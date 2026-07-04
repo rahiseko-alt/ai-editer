@@ -1,0 +1,152 @@
+/* kosespark webapp-mockup — 左カラム設定カード群（styles.css から分離・line-count-gate 対応）
+   :root 変数・レイアウトグリッドは styles.css 側に定義。本ファイルは styles.css の後に読み込む。
+   設定カード = ガラス質感（半透明 + backdrop-blur + 多層 shadow + 内側ハイライト）+ ホバー浮上。 */
+
+/* ===== 設定グループ（ガラスカード）===== */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+  background: var(--glass-bg);            /* 半透明白(RGB255維持→measure #2 diff確保) */
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);     /* 背後をぼかし彩度up=ガラス質感 */
+  border: 1px solid var(--glass-border);  /* 明るいガラスエッジ */
+  border-radius: var(--glass-radius);
+  padding: clamp(var(--sp-1), 1.2vw, var(--sp-2));
+  box-shadow: var(--shadow-card);         /* 多層: 接地影＋拡散影＋内側ハイライト */
+  transition:
+    transform .24s cubic-bezier(.2,.7,.25,1),
+    box-shadow .24s ease,
+    background .24s ease,
+    border-color .24s ease;
+  will-change: transform;
+}
+/* ホバー: ふわっと浮上＋影拡大＋エッジ発光＋わずかに不透明化 */
+.settings-group:hover {
+  transform: translateY(-3px);
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* グループラベル（共通見出し）*/
+.group-label {
+  margin: 0;
+  font-size: clamp(13px, 0.92vw, 15px);
+  font-weight: 700;
+  display: flex; align-items: center; gap: var(--sp-1);
+  color: var(--ink);
+}
+
+/* ステップ番号バッジ（sage単色）*/
+.step-n {
+  display: inline-grid; place-items: center;
+  width: clamp(18px, 1.4vw, 22px); height: clamp(18px, 1.4vw, 22px);
+  border-radius: 50%;
+  background: var(--accent); color: #FFFFFF;
+  font-size: clamp(10px, 0.65vw, 12px); font-weight: 800;
+  flex-shrink: 0;
+}
+
+/* 星バッジ（AI確認）*/
+.step-star {
+  display: inline-grid; place-items: center;
+  width: clamp(18px, 1.4vw, 22px); height: clamp(18px, 1.4vw, 22px);
+  border-radius: 50%;
+  background: var(--accent); color: #FFFFFF;
+  font-size: clamp(9px, 0.6vw, 12px); font-weight: 800;
+  flex-shrink: 0;
+}
+
+/* グループ内の補足テキスト */
+.group-note {
+  margin: 0;
+  font-size: clamp(13px, 0.70vw, 14px);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ===== ドロップゾーン ===== */
+.drop {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  border: 2px dashed rgba(0,0,0,.22);
+  border-radius: 10px;
+  padding: clamp(var(--sp-2), 2.5%, var(--sp-3));
+  cursor: pointer; color: var(--ink);
+  transition: border-color .15s, background .15s;
+  width: 100%;
+  min-height: clamp(64px, 10vh, 96px);
+}
+/* 空状態の視線誘導（最初の一手はここ。選択後は .drop ごと hidden で消える）*/
+.drop { box-shadow: 0 0 0 3px rgba(77,122,77,.07); }
+.drop:hover, .drop.drag {
+  border-color: var(--accent);
+  background: var(--chip-on-bg);
+  box-shadow: 0 0 0 3px rgba(77,122,77,.16);
+}
+.drop-ico { font-size: clamp(18px, 1.4vw, 24px); color: var(--muted); }
+.drop-text { font-weight: 700; font-size: clamp(13px, 0.80vw, 15px); text-align: center; line-height: 1.5; }
+
+/* ファイルバー */
+.filebar {
+  display: flex; align-items: center; gap: 6px;
+  font-size: clamp(13px, 0.78vw, 14px);
+  background: var(--surface-2); border-radius: 8px; border: 1px solid rgba(0,0,0,.08);
+  padding: 6px var(--sp-1);
+  min-width: 0; flex-shrink: 0;
+}
+.file-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.link { margin-left: auto; background: none; border: none; color: var(--accent); cursor: pointer; font-weight: 700; font-size: clamp(13px, 0.78vw, 14px); flex-shrink: 0; text-decoration: underline; }
+
+/* ===== チップ（sage tint/tone 選択・ベタ塗り脱却）===== */
+.chips { display: flex; flex-wrap: wrap; gap: clamp(4px, 0.5vw, 8px); flex-shrink: 0; }
+.chips-wrap { flex-wrap: wrap; }
+.chip {
+  color: var(--chip-off-text);
+  border: 1.5px solid var(--chip-off-border);
+  background: var(--chip-off-bg);
+  padding: clamp(4px, 0.45vw, 6px) clamp(10px, 1vw, 14px); border-radius: 999px;
+  cursor: pointer; font-size: clamp(13px, 0.78vw, 14px); font-weight: 500; font-family: var(--font);
+  transition: color .15s, background .15s, border-color .15s, font-weight .05s, transform .15s;
+  white-space: nowrap; text-align: center;
+}
+.chip:hover { background: var(--surface-2); border-color: rgba(0,0,0,.35); transform: translateY(-1px); }
+/* 選択: 淡sage tint背景 + 濃sage tone枠 + 太字（ベタ塗りでない・複数キュー）*/
+.chip.is-on {
+  color: var(--chip-on-text);
+  background: var(--chip-on-bg);
+  border: 2px solid var(--chip-on-border);
+  font-weight: 800;
+}
+
+/* 字幕2択トグル */
+.sub-toggle { gap: var(--sp-1); flex-wrap: nowrap; }
+.sub-chip { flex: 1; }
+
+/* サイズチップ（2列グリッド）*/
+.size-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-1);
+}
+.size-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  white-space: normal;
+  padding: clamp(6px, 0.7vw, 10px) clamp(6px, 0.9vw, 12px);
+  border-radius: 10px;
+}
+.size-ratio { font-family: var(--font-display); font-size: clamp(13px, 0.92vw, 15px); font-weight: 600; letter-spacing: .02em; line-height: 1.3; }
+.size-use { font-size: clamp(13px, 0.68vw, 14px); font-weight: 500; color: inherit; opacity: .80; line-height: 1.3; }
+
+/* カット詳細 */
+.cut-detail { min-height: 0; }
+.cut-note { margin: 0; font-size: clamp(13px, 0.75vw, 14px); color: var(--ink); line-height: 1.6; }
+.cut-note label { font-size: inherit; color: var(--muted); margin-right: 2px; }
+.cut-note input[type=number] {
+  width: clamp(40px, 3.2vw, 54px); padding: 3px 4px;
+  border: 1px solid rgba(0,0,0,.20); border-radius: 6px;
+  background: var(--surface-2); color: var(--ink); font-family: var(--font);
+  font-size: clamp(13px, 0.85vw, 14px); text-align: center;
+}

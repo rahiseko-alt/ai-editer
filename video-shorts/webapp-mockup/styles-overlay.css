@@ -1,0 +1,129 @@
+/* ===== 結果オーバーレイ（採用候補 / ゴミ素材 タブ）===== */
+/* styles.css から分離。index.html で styles.css の後に読み込む。
+   機能: 実行後の結果パネル（左スライドイン）・タブ・クリップリスト
+   タブ選択: sage tint背景+tone枠+太字（ベタ塗りなし・styles.css と整合）*/
+
+/* ===== 編集実行の最終確認（画面中央モーダル）===== */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(43,43,43,.32);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+.confirm-overlay.show { opacity: 1; pointer-events: auto; }
+.confirm-card {
+  width: min(440px, 90vw);
+  background: rgba(255,255,255,.97);
+  backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--shadow-panel);
+  padding: clamp(20px, 3vw, 28px);
+  transform: translateY(12px) scale(.98);
+  transition: transform .25s cubic-bezier(.22,1,.36,1);
+}
+.confirm-overlay.show .confirm-card { transform: translateY(0) scale(1); }
+.confirm-title { margin: 0 0 12px; font-size: 17px; }
+.confirm-ask { margin: 14px 0 18px; font-weight: 700; font-size: clamp(14px, 0.9vw, 16px); color: var(--ink); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* 作成履歴（2本目以降に出るジョブ選択チップ）*/
+.job-list {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 10px; padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0,0,0,.08); flex-shrink: 0;
+}
+.job-list-label { font-size: 13px; color: var(--muted); font-weight: 700; margin-right: 2px; }
+.job-chip {
+  border: 1.5px solid rgba(0,0,0,.20); background: transparent;
+  color: var(--muted); font-family: var(--font); font-weight: 600; font-size: 13px;
+  padding: 4px 11px; border-radius: 999px; cursor: pointer;
+  transition: background .14s, color .14s, border-color .14s, transform .14s; white-space: nowrap;
+}
+.job-chip:hover { background: rgba(0,0,0,.05); color: var(--ink); transform: translateY(-1px); }
+.job-chip.is-on { background: var(--chip-on-bg); color: var(--chip-on-text); border: 2px solid var(--chip-on-border); font-weight: 800; }
+
+/* タブ行 */
+.tabs { display: flex; gap: 7px; margin-bottom: 10px; flex-wrap: wrap; flex-shrink: 0; }
+.tab {
+  border: 1.5px solid rgba(0,0,0,.22); background: transparent;
+  color: var(--muted); font-weight: 500; font-size: 14px;
+  padding: 6px 13px; border-radius: 999px;
+  cursor: pointer; font-family: var(--font);
+  transition: background .15s, color .15s, border-color .15s; white-space: nowrap;
+}
+.tab b { color: inherit; }
+/* 選択: sage tint背景+tone枠+太字（ベタ塗りなし・styles.css の chip.is-on と整合）*/
+.tab.is-on { background: var(--chip-on-bg); color: var(--chip-on-text); border: 2px solid var(--chip-on-border); font-weight: 800; }
+.tab:not(.is-on):hover { background: rgba(0,0,0,.05); color: var(--ink); border-color: rgba(0,0,0,.40); }
+
+.tab-body { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
+.placeholder { color: var(--muted); font-size: 14px; margin: 6px 0; }
+
+/* クリップ行（採用候補・ゴミ素材共通） */
+.clip-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid rgba(0,0,0,.10);
+  border-radius: 10px; margin-bottom: 7px; font-size: 14px;
+  background: rgba(0,0,0,.03); min-width: 0; overflow: hidden;
+}
+.clip-row .thumb {
+  width: 28px; height: 48px; border-radius: 5px;
+  background: linear-gradient(160deg,#DDDAD5,#C8C4BC); flex-shrink: 0;
+}
+.clip-row .ch { flex: 1; min-width: 0; }
+.clip-row .ch b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-row .ch span { color: var(--muted); font-size: 13px; }
+.clip-row.trash { opacity: .8; }
+.clip-row.trash .thumb { background: linear-gradient(160deg,#D0CCC5,#B8B4AD); }
+.reason { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.clip-btn {
+  flex-shrink: 0; border: 1.5px solid rgba(0,0,0,.25);
+  background: transparent; color: var(--ink);
+  font-family: var(--font); font-weight: 800; font-size: 13px;
+  padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s; white-space: nowrap;
+}
+.clip-btn:hover { background: var(--ink); color: var(--surface-1); border-color: var(--ink); }
+
+/* ===== オーバーレイ本体（左からスライドイン） ===== */
+.result-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex;
+  background: rgba(43,43,43,.30);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+.result-overlay.show { opacity: 1; pointer-events: auto; }
+
+.result-panel {
+  width: min(520px, 88vw); height: 100%;
+  padding: 20px clamp(14px, 3%, 24px);
+  overflow-x: hidden; overflow-y: auto;
+  background: rgba(255,255,255,.97);
+  backdrop-filter: blur(26px) saturate(120%);
+  -webkit-backdrop-filter: blur(26px) saturate(120%);
+  border-right: 1px solid rgba(0,0,0,.10);
+  box-shadow: 30px 0 80px -20px rgba(0,0,0,.18);
+  transform: translateX(-110%);
+  transition: transform .45s cubic-bezier(.22,1,.36,1);
+  box-sizing: border-box; display: flex; flex-direction: column;
+}
+.result-overlay.show .result-panel { transform: translateX(0); }
+
+.result-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; flex-shrink: 0;
+}
+.result-head h2 { margin: 0; font-size: 18px; }
+.result-close {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid rgba(0,0,0,.22);
+  background: transparent; color: var(--ink);
+  font-size: 17px; cursor: pointer; line-height: 1;
+  transition: background .12s;
+}
+.result-close:hover { background: rgba(0,0,0,.08); }
+.result-head-actions { display: flex; align-items: center; gap: 8px; }

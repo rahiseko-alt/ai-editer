@@ -1,0 +1,33 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - heading "video-shorts のダウンロード" [level=1] [ref=e4]
+    - paragraph [ref=e5]: 長編動画から縦型/横型ショートを自動生成するツールです。下のボタンからダウンロードできます。
+  - link "▶ ダウンロード（video-shorts.zip）" [ref=e7] [cursor=pointer]:
+    - /url: video-shorts.zip
+  - region "ダウンロードから利用開始までの流れ" [ref=e8]:
+    - heading "ダウンロード → 利用開始の流れ" [level=2] [ref=e9]
+    - list [ref=e10]:
+      - listitem [ref=e11]:
+        - generic [ref=e12]: "1"
+        - generic [ref=e13]: 上の「ダウンロード」を押す
+      - listitem [ref=e14]:
+        - generic [ref=e15]: "2"
+        - generic [ref=e16]: ダウンロードしたファイルを開く（展開する）
+      - listitem [ref=e17]:
+        - generic [ref=e18]: "3"
+        - generic [ref=e19]:
+          - text: 最初に
+          - code [ref=e20]: setup.html
+          - text: を開く
+      - listitem [ref=e21]:
+        - generic [ref=e22]: "4"
+        - generic [ref=e23]: ［規約を表示］で内容を確認 → ［☑ 規約に了承する］にチェック
+      - listitem [ref=e24]:
+        - generic [ref=e25]: "5"
+        - generic [ref=e26]: チェックすると［はじめる］が押せる → 押す
+      - listitem [ref=e27]:
+        - generic [ref=e28]: "6"
+        - generic [ref=e29]: 使える状態になる
+        - paragraph [ref=e30]: 使用説明書に沿ってご利用ください。
+  - link "使い方を先に見る（使用説明書）→" [ref=e31] [cursor=pointer]:
+    - /url: user-manual.html

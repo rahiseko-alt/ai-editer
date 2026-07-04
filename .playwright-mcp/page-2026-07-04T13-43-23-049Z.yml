@@ -1,0 +1,12 @@
+- main [ref=e2]:
+  - heading "video-shorts セットアップ" [level=1] [ref=e3]
+  - paragraph [ref=e4]:
+    - text: ダウンロードありがとうございます。ご利用の前に、下記の外部サービス・AI利用に関する規約（AI顧問契約書 第10版 別紙4・別紙5 相当）にご了承ください。
+    - strong [ref=e5]: 署名・書類のやり取りは不要です。
+  - button "規約を表示" [ref=e6] [cursor=pointer]
+  - generic [ref=e7] [cursor=pointer]:
+    - checkbox "上記の規約に了承します（内容の確認は任意です）。／ 準拠：AI顧問契約書 第10版" [ref=e8]
+    - generic [ref=e9]: 上記の規約に了承します（内容の確認は任意です）。／ 準拠：AI顧問契約書 第10版
+  - button "はじめる（使用説明書へ）" [disabled] [ref=e11]
+  - paragraph [ref=e12]: 「規約に了承する」にチェックすると「はじめる」が押せます（読む・読まないは自由・署名不要）。
+  - generic [ref=e13]: video-shorts セットアップ v1.0 ／ 準拠：AI顧問契約書 第10版

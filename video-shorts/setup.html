@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>video-shorts セットアップ</title>
+<style>
+  :root{ --bg:#f4f5f7; --card:#fff; --ink:#1c2330; --sub:#5b6472; --line:#e2e6ec; --brand:#2563eb; --ok:#16a34a; --dis:#b8bfca; }
+  @media (prefers-color-scheme:dark){ :root{ --bg:#0f141b; --card:#171d26; --ink:#e8ecf2; --sub:#9aa4b2; --line:#2a323d; --brand:#3b82f6; --ok:#22c55e; --dis:#3a434f; } }
+  *{ box-sizing:border-box; }
+  body{ margin:0; padding:24px 16px; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,sans-serif; line-height:1.7; }
+  .card{ max-width:680px; margin:0 auto; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:28px clamp(18px,4vw,34px); box-shadow:0 8px 30px rgba(0,0,0,.06); }
+  h1{ font-size:clamp(20px,4.5vw,25px); margin:0 0 8px; }
+  .sub{ color:var(--sub); font-size:15px; margin:0 0 18px; }
+  .btn-show{ font-size:15px; font-weight:700; padding:11px 18px; border:1px solid var(--brand);
+    background:transparent; color:var(--brand); border-radius:10px; cursor:pointer; }
+  .terms{ display:none; margin:14px 0 4px; border:1px solid var(--line); border-radius:10px;
+    background:var(--bg); padding:14px 16px; max-height:320px; overflow-y:auto; font-size:14px; }
+  .terms.open{ display:block; }
+  .terms h2{ font-size:15px; color:var(--brand); margin:14px 0 4px; }
+  .terms h2:first-child{ margin-top:0; }
+  .terms .ref{ font-size:11px; font-weight:700; color:#b8860b; border:1px solid currentColor;
+    border-radius:999px; padding:1px 7px; margin-left:6px; }
+  .terms p{ margin:0 0 6px; }
+  .agree{ display:flex; gap:12px; align-items:flex-start; margin:18px 0 6px; padding:14px 16px;
+    border:1px solid var(--line); border-radius:10px; background:var(--bg); cursor:pointer; font-size:15px; }
+  .agree input{ width:22px; height:22px; margin-top:1px; accent-color:var(--brand); flex:0 0 auto; }
+  .row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:12px; }
+  .btn-start{ font-size:17px; font-weight:800; padding:14px 26px; border:0; border-radius:11px;
+    background:var(--ok); color:#fff; cursor:pointer; }
+  .btn-start:disabled{ background:var(--dis); cursor:not-allowed; }
+  .btn-mail{ font-size:13px; padding:10px 14px; border:1px solid var(--line); background:transparent;
+    color:var(--sub); border-radius:9px; cursor:pointer; text-decoration:none; }
+  .hint{ font-size:13px; color:var(--sub); margin:8px 0 0; }
+  .foot{ margin-top:20px; text-align:center; color:var(--sub); font-size:12px; }
+  code{ background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:.92em; }
+</style>
+</head>
+<body>
+<main class="card" data-contact="rahiseko@gmail.com" data-version="1.0">
+  <h1>video-shorts セットアップ</h1>
+  <p class="sub">ダウンロードありがとうございます。ご利用の前に、下記の外部サービス・AI利用に関する規約（AI顧問契約書 第10版 別紙4・別紙5 相当）にご了承ください。<strong>署名・書類のやり取りは不要です。</strong></p>
+
+  <button type="button" class="btn-show" id="showTerms">規約を表示</button>
+
+  <div class="terms" id="terms">
+    <h2>1. AIの出力と確認責任 <span class="ref">第13条</span></h2>
+    <p>AI（特に生成AI）は誤情報・ハルシネーション・第三者権利侵害の可能性を完全には排除できません。AI生成物は判断を補助する参考情報であり、採用・対外利用の最終判断はお客様の責任で行い、正確性・適法性・第三者権利の非侵害はお客様が確認します。確認を経て利用した結果生じた損害について、乙に故意・重過失があるときを除き乙は責任を負いません。医療・法律・税務・会計等の専門判断は有資格者にご相談ください。ただし成果物の計算ロジック等の基本機能の正確性は乙が第11条により責任を負います。</p>
+    <h2>2. 外部サービス・AI提供者側の不備 <span class="ref">第14条</span></h2>
+    <p>外部サービス又はAI提供者側の不備・脆弱性・誤作動に起因する損害について、本規約作成日に既に公表され又は乙が知り得たものを除き、乙は責任を負いません（乙の故意・重過失を除く）。</p>
+    <h2>3. 料金はお客様負担・お客様名義 <span class="ref">第3条3項</span></h2>
+    <p>文字起こし高速化(Groq)その他 AIサービスの利用料及び実費はお客様のご負担です。AIサービスの利用契約はお客様の名義・負担で締結します。鍵（APIキー）はお客様のもので、kosespark は預かりません・保存しません。鍵を設定しなければ無料のローカル処理で動作します。</p>
+    <h2>4. データ・生成AIへの情報入力 <span class="ref">第16条</span></h2>
+    <p>動画・音声・文字起こしはお客様のPC内で処理されます。Groq を使う場合のみ音声がお客様の鍵で Groq に送信されます。学習に利用される設定のAIに秘密情報・個人情報を入力しないようご注意ください。お客様が入力したことに起因する損害について乙は責任を負いません。</p>
+    <h2>5. 成果の無保証 <span class="ref">第2条2項</span></h2>
+    <p>本ツール及び助言は事務の遂行を目的とし、売上向上・コスト削減その他の具体的成果を保証しません。文字起こし精度・区間選定の品質・出力画質・処理速度は素材及び利用環境に依存します。</p>
+    <h2>6. 仕様変更・環境変化・法令改正 <span class="ref">第9条・第19条の2</span></h2>
+    <p>外部サービスの仕様変更・提供終了、OS・ブラウザ・端末の変化、法令・税率の改正に起因する不動作は瑕疵・契約不適合に該当しません。対応が必要な場合は別途見積りのうえ有償改修となります。</p>
+    <h2>7. 検収・不具合・保守 <span class="ref">第10〜12条</span></h2>
+    <p>合意した受入基準を再現できない不具合の修補は契約不適合責任・保守の範囲。使い心地の改善・新機能は別途有償。保守は別紙1により行い、稼働率・復旧時間の保証は行いません。</p>
+    <h2>8. 損害賠償の範囲・上限 <span class="ref">第19条</span></h2>
+    <p>賠償は現実に生じた通常の損害に限り、逸失利益・間接損害・特別損害を含みません。賠償額は原因発生時から遡り6か月間に支払われた顧問料（保守料含む）の総額を上限とします（故意・重過失を除く）。お客様の顧客等第三者への対応費用は含みません。本規約と AI顧問契約書 に齟齬があるときは顧問契約書が優先します。</p>
+  </div>
+
+  <label class="agree">
+    <input type="checkbox" id="agree" />
+    <span>上記の規約に了承します（内容の確認は任意です）。／ 準拠：AI顧問契約書 第10版</span>
+  </label>
+
+  <div class="row">
+    <button type="button" class="btn-start" id="start" disabled>はじめる（使用説明書へ）</button>
+    <a href="#" class="btn-mail" id="mail" hidden>（任意）了承を運営に送る</a>
+  </div>
+  <p class="hint" id="hint">「規約に了承する」にチェックすると「はじめる」が押せます（読む・読まないは自由・署名不要）。</p>
+
+  <div class="foot">video-shorts セットアップ v1.0 ／ 準拠：AI顧問契約書 第10版</div>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var card=document.querySelector(".card");
+  var showBtn=document.getElementById("showTerms");
+  var terms=document.getElementById("terms");
+  var agree=document.getElementById("agree");
+  var start=document.getElementById("start");
+  var hint=document.getElementById("hint");
+  var mail=document.getElementById("mail");
+  var CONTACT=card.dataset.contact||"";
+  var VERSION=card.dataset.version||"1.0";
+
+  showBtn.addEventListener("click",function(){
+    terms.classList.toggle("open");
+    showBtn.textContent=terms.classList.contains("open")?"規約を閉じる":"規約を表示";
+  });
+
+  agree.addEventListener("change",function(){
+    start.disabled=!agree.checked;
+    mail.hidden=!agree.checked;
+    hint.textContent=agree.checked
+      ? "「はじめる」を押すと使用説明書が開きます。"
+      : "「規約に了承する」にチェックすると「はじめる」が押せます（読む・読まないは自由・署名不要）。";
+    if(agree.checked){
+      var now=new Date();
+      var when=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+      var body="video-shorts の規約（v"+VERSION+"・AI顧問契約書 第10版 別紙4/5相当）に了承しました。\n了承日: "+when+"\nこのメールをもって同意の記録とします。";
+      mail.setAttribute("href","mailto:"+encodeURIComponent(CONTACT)+"?subject="+encodeURIComponent("【video-shorts 規約了承】"+when)+"&body="+encodeURIComponent(body));
+    }
+  });
+
+  start.addEventListener("click",function(){
+    if(start.disabled) return;
+    // 使用説明書へ（同梱の install/user-manual.html）
+    window.location.href="install/user-manual.html";
+  });
+})();
+</script>
+</body>
+</html>

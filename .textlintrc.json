@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "preset-ja-technical-writing": {
+      "sentence-length": { "max": 120 },
+      "no-mix-dearu-desumasu": { "preferInHeader": "", "preferInBody": "ですます", "preferInList": "" },
+      "max-comma": { "max": 4 },
+      "no-doubled-joshi": { "min_interval": 1 }
+    },
+    "preset-japanese": true,
+    "preset-ja-spacing": {
+      "ja-space-around-code": { "before": true, "after": true }
+    }
+  }
+}

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>kosespark Writer — AI記事制作プラットフォーム</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ヘッダー：SaaSツール風。ターミナル/チャットを感じさせない -->
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-mark">✺</span>
+    <span class="logo-text">kosespark</span>
+    <span class="edition">Writer</span>
+  </div>
+  <nav class="topnav">
+    <a class="navlink active">作成</a>
+    <a class="navlink">履歴</a>
+    <a class="navlink">使い方</a>
+    <span class="plan-badge">テスト版</span>
+  </nav>
+</header>
+
+<main class="layout">
+
+  <!-- 左：依頼フォーム -->
+  <section class="panel input-panel">
+    <h1 class="panel-title">記事を1本、まるごと仕上げます</h1>
+    <p class="panel-sub">テーマを入れて「生成」を押すだけ。調査・執筆・校正・スライドまで自動で進みます。</p>
+
+    <label class="field">
+      <span class="field-label">テーマ / キーワード <em>必須</em></span>
+      <input id="f-keyword" type="text" placeholder="例：非エンジニアが Claude Code を始める方法">
+    </label>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">読者</span>
+        <input id="f-persona" type="text" placeholder="初心者">
+      </label>
+      <label class="field">
+        <span class="field-label">トーン</span>
+        <select id="f-tone">
+          <option>親しみやすい敬体</option>
+          <option>きっちり丁寧</option>
+          <option>フランク</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="field">
+      <span class="field-label">目標文字数</span>
+      <select id="f-length">
+        <option>2,000〜2,500字</option>
+        <option>1,000〜1,500字</option>
+        <option>3,000字以上</option>
+      </select>
+    </label>
+
+    <label class="check">
+      <input id="f-slide" type="checkbox" checked>
+      <span>制作過程の説明スライドも作る（クライアント提出用）</span>
+    </label>
+
+    <button id="run" class="run-btn">記事を生成する</button>
+    <p class="run-note">※ テスト版：現在はフロント画面の動作確認用です</p>
+  </section>
+
+  <!-- 右：工程＋結果 -->
+  <section class="panel work-panel">
+
+    <!-- 4工程パイプライン -->
+    <div class="pipeline" id="pipeline">
+      <div class="pstep" data-step="research">
+        <span class="pdot"></span>
+        <div class="pmeta"><b>リサーチ</b><small>Tavily（外部AI）</small></div>
+      </div>
+      <div class="pline"></div>
+      <div class="pstep" data-step="write">
+        <span class="pdot"></span>
+        <div class="pmeta"><b>執筆</b><small>AI（プラットフォーム本体）</small></div>
+      </div>
+      <div class="pline"></div>
+      <div class="pstep" data-step="proof">
+        <span class="pdot"></span>
+        <div class="pmeta"><b>校正</b><small>textlint（外部）</small></div>
+      </div>
+      <div class="pline"></div>
+      <div class="pstep" data-step="slide">
+        <span class="pdot"></span>
+        <div class="pmeta"><b>スライド</b><small>Marp（外部）</small></div>
+      </div>
+    </div>
+
+    <!-- 結果タブ -->
+    <div class="tabs">
+      <button class="tab active" data-tab="article">記事</button>
+      <button class="tab" data-tab="slide">スライド</button>
+      <button class="tab" data-tab="source">リサーチ出典</button>
+    </div>
+
+    <div class="result" id="result">
+      <div class="empty-state" id="empty">
+        <span class="empty-icon">📝</span>
+        <p>ここに完成した記事が表示されます。<br>左でテーマを入れて「生成」してください。</p>
+      </div>
+
+      <article class="tab-body" data-body="article" hidden></article>
+      <div class="tab-body" data-body="slide" hidden></div>
+      <div class="tab-body" data-body="source" hidden></div>
+    </div>
+  </section>
+</main>
+
+<footer class="footbar">
+  <span>連携中のAI / ツール：</span>
+  <span class="chip">Tavily 調査</span>
+  <span class="chip">AI 執筆</span>
+  <span class="chip">textlint 校正</span>
+  <span class="chip">Marp スライド</span>
+  <span class="foot-note">kosespark Writer — テスト版（Claude Code をエンジンに使用）</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

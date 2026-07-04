@@ -1,0 +1,197 @@
+{
+  "permissions": {
+    "deny": [
+      "PowerShell(Get-Content *)",
+      "Bash(env)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git branch -D*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Write(.env)",
+      "Write(**/.env)",
+      "Edit(.git/**)",
+      "Write(.git/**)",
+      "Write(**/secrets/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git rebase:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(npm publish:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(yarn add:*)",
+      "Bash(pip install:*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/secrets/**)",
+      "Bash(gh auth:*)",
+      "Bash(git config user.*)",
+      "Bash(git config --global user.*)"
+    ],
+    "ask": [
+      "Bash(node -e *)",
+      "Bash(node --eval*)",
+      "Bash(node -p *)",
+      "Bash(node --input-type=*)",
+      "Bash(npm install *)",
+      "Bash(npx --yes*)",
+      "Bash(docker:*)",
+      "Bash(kubectl:*)",
+      "Bash(terraform:*)",
+      "Bash(aws:*)",
+      "Bash(gcloud:*)",
+      "Bash(vercel --prod*)",
+      "Bash(npx vercel --prod*)",
+      "Bash(vercel deploy --prod*)",
+      "Bash(npm publish:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=post-bash -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-bash.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=post-write -- bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=rules-coverage-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/rules-coverage-gate.mjs",
+            "statusMessage": "ルールカバレッジ検証中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=ac-keyword-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ac-keyword-gate.mjs",
+            "statusMessage": "受入条件 keyword 検証中 (Stage 2)..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=line-count-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/line-count-gate.mjs",
+            "statusMessage": "500行規律検証中..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=pre-edit -- bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-edit.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=area-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/area-gate.mjs",
+            "statusMessage": "運用エリアゲート検証中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=pre-bash-destructive -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-bash-destructive.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=pre-git-staging-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-git-staging-gate.mjs",
+            "statusMessage": "git 無差別 stage（index sweep）防止チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=secret-write-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/secret-write-gate.mjs",
+            "statusMessage": "settings.local.json シークレット混入チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=outside-vibe-base-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/outside-vibe-base-gate.mjs",
+            "statusMessage": "vibe-base 外フォルダ編集チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=memory-observation-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/memory-observation-gate.mjs",
+            "statusMessage": "memory.md 継続観察パターン検証中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=memory-size-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/memory-size-gate.mjs",
+            "statusMessage": "memory 系ファイル byte 上限チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=serena-suggest-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/serena-suggest-gate.mjs",
+            "statusMessage": "Serena 適用機会チェック中..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": []
+  }
+}

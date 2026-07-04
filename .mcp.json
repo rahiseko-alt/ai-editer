@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "duckduckgo": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"]
+    },
+    "textlint": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["textlint", "--mcp"]
+    },
+    "marp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@masaki39/marp-mcp@latest"]
+    }
+  }
+}

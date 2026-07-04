@@ -1,0 +1,66 @@
+# 依存（再生成可能・巨大）
+node_modules/
+
+# 実行時の中間/出力（リクエストごとの成果物）
+workspace/
+
+# 秘密（鍵管理方針確定までも含め常時除外）
+.env
+.env.*
+*.local
+
+# 配布パッケージのビルド生成物（video-shorts 配布 zip 等）
+dist/
+# === vibe-base migration standard ===
+# 自動付与: 明確な不要物（依存・ビルド出力・生成物・キャッシュ・secret）を除外する。
+# 大型物(>10MB)はパターンでなく migrate-products-to-repos.mjs の大型ガードが個別に自動退避する
+# （portfolio 本体・小サイズの素材動画/zip 等は誤除外しない）。
+# 必要なファイルは `git add -f <path>` で個別追加可能。
+# このマーカー行で冪等追記の重複を判定する。
+
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+build/
+.next/
+.nuxt/
+.svelte-kit/
+
+# generated / outputs
+outputs/
+output/
+
+# temporary
+tmp/
+tmp-*/
+*.tmp
+session-artifact-backups/
+
+# caches
+__pycache__/
+*.pyc
+.venv/
+.vercel
+.wrangler/
+*.db
+
+# Serena MCP index
+.serena/
+
+# secrets（コミット厳禁・.env.example はテンプレなので復活）
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+credentials.json
+token.json
+ga4-*.json
+**/.claude/settings.local.json
+
+# logs
+.claude/logs/
+# === end vibe-base migration standard ===

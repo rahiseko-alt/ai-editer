@@ -1,0 +1,150 @@
+- main [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - heading "video-shorts 使用説明書" [level=1] [ref=f1e4]
+    - paragraph [ref=f1e5]: 長編の動画から「見どころショート」を自動で作るツールです。あなたの PC の中で動き、動画は外に送られません（高速文字起こしを使うときだけ、あなたの鍵で Groq に音声を送ります）。
+  - navigation [ref=f1e6]:
+    - strong [ref=f1e7]: 目次
+    - list [ref=f1e8]:
+      - listitem [ref=f1e9]:
+        - link "0. 最初に（同意）" [ref=f1e10] [cursor=pointer]:
+          - /url: "#step0"
+      - listitem [ref=f1e11]:
+        - link "1. 用意するもの" [ref=f1e12] [cursor=pointer]:
+          - /url: "#need"
+      - listitem [ref=f1e13]:
+        - link "2. 初回セットアップ" [ref=f1e14] [cursor=pointer]:
+          - /url: "#setup"
+      - listitem [ref=f1e15]:
+        - link "3. 使い方（動画→ショート）" [ref=f1e16] [cursor=pointer]:
+          - /url: "#use"
+      - listitem [ref=f1e17]:
+        - link "4. モードの選び方" [ref=f1e18] [cursor=pointer]:
+          - /url: "#mode"
+      - listitem [ref=f1e19]:
+        - link "5. 候補の確認" [ref=f1e20] [cursor=pointer]:
+          - /url: "#review"
+      - listitem [ref=f1e21]:
+        - link "6. うまくいかない時" [ref=f1e22] [cursor=pointer]:
+          - /url: "#trouble"
+      - listitem [ref=f1e23]:
+        - link "7. よくある質問" [ref=f1e24] [cursor=pointer]:
+          - /url: "#faq"
+  - generic [ref=f1e25]:
+    - heading "0. 最初に（同意）" [level=2] [ref=f1e26]
+    - paragraph [ref=f1e27]:
+      - text: ご利用の前に、同じフォルダの consent.html を開き、外部サービス・AI利用の同意事項をご確認のうえ同意してください。同意すると「控え（同意の証拠）」がダウンロードされます。
+      - strong [ref=f1e28]: 控えは保管してください。
+      - text: 構築を代行でご依頼の場合は、担当者にお渡しください。
+  - generic [ref=f1e29]:
+    - heading "1. 用意するもの（初回のみ・無料）" [level=2] [ref=f1e30]
+    - table [ref=f1e31]:
+      - rowgroup [ref=f1e32]:
+        - row "ソフト 用途 入手先" [ref=f1e33]:
+          - columnheader "ソフト" [ref=f1e34]
+          - columnheader "用途" [ref=f1e35]
+          - columnheader "入手先" [ref=f1e36]
+        - row "Node.js 18 以上 本体の実行 nodejs.org（LTS 版）" [ref=f1e37]:
+          - cell "Node.js 18 以上" [ref=f1e38]
+          - cell "本体の実行" [ref=f1e39]
+          - cell "nodejs.org（LTS 版）" [ref=f1e40]
+        - row "Python 3.12 文字起こし python.org" [ref=f1e41]:
+          - cell "Python 3.12" [ref=f1e42]
+          - cell "文字起こし" [ref=f1e43]
+          - cell "python.org" [ref=f1e44]
+        - row "ffmpeg / ffprobe 動画処理 ffmpeg.org" [ref=f1e45]:
+          - cell "ffmpeg / ffprobe" [ref=f1e46]
+          - cell "動画処理" [ref=f1e47]
+          - cell "ffmpeg.org" [ref=f1e48]
+    - paragraph [ref=f1e49]: 入れ終わったら、ターミナル（Windows は PowerShell）で次を打ち、バージョンが表示されれば準備完了です。
+    - generic [ref=f1e50]: node -v python --version ffmpeg -version
+  - generic [ref=f1e51]:
+    - heading "2. 初回セットアップ" [level=2] [ref=f1e52]
+    - list [ref=f1e53]:
+      - listitem [ref=f1e54]:
+        - generic [ref=f1e55]: 同意
+        - text: ：consent.html を開いて同意（上記 0）。
+      - listitem [ref=f1e56]:
+        - generic [ref=f1e57]: 文字起こしライブラリを入れる
+        - text: （無料）：
+        - generic [ref=f1e58]: pip install -r requirements.txt
+      - listitem [ref=f1e59]:
+        - generic [ref=f1e60]: （任意）高速文字起こしを使う場合だけ
+        - text: ：あなたの Groq アカウントで鍵を作り、video-shorts/.env に1行だけ書きます。鍵はこのファイル以外に貼らないでください。
+        - generic [ref=f1e61]: GROQ_API_KEY=gsk_（console.groq.com/keys で作成した鍵）
+        - text: 鍵が有効か確認：
+        - generic [ref=f1e62]: python src/check-groq-key.py
+        - paragraph [ref=f1e63]: 鍵を設定しなくても、無効でも、ネットが切れても、自動で無料のローカル文字起こしに切り替わるので止まりません。
+  - generic [ref=f1e64]:
+    - heading "3. 使い方（動画 → ショート）" [level=2] [ref=f1e65]
+    - paragraph [ref=f1e66]: 例として、作業名を myvideo とします。上から順に実行してください。
+    - list [ref=f1e67]:
+      - listitem [ref=f1e68]:
+        - generic [ref=f1e69]: 文字起こし
+        - text: ：
+        - generic [ref=f1e70]: python src/transcribe.py 入力動画.mp4 work/myvideo/transcript.json
+      - listitem [ref=f1e71]:
+        - generic [ref=f1e72]: 区間選定
+        - text: （AI が見どころを選ぶ）：
+        - generic [ref=f1e73]: node pipeline.mjs select work/myvideo
+      - listitem [ref=f1e74]:
+        - generic [ref=f1e75]: レンダリング
+        - text: （ショートを作る）：
+        - generic [ref=f1e76]: node pipeline.mjs render work/myvideo
+      - listitem [ref=f1e77]:
+        - generic [ref=f1e78]: 候補を確認
+        - text: ：ui/index.html を開き、採用するものを選びます。
+  - generic [ref=f1e79]:
+    - heading "4. モードの選び方" [level=2] [ref=f1e80]
+    - table [ref=f1e81]:
+      - rowgroup [ref=f1e82]:
+        - row "選ぶもの 意味" [ref=f1e83]:
+          - columnheader "選ぶもの" [ref=f1e84]
+          - columnheader "意味" [ref=f1e85]
+        - row "話題ごと（topic） 話題の切れ目ごとに1本。全編をカバーしたい時" [ref=f1e86]:
+          - cell "話題ごと（topic）" [ref=f1e87]
+          - cell "話題の切れ目ごとに1本。全編をカバーしたい時" [ref=f1e88]
+        - row "ダイジェスト（digest） 面白い所だけを1本に凝縮。ハイライトが欲しい時" [ref=f1e89]:
+          - cell "ダイジェスト（digest）" [ref=f1e90]
+          - cell "面白い所だけを1本に凝縮。ハイライトが欲しい時" [ref=f1e91]
+        - row "縦 / 横 縦=SNS リール向け（1080×1920）／横=画面録画など細かい文字を残す用途（1920×1080）" [ref=f1e92]:
+          - cell "縦 / 横" [ref=f1e93]
+          - cell "縦=SNS リール向け（1080×1920）／横=画面録画など細かい文字を残す用途（1920×1080）" [ref=f1e94]
+        - row "字幕 ON / OFF 字幕を焼き込むか。ONは誤変換に注意（用語辞書で補正可）" [ref=f1e95]:
+          - cell "字幕 ON / OFF" [ref=f1e96]
+          - cell "字幕を焼き込むか。ONは誤変換に注意（用語辞書で補正可）" [ref=f1e97]
+    - paragraph [ref=f1e98]: モード・縦横・字幕は毎回たずねられます（前回の設定は引き継ぎません）。
+  - generic [ref=f1e99]:
+    - heading "5. 候補の確認" [level=2] [ref=f1e100]
+    - paragraph [ref=f1e101]: ショートは「候補」として複数作られます。ui/index.html をブラウザで開き、良いものだけを採用してください。すべてを自動採用にはせず、必ず目で見て選びます（見どころの歩留まりは 30〜50% が目安です）。
+  - generic [ref=f1e102]:
+    - heading "6. うまくいかない時" [level=2] [ref=f1e103]
+    - table [ref=f1e104]:
+      - rowgroup [ref=f1e105]:
+        - row "症状 対処" [ref=f1e106]:
+          - columnheader "症状" [ref=f1e107]
+          - columnheader "対処" [ref=f1e108]
+        - row "ffmpeg not found ffmpeg を入れ直し、ffmpeg -version が出るか確認" [ref=f1e109]:
+          - cell "ffmpeg not found" [ref=f1e110]
+          - cell "ffmpeg を入れ直し、ffmpeg -version が出るか確認" [ref=f1e111]
+        - row "文字起こしが遅い ローカルは PC 性能に依存。速くするには Groq 鍵を設定（2-3）" [ref=f1e112]:
+          - cell "文字起こしが遅い" [ref=f1e113]
+          - cell "ローカルは PC 性能に依存。速くするには Groq 鍵を設定（2-3）" [ref=f1e114]
+        - row "Groq が [NG] 鍵をコピーし直す／console.groq.com で作り直す。それでも無効なら鍵設定を消せば無料のローカルで動く" [ref=f1e115]:
+          - cell "Groq が [NG]" [ref=f1e116]
+          - cell "鍵をコピーし直す／console.groq.com で作り直す。それでも無効なら鍵設定を消せば無料のローカルで動く" [ref=f1e117]
+        - row "字幕の誤変換 src/term-corrections.json に「誤→正」を追記すると次回から直る" [ref=f1e118]:
+          - cell "字幕の誤変換" [ref=f1e119]
+          - cell "src/term-corrections.json に「誤→正」を追記すると次回から直る" [ref=f1e120]
+        - row "候補が少ない/微妙 歩留まり 30〜50% は仕様。ui で採用分だけ使う" [ref=f1e121]:
+          - cell "候補が少ない/微妙" [ref=f1e122]
+          - cell "歩留まり 30〜50% は仕様。ui で採用分だけ使う" [ref=f1e123]
+  - generic [ref=f1e124]:
+    - heading "7. よくある質問" [level=2] [ref=f1e125]
+    - generic [ref=f1e126]:
+      - term [ref=f1e127]: 動画は外部に送られますか？
+      - definition [ref=f1e128]: いいえ。処理は PC 内で行われます。高速文字起こし（Groq）を使うときだけ、音声があなたの鍵で Groq に送られます。
+      - term [ref=f1e129]: お金はかかりますか？
+      - definition [ref=f1e130]: ツールはローカルで無料動作します。Groq を使い無料枠を超えた分だけ、あなたの Groq アカウントに課金されます（鍵を設定しなければ無料）。
+      - term [ref=f1e131]: 字幕の変換ミスが気になります。
+      - definition [ref=f1e132]: 用語辞書（src/term-corrections.json）に「誤→正」を登録すると、次回の文字起こしから直ります。
+  - generic [ref=f1e133]: video-shorts 使用説明書 v1.0（2026-07-04）

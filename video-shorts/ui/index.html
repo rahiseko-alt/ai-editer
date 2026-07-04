@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>video-shorts 選別UI</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>ショート候補 選別</h1>
+    <p class="hint">歩留まり30-50%前提。良い候補だけ「採用」し、残りは破棄してください。</p>
+    <div class="loader">
+      <label class="file-btn">
+        candidates.json を読み込む
+        <input type="file" id="manifest-input" accept="application/json" hidden />
+      </label>
+      <span id="job-label" class="job-label"></span>
+    </div>
+  </header>
+
+  <main id="grid" class="grid" aria-live="polite">
+    <p class="empty" id="empty-msg">
+      output/&lt;id&gt;/candidates.json を読み込むと候補が並びます。<br />
+      （動画は candidates.json と同じフォルダの mp4 を参照します）
+    </p>
+  </main>
+
+  <footer class="statusbar">
+    <span id="counts">採用 0 / 破棄 0 / 未判定 0</span>
+    <button id="export-btn" class="export" disabled>採用リストを書き出す</button>
+  </footer>
+
+  <template id="card-tpl">
+    <article class="card" data-status="pending">
+      <div class="video-wrap">
+        <video class="clip" controls preload="metadata" playsinline></video>
+        <span class="badge"></span>
+      </div>
+      <div class="meta">
+        <p class="hook"></p>
+        <p class="sub"><span class="time"></span> ・ 確信度 <span class="conf"></span></p>
+        <p class="keep"></p>
+      </div>
+      <div class="actions">
+        <button class="adopt">採用</button>
+        <button class="reject">破棄</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

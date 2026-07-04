@@ -1,0 +1,17 @@
+{
+  "name": "kosespark-writer-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "kosespark Writer テスト版 裏エンジン（外部AIツール連携・キーレス）",
+  "scripts": {
+    "lint:article": "textlint",
+    "slide:build": "marp"
+  },
+  "devDependencies": {
+    "textlint": "^15.2.0",
+    "textlint-rule-preset-ja-technical-writing": "^12.0.2",
+    "textlint-rule-preset-japanese": "^9.0.0",
+    "textlint-rule-preset-ja-spacing": "^2.4.3",
+    "@marp-team/marp-cli": "^4.2.3"
+  }
+}
