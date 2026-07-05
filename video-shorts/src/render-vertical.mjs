@@ -13,6 +13,28 @@ const ORIENT = { portrait: [1080, 1920], landscape: [1920, 1080] };
 const DEFAULT_ORIENT = "portrait";
 
 /**
+ * 拡大ガード込みの実際の出力canvas(W,H)を算出する。
+ * 素材(srcW,srcH)が既定ターゲットより小さい場合、無理に拡大しないターゲットへ縮小する
+ * （432x766素材を1080x1920へ6.2倍拡大しても画質向上ゼロで負荷だけ増える＝実測差分あり）。
+ * k = min(TARGET_W/srcW, TARGET_H/srcH)。k>1（=そのままだと拡大）なら
+ * even(TARGET_W/k) x even(TARGET_H/k) へ縮小（h264は偶数幅高さが必須）。
+ * env FORCE_TARGET_RES=1 でガード無効化（オプトアウト）。
+ * @returns {{w:number, h:number, guarded:boolean}}
+ */
+export function computeCanvas(orientation, srcW, srcH) {
+  const [TARGET_W, TARGET_H] = ORIENT[orientation] || ORIENT[DEFAULT_ORIENT];
+  const forceTarget = process.env.FORCE_TARGET_RES === "1";
+  if (!forceTarget && srcW && srcH && srcW > 0 && srcH > 0) {
+    const k = Math.min(TARGET_W / srcW, TARGET_H / srcH);
+    if (k > 1) {
+      const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
+      return { w: even(TARGET_W / k), h: even(TARGET_H / k), guarded: true };
+    }
+  }
+  return { w: TARGET_W, h: TARGET_H, guarded: false };
+}
+
+/**
  * 入力動画(16:9想定)から区間を切り出し、9:16縦型に中央crop→scaleし、ASS字幕を焼く。
  * crop先→scale後（落とし穴#3）。映像は再エンコード・音声は -c:a copy（落とし穴#2）。
  *
@@ -22,11 +44,20 @@ const DEFAULT_ORIENT = "portrait";
  * @param {number} p.end 終了秒
  * @param {string} p.assPath 焼き込む .ass 字幕パス（無ければ字幕なし）
  * @param {string} p.output 出力mp4
+ * @param {number} [p.srcW] 素材の実横幅（拡大ガード用。省略時はガード無効）
+ * @param {number} [p.srcH] 素材の実縦幅（拡大ガード用。省略時はガード無効）
  * @returns {Promise<{cmd:string, output:string}>}
  */
 export function renderClip(p) {
   const dur = Math.max(0.1, p.end - p.start);
-  const [TARGET_W, TARGET_H] = ORIENT[p.orientation] || ORIENT[DEFAULT_ORIENT];
+  const canvas = computeCanvas(p.orientation, p.srcW, p.srcH);
+  const TARGET_W = canvas.w;
+  const TARGET_H = canvas.h;
+  if (canvas.guarded) {
+    process.stderr.write(
+      `[INFO] 拡大ガード: 素材${p.srcW}x${p.srcH} → 出力${TARGET_W}x${TARGET_H}（拡大なし）\n`
+    );
+  }
   const assFilter = p.assPath
     ? `,ass='${escapeFilterPath(p.assPath)}'`
     : "";

@@ -21,10 +21,11 @@ import { resolveSegments } from "./src/reverse-match.mjs";
 import { mergeShortSegments, snapToSilence } from "./src/snap-boundaries.mjs";
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
-import { renderClip, probeSize, clipName } from "./src/render-vertical.mjs";
+import { renderClip, probeSize, clipName, computeCanvas } from "./src/render-vertical.mjs";
 import { concatClips } from "./src/concat.mjs";
 import { DEFAULT_MODE, getMode, isValidMode } from "./src/select-modes.mjs";
 import { runDigestEditor } from "./src/digest-editor.mjs";
+import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./src/timing.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -80,6 +81,7 @@ function cmdInit(input, mode, sub, orientArg) {
   const id = path.basename(input).replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}]+/gu, "-");
   const workDir = path.join(WORK_ROOT, id);
   fs.mkdirSync(workDir, { recursive: true });
+  stageStart(workDir, "init");
   saveState(workDir, {
     id,
     input: path.resolve(input),
@@ -90,6 +92,7 @@ function cmdInit(input, mode, sub, orientArg) {
     orient,
     createdHint: "transcribe.py で transcript.json を作り select へ",
   });
+  stageEnd(workDir, "init");
   log(`[OK] job 作成: ${workDir}（mode=${getMode(mode).label} / 字幕=${sub} / 向き=${orient}）`);
   log(`  次: python src/transcribe.py "${input}" "${path.join(workDir, "transcript.json")}"`);
   console.log(workDir);
@@ -101,6 +104,8 @@ async function cmdSelect(workDir, useApi, modeOverride) {
   const tPath = path.join(workDir, "transcript.json");
   if (!fs.existsSync(tPath)) die(`transcript.json がありません。先に transcribe.py を実行: ${tPath}`);
 
+  stageStart(workDir, "select");
+
   // ダイジェストは編集エージェント（理解→台本再構成→検証修正ループ）が
   // llm-response.json を直接書く。キーレスの手書き経路（llm-request.md）は使わない。
   if (mode === "digest") {
@@ -110,6 +115,7 @@ async function cmdSelect(workDir, useApi, modeOverride) {
     state.mode = mode;
     state.digestMeta = meta;
     saveState(workDir, state);
+    stageEnd(workDir, "select");
     log(`[OK] ダイジェスト台本完成: ${meta.count}区間 / score=${meta.score} / ${meta.iterations}反復`);
     return;
   }
@@ -131,8 +137,10 @@ async function cmdSelect(workDir, useApi, modeOverride) {
     const raw = await callAnthropic(doc);
     const segs = parseResponse(raw);
     writeJson(path.join(workDir, "llm-response.json"), { segments: segs });
+    stageEnd(workDir, "select");
     log(`[OK] API選定完了: ${segs.length} 候補 → llm-response.json`);
   } else {
+    stageEnd(workDir, "select");
     log("[NEXT] オーケストレーター(Claude Code)は llm-request.md を読み、");
     log(`       ${path.join(workDir, "llm-response.json")} に {"segments":[{keepText,hook}]} を書く。`);
     log("       その後: node pipeline.mjs render " + workDir);
@@ -149,11 +157,26 @@ async function cmdRender(workDir, opts = {}) {
     const avail = listStyles().map((s) => `${s.key}（${s.label}）`).join(" / ");
     die(`未知の字幕スタイル: ${subStyle}\n  利用可能: ${avail}`);
   }
+  stageStart(workDir, "render");
   const transcript = readJson(path.join(workDir, "transcript.json"));
   const respPath = path.join(workDir, "llm-response.json");
   if (!fs.existsSync(respPath)) die(`llm-response.json がありません: ${respPath}`);
   const llmSegs = parseResponse(readJson(respPath));
   if (llmSegs.length === 0) die("LLM候補が0件です");
+
+  // 区間選定(orchestrate)所要時間: llm-request.md(依頼) → llm-response.json(応答) の mtime差分で算出。
+  // オーケストレーター(Claude Code)が手動で書く工程のため start/end 計測ができず、mtime から逆算する。
+  try {
+    const reqPath = path.join(workDir, "llm-request.md");
+    if (fs.existsSync(reqPath) && fs.existsSync(respPath)) {
+      const reqMs = fs.statSync(reqPath).mtimeMs;
+      const respMs = fs.statSync(respPath).mtimeMs;
+      const sec = (respMs - reqMs) / 1000;
+      if (Number.isFinite(sec) && sec >= 0) stageSetSec(workDir, "orchestrate", sec);
+    }
+  } catch (e) {
+    log(`[WARN] 区間選定時間の算出に失敗（計測スキップ）: ${e.message}`);
+  }
 
   // 逆マッチングで秒数確定（落とし穴#1）。ダイジェストは台本順を保持（時系列に戻さない）。
   let resolved = resolveSegments(llmSegs, transcript, { preserveOrder: mode === "digest" });
@@ -193,20 +216,33 @@ async function cmdRender(workDir, opts = {}) {
   fs.mkdirSync(outDir, { recursive: true });
   const manifest = [];
 
+  // 素材の実解像度を1回だけprobeし、拡大ガード込みの実canvasを算出（ステップ5）。
+  // 字幕ONの場合、buildAssのPlayResにも同じ実canvasを渡しスケールずれを防ぐ。
+  const orientation = state.orient || "portrait";
+  let srcSize = null;
+  try {
+    srcSize = await probeSize(state.input);
+  } catch (e) {
+    log(`[WARN] 素材解像度のprobeに失敗（拡大ガード無効で続行）: ${e.message}`);
+  }
+  const srcW = srcSize ? srcSize.width : undefined;
+  const srcH = srcSize ? srcSize.height : undefined;
+  const canvas = computeCanvas(orientation, srcW, srcH);
+
   for (let i = 0; i < resolved.length; i++) {
     const seg = resolved[i];
     // 字幕(ASS)生成（--no-sub 指定時はスキップ）
     let assPath = null;
     if (!noSub) {
       const relWords = wordsInRange(transcript.words || [], seg.start, seg.end);
-      const ass = buildAss(relWords, seg.hook, seg.duration, { style: subStyle });
+      const ass = buildAss(relWords, seg.hook, seg.duration, { style: subStyle, width: canvas.w, height: canvas.h });
       assPath = path.join(workDir, `clip-${i + 1}.ass`);
       fs.writeFileSync(assPath, ass, "utf-8");
     }
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderClip({ input: state.input, start: seg.start, end: seg.end, assPath, output: outFile, orientation: state.orient || "portrait" });
+      await renderClip({ input: state.input, start: seg.start, end: seg.end, assPath, output: outFile, orientation, srcW, srcH });
       const size = await probeSize(outFile);
       manifest.push({
         index: i + 1,
@@ -255,6 +291,8 @@ async function cmdRender(workDir, opts = {}) {
   const total = transcript.duration || 0;
   const rate = total > 0 ? covered / total : 0;
   log(`[COVER] mode=${mode} 選定合計 ${covered.toFixed(1)}s / 素材 ${total.toFixed(1)}s = カバー率 ${rate.toFixed(3)}`);
+  stageEnd(workDir, "render");
+  log(summaryLine(readTiming(workDir)));
   log(`[DONE] ${manifest.length} 本生成 → ${outDir}\\candidates.json`);
   log(`[NEXT] ui/index.html を開いて candidates.json を読み込み、採用/破棄を選別`);
 }

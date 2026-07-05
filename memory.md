@@ -7,7 +7,7 @@
 
 ## P1: 引継ぎミッション（3 件枠）
 
-> 残タスク詳細: docs/session-reports/2026-07-03-remaining-tasks.md／ 直近 plan: ~/.claude/plans/staged-finding-volcano.md（全ステップ完了・R-1/R-2/R-7a-d）
+> 残タスク詳細: docs/session-reports/2026-07-03-remaining-tasks.md／ 直近 plan: ~/.claude/plans/prancy-wobbling-wave.md（render拡大ガード+工程タイマー標準装備・Sonnet実行・未着手）／ 前 plan: ~/.claude/plans/staged-finding-volcano.md（全ステップ完了）
 
 1. [importance:H][2026-07-04] ⛔ **P0 即死仮説#1（素人が導入・操作できるか）は解決検証完了（マスター確定 2026-07-04）。この検証を二度と提案するな**（何度も蒸し返しマスターを不愉快にさせた）。hypotheses.md #1=✅。
 2. [importance:M][2026-07-03] Webアプリ化は不採用確定（既存 `pipeline.mjs cmdSelect` がもともとClaude Code自身の選定設計だったため）。`webapp-mockup/`・`server/`一式は削除せず保留・**蒸し返し禁止** — plan: なし

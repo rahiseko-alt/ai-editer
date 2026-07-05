@@ -28,14 +28,16 @@ export const PRESETS = {
       "hue=H='2*PI*t/4'[v]",
   },
   // ③ ズームシェイク: 1.1倍に拡大し、切り出し位置を sin/cos で揺らしてカメラシェイク
+  // 拡大ガード（render-vertical.mjs computeCanvas）で出力canvasが1080x1920より小さくなる
+  // ケースがあるため、固定1080x1920ではなく入力解像度(iw/ih)基準の式にする（横断チェック§4）。
   shake: {
     label: "ズームシェイク",
     type: "vf",
     filter:
-      "scale=1188:2112," +
-      "crop=1080:1920:" +
-      "x='(in_w-1080)/2+34*sin(t*12)':" +
-      "y='(in_h-1920)/2+34*cos(t*10)'",
+      "scale=trunc(iw*1.1/2)*2:trunc(ih*1.1/2)*2," +
+      "crop=iw/1.1:ih/1.1:" +
+      "x='(in_w-in_w/1.1)/2+34*sin(t*12)':" +
+      "y='(in_h-in_h/1.1)/2+34*cos(t*10)'",
   },
 };
 

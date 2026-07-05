@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 
 def parse_args(argv):
@@ -120,6 +121,35 @@ def apply_corrections(result, corrections):
     return result
 
 
+def write_timing(output_path, stage_name, start_dt, end_dt):
+    """出力先(transcript.json)と同じディレクトリの timing.json に stages.<stage_name> を
+    read-modify-write で追記する。スキーマは timing.mjs 側が正:
+    {stages: {<name>: {start: ISO, end: ISO, sec: number}}}
+    書込み失敗は WARN のみで本処理の成功(exit 0)を維持する（サイレントフェイル方針: 計測は補助）。
+    """
+    timing_path = os.path.join(os.path.dirname(os.path.abspath(output_path)), "timing.json")
+    try:
+        timing = {"stages": {}}
+        if os.path.isfile(timing_path):
+            try:
+                with open(timing_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("stages"), dict):
+                    timing = data
+            except Exception:
+                timing = {"stages": {}}
+        sec = round((end_dt - start_dt).total_seconds())
+        timing["stages"][stage_name] = {
+            "start": start_dt.isoformat().replace("+00:00", "Z"),
+            "end": end_dt.isoformat().replace("+00:00", "Z"),
+            "sec": sec,
+        }
+        with open(timing_path, "w", encoding="utf-8") as f:
+            json.dump(timing, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        sys.stderr.write(f"[WARN] timing.json 書込み失敗（計測スキップ）: {type(e).__name__}: {e}\n")
+
+
 def resolve_backend(choice):
     """auto の場合は GROQ_API_KEY の有無で groq/local を決める。"""
     if choice in ("local", "groq"):
@@ -148,6 +178,7 @@ def main(argv):
     if not os.path.isfile(args.input):
         sys.stderr.write(f"[ERROR] 入力が見つかりません: {args.input}\n")
         return 2
+    start_dt = datetime.now(timezone.utc)
     backend = resolve_backend(args.backend)
     sys.stderr.write(f"[INFO] backend={backend}\n")
     try:
@@ -173,6 +204,8 @@ def main(argv):
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
+    end_dt = datetime.now(timezone.utc)
+    write_timing(args.output, "transcribe", start_dt, end_dt)
     sys.stderr.write(
         f"[OK] words={len(result['words'])} segments={len(result['segments'])} "
         f"duration={result['duration']}s → {args.output}\n"
