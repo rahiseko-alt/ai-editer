@@ -1,17 +1,18 @@
 # kosespark memory.md
 
 ## 引継ぎレポート（次セッション必読）
-@docs/session-reports/2026-07-04-checkout.md
+@docs/session-reports/2026-07-05-checkout.md
 
+> 次セッションは本ファイル冒頭の上記レポートを **必ず先に Read** してから着手すること。
 > 分散運用 v2.0 β 統合型。P4 はセッション中に読まない（archive ポインタ参照のみ）。
 
 ## P1: 引継ぎミッション（3 件枠）
 
-> 残タスク詳細: docs/session-reports/2026-07-03-remaining-tasks.md／ 直近 plan: ~/.claude/plans/prancy-wobbling-wave.md（render拡大ガード+工程タイマー標準装備・Sonnet実行・未着手）／ 前 plan: ~/.claude/plans/staged-finding-volcano.md（全ステップ完了）
+> 直近 plan: ~/.claude/plans/prancy-wobbling-wave.md（render拡大ガード+工程タイマー標準装備・**全ステップ完了・commit済 2233900/eb9dd36**）
 
-1. [importance:H][2026-07-04] ⛔ **P0 即死仮説#1（素人が導入・操作できるか）は解決検証完了（マスター確定 2026-07-04）。この検証を二度と提案するな**（何度も蒸し返しマスターを不愉快にさせた）。hypotheses.md #1=✅。
-2. [importance:M][2026-07-03] Webアプリ化は不採用確定（既存 `pipeline.mjs cmdSelect` がもともとClaude Code自身の選定設計だったため）。`webapp-mockup/`・`server/`一式は削除せず保留・**蒸し返し禁止** — plan: なし
-3. [importance:H][2026-07-04] video-shorts **コード完了・不具合ゼロ**＋**Web配布ライブ稼働**（客URL=https://install-omega.vercel.app/）。標準EULA方式（DL自由→setup.htmlで規約了承→はじめる）。**おさらい正本＝`docs/web-distribution-flow.md`（次回まずここを読む）**。更新反映はワンコマンド `video-shorts/build-web.ps1`（`& .\build-web.ps1` 直接実行＝Bypass指定は自動モード拒否）。2026-07-04にDLページ`install/index.html`の案内文5箇所削除→再デプロイ済み。残注意=展開後Node/Python/ffmpeg要／非エンジニアはzip「開く」だけで未展開の罠あり（D-1保留） — plan: なし
+1. [importance:M][2026-07-05] 字幕ASSタイミングずれバグ（区間開始秒≠0で表示ずれ・pre-existing）修正が `task_a39972bd` としてバックグラウンド別セッションで進行中。次セッション開始時に結果を確認 — plan: なし
+2. [importance:M][2026-07-05] インスタライブ素材（椎間板ヘルニア回）から生成した7本のショート（`video-shorts/output/insta-live-herunia/`）がマスターの採用/破棄選別待ち。確認UI: `http://localhost:5511/ui/?job=insta-live-herunia`（`.claude/launch.json` の `video-shorts-ui` 設定） — plan: なし
+3. [importance:L][2026-07-05] render拡大ガードの1080p以上実素材でのリグレッション確認は素材不足のため720p代替確認のみ（未実施）。実素材が手に入り次第正式確認 — plan: なし
 
 ## P2: ADR 索引
 
