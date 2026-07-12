@@ -50,6 +50,8 @@ function copyDirFiltered(relDir) {
 //    ui/ install/ は配布廃止のため、過去ビルドの残骸を purge する目的でここでも削除する。
 //    skill/ は DEST 直下の配布固有物なので触らない。
 for (const d of ["src", "tests", "ui", "install"]) fs.rmSync(path.join(DEST, d), { recursive: true, force: true });
+// 配布から外したルート直下の旧ファイルも purge（増分ビルド運用で残骸が客に混入しないよう再現性を担保）。
+for (const f of ["setup.html", "README.md", "はじめにお読みください.txt"]) fs.rmSync(path.join(DEST, f), { force: true });
 
 // 1. ルートの配布ファイル（start-here.md = ユーザーが Claude Code に「実行して」と渡すAI向け実行指示書。
 //    旧 setup.html(EULA画面) / README.md(人間向け) は新フロー = start-here.md 内 ⓪同意 + Claude 会話で代替のため配布しない）
