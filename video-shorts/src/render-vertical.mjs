@@ -79,7 +79,9 @@ export function renderClip(p) {
   //  - `setpts=PTS-STARTPTS`: 映像の先頭フレーム PTS を 0 に正規化する（個体差で残る 1 フレーム
   //    ≈33ms のずれを潰す）。
   // 旧 trim/atrim 方式は映像 start_time≈0.021 / 音声 0.000 の 21ms 残留があった。
-  // 本方式の実測 start_time は 0.000/0.000（両ストリーム0近傍・duration一致）。
+  // 入力シーク1段へ移行後も start_time は 0.000/0.000 を維持する（2026-07-23 に本方式で再実測。
+  // lecture.mp4 の start=0 / 300 / 700s の 3 クリップとも video・audio 共に 0.000000・duration 一致）。
+  // ＝下の -bf 0 / -avoid_negative_ts を付けない / setpts の 3 点は 1 段化後も引き続き必要。
   //
   // === 2段シーク（粗 -ss coarse + 精 -ss fine）を廃した理由（2026-07-23 実測で根治）===
   // 出力シーク（`-i` の後の `-ss`）は **filtergraph より後段** で適用される。showinfo で実測すると
