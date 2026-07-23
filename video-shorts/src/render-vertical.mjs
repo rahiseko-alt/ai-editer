@@ -68,33 +68,37 @@ export function renderClip(p) {
   // boxblur=40 をフル解像度に毎フレーム掛けるのを廃止し再エンコード負荷を激減
   //（実測: 20秒あたり約48s → 約7s の約7倍速）。
   //
-  // === A/V 同期の根治（2段出力シーク方式）===
-  //  - 粗シーク `-ss <coarse>` を `-i` の前に置き高速に近傍キーフレームへ飛ぶ（デコード量削減）。
-  //  - 精シーク `-ss <fine>` を `-i` の後に置き、正確な開始点までフレーム精度で詰める。
+  // === A/V 同期（入力シーク1段方式）===
+  //  - `-ss <start>` を `-i` の前に1つだけ置く。ffmpeg 2.1+ の入力シークはキーフレームへ飛んだ後
+  //    目的位置までデコードして捨てるため、これ単独でフレーム精度が出る（粗＋精の2段は不要）。
   //  - `-t <dur>` で出力長を指定。切り出しは filter(trim/atrim) ではなくシークで行うため
   //    映像/音声は同一の入力タイムライン上で同時に切られ、開始点が食い違わない。
   //  - `-avoid_negative_ts` は付けない（make_zero は映像側にのみ +21ms の edit-list 起点を残し
   //    映像 start_time≈0.021 / 音声 0.000 の一定オフセットを生む主因）。
   //  - `-bf 0`: B フレーム reorder 由来の mp4 edit-list 先頭オフセットを排除（映像 start_time を 0 に）。
+  //  - `setpts=PTS-STARTPTS`: 映像の先頭フレーム PTS を 0 に正規化する（個体差で残る 1 フレーム
+  //    ≈33ms のずれを潰す）。
   // 旧 trim/atrim 方式は映像 start_time≈0.021 / 音声 0.000 の 21ms 残留があった。
   // 本方式の実測 start_time は 0.000/0.000（両ストリーム0近傍・duration一致）。
-  const PREROLL = 2; // 秒。粗シークをこの分だけ手前に置き、精シークで正確な開始点まで詰める。
-  const coarse = Math.max(0, p.start - PREROLL);
-  const fine = p.start - coarse;
-  // 末尾 setpts=PTS-STARTPTS: 映像の先頭フレーム PTS を必ず 0 に正規化する。
-  // 2段シーク＋-bf 0 だけでは、精シーク位置がフレームグリッド間に落ちるクリップで
-  // 先頭フレームが 1 フレーム(≈33ms)後ろにずれ start_time≈0.033 が残る個体差が出た（実測 4/13 本）。
-  // setpts で全クリップの映像先頭を 0 に揃え、音声(0.000)と一定 0ms 同期にする。
+  //
+  // === 2段シーク（粗 -ss coarse + 精 -ss fine）を廃した理由（2026-07-23 実測で根治）===
+  // 出力シーク（`-i` の後の `-ss`）は **filtergraph より後段** で適用される。showinfo で実測すると
+  // フィルタに流れる先頭フレームは pts_time=0（＝coarse 起点）で、精シーク分は捨てられていない。
+  // 一方 ASS 本体は wordsInRange() が「区間先頭 = p.start」を 0 とした相対時刻で書いている
+  // （srt-builder.mjs）。よって ass フィルタは coarse 起点の 0 から字幕を焼き、その結果を後段の
+  // 出力シークが fine 秒ぶん切り落とすため、**字幕が常に PREROLL 秒ぶん先行**していた。
+  // 実測（lecture.mp4 の 300-312s 区間）: 出力 t=0.5s に ASS の 2.26-2.56s 行が焼かれていた。
+  // setpts と ass の順序を入れ替えても解消しない（フィルタ入力 PTS が既に 0 のため setpts が no-op）。
+  // 入力シーク1段にすると filtergraph の 0 = p.start となり ASS の相対時刻と一致する。
   const vf =
     `[0:v]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
-    `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1` +
-    assFilter + `,setpts=PTS-STARTPTS[v]`;
+    `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,` +
+    `setpts=PTS-STARTPTS` + assFilter + `[v]`;
 
   const args = [
     "-y",
-    "-ss", String(coarse), // 粗シーク（-i の前・高速キーフレーム飛び）
+    "-ss", String(p.start), // 入力シーク（-i の前・1段。filtergraph の 0 が p.start と一致する）
     "-i", p.input,
-    "-ss", String(fine),   // 精シーク（-i の後・フレーム精度で開始点を詰める）
     "-t", String(dur),
     "-filter_complex", vf,
     "-map", "[v]",
