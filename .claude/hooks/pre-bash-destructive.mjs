@@ -88,6 +88,28 @@ process.stdin.on('end', () => {
         name: 'taskkill /F (force kill process)',
         alternative: 'Session 278 再発防止: プロセス kill は明示同意必須。マスターに承認を仰ぐ',
       },
+      // git clean（untracked ファイルの不可逆削除・監査 #3）
+      // deny 前方一致 `git clean -fd*` は次のいずれでも抜けて `Bash(git:*)` allow に落ちる:
+      //   - フラグ順序/組合せ（`-df` / `-xfd`）      … 順序非依存マッチで対応
+      //   - 大文字（`Git clean`。Windows はコマンド解決が大小無視）… pattern に /i
+      //   - git グローバルオプション前置（`git -C <path> clean` / `git --git-dir=X clean`）… pattern で吸収
+      // 判定は「-f の有無」ではなく「dry-run か否か」で行う（bias-to-safe）。理由:
+      //   `git config clean.requireForce false` 後は `-f` 無し（`git clean -d` や裸の `git clean`）でも
+      //   削除されるため、-f 依存の判定は requireForce=false 経由でバイパスされる（③検証パネル指摘）。
+      // よって `-n`/`--dry-run` を含まない git clean をすべて危険とする（dry-run は git 側で n が優先）。
+      // dry-run 検出はトークン境界 `(?=\s|$)` で固定する。緩い `-[a-z]*n` だと `-not_tracked/` /
+      // `-newdir/` 等ハイフン始まりの pathspec を dry-run flag と誤認し `-fd` 付き実削除を素通りさせる
+      // （②検証パネル指摘）。真の dry-run flag は `-`+英字のみのトークン末尾で終わる（`-n` `-nd` `-fn`）。
+      // 副作用: `-h`/`--help`（無害）も dry-run 非含有ゆえ block されるが、bias-to-safe として許容（記録のみ）。
+      // 複合コマンド（`;` `&&` `bash -c`/`env` 前置）・フルパス起動（`/usr/bin/git`）は本 hook 対象外
+      // （canonical L91・#1 で de-scope 済＝全 matcher 共通の既存限界）。
+      {
+        pattern: /^git\s+(?:-C\s+\S+\s+|-c\s+\S+\s+|--\S+\s+|-\w\s+)*clean\b/i,
+        dangerousPath: /^(?!.*--dry-run)(?!.*(?:^|\s)-[a-z]*n[a-z]*(?=\s|$))/,
+        requireDangerousPath: 'custom',
+        name: 'git clean (untracked ファイルの不可逆削除)',
+        alternative: 'git clean -n で削除対象を確認してから個別 rm。全削除が必要なら承認マーカーを touch',
+      },
       // node -e with fs.rmSync / fs.rm({recursive:true})
       {
         pattern: /^node\s+(--?[a-zA-Z][\w-]*\s+)*-e\s/,

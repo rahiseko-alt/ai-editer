@@ -3,7 +3,7 @@
 // PreToolUse(Read|Edit): 大物の product コードファイルを触る瞬間に、Serena 利用を
 // マスターへ提案するよう AI へ助言注入する（機械検知 → AI提案 → マスター承認 → 発火 の入口）。
 // 常時注入はしない。下記条件を全て満たす時だけ・セッション1回だけ発火する。
-// 設計思想: AI 自己規律でなく hook で機械強制（CLAUDE.md §5・serena-contribution-report §4）。
+// 設計思想: AI 自己規律でなく hook で機械強制（CLAUDE.md §4・serena-contribution-report §4）。
 //
 // 出力形: hookSpecificOutput.additionalContext（非ブロッキング助言注入）。
 //   Live 検証(plan S-5)で PreToolUse でも本 harness が honor することを実挙動確認済み。

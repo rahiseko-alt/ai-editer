@@ -31,7 +31,16 @@
       "Read(**/secrets/**)",
       "Bash(gh auth:*)",
       "Bash(git config user.*)",
-      "Bash(git config --global user.*)"
+      "Bash(git config --global user.*)",
+      "Bash(git clean -fd*)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear*)",
+      "Bash(git restore .)",
+      "Bash(git checkout -- .)",
+      "Bash(git remote set-url*)",
+      "Bash(git commit --amend*)",
+      "Bash(gh repo fork*)",
+      "Edit(**/secrets/**)"
     ],
     "ask": [
       "Bash(node -e *)",
@@ -48,7 +57,44 @@
       "Bash(vercel --prod*)",
       "Bash(npx vercel --prod*)",
       "Bash(vercel deploy --prod*)",
-      "Bash(npm publish:*)"
+      "Bash(npm publish:*)",
+      "Bash(cmd:*)",
+      "Bash(cmd.exe *)",
+      "Bash(powershell:*)",
+      "Bash(powershell.exe *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(find:*)",
+      "Bash(bash -c:*)",
+      "Bash(bash:*)"
+    ],
+    "allow": [
+      "Bash(sleep:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(test:*)",
+      "Bash(date)",
+      "Bash(date:*)",
+      "Bash(pwd)",
+      "Bash(pwd:*)",
+      "Bash(printf:*)",
+      "Bash(which:*)",
+      "Bash(notepad:*)",
+      "Bash(notepad.exe:*)",
+      "WebFetch(domain:kouheikosehira.com)",
+      "WebFetch(domain:*.kouheikosehira.com)",
+      "WebFetch(domain:hnrss.org)",
+      "WebFetch(domain:openai.com)",
+      "WebFetch(domain:zenn.dev)",
+      "WebFetch(domain:rss.itmedia.co.jp)",
+      "WebFetch(domain:goworkship.com)",
+      "WebFetch(domain:www.nippon.com)",
+      "WebFetch(domain:www.technologyreview.jp)",
+      "WebFetch(domain:gsap.com)",
+      "WebFetch(domain:prtimes.jp)",
+      "WebFetch(domain:note.com)",
+      "WebFetch(domain:www.anthropic.com)",
+      "Bash(export PATH=$PATH:*)"
     ]
   },
   "hooks": {
@@ -132,6 +178,16 @@
         ]
       },
       {
+        "matcher": "Bash|Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=allow-marker-guard -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/allow-marker-guard.mjs",
+            "statusMessage": ".allow-* バイパスマーカーの自己発行チェック中..."
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
@@ -190,8 +246,71 @@
             "statusMessage": "Serena 適用機会チェック中..."
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=job-application-write-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/job-application-write-gate.mjs",
+            "statusMessage": "応募文の書き込み経路チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=plan-daigi-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plan-daigi-gate.mjs",
+            "statusMessage": "plan の大義照合中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=roadmap-state-write-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/roadmap-state-write-gate.mjs",
+            "statusMessage": "現在地(roadmap-state.json)の書込検査中..."
+          }
+        ]
       }
     ],
-    "SessionStart": []
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tool-use-failure-triage.mjs",
+            "statusMessage": "微細エラー判定支援中（要検証・claude --debugで発火確認前）..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=session-start-handover-inject -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start-handover-inject.mjs",
+            "statusMessage": "前回引継ぎレポート強制注入中..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/hook-runner.mjs --hook=job-application-agent-gate -- node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/job-application-agent-gate.mjs",
+            "statusMessage": "応募文サブへの委譲チェック中..."
+          }
+        ]
+      }
+    ]
   }
 }

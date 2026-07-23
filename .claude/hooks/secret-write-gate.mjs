@@ -5,12 +5,18 @@
   // 既存 hook（area-gate.mjs）と同じパターン: stdin JSON → 判定 → block or pass
 
   import path from 'path';
-  import { fileURLToPath, pathToFileURL } from 'url';
-  const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const { scanString } = await import(pathToFileURL(path.join(PROJECT_DIR, 'scripts', 'check-secret-patterns.mjs')).href);
+  import { fileURLToPath } from 'url';
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
+
+  // 検知ロジックは hook 自身の隣（同じ .claude/hooks/）から読む。
+  // 旧版は起動場所（CLAUDE_PROJECT_DIR）配下の scripts/ を見ていたため、product へ
+  // 実体コピーされると products/<X>/scripts/ を指して ERR_MODULE_NOT_FOUND で毎回クラッシュし、
+  // 全 product でシークレット検査が無効化されていた（2026-05-23 に一度再発済・同型）。
+  // check-secret-patterns.mjs は propagate が hook と一緒に配るため、隣接参照なら root でも
+  // product でも必ず解決する。
+  import { scanString } from './check-secret-patterns.mjs';
 
   let data = '';
   process.stdin.on('data', chunk => (data += chunk));

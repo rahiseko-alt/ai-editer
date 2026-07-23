@@ -28,11 +28,19 @@ const LOG_PATH = path.join(PROJECT_DIR, '.claude', 'logs', 'line-count-gate.err'
 const LIMIT = 500;
 const TARGET_EXT = /\.(html|js|jsx|ts|tsx|svelte|css)$/i;
 // ビルド成果物・依存・バックアップ・アーカイブ・納品デザインサンプル（design-samples=納品正本・分割対象外 2026-06-12 マスター承認）
-const EXCLUDE_PATH = /(^|[/\\])(node_modules|dist|dist\.bak|\.svelte-kit|build|out|coverage|\.vercel|\.wrangler|backups|archive|design-samples)[/\\]/;
+// deploy: 公開専用ディレクトリ（build-*-portfolio.mjs 等の生成物。dist/out と同種・2026-07-09 追加）
+const EXCLUDE_PATH = /(^|[/\\])(node_modules|dist|dist\.bak|\.svelte-kit|build|out|coverage|\.vercel|\.wrangler|backups|archive|design-samples|deploy)[/\\]/;
 // minified / bundle / ローカル同梱ライブラリ
 const EXCLUDE_FILE = /(\.min\.(js|css)|\.bundle\.js|konva\.min\.js)$/i;
 // データファイル（漢字 1 字 1 ファイル・パック・画像認識アセット等）
 const EXCLUDE_DATA = /[/\\](lib[/\\]data|data[/\\]kanji|pyautogui-assets)[/\\]/;
+// 自己完結の配布文書（docs/deliverables/*.html・2026-07-09 追加）
+//   営業資料・オンボーディング資料は「1ファイルで送れる／1枚でデプロイできる」ことが仕様であり、
+//   CSS/JS を切り出すとメール添付・単体配布が壊れる。500 行規律はコード構造編であり本用途は対象外。
+//   対象はこのディレクトリ直下の .html のみ（配下のアプリコードは通常どおり規律対象）。
+const EXCLUDE_DELIVERABLE_DOC = /[/\\]docs[/\\]deliverables[/\\][^/\\]+\.html$/i;
+// vest1 索引（docs/standards/vest1-catalog.html＝1画面で全 vest1 を見渡すためのカード型索引データ。機能分割すると一覧性が壊れる。2026-07-06 マスター承認）
+const EXCLUDE_INDEX = /[/\\]docs[/\\]standards[/\\]vest1-catalog\.html$/;
 
 function logErr(label, err) {
   try {
@@ -57,7 +65,7 @@ process.stdin.on('end', () => {
 
     const norm = filePath.replace(/\\/g, '/');
     if (!TARGET_EXT.test(norm)) process.exit(0);
-    if (EXCLUDE_PATH.test(filePath) || EXCLUDE_FILE.test(norm) || EXCLUDE_DATA.test(filePath)) process.exit(0);
+    if (EXCLUDE_PATH.test(filePath) || EXCLUDE_FILE.test(norm) || EXCLUDE_DATA.test(filePath) || EXCLUDE_DELIVERABLE_DOC.test(filePath) || EXCLUDE_INDEX.test(filePath)) process.exit(0);
     if (!fs.existsSync(filePath)) process.exit(0);
 
     const content = fs.readFileSync(filePath, 'utf8');
