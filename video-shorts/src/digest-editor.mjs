@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
+import { resolveSegments } from "./reverse-match.mjs";
 
 const TIMEOUT_MS = Number(process.env.DIGEST_TIMEOUT_MS ?? 300_000);
 const MODEL = process.env.DIGEST_MODEL ?? "claude-opus-4-8";
@@ -95,10 +96,11 @@ const VERBATIM = `【厳守】keepText は文字起こし本文に実在する�
   `語順を変える・言い換える・要約する・創作するのは禁止（後段が本文へ逆照合して秒数を確定するため）。` +
   `順序（segmentsの並び）だけは自由に入れ替えてよい。`;
 
-function draftPrompt(transcriptText) {
+function draftPrompt(transcriptText, targetInfo) {
   return `あなたは一流の動画編集者です。次の長編の文字起こし全体を理解し、視聴者が最後まで飽きない` +
     `「ダイジェスト（面白い所だけ）」の台本を作ってください。冒頭の挨拶・締めの定型・冗長な繰り返し・` +
     `本編でない雑談は捨てる。掴み→展開→山場→締めの流れになるよう、必要なら時系列を入れ替える。\n\n` +
+    (targetInfo ? `${targetInfo}\n\n` : "") +
     `${VERBATIM}\n\n# 文字起こし本文\n"""\n${transcriptText}\n"""\n\n` +
     `# 出力（JSONのみ・前後に説明文を書かない）\n` +
     `{"script":[{"keepText":"本文の逐語連続抜き出し","hook":"20字以内の見出し","reason":"採用理由一言"}]}`;
@@ -140,17 +142,29 @@ function revisePrompt(transcriptText, script, critique) {
  * ダイジェスト台本を生成して work/<id>/llm-response.json に順序付きで書く。
  * @returns {Promise<{segments:object[], meta:object}>}
  */
-export async function runDigestEditor(workDir, onLog = () => {}) {
+export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
+  const { targetMinutes } = opts;
   const tPath = path.join(workDir, "transcript.json");
   if (!fs.existsSync(tPath)) throw new Error(`transcript.json がありません: ${tPath}`);
   const tr = JSON.parse(fs.readFileSync(tPath, "utf-8"));
   const transcriptText = (tr.segments || []).map((s) => s.text).join(" ").trim();
   if (!transcriptText) throw new Error("文字起こし本文が空です");
 
+  // 尺目標（任意）: 実測の話速（文字数/秒）から文字数の目安に換算してドラフト指示に含める。
+  // LLM に秒数を直接出させず、掴みやすい「文字数」の目安に変換して伝える（落とし穴#1の考え方を踏襲）。
+  const targetSeconds = Number.isFinite(targetMinutes) && targetMinutes > 0 ? targetMinutes * 60 : null;
+  let targetInfo = null;
+  if (targetSeconds) {
+    const charsPerSec = transcriptText.length / Math.max(1, tr.duration || transcriptText.length / 5);
+    const charBudget = Math.round(targetSeconds * charsPerSec);
+    targetInfo = `【尺の目安】合計の keepText 文字数が約${charBudget}文字（この話者の話速換算で約${targetMinutes}分相当）に収まるよう選定せよ。` +
+      `本当に面白い部分だけに絞り込み、目安を大きく超えないこと。`;
+  }
+
   onLog(`[digest] 台本ドラフト作成中（model=${MODEL}）`);
   // draft は必須。長い逐語 keepText で LLM の JSON が崩れることがあるため明示メッセージで失敗させる。
   let draftResp;
-  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText), onLog)); }
+  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText, targetInfo), onLog)); }
   catch (e) { throw new Error(`ドラフト応答の JSON 解析に失敗: ${e.message}`); }
   let script = (draftResp.script) || [];
   if (script.length === 0) throw new Error("ドラフト台本が空です");
@@ -177,12 +191,47 @@ export async function runDigestEditor(workDir, onLog = () => {}) {
   }
 
   const chosen = best.score >= 0 ? best.script : script;
-  const segments = chosen
+  let segments = chosen
     .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
     .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
   if (segments.length === 0) throw new Error("採用可能な台本区間が0件です");
 
-  const meta = { iterations, score: best.score, count: segments.length };
+  // 尺目標がある場合、実測秒数（reverse-match）が目標から大きく外れていたら1回だけ縮小/拡張指示を出す。
+  // 文字数目安だけでは実発話速度のブレを吸収できないため、実測フィードバックで是正する。
+  let actualSeconds = null;
+  if (targetSeconds) {
+    const measure = (segs) => {
+      const resolved = resolveSegments(segs, tr, { preserveOrder: true });
+      return resolved.reduce((a, s) => a + (s.end - s.start), 0);
+    };
+    actualSeconds = measure(segments);
+    onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s`);
+    if (actualSeconds < targetSeconds * 0.8 || actualSeconds > targetSeconds * 1.2) {
+      const dir = actualSeconds > targetSeconds ? "短く削れ" : "本編から追加して伸ばせ";
+      const fixPrompt = `次のダイジェスト台本は実測${Math.round(actualSeconds)}秒、目標は${targetSeconds}秒` +
+        `（約${targetMinutes}分）です。目標の±20%に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n\n` +
+        `${VERBATIM}\n\n# 現在の台本\n${scriptToText(segments.map((s, i) => ({ ...s, reason: "" })))}\n\n` +
+        `# 参照可能な全文字起こし\n"""\n${transcriptText}\n"""\n\n` +
+        `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
+      try {
+        const fixResp = parseJson(await callClaude(fixPrompt, onLog));
+        const fixed = (fixResp.script || [])
+          .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+          .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
+        if (fixed.length > 0) {
+          const fixedSeconds = measure(fixed);
+          onLog(`[digest] 尺是正後: 実測${fixedSeconds.toFixed(0)}s`);
+          segments = fixed;
+          actualSeconds = fixedSeconds;
+        }
+      } catch (e) {
+        onLog(`[digest] 尺是正の応答処理に失敗（元の台本のまま確定）: ${e.message}`);
+      }
+    }
+  }
+
+  const meta = { iterations, score: best.score, count: segments.length,
+    targetSeconds, actualSeconds };
   fs.writeFileSync(path.join(workDir, "llm-response.json"),
     JSON.stringify({ segments, meta }, null, 2), "utf-8");
   onLog(`[digest] 完成台本: ${segments.length}区間 / score=${best.score} / ${iterations}反復`);

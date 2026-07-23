@@ -98,7 +98,7 @@ function cmdInit(input, mode, sub, orientArg) {
   console.log(workDir);
 }
 
-async function cmdSelect(workDir, useApi, modeOverride) {
+async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
   const state = loadState(workDir);
   const mode = isValidMode(modeOverride) ? modeOverride : (state.mode || DEFAULT_MODE);
   const tPath = path.join(workDir, "transcript.json");
@@ -110,7 +110,7 @@ async function cmdSelect(workDir, useApi, modeOverride) {
   // llm-response.json を直接書く。キーレスの手書き経路（llm-request.md）は使わない。
   if (mode === "digest") {
     log("[INFO] ダイジェスト編集エージェント起動（理解→台本→検証修正ループ）");
-    const { meta } = await runDigestEditor(workDir, (m) => log(m));
+    const { meta } = await runDigestEditor(workDir, (m) => log(m), { targetMinutes });
     state.stage = "selected";
     state.mode = mode;
     state.digestMeta = meta;
@@ -312,11 +312,13 @@ async function main() {
   const [cmd, arg, ...rest] = process.argv.slice(2);
   const useApi = rest.includes("--api");
   const modeArg = flagValue(rest, "--mode", undefined);
+  const targetMinArg = flagValue(rest, "--target-min", undefined);
+  const targetMinutes = targetMinArg !== undefined ? Number(targetMinArg) : undefined;
   switch (cmd) {
     case "init":
       return cmdInit(arg, modeArg, flagValue(rest, "--sub", undefined),
         flagValue(rest, "--orient", undefined));
-    case "select": return cmdSelect(arg, useApi, modeArg);
+    case "select": return cmdSelect(arg, useApi, modeArg, targetMinutes);
     case "render":
       return cmdRender(arg, {
         flagNoSub: rest.includes("--no-sub"),
@@ -330,7 +332,7 @@ async function main() {
     default:
       log("usage: node pipeline.mjs <init|select|render|status|styles> ...");
       log("  init   <input.mp4> --mode <topic|digest> --sub <on|off> --orient <縦|横>");
-      log("  select <workDir> [--mode <topic|digest>]");
+      log("  select <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
       log("  render <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
       process.exit(1);
   }
