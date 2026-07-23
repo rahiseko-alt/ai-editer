@@ -64,3 +64,9 @@ ga4-*.json
 # logs
 .claude/logs/
 # === end vibe-base migration standard ===
+
+# hook のランタイム状態（失敗カウンタ等・再生成される）
+.claude/state/
+
+# video-shorts の作業痕（デバッグ用フレーム抽出・build-dist も /^scratch/ で除外している）
+video-shorts/scratch_frames/
