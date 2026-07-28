@@ -121,8 +121,8 @@
     "active": "P1-6",
     "next": "P1-6(サーバー再起動後SSEが永久待機する問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-5(一部チャンク失敗を成功扱いする問題)を完了。runClaudeSelect(server/claude-select.mjs)がincomplete/failedChunks/totalChunksを返すよう変更し、統合ロジックをsummarizeChunkResults()として純粋関数に切り出し。server/pipeline-runner.mjsがstate.jsonとSSE(選定完了イベント・最終done)の両方にincompleteを反映。pipeline.mjsのcmdRenderがcandidates.jsonにもincompleteを引き継ぎ、webapp-mockup/app.jsが「一部区間の解析に失敗した」警告文を結果画面に表示。tests/smoke.mjsに契約テスト3件を追加(計48 PASS)。",
-      "trouble": "特になし。"
+      "done": "independent-verifierサブエージェントにP0-5〜P1-5全件の敵対的再検証(実サーバーへのcurl攻撃・Playwright実ブラウザ確認・CI evidenceとコミット内容の突合)を依頼。P1-2-Cのlooksイイ動画判定(server/security.mjs looksLikeVideo)に、MPEG-TS判定が先頭1バイトの0x47のみを見ておりバイパス可能というバグを発見された(先頭バイトだけGにした非動画ファイルが202で受理される実例あり)。これを、188バイト境界で同期バイト0x47が4回連続一致することを要求する実装に修正。tests/smoke.mjsに(a)本物のMPEG-TSは引き続き通る、(b)発見されたバイパスは拒否される、の2アサーションを追加。実サーバーで同じ再現手順を再実行し415に変わったこと・正規のMP4/MPEG-TSは引き続き202であることを確認。それ以外のP0-5-B/P1-1-A〜E/P1-2-A,B,D,E/P1-3/P1-4-A,B/P1-5は独立検証で記載どおりの挙動を確認された。",
+      "trouble": "独立検証でP1-2-Cの実装漏れ(バイパス)が見つかった。本人(自分)がdoneと判定した時点では気づけなかった問題を、独立した敵対的検証が発見して機能した形。"
     },
     "updated": "2026-07-28"
   },
@@ -311,13 +311,13 @@
                   "kind": "state",
                   "theme": "アップロードされたファイルの中身を確認する",
                   "meaning": "動画のふりをした別のファイルが処理されない",
-                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。",
+                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。2026-07-28: independent-verifierがMPEG-TS判定の先頭1バイトのみ判定をバイパスできることを実証したため、188バイト境界で同期バイトが4回連続一致することを要求するよう修正(PR #19)。",
                   "status": "done",
                   "criteria": [
                     {
                       "text": "拡張子と異なる中身のファイルアップロードが拒否される",
-                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30350960905/job/90248090882"
+                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する。MPEG-TSシグネチャのみを模倣した非動画ファイル(先頭バイトのみ0x47)でも拒否されること",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30366534024/job/90299250902"
                     }
                   ]
                 },
