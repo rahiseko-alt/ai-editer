@@ -11,7 +11,7 @@ import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segment
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
 import { resolveJobSettings, renderLabel } from "../server/pipeline-runner.mjs";
-import { parseJobParams } from "../server/job-params.mjs";
+import { parseJobParams, makeUniqueJobId } from "../server/job-params.mjs";
 import {
   ALLOWED_ENV_VARS,
   NO_TOOLS_ARGS,
@@ -433,6 +433,22 @@ t("P1-2-E: レート制限はウィンドウが変われば再度許可する", 
   assert.strictEqual(limiter.allow("k"), false, "同一ウィンドウ内の2回目は拒否される");
   fakeNow += 1000; // ウィンドウ経過をシミュレート(実時間を待たない)
   assert.strictEqual(limiter.allow("k"), true, "ウィンドウ経過後は再度許可される");
+});
+
+// ---- P1-3: 同名ファイルを同時にアップロードしても混線しない ----
+
+t("P1-3: 同名ファイルの2回のアップロードは異なるjobIdになる(workDirが衝突しない)", () => {
+  const a = makeUniqueJobId("lecture.mp4");
+  const b = makeUniqueJobId("lecture.mp4");
+  assert.notStrictEqual(a, b, "同名でもジョブごとに一意なIDになること");
+  assert.ok(a.startsWith("lecture-"), "デバッグしやすいようファイル名由来のprefixを保つこと");
+  assert.ok(/^[\p{L}\p{N}_-]+$/u.test(a), "サニタイズ済みの文字集合に収まること(パストラバーサル等に使えない)");
+});
+
+t("P1-3: 拡張子や記号だけのファイル名でも空文字列や不正値にならない", () => {
+  const id = makeUniqueJobId(".mp4");
+  assert.ok(id.length > 0);
+  assert.ok(/^[\p{L}\p{N}_-]+$/u.test(id));
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);
