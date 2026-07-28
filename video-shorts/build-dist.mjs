@@ -6,7 +6,7 @@
 // - 現 dist の欠陥を根治: __pycache__・.pyc 混入 → 除去
 // - 配布しないもの: server/・webapp-mockup/（保留経路）・ui/（ブラウザ選別UI）・install/（Vercel同意フォーム）、work/output/input/samples/scratch 等の作業物
 //   ※ ui/ の選別も install/ の同意も、start-here.md + SKILL.md のチャット完結フローで代替（SKILL.md「UIを使わない」明記）
-// - skill/ は配布固有物として保持（本スクリプトは触らない）
+// - skill/ は video-shorts/skill/ が正本（ビルドのたびに DEST 側をパージしコピーし直す）
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,10 +46,10 @@ function copyDirFiltered(relDir) {
   }
 }
 
-// 0. 再生成対象（src/tests）をクリーン削除してから作り直す（配布外になった残骸・pyc も消す）。
+// 0. 再生成対象（src/tests/skill）をクリーン削除してから作り直す（配布外になった残骸・pyc も消す）。
 //    ui/ install/ は配布廃止のため、過去ビルドの残骸を purge する目的でここでも削除する。
-//    skill/ は DEST 直下の配布固有物なので触らない。
-for (const d of ["src", "tests", "ui", "install"]) fs.rmSync(path.join(DEST, d), { recursive: true, force: true });
+//    skill/ は video-shorts/skill/ が正本なので DEST 側を毎回パージしてから作り直す。
+for (const d of ["src", "tests", "skill", "ui", "install"]) fs.rmSync(path.join(DEST, d), { recursive: true, force: true });
 // 配布から外したルート直下の旧ファイルも purge（増分ビルド運用で残骸が客に混入しないよう再現性を担保）。
 for (const f of ["setup.html", "README.md", "はじめにお読みください.txt"]) fs.rmSync(path.join(DEST, f), { force: true });
 
@@ -61,6 +61,7 @@ for (const f of ["start-here.md", "pipeline.mjs", "requirements.txt"]) {
 // 2. src / tests（pyc・__pycache__ 除外）
 copyDirFiltered("src");
 copyDirFiltered("tests");
+copyDirFiltered("skill");
 // 3. 版刻印（再現性のため git hash を記録・.gitignore で追跡外の dist の出所を明示）
 let ver = "unknown";
 try {
@@ -72,4 +73,4 @@ fs.writeFileSync(path.join(DEST, "version.txt"), `build: ${ver}\n`, "utf-8");
 
 console.log(`[build-dist] 完了 → ${DEST} (version ${ver})`);
 console.log("[build-dist] 除外: server/ webapp-mockup/ ui/ install/ work/ output/ samples/ scratch* *.wav __pycache__ *.pyc");
-console.log("[build-dist] 保持: skill/ （配布固有物）");
+console.log("[build-dist] コピー: skill/ （video-shorts/skill/ が正本）");

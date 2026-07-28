@@ -265,6 +265,19 @@ async function cmdRender(workDir, opts = {}) {
     }
   }
 
+  const failCount = resolved.length - manifest.length;
+  if (resolved.length > 0 && manifest.length === 0) {
+    writeJson(path.join(outDir, "candidates.json"),
+      { id: state.id, mode, generated: 0, digest: null, candidates: [] });
+    state.stage = "render_failed";
+    state.candidates = 0;
+    saveState(workDir, state);
+    die(`レンダ失敗: ${resolved.length}区間すべてで生成に失敗しました（0本）。上の [FAIL] ログを確認してください。`);
+  }
+  if (failCount > 0) {
+    log(`[WARN] 部分失敗: ${failCount}/${resolved.length} 区間のレンダに失敗（${manifest.length}本は生成成功）`);
+  }
+
   // ダイジェストは全 part を時系列連結して1本にする（面白い所だけを繋ぐ）。
   let digest = null;
   if (mode === "digest" && manifest.length > 0) {
