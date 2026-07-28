@@ -68,7 +68,6 @@
         <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
           <button class="chip is-on" data-val="topic">話題で切る</button>
           <button class="chip" data-val="minutes">分数で切る</button>
-          <button class="chip" data-val="count">本数で切る</button>
         </div>
         <div class="cut-detail" id="cut-detail">
           <p class="cut-note" data-for="topic">AIが話題の切れ目を判断して自動でカットします。</p>
@@ -76,11 +75,6 @@
             <label for="cut-min">分数：</label>
             <input type="number" id="cut-min" value="3" min="1" max="60" />
             分以内で、区切りの良いところで切ります。
-          </p>
-          <p class="cut-note hidden" data-for="count">
-            <label for="cut-cnt">本数：</label>
-            <input type="number" id="cut-cnt" value="5" min="1" max="50" />
-            本に分割（区切りの良い所で）。
           </p>
         </div>
       </section>
@@ -94,14 +88,6 @@
           <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16">
             <span class="size-ratio">縦 9:16</span>
             <span class="size-use">ショート / リール / TikTok</span>
-          </button>
-          <button class="chip size-chip" data-val="1:1" data-ar="1/1">
-            <span class="size-ratio">正方形 1:1</span>
-            <span class="size-use">Instagram 投稿</span>
-          </button>
-          <button class="chip size-chip" data-val="4:5" data-ar="4/5">
-            <span class="size-ratio">縦 4:5</span>
-            <span class="size-use">Instagram 縦長</span>
           </button>
           <button class="chip size-chip" data-val="16:9" data-ar="16/9">
             <span class="size-ratio">横 16:9</span>

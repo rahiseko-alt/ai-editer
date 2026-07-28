@@ -17,6 +17,7 @@ import {
   unsubscribeJob,
   isRunning,
 } from "./pipeline-runner.mjs";
+import { parseJobParams } from "./job-params.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -130,10 +131,7 @@ function serveStatic(req, res) {
 async function handlePostJobs(req, res) {
   // クエリパラメータ取得
   const url = new URL(req.url, "http://x");
-  const sub = url.searchParams.get("sub") === "on" ? "on" : "none";
-  const cut = url.searchParams.get("cut") ?? "topic";
-  const size = url.searchParams.get("size") ?? "9:16";
-  const name = url.searchParams.get("name") ?? "upload.mp4";
+  const { sub, cut, size, cutMin, name } = parseJobParams(url.searchParams);
 
   // ファイル名からジョブID生成・サニタイズ
   const rawId = makeJobId(name);
@@ -157,7 +155,7 @@ async function handlePostJobs(req, res) {
   });
 
   // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
-  const started = startJob(jobId, inputPath, { sub, cut, size });
+  const started = startJob(jobId, inputPath, { sub, cut, size, cutMin });
   if (!started) {
     return jsonRes(res, 409, { error: "already running", jobId });
   }
