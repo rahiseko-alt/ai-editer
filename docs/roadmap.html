@@ -311,13 +311,13 @@
                   "kind": "state",
                   "theme": "アップロードされたファイルの中身を確認する",
                   "meaning": "動画のふりをした別のファイルが処理されない",
-                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。",
+                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。2026-07-28: independent-verifierがMPEG-TS判定の先頭1バイトのみ判定をバイパスできることを実証したため、188バイト境界で同期バイトが4回連続一致することを要求するよう修正(PR #19)。",
                   "status": "done",
                   "criteria": [
                     {
                       "text": "拡張子と異なる中身のファイルアップロードが拒否される",
-                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30350960905/job/90248090882"
+                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する。MPEG-TSシグネチャのみを模倣した非動画ファイル(先頭バイトのみ0x47)でも拒否されること",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30366534024/job/90299250902"
                     }
                   ]
                 },
