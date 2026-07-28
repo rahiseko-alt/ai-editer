@@ -5,7 +5,7 @@
 
 const state = {
   file: null, sub: "none",
-  cut: "topic", cutMin: 3, cutCnt: 5,
+  cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
 };
 const $ = (id) => document.getElementById(id);
@@ -117,16 +117,13 @@ function updateSubDesc() {
 function showCut() {
   document.querySelectorAll(".cut-note").forEach((p) => p.classList.toggle("hidden", p.dataset.for !== state.cut));
 }
-["cut-min", "cut-cnt"].forEach((id) => {
-  const el = $(id);
-  if (el) el.addEventListener("input", () => {
-    state.cutMin = +$("cut-min").value; state.cutCnt = +$("cut-cnt").value; refresh();
-  });
+const cutMinInput = $("cut-min");
+if (cutMinInput) cutMinInput.addEventListener("input", () => {
+  state.cutMin = +cutMinInput.value; refresh();
 });
 function cutText() {
   if (state.cut === "topic") return "話題で切る（AIが切れ目を判断）";
   if (state.cut === "minutes") return `分数で切る（${state.cutMin}分以内・区切りの良い所）`;
-  if (state.cut === "count") return `本数で切る（${state.cutCnt}本・区切りの良い所）`;
   return "話題で切る（AIが切れ目を判断）";
 }
 
@@ -283,6 +280,7 @@ function run() {
     size: state.size,
     name: state.file.name,
   });
+  if (state.cut === "minutes") params.set("cutMin", String(state.cutMin));
   fetch(`/api/jobs?${params}`, { method: "POST", body: state.file })
     .then((res) => {
       if (!res.ok) return res.json().then((d) => Promise.reject(d.error || d.message || "ジョブ作成失敗"));

@@ -184,7 +184,7 @@ function drainLocalQueue() {
  *
  * @param {string} jobId
  * @param {string} inputAbsPath - 保存済みの入力動画絶対パス
- * @param {{ sub: "on"|"none", cut: string, size: string }} opts
+ * @param {{ sub: "on"|"none", cut: "topic"|"minutes", size: "9:16"|"16:9", cutMin?: number }} opts
  */
 export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/s/r）なら二重起動を拒否。
@@ -231,10 +231,23 @@ export function startJob(jobId, inputAbsPath, opts) {
   return true;
 }
 
+/**
+ * UIの設定契約(P0-5)をpipeline.mjsが理解するmode/orientへ変換する。
+ * サポート外の値はここでも既定へフォールバックし、末端(select/render)まで不正値を伝播させない。
+ */
+export function resolveJobSettings(opts) {
+  const mode = opts.cut === "minutes" ? "digest" : "topic";
+  const orient = opts.size === "16:9" ? "landscape" : "portrait";
+  const targetMinutes =
+    mode === "digest" && Number.isFinite(opts.cutMin) && opts.cutMin > 0 ? opts.cutMin : undefined;
+  return { mode, orient, targetMinutes };
+}
+
 /** 実際の段階実行（内部・エラーは呼び元でキャッチ） */
 async function runJob(jobId, inputAbsPath, opts) {
   const workDir = path.join(WORK_ROOT, jobId);
   const noSub = opts.sub === "none";
+  const { mode, orient, targetMinutes } = resolveJobSettings(opts);
 
   // state.json 初期作成（pipeline.mjs init の代替）
   const ext = path.extname(inputAbsPath) || ".mp4";
@@ -243,6 +256,9 @@ async function runJob(jobId, inputAbsPath, opts) {
     input: inputAbsPath,
     transcript: null,
     stage: "init",
+    mode,
+    orient,
+    sub: opts.sub === "none" ? "none" : "on",
   };
   writeState(workDir, state);
 
@@ -279,18 +295,26 @@ async function runJob(jobId, inputAbsPath, opts) {
   job.stage = "s";
   broadcast(jobId, { stage: "s", status: "active", label: "良い場面を選んでいます" });
 
-  // pipeline.mjs select で llm-request.md を生成（--api なし）
+  // digest(分数で切る): pipeline.mjs select --mode digest が編集エージェント(runDigestEditor)を
+  // 自前で起動し claude -p を呼んで llm-response.json まで書く。topic 側の claude-select は使わない。
+  const selectArgs = [PIPELINE_MJS, "select", workDir, "--mode", mode];
+  if (mode === "digest" && targetMinutes !== undefined) {
+    selectArgs.push("--target-min", String(targetMinutes));
+  }
   await spawnAndLog(
     "node",
-    [PIPELINE_MJS, "select", workDir],
+    selectArgs,
     {},
     (ln) => broadcast(jobId, { stage: "s", status: "active", log: ln })
   );
 
-  // claude -p で区間選定（llm-response.json を書く）
-  await runClaudeSelect(workDir, (msg) => {
-    broadcast(jobId, { stage: "s", status: "active", log: msg });
-  });
+  // topic(話題で切る): pipeline.mjs select は llm-request.md を書くだけなので、
+  // claude -p 呼び出し(チャンク並列)は別途ここで行い llm-response.json を書く。
+  if (mode !== "digest") {
+    await runClaudeSelect(workDir, (msg) => {
+      broadcast(jobId, { stage: "s", status: "active", log: msg });
+    });
+  }
 
   state.stage = "selected";
   writeState(workDir, state);
@@ -300,7 +324,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   job.stage = "r";
   broadcast(jobId, { stage: "r", status: "active", label: "縦長の動画に整えています" });
 
-  const renderArgs = [PIPELINE_MJS, "render", workDir];
+  const renderArgs = [PIPELINE_MJS, "render", workDir, "--mode", mode];
   if (noSub) renderArgs.push("--no-sub");
 
   await spawnAndLog(

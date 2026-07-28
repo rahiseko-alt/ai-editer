@@ -2,10 +2,17 @@
 // 実行: node tests/smoke.mjs   (全PASSで exit 0 / 1件でもFAILで exit 1)
 
 import assert from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveSegments, normalize, dedupeOverlap } from "../src/reverse-match.mjs";
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
+import { resolveJobSettings } from "../server/pipeline-runner.mjs";
+import { parseJobParams } from "../server/job-params.mjs";
+
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 let pass = 0;
 let fail = 0;
@@ -179,6 +186,67 @@ t("逆マッチング(R-5①): digest経路(preserveOrder)は下限を伝播せ�
   );
   assert.strictEqual(out.length, 1, "同一先頭出現2件は dedupeOverlap で1件に間引かれる");
   assert.strictEqual(out[0].start, 0.0);
+});
+
+// ---- P0-5: Web UIの設定が生成物へ反映される（画面選択→mode/orient契約） ----
+
+t("resolveJobSettings: cut=topic → mode=topic / size=9:16 → orient=portrait", () => {
+  const r = resolveJobSettings({ cut: "topic", size: "9:16", sub: "none" });
+  assert.strictEqual(r.mode, "topic");
+  assert.strictEqual(r.orient, "portrait");
+  assert.strictEqual(r.targetMinutes, undefined, "topicモードはtargetMinutesを持たない");
+});
+
+t("resolveJobSettings: cut=minutes → mode=digest / size=16:9 → orient=landscape", () => {
+  const r = resolveJobSettings({ cut: "minutes", size: "16:9", sub: "on", cutMin: 7 });
+  assert.strictEqual(r.mode, "digest");
+  assert.strictEqual(r.orient, "landscape");
+  assert.strictEqual(r.targetMinutes, 7);
+});
+
+t("resolveJobSettings: digestでもcutMinが不正なら targetMinutes は undefined（クラッシュしない）", () => {
+  const r1 = resolveJobSettings({ cut: "minutes", size: "9:16", sub: "none", cutMin: undefined });
+  assert.strictEqual(r1.targetMinutes, undefined);
+  const r2 = resolveJobSettings({ cut: "minutes", size: "9:16", sub: "none", cutMin: -1 });
+  assert.strictEqual(r2.targetMinutes, undefined);
+});
+
+t("resolveJobSettings: 未知のcut/sizeは既定(topic/portrait)へフォールバック", () => {
+  const r = resolveJobSettings({ cut: "count", size: "4:5", sub: "none" });
+  assert.strictEqual(r.mode, "topic");
+  assert.strictEqual(r.orient, "portrait");
+});
+
+t("parseJobParams: サポート外のcut/sizeはクエリに来ても既定へ丸められる", () => {
+  const p = parseJobParams(new URLSearchParams({ cut: "count", size: "4:5", cutMin: "999" }));
+  assert.strictEqual(p.cut, "topic");
+  assert.strictEqual(p.size, "9:16");
+  assert.strictEqual(p.cutMin, 3, "範囲外(1-60)のcutMinは既定3へ丸められる");
+});
+
+t("parseJobParams: サポート内の値はそのまま通る", () => {
+  const p = parseJobParams(new URLSearchParams({ cut: "minutes", size: "16:9", cutMin: "12", sub: "on" }));
+  assert.strictEqual(p.cut, "minutes");
+  assert.strictEqual(p.size, "16:9");
+  assert.strictEqual(p.cutMin, 12);
+  assert.strictEqual(p.sub, "on");
+});
+
+// ---- P0-5-B: レンダラー未実装の選択肢(1:1 / 4:5 / 本数で切る)がUIから除去されている ----
+
+t("webapp-mockup: UIに未実装の選択肢(1:1・4:5・本数で切る)が存在しない", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(!html.includes('data-val="1:1"'), "1:1 は render-vertical.mjs 未実装のため除去済みのはず");
+  assert.ok(!html.includes('data-val="4:5"'), "4:5 は render-vertical.mjs 未実装のため除去済みのはず");
+  assert.ok(!html.includes('data-val="count"'), "本数で切る はdigest-editor未実装のため除去済みのはず");
+});
+
+t("webapp-mockup: 実装済みの選択肢(9:16・16:9・話題/分数)はUIに残っている", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(html.includes('data-val="9:16"'));
+  assert.ok(html.includes('data-val="16:9"'));
+  assert.ok(html.includes('data-val="topic"'));
+  assert.ok(html.includes('data-val="minutes"'));
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);
