@@ -5,6 +5,7 @@
 // llm-response.json を書く。API版は callAnthropic() を使う（ANTHROPIC_API_KEY 必要）。
 
 import { DEFAULT_MODE, getMode } from "./select-modes.mjs";
+import { wrapUntrustedText } from "./claude-safety.mjs";
 
 const SYSTEM_RULES_BASE = `あなたは長編動画を区間に切り分ける編集者です。
 出力は必ず JSON のみ。秒数・タイムスタンプは絶対に出力しないこと（後段が文字起こしに
@@ -55,9 +56,7 @@ export function buildPrompt(chunk, targetCount = 0, mode = DEFAULT_MODE) {
 ${m.fragment}
 
 # 文字起こし本文（この範囲を分割する）
-"""
-${chunk.text}
-"""
+${wrapUntrustedText("transcript-chunk", chunk.text)}
 
 # 指示
 上記を上記モードの方針で区間に分割し、各区間を次のJSONスキーマで出力せよ${limit}。

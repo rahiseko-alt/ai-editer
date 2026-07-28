@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P0-5-A",
-    "next": "実装済みの範囲でP1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P0-5-Aは実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK)ができ次第、改めてdoneにする。",
+    "active": "P1-1",
+    "next": "PushしてCIが緑になったら、P1-1-A〜Eのevidenceに CI run URL を記入して完了させる。その後G-P1の次項目P1-2(ローカルAPIに誰でもアクセスできる状態を無くす)へ進む。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "PR #12(server側のorient別ラベル修正)がCI緑化直後にauto-mergeされた後、CodeRabbitから新たな指摘: server(pipeline-runner.mjs)はorientに応じたlabel(縦長/横長)を送るようになったが、フロント(webapp-mockup/app.js)のSSEハンドラがd.labelを一切読まず常に固定のEDITING_LABEL[stage]を表示していたため、修正が画面に一切反映されていなかった。app.jsのes.onmessageでd.labelを分割代入し、有れば優先表示(無ければ従来通りEDITING_LABEL[stage]にフォールバック)するよう修正。合わせてrenderLabel(orient)を独立関数として切り出しcontract testで縦長/横長を検証(tests/smoke.mjsに2件追加・計26 PASS)。",
-      "trouble": "PR #11・#12とも必須チェック(ci-green/roadmap-required)緑化直後にauto-merge.ymlで即マージされ、その後届いたCodeRabbitの指摘に追いつけない事象が2回連続発生(docs/failures.md 2026-07-25の既知パターンと同型)。マージ済みブランチへの追いpushは避け、その都度mainから枝を作り直して是正PRを出し直している。実ffmpegでの向き反映(portrait/landscape)の最終確認は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK、P0-5-Aはdoingのまま)。"
+      "done": "P1-1(非信頼文字起こしのプロンプト注入対策)に着手。共通ハードニングモジュール video-shorts/src/claude-safety.mjs を新設し、(A)ツール無効化(--tools \"\"相当のNO_TOOLS_ARGS)・(B)子プロセスへ渡す環境変数のallowlist化(buildSafeEnv、ANTHROPIC_API_KEY等の秘密情報は含めない)・(C)ジョブ専用の隔離cwd(createIsolatedCwd、OS tmpdir配下でリポジトリのCLAUDE.mdを読ませない)・(D)非信頼テキストを乱数nonceタグで区切りデータと明示するwrapUntrustedTextを実装。server/claude-select.mjsとsrc/digest-editor.mjsの両spawn呼び出しに適用し、src/select-segments.mjsのbuildPromptとsrc/digest-editor.mjsのdraftPrompt/revisePrompt/durationFixPrompt(尺是正プロンプトを独立関数として抽出)の文字起こし埋め込みをwrapUntrustedText経由に差し替え。tests/smoke.mjsにP1-1-A〜E相当の契約テスト(ツール無効化・env allowlist・隔離cwd・区切り明示・偽装閉じタグでの境界突破不可)を5件追加(計32 PASS)。ローカルでtypecheck(対象パッケージ無し)/lint(対象パッケージ無し)/test/build/auditを実行し全て緑を確認済み。",
+      "trouble": "特になし。"
     },
     "updated": "2026-07-28"
   },

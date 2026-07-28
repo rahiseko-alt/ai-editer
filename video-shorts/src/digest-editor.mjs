@@ -13,27 +13,31 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { spawn } from "node:child_process";
 import { resolveSegments } from "./reverse-match.mjs";
+import {
+  buildSafeEnv,
+  createIsolatedCwd,
+  NO_TOOLS_ARGS,
+  wrapUntrustedText,
+} from "./claude-safety.mjs";
 
 const TIMEOUT_MS = Number(process.env.DIGEST_TIMEOUT_MS ?? 300_000);
 const MODEL = process.env.DIGEST_MODEL ?? "claude-opus-4-8";
 const MAX_ITER = Number(process.env.DIGEST_MAX_ITER ?? 3);
 const PASS_SCORE = Number(process.env.DIGEST_PASS_SCORE ?? 80);
 
-/** claude -p を1回叩き stdout(JSON envelope)の result テキストを返す。--model 無効環境はCLI既定へ退避。 */
-function callClaude(prompt, onLog, useModel = true) {
-  const args = ["-p", "--strict-mcp-config", "--output-format", "json"];
+/** claude -p を1回叩き stdout(JSON envelope)の result テキストを返す。--model 無効環境はCLI既定へ退避。
+ *  cwd はジョブ専用の隔離ディレクトリ（createIsolatedCwd の出力）を呼び出し元から渡す。 */
+function callClaude(prompt, onLog, useModel = true, cwd) {
+  const args = ["-p", "--strict-mcp-config", "--output-format", "json", ...NO_TOOLS_ARGS];
   if (useModel) args.push("--model", MODEL);
   return new Promise((resolve, reject) => {
-    // cwd を中立ディレクトリにして vibe-base/製品の CLAUDE.md（司令塔憲法）を読ませない。
+    // cwd を中立な隔離ディレクトリにして vibe-base/製品の CLAUDE.md（司令塔憲法）を読ませない。
     // これを付けないと sub-claude が司令塔ペルソナ化し「JSONを返せ」を乗っ取りとみなして拒否する。
-    // 既定はサブスク継承（OAuthログイン・コスト0）で動かす。環境に ANTHROPIC_API_KEY があると
-    // claude -p が従量課金経路に乗るため、子プロセスの env から明示除外する（意図せぬ課金防止・販売安全）。
-    const childEnv = { ...process.env };
-    delete childEnv.ANTHROPIC_API_KEY;
-    const child = spawn("claude", args, { windowsHide: true, env: childEnv, cwd: os.tmpdir() });
+    // env は allowlist のみ（ANTHROPIC_API_KEY 等の秘密情報は渡さない＝意図せぬ課金防止・販売安全）。
+    // 既定はサブスク継承（OAuthログイン・コスト0）で動かす。ツールは全無効化（P1-1-A）。
+    const child = spawn("claude", args, { windowsHide: true, env: buildSafeEnv(), cwd });
     let out = "", err = "";
     child.stdout.on("data", (c) => (out += c.toString()));
     child.stderr.on("data", (c) => (err += c.toString()));
@@ -50,7 +54,7 @@ function callClaude(prompt, onLog, useModel = true) {
         // モデル無関係の失敗まで再試行して真因を隠していた。model と無効語の連語のみに絞る。
         if (useModel && /(unknown|invalid|unrecognized|no such|not a valid)\s+model|model[\s\S]{0,20}?(not found|not recognized|not supported|is invalid)/i.test(err)) {
           onLog(`[digest] --model ${MODEL} 失敗→CLI既定モデルで再試行`);
-          return callClaude(prompt, onLog, false).then(resolve, reject);
+          return callClaude(prompt, onLog, false, cwd).then(resolve, reject);
         }
         return reject(new Error(`claude 終了コード ${code}: ${err.slice(0, 300)}`));
       }
@@ -96,12 +100,12 @@ const VERBATIM = `【厳守】keepText は文字起こし本文に実在する�
   `語順を変える・言い換える・要約する・創作するのは禁止（後段が本文へ逆照合して秒数を確定するため）。` +
   `順序（segmentsの並び）だけは自由に入れ替えてよい。`;
 
-function draftPrompt(transcriptText, targetInfo) {
+export function draftPrompt(transcriptText, targetInfo) {
   return `あなたは一流の動画編集者です。次の長編の文字起こし全体を理解し、視聴者が最後まで飽きない` +
     `「ダイジェスト（面白い所だけ）」の台本を作ってください。冒頭の挨拶・締めの定型・冗長な繰り返し・` +
     `本編でない雑談は捨てる。掴み→展開→山場→締めの流れになるよう、必要なら時系列を入れ替える。\n\n` +
     (targetInfo ? `${targetInfo}\n\n` : "") +
-    `${VERBATIM}\n\n# 文字起こし本文\n"""\n${transcriptText}\n"""\n\n` +
+    `${VERBATIM}\n\n# 文字起こし本文\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ・前後に説明文を書かない）\n` +
     `{"script":[{"keepText":"本文の逐語連続抜き出し","hook":"20字以内の見出し","reason":"採用理由一言"}]}`;
 }
@@ -125,7 +129,7 @@ function criticPrompt(script) {
     `pass は ${PASS_SCORE}点以上かつ致命的問題が無い場合のみ true。`;
 }
 
-function revisePrompt(transcriptText, script, critique) {
+export function revisePrompt(transcriptText, script, critique) {
   const cur = Number(critique.score) || 0;
   const perScores = critique.scores ? JSON.stringify(critique.scores, null, 0) : "(観点別スコアなし)";
   const weakest = critique.weakest || "";
@@ -134,7 +138,17 @@ function revisePrompt(transcriptText, script, critique) {
     (weakest ? `特に最も低い観点「${weakest}」を最優先で引き上げてください。\n` : "") +
     `点数を上げるのが目的です。満点でない観点を狙って直し、既に高い観点は壊さないこと。\n\n` +
     `${VERBATIM}\n\n# レビュー指摘（観点別の改善指示）\n${JSON.stringify(critique.fixes || critique.issues || [], null, 0)}\n\n` +
-    `# 現在の台本\n${scriptToText(script)}\n\n# 参照可能な全文字起こし\n"""\n${transcriptText}\n"""\n\n` +
+    `# 現在の台本\n${scriptToText(script)}\n\n# 参照可能な全文字起こし\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
+    `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
+}
+
+/** 尺是正プロンプト（実測秒数が目標から外れた時の1回だけの縮小/拡張指示）。 */
+export function durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds }) {
+  const dir = actualSeconds > targetSeconds ? "短く削れ" : "本編から追加して伸ばせ";
+  return `次のダイジェスト台本は実測${Math.round(actualSeconds)}秒、目標は${targetSeconds}秒` +
+    `（約${targetMinutes}分）です。目標の±20%に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n\n` +
+    `${VERBATIM}\n\n# 現在の台本\n${scriptToText(segments.map((s) => ({ ...s, reason: "" })))}\n\n` +
+    `# 参照可能な全文字起こし\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
 }
 
@@ -161,10 +175,12 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
       `本当に面白い部分だけに絞り込み、目安を大きく超えないこと。`;
   }
 
+  const cwd = createIsolatedCwd(path.basename(workDir));
+
   onLog(`[digest] 台本ドラフト作成中（model=${MODEL}）`);
   // draft は必須。長い逐語 keepText で LLM の JSON が崩れることがあるため明示メッセージで失敗させる。
   let draftResp;
-  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText, targetInfo), onLog)); }
+  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText, targetInfo), onLog, true, cwd)); }
   catch (e) { throw new Error(`ドラフト応答の JSON 解析に失敗: ${e.message}`); }
   let script = (draftResp.script) || [];
   if (script.length === 0) throw new Error("ドラフト台本が空です");
@@ -175,7 +191,7 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     // critic/revise の応答 JSON は逐語テキスト混入で崩れうる。崩れても best を返して完走させる
     // （旧実装は parseJson が throw して digest 全体が例外死し、せっかくの best を捨てていた）。
     let critique;
-    try { critique = parseJson(await callClaude(criticPrompt(script), onLog)); }
+    try { critique = parseJson(await callClaude(criticPrompt(script), onLog, true, cwd)); }
     catch (e) { onLog(`[digest] 検証 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
     const score = Number(critique.score) || 0;
     onLog(`[digest] 検証 ${i}回目: score=${score} pass=${!!critique.pass} (${(critique.issues || []).length}件指摘)`);
@@ -184,7 +200,7 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     if (i === MAX_ITER) { iterations = i; break; }
     onLog(`[digest] 修正 ${i}回目`);
     let revised;
-    try { revised = parseJson(await callClaude(revisePrompt(transcriptText, script, critique), onLog)).script; }
+    try { revised = parseJson(await callClaude(revisePrompt(transcriptText, script, critique), onLog, true, cwd)).script; }
     catch (e) { onLog(`[digest] 修正 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
     if (Array.isArray(revised) && revised.length) { script = revised; iterations = i + 1; }
     else break;
@@ -207,14 +223,9 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     actualSeconds = measure(segments);
     onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s`);
     if (actualSeconds < targetSeconds * 0.8 || actualSeconds > targetSeconds * 1.2) {
-      const dir = actualSeconds > targetSeconds ? "短く削れ" : "本編から追加して伸ばせ";
-      const fixPrompt = `次のダイジェスト台本は実測${Math.round(actualSeconds)}秒、目標は${targetSeconds}秒` +
-        `（約${targetMinutes}分）です。目標の±20%に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n\n` +
-        `${VERBATIM}\n\n# 現在の台本\n${scriptToText(segments.map((s, i) => ({ ...s, reason: "" })))}\n\n` +
-        `# 参照可能な全文字起こし\n"""\n${transcriptText}\n"""\n\n` +
-        `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
+      const fixPrompt = durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds });
       try {
-        const fixResp = parseJson(await callClaude(fixPrompt, onLog));
+        const fixResp = parseJson(await callClaude(fixPrompt, onLog, true, cwd));
         const fixed = (fixResp.script || [])
           .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
           .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
