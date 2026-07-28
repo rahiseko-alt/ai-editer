@@ -243,6 +243,11 @@ export function resolveJobSettings(opts) {
   return { mode, orient, targetMinutes };
 }
 
+/** レンダリングstageの進捗ラベルをorientに応じて出し分ける（縦長/横長） */
+export function renderLabel(orient) {
+  return orient === "landscape" ? "横長の動画に整えています" : "縦長の動画に整えています";
+}
+
 /** 実際の段階実行（内部・エラーは呼び元でキャッチ） */
 async function runJob(jobId, inputAbsPath, opts) {
   const workDir = path.join(WORK_ROOT, jobId);
@@ -323,8 +328,7 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // ── Stage r: レンダリング ────────────────────────────────────
   job.stage = "r";
-  const renderLabel = orient === "landscape" ? "横長の動画に整えています" : "縦長の動画に整えています";
-  broadcast(jobId, { stage: "r", status: "active", label: renderLabel });
+  broadcast(jobId, { stage: "r", status: "active", label: renderLabel(orient) });
 
   const renderArgs = [PIPELINE_MJS, "render", workDir, "--mode", mode];
   if (noSub) renderArgs.push("--no-sub");

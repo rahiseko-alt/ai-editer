@@ -9,7 +9,7 @@ import { resolveSegments, normalize, dedupeOverlap } from "../src/reverse-match.
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
-import { resolveJobSettings } from "../server/pipeline-runner.mjs";
+import { resolveJobSettings, renderLabel } from "../server/pipeline-runner.mjs";
 import { parseJobParams } from "../server/job-params.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -247,6 +247,26 @@ t("webapp-mockup: 実装済みの選択肢(9:16・16:9・話題/分数)はUIに�
   assert.ok(html.includes('data-val="16:9"'));
   assert.ok(html.includes('data-val="topic"'));
   assert.ok(html.includes('data-val="minutes"'));
+});
+
+// ---- レンダリング進捗ラベル(landscape対応) ----
+
+t("renderLabel: portraitは縦長、landscapeは横長のラベルを返す", () => {
+  assert.strictEqual(renderLabel("portrait"), "縦長の動画に整えています");
+  assert.strictEqual(renderLabel("landscape"), "横長の動画に整えています");
+  assert.strictEqual(renderLabel(undefined), "縦長の動画に整えています", "未知値は既定(縦長)");
+});
+
+t("webapp-mockup: SSEのd.labelを表示に反映する経路がある(EDITING_LABEL固定表示のみに戻っていない)", () => {
+  const js = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(
+    /const\s*\{\s*stage,\s*status,\s*label\s*\}\s*=\s*d/.test(js),
+    "es.onmessageでd.labelを分割代入していること(サーバーが送るorient別ラベルを読み捨てない)",
+  );
+  assert.ok(
+    /label\s*\|\|\s*EDITING_LABEL\[stage\]/.test(js),
+    "labelがあれば優先し、無い時だけEDITING_LABEL[stage]にフォールバックすること",
+  );
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);

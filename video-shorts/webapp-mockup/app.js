@@ -298,11 +298,14 @@ function run() {
       es.onmessage = (ev) => {
         let d;
         try { d = JSON.parse(ev.data); } catch { return; }
-        const { stage, status } = d;
+        const { stage, status, label } = d;
         if (status === "active") {
           setStage(stage, "active");
           setEditingStep(stage, "active");
-          if (EDITING_LABEL[stage]) $("editing-status").textContent = EDITING_LABEL[stage];
+          // サーバーが状況に応じたlabel(例: 縦長/横長、順番待ち)を送ってきた場合はそれを優先する。
+          // 無ければ段階名からの既定文言(EDITING_LABEL)にフォールバックする。
+          const text = label || EDITING_LABEL[stage];
+          if (text) $("editing-status").textContent = text;
         }
         if (status === "done") {
           setStage(stage, "done");
