@@ -118,10 +118,10 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P1-3",
-    "next": "P1-3(同名ファイルを同時にアップロードしても混線しない)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-4",
+    "next": "P1-4(推測可能IDで成果物取得できてしまう問題・2葉: ジョブIDの暗号学的ランダム化/成果物取得のジョブ別認可)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-2(ローカルAPIに誰でもアクセスできる状態を無くす・5葉)を完了。server/security.mjsを新設し、(A)起動時トークン(generateStartupToken、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込み)・(B)Origin/Host検証(isAllowedHost/isAllowedOrigin)・(C)magic byte検証(looksLikeVideo、MP4/WebM/AVI/MPEG-TS)・(D)アップロード上限(MAX_UPLOAD_BYTES=500MB、宣言値+実測の両方で強制)・(E)レート制限(createRateLimiter、60秒10回)を実装。server/index.mjsの全/api/*入口でトークン+Origin/Host検証を必須化し、POST /api/jobsにレート制限・アップロード上限・magic byte検証を適用。webapp-mockup/app.jsをトークン付き呼び出し(fetchはヘッダ、EventSource/ダウンロードリンクはクエリ)へ更新。tests/smoke.mjsにP1-2-A〜E契約テスト8件を追加(計39 PASS)。ローカルで実サーバーを起動しcurlで無トークン401・不正Origin401・非動画415・正常202を実地確認済み。",
+      "done": "P1-3(同名ファイルの同時アップロードで混線する問題)を完了。makeUniqueJobId(server/job-params.mjs)を新設し、ファイル名prefix+暗号乱数(crypto.randomBytes)suffixでjobIdを生成するよう変更。workDir/inputPathがジョブごとに必ず別になり、同名ファイルの同時アップロードでも書込みが衝突しなくなった。tests/smoke.mjsに契約テスト2件を追加(計41 PASS)。実サーバーで同名ファイルを実際に同時アップロードし、双方が別jobIdになり内容も破損しないことをdiffで実地確認済み。",
       "trouble": "特になし。"
     },
     "updated": "2026-07-28"
@@ -359,8 +359,8 @@
               "kind": "state",
               "theme": "同名ファイルを同時にアップロードしても混線しない",
               "meaning": "2人のお客様(または同じお客様の2操作)が同時に同じファイル名を使っても、片方が壊れない",
-              "detail": "根拠: 実行中判定より前に同じinput.*をtruncateする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-3）",
-              "status": "todo",
+              "detail": "根拠: 実行中判定より前に同じinput.*をtruncateする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-3）。makeUniqueJobId(server/job-params.mjs)がファイル名prefix+暗号乱数suffixでjobIdを生成するよう変更し、workDir/inputPathがジョブごとに必ず別になるようにした(server/index.mjs)。",
+              "status": "done",
               "criteria": [
                 {
                   "text": "ジョブ単位(UUID等)でアップロード先を分離し、同名ファイルの同時投入で互いのファイルを上書き/破損させない",

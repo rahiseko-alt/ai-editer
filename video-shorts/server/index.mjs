@@ -17,7 +17,7 @@ import {
   unsubscribeJob,
   isRunning,
 } from "./pipeline-runner.mjs";
-import { parseJobParams } from "./job-params.mjs";
+import { parseJobParams, makeUniqueJobId } from "./job-params.mjs";
 import {
   generateStartupToken,
   extractToken,
@@ -59,7 +59,7 @@ const MIME = {
 /** 英数・ハイフンのみ・ .. / スラッシュ 禁止 */
 function safeId(raw) {
   if (!raw) return null;
-  // 日本語等の Unicode 文字・数字・ハイフン・アンダースコアを許可（makeJobId と整合）。
+  // 日本語等の Unicode 文字・数字・ハイフン・アンダースコアを許可（makeUniqueJobId と整合）。
   // セパレータや「.」は含まないため、下のトラバーサル検査と併せて安全。
   if (!/^[\p{L}\p{N}_-]+$/u.test(raw)) return null;
   if (raw.includes("..") || raw.includes("/") || raw.includes("\\")) return null;
@@ -78,14 +78,6 @@ function safeFile(raw) {
 function decodeId(raw) {
   try { return decodeURIComponent(raw); }
   catch (_) { return null; }
-}
-
-/** jobId を入力ファイル名から生成（pipeline.mjs cmdInit と同じ規則） */
-function makeJobId(filename) {
-  return path
-    .basename(filename)
-    .replace(/\.[^.]+$/, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "-");
 }
 
 // ── JSON レスポンス ──────────────────────────────────────────
@@ -175,8 +167,9 @@ async function handlePostJobs(req, res) {
     return jsonRes(res, 413, { error: "ファイルが大きすぎます" });
   }
 
-  // ファイル名からジョブID生成・サニタイズ
-  const rawId = makeJobId(name);
+  // ファイル名からジョブID生成・サニタイズ。P1-3: 乱数suffixで同名ファイルの同時アップロードを
+  // ジョブ単位に分離する(workDir/inputPathがジョブごとに必ず別になり、書込みが衝突しない)。
+  const rawId = makeUniqueJobId(name);
   const jobId = safeId(rawId);
   if (!jobId) {
     return jsonRes(res, 400, { error: "無効なファイル名" });
