@@ -121,8 +121,8 @@
     "active": "P0-5-A",
     "next": "実装済みの範囲でP1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P0-5-Aは実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK)ができ次第、改めてdoneにする。",
     "handoff": {
-      "done": "P0-5(Web UIの設定が生成物へ反映されない問題)のコード修正を実施。resolveJobSettings()を新設しUIのcut/size/cutMinをpipeline.mjsのmode/orient/targetMinutesへ変換、state.json初期作成時に書き込み(targetMinutesも含む)、select/renderサブプロセスへ--modeを明示的に渡すよう修正。着手時の再調査でdigest-editorが「本数で切る」targetCountに未対応と判明したため、レンダラー未実装の1:1・4:5と合わせてUIから除去(P0-5-B・done)。server/job-params.mjsを新設しクエリ値のサポート契約を検証、フロント側のcutMin入力も同じ範囲(1-60)へ正規化し表示と送信値のズレを解消。レンダリング進捗ラベルをorientに応じて縦長/横長で出し分け。tests/smoke.mjsに契約テスト7件を追加(計24 PASS)。PR #11のCodeRabbitレビューで、P0-5-Aを「実出力解像度が一致する」まで検証していないのにdone扱いしていた誤りを指摘され是正(evidence除去・statusをdoingへ差し戻し)。",
-      "trouble": "PR #11は必須チェック(ci-green/roadmap-required)緑化直後にauto-merge.ymlで即マージされ、その後届いたCodeRabbitの指摘(P0-5-Aの時期尚早なdone化・targetMinutes未永続化・cutMin正規化不一致・landscape時の進捗ラベル不一致)に対応できなかった(docs/failures.md 2026-07-25の既知パターンと同型)。マージ済みブランチへの追いpushを避け、mainから枝を作り直して本コミットで是正・新PRとして出し直す。digestモード(分数で切る)はrunDigestEditorが自前でclaude -pを呼びllm-response.jsonを直接書くため、topic専用だったclaude-select.mjsの二重呼び出しを避ける分岐が必要だった。実ffmpegでの向き反映(portrait/landscape)は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK)。"
+      "done": "PR #12(server側のorient別ラベル修正)がCI緑化直後にauto-mergeされた後、CodeRabbitから新たな指摘: server(pipeline-runner.mjs)はorientに応じたlabel(縦長/横長)を送るようになったが、フロント(webapp-mockup/app.js)のSSEハンドラがd.labelを一切読まず常に固定のEDITING_LABEL[stage]を表示していたため、修正が画面に一切反映されていなかった。app.jsのes.onmessageでd.labelを分割代入し、有れば優先表示(無ければ従来通りEDITING_LABEL[stage]にフォールバック)するよう修正。合わせてrenderLabel(orient)を独立関数として切り出しcontract testで縦長/横長を検証(tests/smoke.mjsに2件追加・計26 PASS)。",
+      "trouble": "PR #11・#12とも必須チェック(ci-green/roadmap-required)緑化直後にauto-merge.ymlで即マージされ、その後届いたCodeRabbitの指摘に追いつけない事象が2回連続発生(docs/failures.md 2026-07-25の既知パターンと同型)。マージ済みブランチへの追いpushは避け、その都度mainから枝を作り直して是正PRを出し直している。実ffmpegでの向き反映(portrait/landscape)の最終確認は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK、P0-5-Aはdoingのまま)。"
     },
     "updated": "2026-07-28"
   },
