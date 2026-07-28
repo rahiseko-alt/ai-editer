@@ -12,13 +12,18 @@ const $ = (id) => document.getElementById(id);
 
 // P1-2(A): サーバーがindex.html配信時に埋め込む起動時トークン。
 // fetch系はヘッダで、EventSource/ダウンロードリンクはカスタムヘッダを付けられないためクエリで送る。
+// P1-4(B): ジョブごとに発行されるjobToken(POST /api/jobsの応答)も、そのジョブ関連の呼び出し
+// (SSE/候補JSON/クリップDL)すべてに併せて付与する(起動時トークンだけでは他ジョブと区別できない)。
 const API_TOKEN = window.__KOSESPARK_TOKEN__ || "";
-function withTokenHeader(init = {}) {
-  return { ...init, headers: { ...(init.headers || {}), "X-Kosespark-Token": API_TOKEN } };
+function withTokenHeader(init = {}, jobToken = null) {
+  const headers = { ...(init.headers || {}), "X-Kosespark-Token": API_TOKEN };
+  if (jobToken) headers["X-Kosespark-Job-Token"] = jobToken;
+  return { ...init, headers };
 }
-function withTokenQuery(url) {
+function withTokenQuery(url, jobToken = null) {
   const u = new URL(url, window.location.origin);
   u.searchParams.set("token", API_TOKEN);
+  if (jobToken) u.searchParams.set("jobToken", jobToken);
   return u.pathname + u.search;
 }
 
@@ -304,8 +309,8 @@ function run() {
       if (!res.ok) return res.json().then((d) => Promise.reject(d.error || d.message || "ジョブ作成失敗"));
       return res.json();
     })
-    .then(({ jobId }) => {
-      const es = new EventSource(withTokenQuery(`/api/jobs/${jobId}/events`));
+    .then(({ jobId, jobToken }) => {
+      const es = new EventSource(withTokenQuery(`/api/jobs/${jobId}/events`, jobToken));
 
       es.onmessage = (ev) => {
         let d;
@@ -327,12 +332,12 @@ function run() {
 
       es.addEventListener("done", () => {
         es.close();
-        fetch(`/api/jobs/${jobId}/candidates`, withTokenHeader())
+        fetch(`/api/jobs/${jobId}/candidates`, withTokenHeader({}, jobToken))
           .then((r) => {
             if (!r.ok) return r.json().then((d) => Promise.reject(d.error || d.message || "候補取得失敗"));
             return r.json();
           })
-          .then((data) => fillResults(jobId, data.candidates || []))
+          .then((data) => fillResults(jobId, jobToken, data.candidates || []))
           .catch((msg) => showError(String(msg)));
       });
 
@@ -362,7 +367,7 @@ $("editing-error-close").addEventListener("click", hideEditing);
 let jobs = [];
 let curJob = -1;
 function activeJob() { return jobs[curJob] || null; }
-function addJob(jobId, candidates) {
+function addJob(jobId, jobToken, candidates) {
   const keep = (candidates || []).map((c) => ({
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
@@ -370,6 +375,7 @@ function addJob(jobId, candidates) {
   }));
   jobs.push({
     jobId,
+    jobToken, // P1-4(B): このジョブの成果物取得に必要(クリップDL時に使う)
     label: state.file?.name || `動画${jobs.length + 1}`,
     keep,
     trash: [],   // エンジンは採用候補のみ返すため trash は空
@@ -414,7 +420,7 @@ function renderResults() {
 function downloadClip(c) {
   const job = activeJob(); if (!job) return;
   const a = document.createElement("a");
-  a.href = withTokenQuery(`/api/clips/${job.jobId}/${encodeURIComponent(c.file)}`);
+  a.href = withTokenQuery(`/api/clips/${job.jobId}/${encodeURIComponent(c.file)}`, job.jobToken);
   a.download = c.file;
   a.click();
 }
@@ -436,9 +442,9 @@ function openResult() {
   ov.classList.remove("hidden");
   requestAnimationFrame(() => ov.classList.add("show"));
 }
-function fillResults(jobId, candidates) {
+function fillResults(jobId, jobToken, candidates) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
-  addJob(jobId, candidates);  // 今回の結果を履歴に積む（過去分は残る）
+  addJob(jobId, jobToken, candidates);  // 今回の結果を履歴に積む（過去分は残る）
   renderJobList();
   renderResults();
   openResult();

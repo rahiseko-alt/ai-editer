@@ -1,30 +1,64 @@
-// server/security.mjs — localhost API のハードニング(P1-2)。副作用なし・単体テスト用に分離。
-// 同じPC上の別アプリ/悪意あるWebページから、勝手にジョブを起動されたりファイルを盗まれたりしない
-// ようにするための5点: (A)起動時トークン (B)Origin/Host検証 (C)magic byte検証
-// (D)アップロードサイズ上限 (E)レート制限。
+// server/security.mjs — localhost API のハードニング(P1-2・P1-4)。副作用なし(ジョブトークン
+// registryを除く)・単体テスト用に分離。同じPC上の別アプリ/悪意あるWebページ、あるいは同じ
+// 起動時トークンを持つ「他のジョブの作成者」から、勝手にジョブを起動されたり他人の成果物に
+// アクセスされたりしないようにするための項目群:
+//   P1-2: (A)起動時トークン (B)Origin/Host検証 (C)magic byte検証 (D)アップロードサイズ上限 (E)レート制限
+//   P1-4: (A)ジョブIDの暗号学的ランダム化 (B)成果物取得のジョブ別認可(ジョブトークン)
 
 import crypto from "node:crypto";
 
-/** 起動ごとに変わるランダムトークンを生成する(A)。 */
+/** 起動ごとに変わるランダムトークンを生成する(P1-2-A)。 */
 export function generateStartupToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
-/** リクエストからトークンを取り出す。ヘッダ(fetch用)とクエリ(EventSourceはカスタムヘッダ不可のため)の両対応。 */
-export function extractToken(req, searchParams) {
-  const header = req.headers["x-kosespark-token"];
+/** リクエストから任意名のトークンを取り出す。ヘッダ(fetch用)とクエリ(EventSourceはカスタム
+ *  ヘッダ不可のため)の両対応。headerName は小文字(Node はヘッダ名を小文字化して渡す)。 */
+export function extractNamedToken(req, searchParams, headerName, queryName) {
+  const header = req.headers[headerName];
   if (typeof header === "string" && header) return header;
-  const q = searchParams?.get("token");
+  const q = searchParams?.get(queryName);
   return q || null;
 }
 
-/** 起動時トークンと一致するか(タイミング攻撃を避けるため長さ一致後にtimingSafeEqual)。 */
+/** リクエストから起動時トークンを取り出す(P1-2-A)。 */
+export function extractToken(req, searchParams) {
+  return extractNamedToken(req, searchParams, "x-kosespark-token", "token");
+}
+
+/** リクエストからジョブトークンを取り出す(P1-4-B)。 */
+export function extractJobToken(req, searchParams) {
+  return extractNamedToken(req, searchParams, "x-kosespark-job-token", "jobToken");
+}
+
+/** トークンが一致するか(タイミング攻撃を避けるため長さ一致後にtimingSafeEqual)。
+ *  expected が無い(未発行・存在しないジョブ等)場合は常に false。 */
 export function isValidToken(candidate, expected) {
   if (typeof candidate !== "string" || !candidate) return false;
+  if (typeof expected !== "string" || !expected) return false;
   const a = Buffer.from(candidate);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * ジョブ別トークンのregistry(P1-4-B)。起動時トークンは全ジョブ共通のため、それだけでは
+ * 「自分が作成したジョブ以外の成果物を推測/横取りできない」ことを保証できない。ジョブ作成時に
+ * 発行し、そのジョブのSSE/候補JSON/クリップ取得のいずれにも一致を必須にする。
+ */
+const jobTokens = new Map(); // jobId -> token
+
+/** ジョブ作成時に一度だけ呼び、そのジョブ専用のトークンを発行する。 */
+export function issueJobToken(jobId) {
+  const token = crypto.randomBytes(16).toString("hex");
+  jobTokens.set(jobId, token);
+  return token;
+}
+
+/** 指定ジョブのトークンと一致するか。ジョブ自体が存在しなければ常に false。 */
+export function isValidJobToken(jobId, candidate) {
+  return isValidToken(candidate, jobTokens.get(jobId));
 }
 
 /** Host ヘッダが 127.0.0.1:port / localhost:port のいずれかであること(B)。 */
