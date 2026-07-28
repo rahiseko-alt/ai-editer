@@ -266,9 +266,12 @@ async function cmdRender(workDir, opts = {}) {
   }
 
   const failCount = resolved.length - manifest.length;
+  // P1-5: 区間選定(select)段で一部chunkが失敗していた場合、candidates.jsonにも引き継ぐ。
+  // 「本数は生成できたが元の文字起こし全体はカバーできていない」ことを利用者が確認できるようにする。
+  const selectIncomplete = !!state.selectIncomplete;
   if (resolved.length > 0 && manifest.length === 0) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: 0, digest: null, candidates: [] });
+      { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete });
     state.stage = "render_failed";
     state.candidates = 0;
     saveState(workDir, state);
@@ -295,7 +298,7 @@ async function cmdRender(workDir, opts = {}) {
 
   if (mode === "digest" && manifest.length > 0 && digest === null) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest });
+      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete });
     state.stage = "render_failed";
     state.candidates = manifest.length;
     saveState(workDir, state);
@@ -303,7 +306,7 @@ async function cmdRender(workDir, opts = {}) {
   }
 
   writeJson(path.join(outDir, "candidates.json"),
-    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest });
+    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete });
   state.stage = "rendered";
   state.candidates = manifest.length;
   saveState(workDir, state);

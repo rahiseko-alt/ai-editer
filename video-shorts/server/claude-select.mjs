@@ -127,10 +127,13 @@ async function runPool(items, poolSize, worker) {
 /**
  * transcript.json を chunk 分割し、各 chunk を個別の claude -p で選定して統合。
  * work/<id>/llm-response.json に {"segments":[...]} を書く。
+ * P1-5: 一部chunkが失敗しても(1件以上成功していれば)例外にせず続行するが、その場合は
+ * incomplete:true を返す。呼び出し側はこれを「一部失敗」として扱い、全チャンク成功と
+ * 区別すること(サイレントに成功扱いしない)。
  *
  * @param {string} workDir - work/<id> の絶対パス
  * @param {(msg:string)=>void} [onLog]
- * @returns {Promise<{segments: object[]}>}
+ * @returns {Promise<{segments: object[], incomplete: boolean, failedChunks: number, totalChunks: number}>}
  */
 export async function runClaudeSelect(workDir, onLog = () => {}) {
   const transcriptPath = path.join(workDir, "transcript.json");
@@ -159,12 +162,7 @@ export async function runClaudeSelect(workDir, onLog = () => {}) {
   });
 
   // 統合: 成功 chunk の segments を全結合。失敗 chunk はログに残して継続。
-  const merged = [];
-  const failures = [];
-  results.forEach((r, i) => {
-    if (r.ok) merged.push(...r.value);
-    else failures.push(`chunk ${i}: ${r.error.message}`);
-  });
+  const { merged, failures } = summarizeChunkResults(results);
 
   if (failures.length) {
     onLog(`[claude-select] ${failures.length} chunk 失敗: ${failures.join(" / ").slice(0, 300)}`);
@@ -182,5 +180,26 @@ export async function runClaudeSelect(workDir, onLog = () => {}) {
   fs.writeFileSync(respPath, JSON.stringify({ segments: merged }, null, 2), "utf-8");
   onLog(`[claude-select] 統合 ${merged.length} 件 → ${respPath}`);
 
-  return { segments: merged };
+  return {
+    segments: merged,
+    incomplete: failures.length > 0,
+    failedChunks: failures.length,
+    totalChunks: chunks.length,
+  };
+}
+
+/**
+ * P1-5: runPool() の結果(chunkごとの成否)を、成功分のsegments統合と失敗一覧へ要約する純粋関数。
+ * 「一部chunk失敗を黙って成功扱いにしない」ための判定(incomplete)をここに切り出し単体テスト可能にする。
+ * @param {Array<{ok: true, value: object[]} | {ok: false, error: Error}>} results
+ * @returns {{ merged: object[], failures: string[] }}
+ */
+export function summarizeChunkResults(results) {
+  const merged = [];
+  const failures = [];
+  results.forEach((r, i) => {
+    if (r.ok) merged.push(...r.value);
+    else failures.push(`chunk ${i}: ${r.error.message}`);
+  });
+  return { merged, failures };
 }

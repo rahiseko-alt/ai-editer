@@ -32,6 +32,7 @@ import {
   issueJobToken,
   isValidJobToken,
 } from "../server/security.mjs";
+import { summarizeChunkResults } from "../server/claude-select.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -489,6 +490,40 @@ t("P1-4-B: ジョブトークンはヘッダ優先・無ければクエリから
   assert.strictEqual(extractJobToken(reqWithQuery, new URLSearchParams({ jobToken: "q-token" })), "q-token");
 
   assert.strictEqual(extractJobToken({ headers: {} }, new URLSearchParams()), null, "どちらにも無ければnull");
+});
+
+// ---- P1-5: 一部チャンク失敗を成功扱いにしない ----
+
+t("P1-5: 全chunk成功なら incomplete にならない(failures=0)", () => {
+  const results = [
+    { ok: true, value: [{ keepText: "a" }] },
+    { ok: true, value: [{ keepText: "b" }] },
+  ];
+  const { merged, failures } = summarizeChunkResults(results);
+  assert.strictEqual(merged.length, 2);
+  assert.strictEqual(failures.length, 0);
+});
+
+t("P1-5: 一部chunk失敗時は成功分のみ統合しつつ failures に記録される(黙って欠落させない)", () => {
+  const results = [
+    { ok: true, value: [{ keepText: "a" }] },
+    { ok: false, error: new Error("timeout") },
+    { ok: true, value: [{ keepText: "c" }] },
+  ];
+  const { merged, failures } = summarizeChunkResults(results);
+  assert.strictEqual(merged.length, 2, "成功した2 chunk分のsegmentsは維持する(全部捨てない)");
+  assert.strictEqual(failures.length, 1, "失敗したchunkが1件あったという事実は消さない");
+  assert.ok(failures[0].includes("timeout"));
+});
+
+t("P1-5: 全chunk失敗なら成功segmentsは0件になる(呼び出し側でエラーにする材料が残る)", () => {
+  const results = [
+    { ok: false, error: new Error("e1") },
+    { ok: false, error: new Error("e2") },
+  ];
+  const { merged, failures } = summarizeChunkResults(results);
+  assert.strictEqual(merged.length, 0);
+  assert.strictEqual(failures.length, 2);
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);

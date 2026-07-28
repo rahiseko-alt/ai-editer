@@ -316,15 +316,27 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // topic(話題で切る): pipeline.mjs select は llm-request.md を書くだけなので、
   // claude -p 呼び出し(チャンク並列)は別途ここで行い llm-response.json を書く。
+  // P1-5: 一部chunkが失敗しても(1件以上成功していれば)処理は続行するが、その場合は
+  // incomplete:true をstateへ残し、成功したふりをしない(候補生成・SSE完了通知の両方に反映)。
+  let selectIncomplete = false;
   if (mode !== "digest") {
-    await runClaudeSelect(workDir, (msg) => {
+    const result = await runClaudeSelect(workDir, (msg) => {
       broadcast(jobId, { stage: "s", status: "active", log: msg });
     });
+    selectIncomplete = result.incomplete;
+    if (selectIncomplete) {
+      broadcast(jobId, {
+        stage: "s",
+        status: "active",
+        log: `[WARN] ${result.failedChunks}/${result.totalChunks} chunk が失敗しました。成功分のみで続行します。`,
+      });
+    }
   }
 
   state.stage = "selected";
+  state.selectIncomplete = selectIncomplete;
   writeState(workDir, state);
-  broadcast(jobId, { stage: "s", status: "done" });
+  broadcast(jobId, { stage: "s", status: "done", incomplete: selectIncomplete });
 
   // ── Stage r: レンダリング ────────────────────────────────────
   job.stage = "r";
@@ -346,5 +358,5 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // ── 完了 ─────────────────────────────────────────────────────
   job.stage = "done";
-  broadcast(jobId, { stage: "done" }, "done");
+  broadcast(jobId, { stage: "done", incomplete: selectIncomplete }, "done");
 }
