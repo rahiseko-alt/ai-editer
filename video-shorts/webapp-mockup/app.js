@@ -337,7 +337,7 @@ function run() {
             if (!r.ok) return r.json().then((d) => Promise.reject(d.error || d.message || "候補取得失敗"));
             return r.json();
           })
-          .then((data) => fillResults(jobId, jobToken, data.candidates || []))
+          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete))
           .catch((msg) => showError(String(msg)));
       });
 
@@ -367,7 +367,7 @@ $("editing-error-close").addEventListener("click", hideEditing);
 let jobs = [];
 let curJob = -1;
 function activeJob() { return jobs[curJob] || null; }
-function addJob(jobId, jobToken, candidates) {
+function addJob(jobId, jobToken, candidates, incomplete) {
   const keep = (candidates || []).map((c) => ({
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
@@ -379,6 +379,7 @@ function addJob(jobId, jobToken, candidates) {
     label: state.file?.name || `動画${jobs.length + 1}`,
     keep,
     trash: [],   // エンジンは採用候補のみ返すため trash は空
+    incomplete: !!incomplete, // P1-5: 区間選定の一部が失敗し、全編をカバーできていない場合true
   });
   curJob = jobs.length - 1;
 }
@@ -404,6 +405,10 @@ function renderResults() {
   $("keep-n").textContent = KEEP.length;
   $("trash-n").textContent = TRASH.length;
   $("tab-keep").innerHTML =
+    // P1-5: 一部の区間選定に失敗している場合、成功扱いに見せず必ず明示する(黙って欠落させない)。
+    (job.incomplete
+      ? `<p class="reason warn">⚠ 動画の一部区間の解析に失敗したため、全編ではなく成功した範囲のみから選んでいます。</p>`
+      : "") +
     `<p class="reason">あなたの設定をもとに、AIがそのまま使える部分を${KEEP.length}本選びました。短い・中身が薄い部分は「使わない候補」に入れています。</p>` +
     (KEEP.length
       ? KEEP.map((c, i) =>
@@ -442,9 +447,9 @@ function openResult() {
   ov.classList.remove("hidden");
   requestAnimationFrame(() => ov.classList.add("show"));
 }
-function fillResults(jobId, jobToken, candidates) {
+function fillResults(jobId, jobToken, candidates, incomplete) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
-  addJob(jobId, jobToken, candidates);  // 今回の結果を履歴に積む（過去分は残る）
+  addJob(jobId, jobToken, candidates, incomplete);  // 今回の結果を履歴に積む（過去分は残る）
   renderJobList();
   renderResults();
   openResult();

@@ -118,10 +118,10 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P1-5",
-    "next": "P1-5(一部チャンク失敗を成功扱いする問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-6",
+    "next": "P1-6(サーバー再起動後SSEが永久待機する問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-4(推測可能IDで成果物取得できてしまう問題・2葉)を完了。(A)makeUniqueJobId(server/job-params.mjs)のsuffixを32bit→128bit(16byte crypto.randomBytes)へ強化。(B)issueJobToken/isValidJobToken(server/security.mjs)を新設し、POST /api/jobsの応答にjobId+jobTokenを返し、GET /api/jobs/:id/events・/candidates・GET /api/clips/:id/:fileの3経路すべてで起動時トークンに加えジョブ別トークンの一致を必須化(server/index.mjs)。webapp-mockup/app.jsをjobToken対応(EventSource/候補fetch/クリップDLすべてに付与)へ更新。tests/smoke.mjsに契約テスト4件を追加(計45 PASS)。実サーバーでjobToken無し→403、他ジョブのjobToken→403、正しいjobToken→404(候補未生成だが認可通過)を実地確認済み。",
+      "done": "P1-5(一部チャンク失敗を成功扱いする問題)を完了。runClaudeSelect(server/claude-select.mjs)がincomplete/failedChunks/totalChunksを返すよう変更し、統合ロジックをsummarizeChunkResults()として純粋関数に切り出し。server/pipeline-runner.mjsがstate.jsonとSSE(選定完了イベント・最終done)の両方にincompleteを反映。pipeline.mjsのcmdRenderがcandidates.jsonにもincompleteを引き継ぎ、webapp-mockup/app.jsが「一部区間の解析に失敗した」警告文を結果画面に表示。tests/smoke.mjsに契約テスト3件を追加(計48 PASS)。",
       "trouble": "特になし。"
     },
     "updated": "2026-07-28"
@@ -413,13 +413,13 @@
               "kind": "state",
               "theme": "一部だけ失敗したのに「成功」と表示しない",
               "meaning": "3本頼んで1本しか作れなかった時、ちゃんと「一部失敗」と分かる",
-              "detail": "根拠: 1チャンク失敗でも他が成功すると欠落を黙って確定する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-5）",
-              "status": "todo",
+              "detail": "根拠: 1チャンク失敗でも他が成功すると欠落を黙って確定する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-5）。runClaudeSelect(server/claude-select.mjs)がincomplete/failedChunks/totalChunksを返すよう変更し、summarizeChunkResults()として要約ロジックを純粋関数に切り出し。server/pipeline-runner.mjsがstate.jsonとSSE(stage:s done / 最終done)の両方にincompleteを反映。pipeline.mjsのcmdRenderがcandidates.jsonにもincompleteを引き継ぎ、webapp-mockup/app.jsが「一部失敗」の警告文を画面に表示するよう変更。",
+              "status": "done",
               "criteria": [
                 {
                   "text": "一部のチャンクが失敗した場合、全体が成功と表示されずincomplete/failed状態になる",
                   "verify": "一部チャンクが失敗する入力でパイプラインを実行し、最終状態がsuccessではなくincomplete/failedになることを確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30356771764/job/90266678858"
                 }
               ]
             },

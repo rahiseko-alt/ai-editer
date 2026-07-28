@@ -78,6 +78,7 @@
 .clip-row.trash { opacity: .8; }
 .clip-row.trash .thumb { background: linear-gradient(160deg,#D0CCC5,#B8B4AD); }
 .reason { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+.reason.warn { color: #9a6a12; background: #fbeecb; padding: 6px 10px; border-radius: 8px; }
 .clip-btn {
   flex-shrink: 0; border: 1.5px solid rgba(0,0,0,.25);
   background: transparent; color: var(--ink);
