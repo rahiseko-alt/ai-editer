@@ -109,16 +109,19 @@
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm -r typecheck
-pnpm -r lint                        # 全パッケージ本物（echo 禁止）
-pnpm -r test                        # Vitest 実テスト（0 件・ダミーで緑にしない）
-pnpm -r build
+pnpm -r --if-present typecheck      # TS 未導入のパッケージはスキップ（0件を偽装しない＝該当パッケージが無いだけ）
+pnpm -r --if-present lint           # 導入済みパッケージのみ本物（echo 禁止）
+pnpm -r test                        # 実テスト（0 件・ダミーで緑にしない。全パッケージ必須）
+pnpm -r --if-present build
 pnpm audit --audit-level moderate   # 依存の脆弱性ゲート（moderate 以上で落ちる）
 node scripts/verify-roadmap-evidence.mjs  # roadmap の evidence が外部事実か機械検査
 ```
 
 - テストも lint も**本物**だけを置く。`echo` による見かけの成功は偽の緑として扱い、禁止。
-- 新しいパッケージを足したら、そのパッケージにも実テスト・実 lint と上記スクリプトを用意する。
+- `test` は `--if-present` を付けない＝**全パッケージが実テストを持つことを必須**にする。`typecheck`/`lint`/`build` は
+  スタック上未導入（例：プレーン JS のみで TypeScript や Lint 未設定）のパッケージが混在しうるため `--if-present` で
+  スキップを許すが、「未導入」は roadmap の backlog として明記し、放置しない。
+- 新しいパッケージを足したら、そのパッケージにも実テストと上記スクリプトを用意する。
 - 上記は CI（`.github/workflows/ci.yml`）でも同じく回り、機械の審判となる。
 
 ## PR instructions（コミット/PR）
@@ -227,4 +230,4 @@ node scripts/verify-roadmap-evidence.mjs  # roadmap の evidence が外部事実
 書いていない項目はこのルートの普遍ルールを継承する。
 
 - 案件用の雛形: `presets/_TEMPLATE.md`
-- 記入済みの実例: `apps/web/AGENTS.md`（Next.js + Vercel 構成）
+- 記入済みの実例: `video-shorts/AGENTS.md`（Node.js + Python + ffmpeg 構成）

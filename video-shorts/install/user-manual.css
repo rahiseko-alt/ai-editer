@@ -1,0 +1,77 @@
+/* video-shorts 使用説明書 追加スタイル（base は consent.css を流用）。 */
+.manual { max-width: 760px; }
+
+.toc {
+  margin: 18px 0 8px;
+  padding: 14px 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+}
+.toc strong { display: block; margin-bottom: 6px; color: var(--sub); }
+.toc ol { margin: 0; padding-left: 1.4em; }
+.toc a { color: var(--brand); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+
+.manual section { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 22px; scroll-margin-top: 16px; }
+.manual h2 { font-size: 18px; color: var(--brand); margin: 12px 0 10px; }
+.manual p { font-size: 15px; }
+
+.cmd {
+  background: #0f141b;
+  color: #e8ecf2;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 13.5px;
+  line-height: 1.65;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 8px 0 12px;
+  border: 1px solid #2a323d;
+}
+@media (prefers-color-scheme: light) {
+  .cmd { background: #1c2330; }
+}
+
+.kbd {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.steps { counter-reset: st; list-style: none; padding: 0; margin: 0; }
+.steps > li {
+  counter-increment: st;
+  position: relative;
+  padding: 4px 0 12px 40px;
+  margin-bottom: 4px;
+}
+.steps > li::before {
+  content: counter(st);
+  position: absolute; left: 0; top: 2px;
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  background: var(--brand); color: #fff;
+  border-radius: 50%; font-weight: 700; font-size: 14px;
+}
+.steps b { display: inline-block; margin-bottom: 2px; }
+
+.manual table {
+  width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 14px;
+}
+.manual th, .manual td {
+  border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+}
+.manual th { background: var(--bg); color: var(--sub); font-weight: 700; white-space: nowrap; }
+
+.manual dl { margin: 6px 0; }
+.manual dt { font-weight: 700; margin-top: 12px; }
+.manual dd { margin: 4px 0 0; color: var(--ink); font-size: 14px; }
+
+.manual .toc + section { border-top: none; }

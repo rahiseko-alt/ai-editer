@@ -6,11 +6,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm -r build",
-    "start": "pnpm --filter web start",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
+    "dev": "node video-shorts/server/index.mjs",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r test",
     "audit": "pnpm audit --audit-level moderate",
     "verify:roadmap": "node scripts/verify-roadmap-evidence.mjs"
