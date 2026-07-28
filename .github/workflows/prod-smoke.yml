@@ -1,0 +1,52 @@
+name: prod-smoke
+
+# 本番到達の外部事実チェック（G-2-2）。
+# 実行環境(サンドボックス)は *.vercel.app への外向きが遮断されるため、
+# プロキシ外の実機である GitHub Actions に本番URLを curl させて機械判定する。
+# この run が緑＝「公開URLが 200 かつ本文に 'cc-v2 monorepo'」の evidence。
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+# 本番URL（Vercel production alias）。プロジェクトのドメインが変わったらここを更新。
+env:
+  PROD_URL: "https://cc-v2-web.vercel.app"
+
+jobs:
+  reachable:
+    name: prod 200 + marker
+    runs-on: ubuntu-latest
+    steps:
+      - name: curl production (200 かつ 'cc-v2 monorepo') — G-2-2
+        run: |
+          echo "Checking ${PROD_URL}"
+          code=$(curl -sS -o body.html -w '%{http_code}' --max-time 30 "${PROD_URL}")
+          echo "HTTP=${code}"
+          if [ "${code}" != "200" ]; then
+            echo "FAIL: 期待 200 に対し ${code}"
+            exit 1
+          fi
+          if ! grep -q 'cc-v2 monorepo' body.html; then
+            echo "FAIL: 本文にマーカー 'cc-v2 monorepo' が無い"
+            exit 1
+          fi
+          echo "PROD OK: 200 かつ 'cc-v2 monorepo' を ${PROD_URL} で確認"
+
+      - name: HSTS ヘッダを確認 — G-3-3 c2
+        run: |
+          # 本番が https かつ Strict-Transport-Security を返すこと（外部事実）。
+          hdrs=$(curl -sSI --max-time 30 "${PROD_URL}")
+          echo "${hdrs}"
+          if ! printf '%s' "${hdrs}" | grep -iq '^strict-transport-security:'; then
+            echo "FAIL: 応答に Strict-Transport-Security ヘッダが無い（main へ反映後に緑になる）"
+            exit 1
+          fi
+          echo "HSTS OK: Strict-Transport-Security を確認"
+
+      - name: ヘルスチェック /api/health が 200 — G-4-1 裏打ち
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "${PROD_URL}/api/health")
+          echo "HTTP(/api/health)=${code}"
+          test "${code}" = "200"
+          echo "HEALTH OK: /api/health が 200"

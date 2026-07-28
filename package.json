@@ -1,0 +1,28 @@
+{
+  "name": "cc-v2",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "audit": "pnpm audit --audit-level moderate",
+    "verify:roadmap": "node scripts/verify-roadmap-evidence.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.10": ">=8.5.10",
+      "sharp@<0.35.0": ">=0.35.0",
+      "brace-expansion@<5.0.8": ">=5.0.8"
+    }
+  }
+}

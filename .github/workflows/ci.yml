@@ -1,0 +1,115 @@
+name: CI
+
+# 機械の審判（machine judge）。ロードマップ G-1 系の evidence は
+# このワークフローの run URL / commit SHA を指す（AI の自己申告を証拠にしない）。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  quality:
+    name: typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Audit (fail on moderate+)
+        run: pnpm audit --audit-level moderate
+
+      - name: Verify roadmap evidence (外部事実のみ)
+        run: node scripts/verify-roadmap-evidence.mjs
+
+  smoke:
+    name: 起動スモーク (build → start → curl 200 + marker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r build
+
+      # 到達性を外部事実(HTTP 200＋本文マーカー)で縛る。スクショにしない。
+      - name: Smoke (next start → curl 200 + 'cc-v2 monorepo')
+        run: |
+          pnpm --filter web start &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          # 起動待ち（最大60秒）
+          ready=0
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 || true)
+            if [ "$code" = "200" ]; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            echo "FAIL: server did not return 200 within timeout (last code: ${code:-none})"
+            exit 1
+          fi
+
+          # 本文に既知マーカーを含むこと
+          body=$(curl -sf http://localhost:3000)
+          if ! printf '%s' "$body" | grep -q 'cc-v2 monorepo'; then
+            echo "FAIL: body did not contain marker 'cc-v2 monorepo'"
+            exit 1
+          fi
+
+          echo "SMOKE OK: HTTP 200 かつ本文に 'cc-v2 monorepo' を確認"
+
+  # 集約ゲート＝branch protection が要求する「安定した1つの必須チェック」。
+  # 内部ジョブ(quality/smoke)の名前や中身が変わっても context 名は 'ci-green' で不変。
+  # scripts/setup.sh はこの 'ci-green' と 'roadmap-required' だけを必須指定する。
+  gate:
+    name: ci-green
+    needs: [quality, smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 上流ジョブが全て success か検査（1つでも失敗/スキップなら赤）
+        run: |
+          if [ "${{ needs.quality.result }}" != "success" ] || [ "${{ needs.smoke.result }}" != "success" ]; then
+            echo "ci-green: FAIL (quality=${{ needs.quality.result }} smoke=${{ needs.smoke.result }})"
+            exit 1
+          fi
+          echo "ci-green: OK（quality / smoke ともに success）"

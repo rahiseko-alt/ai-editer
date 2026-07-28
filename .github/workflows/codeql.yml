@@ -1,0 +1,32 @@
+name: CodeQL
+
+# 静的解析（G-3-3 c1）。public リポなので code scanning が無料で使える。
+# 結果は GitHub Security → Code scanning に上がり、run URL が evidence になる。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1" # 毎週月曜 03:00 UTC に定期スキャン
+
+jobs:
+  analyze:
+    name: analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      # JS/TS はビルド不要（CodeQL が解析）。
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

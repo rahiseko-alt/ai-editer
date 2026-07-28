@@ -1,0 +1,8 @@
+---
+description: Project rules (source of truth = AGENTS.md)
+alwaysApply: true
+---
+
+このリポジトリのルールは `AGENTS.md` に集約している。以下を唯一の正として従うこと。
+
+@AGENTS.md

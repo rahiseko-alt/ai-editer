@@ -1,0 +1,5 @@
+# ツール/ランタイムのバージョン固定（mise / asdf が参照）
+# AGENTS.md の宣言スタックに合わせて固定する。更新時は package.json の
+# engines.node / packageManager と食い違わせないこと。
+nodejs 22.22.2
+pnpm 10.33.0

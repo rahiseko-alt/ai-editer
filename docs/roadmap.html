@@ -1,0 +1,441 @@
+<title>ロードマップ</title>
+<style>
+  :root {
+    --paper:#ffffff; --panel:#ffffff; --ink:#1b1e26; --muted:#5a606f; --line:#a9afc0;
+    --blue-fill:#e3ebfb; --blue-edge:#7f9be6; --blue-num:#2c50c4;
+    --amber-fill:#fbeecb; --amber-edge:#e0b25a; --amber-num:#9a6a12;
+    --red-fill:#f7dcda; --red-edge:#e08c86; --red-num:#b8685f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#0f1117; --panel:#161922; --ink:#e7e9f0; --muted:#9298aa; --line:#4a5266;
+      --blue-fill:#1a2340; --blue-edge:#4d63a6; --blue-num:#a6b6f7;
+      --amber-fill:#2c2410; --amber-edge:#6b5320; --amber-num:#e0a33f;
+      --red-fill:#33191a; --red-edge:#7a3b38; --red-num:#e8867e; }
+  }
+  :root[data-theme="light"] { --paper:#ffffff; --panel:#ffffff; --ink:#1b1e26; --muted:#5a606f; --line:#a9afc0;
+    --blue-fill:#e3ebfb; --blue-edge:#7f9be6; --blue-num:#2c50c4;
+    --amber-fill:#fbeecb; --amber-edge:#e0b25a; --amber-num:#9a6a12;
+    --red-fill:#f7dcda; --red-edge:#e08c86; --red-num:#b8685f; }
+  :root[data-theme="dark"] { --paper:#0f1117; --panel:#161922; --ink:#e7e9f0; --muted:#9298aa; --line:#4a5266;
+    --blue-fill:#1a2340; --blue-edge:#4d63a6; --blue-num:#a6b6f7;
+    --amber-fill:#2c2410; --amber-edge:#6b5320; --amber-num:#e0a33f;
+    --red-fill:#33191a; --red-edge:#7a3b38; --red-num:#e8867e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:840px; margin:0 auto; padding:12px 16px 60px; }
+
+  .banner { border:1px solid var(--line); border-left:4px solid var(--blue-num); border-radius:8px;
+    background:var(--panel); padding:8px 12px; margin-bottom:12px; font-size:13px; }
+  .banner .lbl { font-size:11px; color:var(--muted); margin-right:6px; }
+  .banner .val { font-weight:600; }
+  .banner .nx { display:block; margin-top:3px; color:var(--muted); }
+
+  .tabs { display:flex; gap:4px; border-bottom:2px solid var(--line); margin-bottom:12px; }
+  .tabs button { font:inherit; font-size:13px; cursor:pointer; padding:7px 16px; border:none; background:none;
+    color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-2px; }
+  .tabs button.active { color:var(--ink); border-bottom-color:var(--blue-num); font-weight:600; }
+  .sheet { display:none; } .sheet.active { display:block; }
+
+  .tools { display:flex; gap:6px; justify-content:flex-end; margin-bottom:8px; }
+  .tools button { font:inherit; font-size:12px; cursor:pointer; padding:4px 10px; border-radius:6px;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted); }
+  .tools button:hover { border-color:var(--blue-num); color:var(--blue-num); }
+
+  .node { margin:4px 0; }
+  .children { position:relative; margin-left:11px; padding-left:30px; }
+  .children::before { content:""; position:absolute; left:0; top:-2px; bottom:0; width:2px; background:var(--muted); }
+  .children > .node { position:relative; }
+  .children > .node::before { content:""; position:absolute; left:-30px; top:11px; width:28px; height:2px; background:var(--muted); }
+  .children > .node:last-child::after { content:""; position:absolute; left:-31px; top:13px; bottom:0; width:4px; background:var(--paper); }
+  .card { display:flex; align-items:flex-start; gap:6px; padding:2px 0; color:var(--ink); }
+  details.node > summary.card { cursor:pointer; list-style:none; }
+  details.node > summary.card::-webkit-details-marker { display:none; }
+  .card.done { color:var(--red-num); }   /* 済＝赤字 */
+  /* 未・途中＝黒字（既定色 --ink） */
+  .caret { color:var(--muted); font-size:11px; width:.9em; flex:none; margin-top:3px; transition:transform .15s; }
+  details.node[open] > summary .caret { transform:rotate(90deg); }
+  .leaf .caret { visibility:hidden; }
+  .line { min-width:0; flex:1; }
+  .n { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums;
+    font-weight:700; margin-right:8px; }
+  .kind { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; margin-right:7px;
+    padding:0 5px; border-radius:4px; border:1px solid var(--line); color:var(--muted); vertical-align:2px; white-space:nowrap; }
+  .kind.state { border-color:var(--blue-edge); color:var(--blue-num); }
+  .kind.work  { border-color:var(--line); color:var(--muted); }
+  .th { font-weight:600; margin-right:7px; }
+  .mn { }
+  .d2 { display:block; margin-top:1px; opacity:.72; }
+  .day, .cmt { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; margin-left:8px; white-space:nowrap; }
+  .cmt { opacity:.8; }
+  /* 受入ゲート表示 */
+  .meter { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; margin-left:8px;
+    padding:0 7px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; vertical-align:1px; }
+  .meter.ok   { background:var(--blue-fill);  border-color:var(--blue-edge);  color:var(--blue-num); }
+  .meter.wait { background:var(--amber-fill); border-color:var(--amber-edge); color:var(--amber-num); }
+  .gate { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; margin-left:6px;
+    color:var(--amber-num); font-weight:700; white-space:nowrap; }
+  .crit { margin:4px 0 6px 26px; padding:8px 10px; border:1px dashed var(--line); border-radius:8px;
+    background:var(--panel); font-size:12px; }
+  .crit-h { font-size:10px; color:var(--muted); letter-spacing:.04em; margin-bottom:4px; text-transform:uppercase; }
+  .crit-item { margin:8px 0; line-height:1.6; }
+  .crit-item + .crit-item { padding-top:8px; border-top:1px solid var(--line); }
+  .crit-item .cb { display:inline-block; width:1.2em; font-size:12px; }
+  .crit-item.ok .cb { color:var(--blue-num); }
+  .crit-item.ng .cb { color:var(--amber-num); }
+  .crit-item .ct { color:var(--ink); }
+  .crit-item .cv { display:block; margin:4px 0 0 1.2em; color:var(--muted); }
+  .crit-item .ce { display:block; margin:4px 0 0 1.2em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11px; color:var(--muted); word-break:break-all; }
+  .here { flex:none; align-self:center; width:20px; height:20px; border-radius:50%;
+    background:var(--blue-num); color:var(--paper); font-size:13px; font-weight:900;
+    display:inline-flex; align-items:center; justify-content:center; }
+  /* 階層を文字サイズで区別 */
+  .card.d0 { font-size:18px; font-weight:700; }
+  .card.d0 .th { font-weight:700; }
+  .card.d1 { font-size:15px; }
+  .card.d2 { font-size:13px; }
+  .card.d3 { font-size:12px; }
+
+  .doc { max-width:70ch; }
+  .doc h2 { font-size:1rem; margin:22px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line); }
+  .doc h2:first-child { margin-top:4px; }
+  .doc h3 { font-size:.9rem; margin:16px 0 6px; color:var(--muted); }
+  .doc p { margin:6px 0; } .doc ul { margin:6px 0; padding-left:20px; } .doc li { margin:3px 0; }
+  .doc code { background:var(--panel); border:1px solid var(--line); padding:1px 5px; border-radius:5px; font-size:.85em; }
+  .doc pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; font-size:.85em; }
+  .doc .rule { background:var(--blue-fill); border:1.5px solid var(--blue-edge); border-radius:8px; padding:10px 14px; font-weight:600; }
+  .tblwrap { overflow-x:auto; margin:8px 0; }
+  .doc table { border-collapse:collapse; width:100%; font-size:.82rem; }
+  .doc th, .doc td { border:1px solid var(--line); padding:6px 9px; text-align:left; white-space:nowrap; }
+  .doc th { background:var(--panel); font-weight:600; }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; border:1.5px solid var(--line); vertical-align:-1px; margin-right:4px; }
+  .sw.done{background:var(--blue-fill);border-color:var(--blue-edge);} .sw.doing{background:var(--amber-fill);border-color:var(--amber-edge);} .sw.blocked{background:var(--red-fill);border-color:var(--red-edge);}
+</style>
+
+<script type="application/json" id="roadmap-data">
+{
+  "meta": {
+    "title": "ロードマップ（白紙テンプレ）",
+    "template": true,
+    "active": "ROOT",
+    "next": "【初回】この案件のゴールを頂点に原子ツリーを描く。meta.handoff.nav（初回接続トップ手順ナビ）に従い、AGENTS.md『新規案件の初期化フロー(0〜6)』の6でこの roadmap.html を描き直す。描き直したら meta.template を false にする。ツリー確定まで実装・調査・ファイル作成には着手しない。",
+    "handoff": {
+      "done": "（白紙テンプレの初期状態）まだ何も実施していません。これはコピー元テンプレのロードマップです。実作業を始める前に、必ず下の nav（初回接続トップ手順ナビ）を上から順に辿ってください。",
+      "trouble": "無し",
+      "nav": [
+        "1. チェックイン：この handoff と meta.active/meta.next を読み、ユーザーへ『白紙テンプレなので、まず案件のゴールをヒアリングして原子ツリーを描きます』と丁寧語で伝える。",
+        "2. 機械強制(新リポジトリで1回だけ／管理者の手作業。CIやAIからは不可)：(a)リポジトリを Public にする(無料Private では branch protection/Ruleset が効かない)。(b)main に ci-green 必須化＝Settings→Rules→Rulesets→New branch ruleset で Enforcement=Active・Target=Include default branch・Require status checks(ci-green)・さらに『Require a pull request before merging』(Required approvals=0のまま)も必ずチェックする(これが無いと main への直pushでCIを丸ごと迂回できる＝実地で確認済みの最重要ハマりどころ)。最初のPRが1回走った後、同じ画面で roadmap-required も必須チェックに追加。(c)Settings→Security→Code security で Secret Protection・Push protection を Enable。(d)Dependabot version updates は .github/dependabot.yml が同梱済みなので追加設定不要。詳細は AGENTS.md『新規案件の初期化フロー』手順0。",
+        "3. ヒアリング→リサーチ→提案→承認：AGENTS.md『新規案件の初期化フロー 1〜4』でスタック(クラウド/言語/FW/パッケージ/DB/認証/IaC/テスト/CI/Lint)を確定する。黙って進めない＝ユーザーの明示OKを取る。",
+        "4. 設定：承認された構成を、案件の AGENTS.md(presets/_TEMPLATE.md を複製)に宣言する。",
+        "5. 原子ツリー作成(第一成果物)：案件のゴールを頂点に、この roadmap.html の nodes を原子レベル(1葉=1事実=1verify)まで描き直す。ROOT プレースホルダは破棄。各葉に criteria/verify を置く。",
+        "6. テンプレ解除：meta.template を false（または削除）にし、meta.active を実ノードIDへ、meta.handoff.done/trouble を実セッションの内容へ上書き、nav は削除する。以降 CI(verify-roadmap-evidence)が本物の原子ツリーを機械強制する。",
+        "7. 実装開始：ツリー確定後、meta.active が指す葉から着手する。以降は checkin-checkout スキルの通常運用(handoff 上書き＋failures.md 追記)へ移行する。"
+      ]
+    },
+    "updated": "2026-07-28"
+  },
+  "nodes": [
+    { "id":"ROOT", "kind":"state",
+      "theme":"（白紙）ここに案件のゴールを置く",
+      "meaning":"コピー直後のテンプレ。実作業前に描き直す単一プレースホルダ",
+      "detail":"この ROOT はテンプレの残骸。meta.handoff.nav（初回接続トップ手順ナビ）に従い、案件のゴールを頂点にした原子ツリーへ描き直し、meta.template を false にする。それまで実装着手しない" }
+  ]
+}
+</script>
+
+<div class="wrap">
+  <div class="banner" id="banner"></div>
+
+  <div class="tabs">
+    <button data-sheet="fig" class="active">図</button>
+    <button data-sheet="readme">README</button>
+  </div>
+
+  <div class="sheet active" id="sheet-fig">
+    <div class="tools">
+      <button data-act="open">開く</button>
+      <button data-act="close">閉じる</button>
+    </div>
+    <div id="tree"></div>
+  </div>
+
+  <div class="sheet" id="sheet-readme">
+    <div class="doc">
+      <h2>概要</h2>
+      <p>このファイル1個 ＝ <b>ロードマップ（図）＋その仕様（README）</b>の自己完結ファイル。
+      リポジトリにまずこれ1個あれば、ここから開始できる。用途は<b>計画先行の進捗管理</b>で、
+      アプリ開発でも任意の長期計画でも使える汎用の表。</p>
+      <p class="rule">案件の絶対起点：どんな依頼でも、実装より先にこの原子ツリーを作る（例外なし・AI裁量ゼロ）。
+      正の運用ルールはルート <code>AGENTS.md</code>「案件の絶対起点」。cc-v2 をコピーして始めた新案件は、
+      同梱ノードを破棄し新案件のゴールから描き直すのが第一コミット。</p>
+
+      <h3>白紙テンプレ・モード（<code>meta.template</code>）</h3>
+      <p class="rule">このリポジトリは<b>テンプレ専用</b>。コピー直後は <code>meta.template:true</code>／ツリーは白紙（<code>ROOT</code> 1個）で、
+      <code>meta.handoff.nav</code> に<b>初回接続トップ手順ナビ</b>が入っている。運用フロー＝
+      <b>コピー → 開く → チェックイン → nav を上から辿る → 原子ツリーを描き直す → <code>meta.template</code> を false → 実装開始</b>。</p>
+      <ul>
+        <li><code>meta.template:true</code> の間は、機械（<code>scripts/verify-roadmap-evidence.mjs</code>）が「白紙ツリー」を許容する代わりに <code>meta.handoff.nav</code> を<b>必須</b>にする。</li>
+        <li>ツリーを描き直して <code>meta.template</code> を false にした瞬間、<b>本物の原子ツリー</b>（分解済み・criteria を持つ葉）の機械強制が自動で復活する。</li>
+        <li>ナビは上部バナーの「初回ナビ」に番号付きで表示される。</li>
+      </ul>
+
+      <h2>核となる仕組み（状態と作業）</h2>
+      <p class="rule">上流＝<b>状態</b>（満たしたい結果）。下流＝<b>作業</b>（実行する操作）。作業を進めると状態が満たされる。</p>
+      <ul>
+        <li><b>状態ノード（state）</b>：達成したい結果・条件。<code>criteria</code>（受入条件）を持つ。</li>
+        <li><b>作業ノード（work）</b>：具体的な操作。<code>status</code>＋<code>commit</code>/<code>done_at</code> を持つ。</li>
+        <li>層数もタイプ名も固定しない。状態の中に状態でも作業でもぶら下げられる（再帰）。</li>
+      </ul>
+
+      <h2>完了ゲート（品質担保の心臓）</h2>
+      <p class="rule">状態は「子が全部 done」だけでは done にしない。受入条件を検証し、証拠が付いて初めて done。</p>
+      <ul>
+        <li>作業ノード：実行して記録（<code>commit</code>/<code>done_at</code>）が残れば done。</li>
+        <li>状態ノード：子が全部 done → 一旦 <b>検証待ち</b>（黄バッジ <code>⛔検証待ち</code>）。受入条件が全て検証されて初めて done（赤字）。</li>
+        <li>これが<b>作業→検証→状態成立</b>の一方通行を作る。ここが無いと「子を全部やった＝一応OK」という<i>タグだけ完了</i>になり品質が抜ける。</li>
+      </ul>
+      <h3>受入条件（criteria）の書き方</h3>
+      <p class="rule">条件は「動くこと」で書く。「ドキュメントがある／レビューした」で書かない。</p>
+      <ul>
+        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝実行可能な手順）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
+        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。</li>
+        <li>証拠は「◯◯レビュー.md が存在する」を認めない。実物が動いた記録を指す。</li>
+      </ul>
+
+      <h2>分解の規則（不変・自己相似）</h2>
+      <p class="rule">最上位は<b>ゴール</b>（最終到達状態）。以下、同じ規則を層の深さによらず当て続ける。</p>
+      <ul>
+        <li><b>不変の規則</b>：<code>P が成立する ⟺ 条件 C1…Cn が全て成立（各々が必要・合わせて十分）</code>。これをどの層でも同じに当てる。層数は設計せず、当て続けた結果として出る。</li>
+        <li><b>層は思考の分解粒度</b>であって処理（工程）ではない。setup→deploy のような時系列は背骨に置かない（それは葉を辿る順番＝道順）。組織軸は「何が真であるべきか」。</li>
+        <li><b>条件＝子ノード</b>。まだ証明が要る条件は<b>子の状態</b>（自分の <code>criteria</code> を持つ）、直接確かめられる条件は<b>葉の受入条件</b>。再帰の底は必ず<b>作業（操作）</b>。</li>
+        <li><b>個数は導出、粒度は選択</b>：子の数は必要十分性から出る（設計しない）。どこまで割るか＝粒度は最初に1回決める計画の契約。</li>
+      </ul>
+      <p class="rule">粒度の線：<b>各葉の状態に、実行可能な <code>verify</code> が1つ書けるところまで割る。書けたら止める。その下（操作）は着手時に展開。</b></p>
+      <ul>
+        <li>浅すぎ＝目的が曖昧で検証不能。深すぎ＝過剰分解で麻痺。線は「意味の分解（何/なぜ）から行動の分解（どう）へ切り替わる高さ」に置く。</li>
+        <li><b>機械強制（AI裁量ゼロ）</b>：この粒度の線は <code>scripts/verify-roadmap-evidence.mjs</code> がCIで機械検査する。
+          子を持つ状態ノードに <code>criteria</code> を付けたら不合格、子を持たない状態ノードの <code>criteria</code> が0件でも2件以上でも不合格（＝ちょうど1件のみ許可）。
+          複数の受入事実を1葉に同居させることはできず、必ず独立した子の葉へ分割することになる。</li>
+      </ul>
+
+      <h2>割り方（計画先行・道順は都度）</h2>
+      <p class="rule">目的地（状態）は先に全部描く。道順（作業）は着手時に割る。コミット1個サイズで止める。</p>
+      <ul>
+        <li>上流の状態は着手前に描き切る。下流の作業は、今の <code>meta.active</code> に着いてから分割・追記（遅延展開）。</li>
+        <li>掘るときは「◯番を割って」→ その状態の受入条件を満たす作業へ、この規則で分割。</li>
+        <li>作業1個＝1つの目的＝コミット単位。数は固定しない（2でも6でも）。</li>
+      </ul>
+
+      <h2>状態表示（文字色とバッジ）</h2>
+      <ul>
+        <li><b style="color:var(--ink)">黒字</b> ＝ 未・着手中・検証待ち（<code>todo</code> / <code>doing</code>）</li>
+        <li><b style="color:var(--red-num)">赤字</b> ＝ 済（<code>done</code>）＝ 作業完了かつ受入条件を全て検証済み</li>
+        <li><span class="meter ok">受入 m/m</span> 全条件充足 ／ <span class="meter wait">受入 n/m</span> 未充足あり ／ <code style="color:var(--amber-num)">⛔検証待ち</code> 作業は済だが未検証</li>
+        <li>データ上は <code>todo/doing/done/blocked</code> の4値。親（状態）は子＋受入ゲートから<b>自動導出</b>（手動で done にしない）。</li>
+      </ul>
+
+      <h2>現在地・次の一手</h2>
+      <p><code>meta.active</code>（現在地ノードID）と <code>meta.next</code>（次の一手）を上部バナーに表示。<b>セッション開始時に最初に読む値</b>。</p>
+
+      <h2>完了は git に紐付け（二重管理しない）</h2>
+      <ul>
+        <li>完了の真実は git。作業完了時は <code>status:"done"</code> ＋ <code>commit</code>（短ハッシュ or PR）＋ <code>done_at</code>。</li>
+        <li>状態の受入条件の <code>evidence</code> も commit SHA / CI run URL / デプロイID / 公開URL 等の外部事実を指す（スクショ等の自己申告は不可）。事実と食い違わせない。</li>
+      </ul>
+
+      <h2>データと表示の分離（重要）</h2>
+      <p>ロードマップの<b>正はこの HTML 内の JSON</b>（<code>&lt;script id="roadmap-data"&gt;</code>）。日々の更新は<b>この JSON だけ</b>を編集する。
+      状態・作業の判定と受入ゲートは末尾の描画エンジンが担う（モデルを変える時だけ触る）。</p>
+
+      <h2>カード表記ルール</h2>
+      <pre>番号 [種別] テーマ （意味）   受入 n/m  ⛔検証待ち
+詳細  完了日  commit</pre>
+      <ul>
+        <li>種別＝状態/作業。テーマ＝専門用語 / 意味＝非エンジニア用語（かっこ囲み）。</li>
+        <li>状態ノードは展開すると受入条件（☑/☐＋検証方法＋証拠）を表示。</li>
+      </ul>
+
+      <h2>作図の作法（デザイン仕様）</h2>
+      <p>他の図に流用してもぶれないための共通仕様。色は必ずトークン経由、値を直書きしない。</p>
+      <h3>カラートークン（ライト / ダーク）</h3>
+      <div class="tblwrap"><table>
+        <tr><th>トークン</th><th>用途</th><th>ライト</th><th>ダーク</th></tr>
+        <tr><td><code>--paper</code></td><td>背景</td><td>#ffffff</td><td>#0f1117</td></tr>
+        <tr><td><code>--panel</code></td><td>カード地・ボタン</td><td>#ffffff</td><td>#161922</td></tr>
+        <tr><td><code>--ink</code></td><td>本文</td><td>#1b1e26</td><td>#e7e9f0</td></tr>
+        <tr><td><code>--muted</code></td><td>番号・詳細・補助</td><td>#5a606f</td><td>#9298aa</td></tr>
+        <tr><td><code>--line</code></td><td>境界線・ツリー線</td><td>#a9afc0</td><td>#4a5266</td></tr>
+        <tr><td><code>--blue-*</code></td><td>状態種別・受入充足（fill/edge/num）</td><td>#e3ebfb / #7f9be6 / #2c50c4</td><td>#1a2340 / #4d63a6 / #a6b6f7</td></tr>
+        <tr><td><code>--amber-*</code></td><td>検証待ち・未充足</td><td>#fbeecb / #e0b25a / #9a6a12</td><td>#2c2410 / #6b5320 / #e0a33f</td></tr>
+        <tr><td><code>--red-*</code></td><td>済（赤字）</td><td>#f7dcda / #e08c86 / #b8685f</td><td>#33191a / #7a3b38 / #e8867e</td></tr>
+      </table></div>
+      <h3>構造・インタラクション</h3>
+      <ul>
+        <li><b>枠なしテキスト＋ツリー線（├─ └─）</b>。1項目=2段（1段目 番号/種別/テーマ/（意味）/受入バッジ、2段目 詳細/完了日/commit）。</li>
+        <li>折りたたみは <code>&lt;details&gt;</code>（子あり・受入条件ありはキャレット ▸、純粋な葉は非表示）。現在地は青丸の ✓ バッジ。</li>
+        <li>階層は<b>文字サイズ＋インデント＋接続線</b>で区別（浅いほど大きい：d0=18px / d1=15 / d2=13 / d3=12）。</li>
+        <li>図シートには解説を置かない（説明はこの README シートに集約）。</li>
+      </ul>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  var DATA = JSON.parse(document.getElementById('roadmap-data').textContent);
+
+  // --- 判定エンジン（状態/作業 ＋ 受入ゲート） ---
+  function kindOf(node){ return node.kind || ((node.children && node.children.length) ? 'state' : 'work'); }
+
+  function rollup(children){
+    var ss = children.map(statusOf);
+    if(ss.every(function(s){return s==='done';})) return 'done';
+    if(ss.some(function(s){return s==='blocked';})) return 'blocked';
+    if(ss.some(function(s){return s==='doing'||s==='done';})) return 'doing';
+    return 'todo';
+  }
+
+  function critProgress(node){
+    // "[採用時のみ]"/"[DB採用時のみ]" 等、text が "[" で始まる条件付き criteria は
+    // その条件を採用するまでゲート対象外（N/A）＝分母・分子の両方から除外する（遅延展開）。
+    var arr = (node.criteria || []).filter(function(c){
+      return !/^\s*\[/.test(String(c.text || ''));
+    });
+    var done = arr.filter(function(c){ return c.evidence && String(c.evidence).trim() !== ''; }).length;
+    return { done: done, total: arr.length };
+  }
+
+  // 状態は「子完了」だけでは done にならない。受入条件が全て検証されて初めて done。
+  function statusOf(node){
+    var kids = node.children && node.children.length;
+    if(kindOf(node) === 'state'){
+      var cs = kids ? rollup(node.children) : null;
+      var hasCrit = node.criteria && node.criteria.length;
+      if(!hasCrit) return kids ? cs : (node.status || 'todo');   // 受入条件なし→従来の子集約
+      var p = critProgress(node);
+      var allMet = p.done === p.total;
+      var childrenDone = !kids || cs === 'done';
+      if(childrenDone && allMet) return 'done';                  // ← ゲート通過
+      if(kids && cs === 'blocked') return 'blocked';
+      if((kids && (cs === 'doing' || cs === 'done')) || p.done > 0) return 'doing';
+      return 'todo';
+    }
+    if(kids) return rollup(node.children);
+    return node.status || 'todo';
+  }
+
+  // 作業は済だが受入未充足＝検証待ち
+  function isGatePending(node){
+    if(kindOf(node) !== 'state') return false;
+    var kids = node.children && node.children.length;
+    if(!kids) return false;
+    if(!(node.criteria && node.criteria.length)) return false;
+    var p = critProgress(node);
+    return rollup(node.children) === 'done' && p.done !== p.total;
+  }
+
+  function span(cls, text){ var s=document.createElement('span'); if(cls) s.className=cls; if(text!=null) s.textContent=text; return s; }
+
+  function card(node, expandable, depth){
+    var st = statusOf(node);
+    var kind = kindOf(node);
+    var el = document.createElement(expandable ? 'summary' : 'div');
+    el.className = 'card d' + depth + (st==='todo' ? '' : ' ' + st) + (node.id===DATA.meta.active ? ' active' : '');
+    el.appendChild(span('caret','▸'));
+    var line = span('line');
+    line.appendChild(span('n', node.id));
+    line.appendChild(span('kind ' + kind, kind==='state' ? '状態' : '作業'));
+    if(node.theme) line.appendChild(span('th', node.theme));
+    if(node.meaning) line.appendChild(span('mn', '（'+node.meaning+'）'));
+    if(kind==='state' && node.criteria && node.criteria.length){
+      var p = critProgress(node);
+      line.appendChild(span('meter ' + (p.done===p.total ? 'ok' : 'wait'), '受入 '+p.done+'/'+p.total));
+      if(isGatePending(node)) line.appendChild(span('gate','⛔検証待ち'));
+    }
+    var d2 = span('d2', node.detail || '');
+    if(node.done_at) d2.appendChild(span('day', node.done_at));
+    if(node.commit) d2.appendChild(span('cmt', '#'+node.commit));
+    line.appendChild(d2);
+    el.appendChild(line);
+    if(node.id === DATA.meta.active) el.appendChild(span('here','✓'));
+    return el;
+  }
+
+  function critBlock(node){
+    var box = document.createElement('div'); box.className = 'crit';
+    box.appendChild(span('crit-h', '受入条件（満たすべき状態）'));
+    node.criteria.forEach(function(c){
+      var ok = c.evidence && String(c.evidence).trim() !== '';
+      var row = document.createElement('div'); row.className = 'crit-item ' + (ok ? 'ok' : 'ng');
+      row.appendChild(span('cb', ok ? '☑' : '☐'));
+      row.appendChild(span('ct', c.text || ''));
+      if(c.verify) row.appendChild(span('cv', '— ' + c.verify));
+      if(ok) row.appendChild(span('ce', /^[0-9a-f]{7,}$/.test(String(c.evidence).trim()) ? '#'+c.evidence : String(c.evidence)));
+      box.appendChild(row);
+    });
+    return box;
+  }
+
+  function render(node, depth){
+    depth = depth || 0;
+    var kids = node.children && node.children.length;
+    var crit = kindOf(node)==='state' && node.criteria && node.criteria.length;
+    if(kids || crit){
+      var d = document.createElement('details');
+      d.className = 'node';
+      d.open = true;
+      d.appendChild(card(node, true, depth));
+      if(crit) d.appendChild(critBlock(node));
+      if(kids){
+        var boxc = document.createElement('div'); boxc.className='children';
+        node.children.forEach(function(c){ boxc.appendChild(render(c, depth+1)); });
+        d.appendChild(boxc);
+      }
+      return d;
+    }
+    var wrap = document.createElement('div');
+    wrap.className = 'node leaf';
+    wrap.appendChild(card(node, false, depth));
+    return wrap;
+  }
+
+  // banner
+  (function(){
+    var b = document.getElementById('banner');
+    b.innerHTML = '';
+    var a = span(); a.appendChild(span('lbl','現在地')); a.appendChild(span('val', DATA.meta.active || '—'));
+    var n = span('nx'); n.appendChild(span('lbl','次の一手')); n.appendChild(document.createTextNode(DATA.meta.next || ''));
+    b.appendChild(a); b.appendChild(n);
+    var h = DATA.meta.handoff || {};
+    if(h.done){ var hd = span('nx'); hd.appendChild(span('lbl','今回実施')); hd.appendChild(document.createTextNode(h.done)); b.appendChild(hd); }
+    if(h.trouble){ var ht = span('nx'); ht.appendChild(span('lbl','今回トラブル')); ht.appendChild(document.createTextNode(h.trouble)); b.appendChild(ht); }
+    if(Array.isArray(h.nav) && h.nav.length){
+      var nv = span('nx'); nv.appendChild(span('lbl','初回ナビ'));
+      var ol = document.createElement('ol'); ol.style.margin = '4px 0 0'; ol.style.paddingLeft = '18px';
+      h.nav.forEach(function(s){ var li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+      nv.appendChild(ol); b.appendChild(nv);
+    }
+  })();
+
+  var tree = document.getElementById('tree');
+  DATA.nodes.forEach(function(n){ tree.appendChild(render(n, 0)); });
+
+  // tabs
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.remove('active'); });
+      document.querySelectorAll('.sheet').forEach(function (s) { s.classList.remove('active'); });
+      b.classList.add('active');
+      document.getElementById('sheet-' + b.dataset.sheet).classList.add('active');
+    });
+  });
+  // expand/collapse
+  document.querySelectorAll('.tools button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var open = b.dataset.act === 'open';
+      document.querySelectorAll('#tree details.node').forEach(function (d) { d.open = open; });
+    });
+  });
+</script>
