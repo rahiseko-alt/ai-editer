@@ -414,6 +414,23 @@ t("P1-2-C: 既知の動画コンテナのmagic byteのみを動画として認�
   assert.strictEqual(looksLikeVideo(notVideo), false, "動画でないファイル(html等)は拒否される");
   const empty = Buffer.alloc(0);
   assert.strictEqual(looksLikeVideo(empty), false, "空バッファは拒否される(クラッシュしない)");
+
+  // 本物のMPEG-TS: 188バイトごとに同期バイト0x47が並ぶ(パケット4個ぶん)
+  const ts = Buffer.alloc(188 * 4);
+  for (let i = 0; i < 4; i++) ts[i * 188] = 0x47;
+  assert.strictEqual(looksLikeVideo(ts), true, "本物のMPEG-TS(複数パケット同期)は動画として認識される");
+
+  // 独立検証(independent-verifier)が実証したバイパス: 先頭バイトだけ0x47にした非動画ファイル
+  const fakeG = Buffer.concat([
+    Buffer.from([0x47]),
+    Buffer.from("<html><body>evil</body></html>", "utf-8"),
+    Buffer.alloc(2000),
+  ]);
+  assert.strictEqual(
+    looksLikeVideo(fakeG),
+    false,
+    "先頭バイトのみ0x47の非動画ファイルは拒否される(単一バイト判定のバイパスを許さない)"
+  );
 });
 
 t("P1-2-D: アップロード上限は現実的な値(数百MB)に設定されている", () => {

@@ -88,8 +88,18 @@ const VIDEO_SIGNATURES = [
     buf.length >= 12 &&
     buf.subarray(0, 4).toString("ascii") === "RIFF" &&
     buf.subarray(8, 12).toString("ascii") === "AVI ",
-  // MPEG-TS (先頭が同期バイト0x47。188バイト境界で複数回現れるのが正だが、先頭のみ簡易確認)
-  (buf) => buf.length >= 1 && buf[0] === 0x47,
+  // MPEG-TS (188バイト境界で同期バイト0x47が連続4回以上現れることを要求。先頭1バイトのみの
+  // 判定だと「先頭バイトがたまたま0x47の非動画ファイル」を通してしまう=独立検証で実証された
+  // バイパスのため、複数パケットの同期を必須にする)
+  (buf) => {
+    const PACKET_SIZE = 188;
+    const MIN_SYNC_COUNT = 4;
+    if (buf.length < PACKET_SIZE * MIN_SYNC_COUNT) return false;
+    for (let i = 0; i < MIN_SYNC_COUNT; i++) {
+      if (buf[i * PACKET_SIZE] !== 0x47) return false;
+    }
+    return true;
+  },
 ];
 
 export function looksLikeVideo(buf) {
