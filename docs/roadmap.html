@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-P0",
-    "next": "P0-5(Web UIの設定が生成物へ反映される)から着手する。次点はP1グループ(セキュリティ・正しさ)。",
+    "active": "G-P1",
+    "next": "P1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P1グループの残り(P1-2〜P1-12)、その後P2グループ(UI/UX)へ続く。",
     "handoff": {
-      "done": "リポジトリ統治をcc-v2(本AGENTS.md/docs/roadmap.html)側に一本化。kosespark-importブランチ(main と共通祖先を持たない別履歴＝vibe-baseモノレポからの分割)からvideo-shorts/一式と関連運用docsのみを取り込み、writer-test/engine(Writerエンジン)は今回スコープ外としてマスター判断で見送り。未使用だったNext.jsサンプル(apps/web, packages/ui)を削除し、pnpm-workspace.yaml/package.json/CIのsmokeジョブをvideo-shorts中心に更新。2026-07-27監査提案の残作業(P0-5・P1全12件・P2全9件のうちvideo-shorts対象22件)を原子分解し本ロードマップへ登録。加えて取り込み時の調査でLint未導入・render-check.mjsのCI未接続を発見しG-TESTINFRAとして追跡、memory.mdのP1保留事項(lecture.mp4素材)もG-PENDINGとして引き継いだ。",
-      "trouble": "kosespark-importはmainと共通祖先を持たない別履歴だったためgit mergeでなくファイル単位checkoutで取り込んだ。旧統治(memory.md/.claude/hooks/*のvibe-base系ゲート、root直下のfailures.md/hypotheses.md/risk-diagnosis.md)はAGENTS.md/roadmap.htmlに一本化する方針のため取り込んでいない。このサンドボックスはパッケージミラーの404でffmpegを導入できずtests/render-check.mjsを手元検証できなかった(CI側での検証に委ねる)。"
+      "done": "P0-5(Web UIの設定が生成物へ反映されない問題)を是正。resolveJobSettings()を新設しUIのcut/size/cutMinをpipeline.mjsのmode/orient/targetMinutesへ変換、state.json初期作成時に書き込み、select/renderサブプロセスへ--modeを明示的に渡すよう修正(P0-5-A)。着手時の再調査でdigest-editorが「本数で切る」targetCountに未対応と判明したため、レンダラー未実装の1:1・4:5と合わせてUIから除去(P0-5-B)。server/job-params.mjsを新設しクエリ値のサポート契約を検証。tests/smoke.mjsに契約テスト7件を追加(計24 PASS)。これでG-P0配下は完了。",
+      "trouble": "digestモード(分数で切る)はrunDigestEditorが自前でclaude -pを呼びllm-response.jsonを直接書くため、topic専用だったclaude-select.mjsの二重呼び出しを避ける分岐が必要だった(気づかず実装すると分数指定時に選定結果が上書きされていた)。実ffmpegでの向き反映(portrait/landscape)は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK)。"
     },
     "updated": "2026-07-28"
   },
@@ -150,13 +150,13 @@
                   "kind": "state",
                   "theme": "画面で選んだ設定が、そのまま動画に反映される",
                   "meaning": "「16:9を選んだのに9:16で出てくる」が起きない",
-                  "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。",
-                  "status": "todo",
+                  "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。resolveJobSettings()でUIのcut/size/cutMinをmode/orient/targetMinutesへ変換し、state.json初期作成時に書き込み、select/renderサブプロセスへ--modeを明示的に渡すよう修正(PR #11)。実ffmpeg出力での確認はG-TESTINFRA-RENDERCHECK(ffmpeg未導入で保留)に依存するため、今回はUI選択値→mode/orient/targetMinutes変換とサブプロセス引数伝播をcontract testで担保。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "画面選択→state→CLI引数→実出力解像度が一致する",
                       "verify": "画面操作(または contract test)で選択値と実出力ファイルの解像度/向きを1対1照合し一致することを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30337609336/job/90205827866"
                     }
                   ]
                 },
@@ -164,14 +164,14 @@
                   "id": "P0-5-B",
                   "kind": "state",
                   "theme": "実装されていない選択肢が画面に出ない",
-                  "meaning": "選べるのに動かない項目(1:1・4:5)がお客様の目に触れない",
-                  "detail": "レンダラー未実装の選択肢をUIから除去する。",
-                  "status": "todo",
+                  "meaning": "選べるのに動かない項目(1:1・4:5・本数で切る)がお客様の目に触れない",
+                  "detail": "レンダラー未実装の1:1・4:5、およびdigest-editor未実装の「本数で切る」をUIから除去(PR #11。本数で切るは着手時の再調査で判明した追加の未実装項目)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "レンダラーが対応していない選択肢がUI上に存在しない",
                       "verify": "webapp-mockup のUIコードとrender-vertical.mjsの対応表を突き合わせ、UI選択肢⊆実装済み比率であることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30337609336/job/90205827866"
                     }
                   ]
                 }
