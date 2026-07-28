@@ -348,6 +348,15 @@ function run() {
         if (code === "no_speech") return showCantEdit(msg);   // 専用カードへ
         showError(msg);
       });
+
+      // P1-6: サーバー再起動でジョブの進捗(メモリのみ)が失われた場合、再接続時に届く専用イベント。
+      // 「処理に失敗しました」という汎用エラーではなく、再起動が原因だと分かる文言で明示する。
+      es.addEventListener("interrupted", (ev) => {
+        es.close();
+        let msg = "サーバーが再起動したため、処理が中断されました。もう一度実行してください。";
+        try { const d = JSON.parse(ev.data); if (d.message) msg = d.message; } catch { /* ignore */ }
+        showError(msg);
+      });
     })
     .catch((msg) => showError(String(msg)));
 }

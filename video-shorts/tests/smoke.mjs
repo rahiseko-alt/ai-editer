@@ -10,7 +10,7 @@ import { resolveSegments, normalize, dedupeOverlap } from "../src/reverse-match.
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
-import { resolveJobSettings, renderLabel } from "../server/pipeline-runner.mjs";
+import { resolveJobSettings, renderLabel, subscribeJob } from "../server/pipeline-runner.mjs";
 import { parseJobParams, makeUniqueJobId } from "../server/job-params.mjs";
 import {
   ALLOWED_ENV_VARS,
@@ -32,6 +32,9 @@ import {
   MAX_UPLOAD_BYTES,
   issueJobToken,
   isValidJobToken,
+  persistJobToken,
+  loadPersistedJobToken,
+  restoreJobToken,
 } from "../server/security.mjs";
 import { summarizeChunkResults } from "../server/claude-select.mjs";
 
@@ -539,6 +542,54 @@ t("P1-4-B: ジョブトークンはヘッダ優先・無ければクエリから
   assert.strictEqual(extractJobToken(reqWithQuery, new URLSearchParams({ jobToken: "q-token" })), "q-token");
 
   assert.strictEqual(extractJobToken({ headers: {} }, new URLSearchParams()), null, "どちらにも無ければnull");
+});
+
+// ---- P1-6: サーバー再起動後、SSE再接続が永久待機しない ----
+
+t("P1-6: このプロセスが認識していないjobIdへのSSE購読は、永久待機せず即座にinterruptedで通知して閉じる", () => {
+  const jobId = "smoke-restarted-job";
+  const received = [];
+  let closed = false;
+  subscribeJob(
+    jobId,
+    (line) => received.push(line),
+    () => { closed = true; }
+  );
+  assert.strictEqual(closed, true, "unknownのまま購読者を溜め込まず、即座に接続を閉じること");
+  assert.strictEqual(received.length, 1, "1回だけイベントをpushすること");
+  assert.ok(/^event: interrupted/.test(received[0]), "interruptedという専用イベント名で通知すること(汎用errorに埋もれさせない)");
+  const payload = JSON.parse(received[0].match(/^data: (.+)$/m)[1]);
+  assert.ok(payload.message && payload.message.length > 0, "何が起きたか分かるメッセージを含むこと");
+});
+
+t("P1-6: 一度interruptedになったjobIdへ後から購読しても、リプレイで同じinterruptedが届く(subscribers Setに溜まらない)", () => {
+  const jobId = "smoke-restarted-job-2";
+  subscribeJob(jobId, () => {}, () => {}); // 1人目: interruptedへ遷移させる
+
+  const received = [];
+  let closed = false;
+  subscribeJob(jobId, (line) => received.push(line), () => { closed = true; });
+  assert.strictEqual(closed, true);
+  assert.ok(/^event: interrupted/.test(received[0]));
+});
+
+t("P1-6: ジョブトークンをworkDirへ永続化し、再読込で同じ値を取り出せる(プロセス再起動後の復元用)", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "video-shorts-p1-6-"));
+  try {
+    assert.strictEqual(loadPersistedJobToken(workDir), null, "永続化前はnull");
+    persistJobToken(workDir, "persisted-token-value");
+    assert.strictEqual(loadPersistedJobToken(workDir), "persisted-token-value");
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+t("P1-6: restoreJobTokenで復元した後は、通常のisValidJobTokenでも一致する(メモリregistryへの再登録)", () => {
+  const jobId = "smoke-restored-job";
+  assert.strictEqual(isValidJobToken(jobId, "restored-token"), false, "復元前は未知のジョブとして拒否");
+  restoreJobToken(jobId, "restored-token");
+  assert.strictEqual(isValidJobToken(jobId, "restored-token"), true, "復元後は正しいトークンが通ること");
+  assert.strictEqual(isValidJobToken(jobId, "wrong-token"), false, "復元後も別トークンは拒否されること");
 });
 
 // ---- P1-5: 一部チャンク失敗を成功扱いにしない ----

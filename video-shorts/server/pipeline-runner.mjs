@@ -49,22 +49,36 @@ export function isRunning(jobId) {
   return !!j && ["init", "t", "s", "r"].includes(j.stage);
 }
 
-/** SSE 購読者を追加 */
+/** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
+const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中断されました。お手数ですが、もう一度実行してください。";
+
+/**
+ * SSE 購読者を追加。
+ * P1-6: jobId がこのプロセスの jobs Map に存在しない状態で呼ばれるのは、"ジョブトークン認可
+ * (P1-4, isAuthorizedForJob)を通過している"のに"このプロセスはこのジョブを一度も起動していない"
+ * ケースに限られる(起動直後は startJob() が必ず先に jobs.set 済みのため)。これは実質的に
+ * 「以前のプロセス(再起動前)が発行したジョブへの再接続」を意味する。進捗はメモリのみでプロセス
+ * 再起動により失われているため、"unknown"のまま永久待機させず、中断された事実を即座に明示する。
+ */
 export function subscribeJob(jobId, push, close) {
   if (!jobs.has(jobId)) {
-    jobs.set(jobId, { stage: "unknown", subscribers: new Set(), error: null, errorCode: null });
+    jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
   }
   const job = jobs.get(jobId);
   const sub = { push, close };
   job.subscribers.add(sub);
 
-  // race condition 対策: 既に終了済みならリプレイして即通知
+  // race condition 対策: 既に終了済み/中断済みならリプレイして即通知
   if (job.stage === "error") {
     try { push(`event: error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
   } else if (job.stage === "done") {
     try { push(`event: done\ndata: ${JSON.stringify({ stage: "done" })}\n\n`); } catch (_) {}
+    try { close(); } catch (_) {}
+    job.subscribers.delete(sub);
+  } else if (job.stage === "interrupted") {
+    try { push(`event: interrupted\ndata: ${JSON.stringify({ message: INTERRUPTED_MESSAGE })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
   }

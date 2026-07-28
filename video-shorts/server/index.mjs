@@ -25,6 +25,9 @@ import {
   isValidToken,
   isValidJobToken,
   issueJobToken,
+  persistJobToken,
+  loadPersistedJobToken,
+  restoreJobToken,
   isAllowedHost,
   isAllowedOrigin,
   createSignatureSniffer,
@@ -252,6 +255,10 @@ async function handlePostJobs(req, res) {
   // これが無いと同じ起動時トークンを持つ別ジョブの作成者が、jobIdさえ知れば/推測できれば
   // 他人の成果物(SSE進捗・候補JSON・生成動画)を取得できてしまう。
   const jobToken = issueJobToken(jobId);
+  // P1-6: メモリのregistryだけだとサーバー再起動で失われ、進行中だったジョブへの正規の
+  // 再接続まで401/403で弾かれてしまう(利用者に「再起動で中断された」ことを伝えられない)。
+  // workDirへも永続化し、再起動後の再接続を認可できるようにする。
+  persistJobToken(workDir, jobToken);
 
   return jsonRes(res, 202, { jobId, jobToken });
 }
@@ -342,9 +349,21 @@ function isAuthorizedApiRequest(req, url) {
 
 // P1-4(B): 起動時トークンに加え、そのジョブ専用のトークンも一致すること。
 // 起動時トークンだけでは「同じサーバーの別ジョブの作成者」を区別できないため必須。
+// P1-6: jobTokensのメモリregistryはプロセス再起動で消えるため、まずそちらを見て、無ければ
+// workDirへ永続化したトークンとの一致を確認する(一致すればメモリへも復元し、以後は通常経路)。
+// jobId は呼び出し元でURLデコードされた未検証の文字列のため、fsパスに使う前に safeId で検査する
+// (でなければ .. 等でworkDir配下から脱出したパスの存在有無を外部から探れてしまう)。
 function isAuthorizedForJob(req, url, jobId) {
+  const id = safeId(jobId);
+  if (!id) return false;
   const jobToken = extractJobToken(req, url.searchParams);
-  return isValidJobToken(jobId, jobToken);
+  if (isValidJobToken(id, jobToken)) return true;
+  const persisted = loadPersistedJobToken(path.join(WORK_ROOT, id));
+  if (persisted && isValidToken(jobToken, persisted)) {
+    restoreJobToken(id, persisted);
+    return true;
+  }
+  return false;
 }
 
 // ── ルーティング ─────────────────────────────────────────────
