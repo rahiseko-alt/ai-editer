@@ -338,21 +338,38 @@ function handleClip(req, res, jobId, file) {
   fs.createReadStream(clipPath).pipe(res);
 }
 
-// P1-2(B): Host/Origin検証(常時)＋(A)起動時トークン検証(/api/*のみ)。
+// P1-2(B): Host/Origin検証。/api/* 全体で常時必須(クロスオリジン/DNS rebinding対策)。
 // 静的ファイル配信(GET /)は公開情報のみのため対象外(ページを開く最初の一歩を塞がないため)。
-function isAuthorizedApiRequest(req, url) {
-  if (!isAllowedHost(req.headers.host, PORT)) return false;
-  if (!isAllowedOrigin(req.headers.origin, PORT)) return false;
+function isAllowedApiOrigin(req) {
+  return isAllowedHost(req.headers.host, PORT) && isAllowedOrigin(req.headers.origin, PORT);
+}
+
+// P1-2(A): 起動時トークン検証。新規ジョブ作成(POST /api/jobs)はこれを厳密に要求する
+// (まだジョブが存在せず、ジョブ単位のトークンへスコープを絞れないため)。
+function isValidStartupToken(req, url) {
   const token = extractToken(req, url.searchParams);
   return isValidToken(token, SERVER_TOKEN);
 }
 
-// P1-4(B): 起動時トークンに加え、そのジョブ専用のトークンも一致すること。
-// 起動時トークンだけでは「同じサーバーの別ジョブの作成者」を区別できないため必須。
-// P1-6: jobTokensのメモリregistryはプロセス再起動で消えるため、まずそちらを見て、無ければ
-// workDirへ永続化したトークンとの一致を確認する(一致すればメモリへも復元し、以後は通常経路)。
-// jobId は呼び出し元でURLデコードされた未検証の文字列のため、fsパスに使う前に safeId で検査する
-// (でなければ .. 等でworkDir配下から脱出したパスの存在有無を外部から探れてしまう)。
+// P1-4(B)+P1-6: 既存ジョブの成果物取得(events/candidates/clips)の認可は、そのジョブ専用の
+// トークン一致のみで判定する(P1-4-B。workDirへの永続化フォールバック込み=P1-6)。
+//
+// 起動時トークンをここで併用(bypass)しないのは意図的:起動時トークンは全ジョブ共通の値
+// なので、それだけで通してしまうと「同じ起動時トークンを知っている(＝同じページを開いた)
+// だけの別ジョブの作成者」が、jobIdさえ知れば(推測困難だが)他人のジョブを覗けてしまい、
+// P1-4-B がそもそも守ろうとしていたものを台無しにする。
+//
+// 起動時トークンをここで必須にもしないのも意図的:それはプロセス起動のたびに変わる値
+// なので、サーバーが再起動すると別の値になる。ブラウザが開きっぱなしのEventSourceは
+// "再起動前の"起動時トークンを含んだままSSEへ自動再接続するため、これを必須にすると
+// 正規の再接続がP1-6の中断通知(event: interrupted)へ到達する前に401で弾かれてしまう
+// (2026-07-28 independent-verifierが実サーバー2プロセスでの再現により発見)。
+//
+// ジョブトークンはそのジョブに一意な暗号学的乱数(P1-4-A/B)であり、単独で
+// 「起動時トークンを知っているか」にも「プロセスが再起動したか」にも依存しない
+// 十分な認可強度を持つため、これだけで判定する。
+// jobId は呼び出し元でURLデコードされた未検証の文字列のため、fsパスに使う前に safeId で
+// 検査する(でなければ .. 等でworkDir配下から脱出したパスの存在有無を外部から探れてしまう)。
 function isAuthorizedForJob(req, url, jobId) {
   const id = safeId(jobId);
   if (!id) return false;
@@ -373,13 +390,16 @@ async function handleRequest(req, res) {
   const method = req.method.toUpperCase();
 
   if (pathname.startsWith("/api/")) {
-    if (!isAuthorizedApiRequest(req, url)) {
+    if (!isAllowedApiOrigin(req)) {
       return jsonRes(res, 401, { error: "Unauthorized" });
     }
   }
 
-  // POST /api/jobs
+  // POST /api/jobs（新規ジョブ作成。まだジョブが存在せず起動時トークンでのみ認可する）
   if (method === "POST" && pathname === "/api/jobs") {
+    if (!isValidStartupToken(req, url)) {
+      return jsonRes(res, 401, { error: "Unauthorized" });
+    }
     try {
       return await handlePostJobs(req, res);
     } catch (e) {
