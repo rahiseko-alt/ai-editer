@@ -27,7 +27,7 @@ import {
   issueJobToken,
   isAllowedHost,
   isAllowedOrigin,
-  looksLikeVideo,
+  createSignatureSniffer,
   createRateLimiter,
   MAX_UPLOAD_BYTES,
 } from "./security.mjs";
@@ -184,14 +184,18 @@ async function handlePostJobs(req, res) {
   const inputPath = path.join(workDir, `input${ext}`);
 
   // リクエストボディをストリームで保存（全量メモリ展開しない）。
-  // 併せて P1-2(C) 先頭チャンクのmagic byte検証と、P1-2(D) 実受信量の上限超過検知(宣言値が
-  // 無い/嘘の場合の保険)を行う。
+  // 併せて P1-2(C) 先頭バイト列のmagic byte検証と、P1-2(D) 実受信量の上限超過検知(宣言値が
+  // 無い/嘘の場合の保険)を行う。TCPの都合で最初のdataチャンクが判定に必要な量未満のことが
+  // ありうるため(実際にCodeRabbitレビューで指摘)、判定ロジックはcreateSignatureSniffer()に
+  // 切り出し、十分な先頭バイト数が揃う(またはストリーム終端する)まで複数チャンクをまたいで
+  // 蓄積してから1回だけ判定する。
   let rejection = null;
   try {
     await new Promise((resolve, reject) => {
       const ws = createWriteStream(inputPath);
       let receivedBytes = 0;
       let checkedSignature = false;
+      const sniffer = createSignatureSniffer();
 
       const abort = (status, message) => {
         rejection = { status, message };
@@ -200,17 +204,28 @@ async function handlePostJobs(req, res) {
         reject(new Error(message));
       };
 
+      const applySniffResult = (result) => {
+        checkedSignature = true;
+        if (!result.ok) return abort(415, "動画ファイルとして認識できません");
+        ws.write(result.head);
+      };
+
       req.on("data", (chunk) => {
         if (rejection) return;
         receivedBytes += chunk.length;
-        if (!checkedSignature) {
-          checkedSignature = true;
-          if (!looksLikeVideo(chunk)) return abort(415, "動画ファイルとして認識できません");
-        }
         if (receivedBytes > MAX_UPLOAD_BYTES) return abort(413, "ファイルが大きすぎます");
+
+        if (!checkedSignature) {
+          const result = sniffer.push(chunk);
+          if (result.decided) applySniffResult(result);
+          return;
+        }
         ws.write(chunk);
       });
       req.on("end", () => {
+        if (rejection) return;
+        // ファイル全体が判定に必要な量未満のまま終端した場合、集まった分だけで判定する。
+        if (!checkedSignature) applySniffResult(sniffer.finish());
         if (!rejection) ws.end();
       });
       req.on("error", (e) => {

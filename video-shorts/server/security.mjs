@@ -77,6 +77,14 @@ export function isAllowedOrigin(originHeader, port) {
 /** アップロード上限(D)。既定500MB(長尺動画1本ぶんの現実的な上限)。 */
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
+const TS_PACKET_SIZE = 188;
+const TS_MIN_SYNC_COUNT = 4;
+
+/** looksLikeVideo()が判定に必要とする最大の先頭バイト数(呼び出し側は、この量が集まるまで
+ *  複数チャンクにまたがっても構わないので判定を遅らせる必要がある。単一チャンクが必ずこの
+ *  サイズ以上とは限らない=実際にCodeRabbitレビューで指摘され是正した点)。 */
+export const SNIFF_BYTES = TS_PACKET_SIZE * TS_MIN_SYNC_COUNT;
+
 /** 既知の動画コンテナのmagic byteだけを許可する(C)。誤検知よりも「本物の動画ファイルのはず」を優先。 */
 const VIDEO_SIGNATURES = [
   // MP4/MOV系: バイト4-7が "ftyp"
@@ -92,11 +100,9 @@ const VIDEO_SIGNATURES = [
   // 判定だと「先頭バイトがたまたま0x47の非動画ファイル」を通してしまう=独立検証で実証された
   // バイパスのため、複数パケットの同期を必須にする)
   (buf) => {
-    const PACKET_SIZE = 188;
-    const MIN_SYNC_COUNT = 4;
-    if (buf.length < PACKET_SIZE * MIN_SYNC_COUNT) return false;
-    for (let i = 0; i < MIN_SYNC_COUNT; i++) {
-      if (buf[i * PACKET_SIZE] !== 0x47) return false;
+    if (buf.length < SNIFF_BYTES) return false;
+    for (let i = 0; i < TS_MIN_SYNC_COUNT; i++) {
+      if (buf[i * TS_PACKET_SIZE] !== 0x47) return false;
     }
     return true;
   },
@@ -110,6 +116,43 @@ export function looksLikeVideo(buf) {
       return false;
     }
   });
+}
+
+/**
+ * ストリーミングアップロードの先頭バイト列を、チャンクをまたいで蓄積してから1回だけ
+ * looksLikeVideo()判定するための状態機械。TCPの都合で最初のdataチャンクがSNIFF_BYTES
+ * 未満のことがありうるため(単一チャンクのみで判定すると正当なMPEG-TSが誤って415になり
+ * うる=CodeRabbitレビューで指摘され是正)、判定に十分な先頭バイト数が揃うか入力が終端
+ * するまで判定を遅らせる。socketの生ロジックから切り離し単体テスト可能にする。
+ */
+export function createSignatureSniffer() {
+  let chunks = [];
+  let bytes = 0;
+  let decided = false;
+
+  function decide() {
+    decided = true;
+    const head = Buffer.concat(chunks, bytes);
+    chunks = [];
+    return { decided: true, ok: looksLikeVideo(head), head };
+  }
+
+  return {
+    /** チャンクを追加する。十分な先頭バイト数が揃った時点で{decided:true,ok,head}を返し、
+     *  まだならchunkをバッファに溜めるだけで{decided:false}を返す。 */
+    push(chunk) {
+      if (decided) throw new Error("createSignatureSniffer: 判定済みチャンクへのpushは不正");
+      chunks.push(chunk);
+      bytes += chunk.length;
+      if (bytes < SNIFF_BYTES) return { decided: false };
+      return decide();
+    },
+    /** 入力が終端した(=SNIFF_BYTES未満のまま全量を受け取った)場合、集まった分だけで確定判定する。 */
+    finish() {
+      if (decided) throw new Error("createSignatureSniffer: 判定済み後のfinishは不正");
+      return decide();
+    },
+  };
 }
 
 /**

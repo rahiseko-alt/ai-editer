@@ -121,8 +121,8 @@
     "active": "P1-6",
     "next": "P1-6(サーバー再起動後SSEが永久待機する問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "independent-verifierサブエージェントにP0-5〜P1-5全件の敵対的再検証(実サーバーへのcurl攻撃・Playwright実ブラウザ確認・CI evidenceとコミット内容の突合)を依頼。P1-2-Cのlooksイイ動画判定(server/security.mjs looksLikeVideo)に、MPEG-TS判定が先頭1バイトの0x47のみを見ておりバイパス可能というバグを発見された(先頭バイトだけGにした非動画ファイルが202で受理される実例あり)。これを、188バイト境界で同期バイト0x47が4回連続一致することを要求する実装に修正。tests/smoke.mjsに(a)本物のMPEG-TSは引き続き通る、(b)発見されたバイパスは拒否される、の2アサーションを追加。実サーバーで同じ再現手順を再実行し415に変わったこと・正規のMP4/MPEG-TSは引き続き202であることを確認。それ以外のP0-5-B/P1-1-A〜E/P1-2-A,B,D,E/P1-3/P1-4-A,B/P1-5は独立検証で記載どおりの挙動を確認された。",
-      "trouble": "独立検証でP1-2-Cの実装漏れ(バイパス)が見つかった。本人(自分)がdoneと判定した時点では気づけなかった問題を、独立した敵対的検証が発見して機能した形。"
+      "done": "independent-verifierサブエージェントにP0-5〜P1-5全件の敵対的再検証(実サーバーへのcurl攻撃・Playwright実ブラウザ確認・CI evidenceとコミット内容の突合)を依頼した結果、P1-2-Cのlooksイイ動画判定(server/security.mjs looksLikeVideo)がMPEG-TS判定の先頭1バイト(0x47)のみを見ておりバイパス可能(先頭バイトだけGにした非動画ファイルが202で受理される実例あり)というバグを発見。188バイト境界で同期バイトが4回連続一致することを要求する修正をPR #19で実施したが、そのPRのCodeRabbitレビューで「判定に必要な752バイトが単一の最初のdataチャンクに満たない場合、正当なMPEG-TSでも誤って415になる」回帰を指摘され(PR #19はauto-mergeで先に本体マージ済みだったため)、続くPR #20でcreateSignatureSniffer()(security.mjs)として複数チャンクをまたいで蓄積してから1回だけ判定する状態機械に切り出して是正・done化・evidence記入まで完了。createSignatureSnifferの単体テスト(同期バイトを1バイトずつ分割して送っても正しく判定する・752バイト未満で終端するケース)とindex.mjsの実サーバーへの生ソケット送信(50バイトずつ分割した本物のMPEG-TS)で202になることを確認。それ以外のP0-5-B/P1-1-A〜E/P1-2-A,B,D,E/P1-3/P1-4-A,B/P1-5は独立検証で記載どおりの挙動を確認された。",
+      "trouble": "PR #19がCodeRabbitの実質レビュー完了前にauto-mergeで先にマージされ、その後届いた指摘(2件: 分割チャンクでの誤415/testのfixture表現)は既にマージ済みブランチには積めなかったため、mainから新ブランチ(PR #20)を切って別PRで是正した(再発だがdocs/failures.mdに既定動作として記録済みのため驚きはない)。"
     },
     "updated": "2026-07-28"
   },
@@ -311,13 +311,13 @@
                   "kind": "state",
                   "theme": "アップロードされたファイルの中身を確認する",
                   "meaning": "動画のふりをした別のファイルが処理されない",
-                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。2026-07-28: independent-verifierがMPEG-TS判定の先頭1バイトのみ判定をバイパスできることを実証したため、188バイト境界で同期バイトが4回連続一致することを要求するよう修正(PR #19)。",
+                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭バイト列を検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。2026-07-28: independent-verifierがMPEG-TS判定の先頭1バイトのみ判定をバイパスできることを実証したため、188バイト境界で同期バイトが4回連続一致することを要求するよう修正(PR #19)。同PRのCodeRabbitレビューで、判定に必要な752バイトが単一の最初のdataチャンクに満たない場合(TCPの都合で起こりうる)、正当なMPEG-TSでも誤って415になる回帰が指摘されたため、createSignatureSniffer()で複数チャンクをまたいで蓄積してから1回だけ判定するよう是正(PR #20)。",
                   "status": "done",
                   "criteria": [
                     {
                       "text": "拡張子と異なる中身のファイルアップロードが拒否される",
-                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する。MPEG-TSシグネチャのみを模倣した非動画ファイル(先頭バイトのみ0x47)でも拒否されること",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30366534024/job/90299250902"
+                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する。MPEG-TSシグネチャのみを模倣した非動画ファイル(先頭バイトのみ0x47)でも拒否されること。正当なMPEG-TSが複数チャンクに分割されて届いても誤って拒否されないこと",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30367897497/job/90303926388"
                     }
                   ]
                 },
