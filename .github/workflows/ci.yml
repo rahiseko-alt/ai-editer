@@ -94,6 +94,32 @@ jobs:
 
           echo "SMOKE OK: HTTP 200 かつ本文に 'kosespark' を確認"
 
+  hook-session-start:
+    name: session-startフック (G-DELIVERY-HOOK-*) の実地検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ローカル扱い(CLAUDE_CODE_REMOTE未設定)は無音no-op
+        run: |
+          out=$(env -u CLAUDE_CODE_REMOTE .claude/hooks/session-start.sh 2>&1)
+          if [ -n "$out" ]; then
+            echo "FAIL: local run should print nothing (got: $out)"
+            exit 1
+          fi
+          echo "OK: local run is a silent no-op"
+
+      - name: 実地検証のため既存のffmpeg/文字起こしライブラリを一旦除去
+        run: |
+          sudo apt-get remove -y ffmpeg
+          python3 -m pip uninstall -y --break-system-packages faster-whisper groq || true
+
+      - name: クラウド扱い(CLAUDE_CODE_REMOTE=true)でffmpegと文字起こしライブラリが自動導入される
+        run: |
+          CLAUDE_CODE_REMOTE=true CLAUDE_PROJECT_DIR="$PWD" .claude/hooks/session-start.sh
+          ffmpeg -version
+          python3 -c "import faster_whisper, groq"
+
   # 集約ゲート＝branch protection が要求する「安定した1つの必須チェック」。
   # 内部ジョブ(quality/smoke)の名前や中身が変わっても context 名は 'ci-green' で不変。
   # scripts/setup.sh はこの 'ci-green' と 'roadmap-required' だけを必須指定する。
