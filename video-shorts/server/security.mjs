@@ -1,11 +1,14 @@
-// server/security.mjs — localhost API のハードニング(P1-2・P1-4)。副作用なし(ジョブトークン
-// registryを除く)・単体テスト用に分離。同じPC上の別アプリ/悪意あるWebページ、あるいは同じ
-// 起動時トークンを持つ「他のジョブの作成者」から、勝手にジョブを起動されたり他人の成果物に
-// アクセスされたりしないようにするための項目群:
+// server/security.mjs — localhost API のハードニング(P1-2・P1-4・P1-6)。副作用なし(ジョブトークン
+// registryと、その再起動復元用のworkDir永続化ファイルを除く)・単体テスト用に分離。同じPC上の
+// 別アプリ/悪意あるWebページ、あるいは同じ起動時トークンを持つ「他のジョブの作成者」から、勝手に
+// ジョブを起動されたり他人の成果物にアクセスされたりしないようにするための項目群:
 //   P1-2: (A)起動時トークン (B)Origin/Host検証 (C)magic byte検証 (D)アップロードサイズ上限 (E)レート制限
 //   P1-4: (A)ジョブIDの暗号学的ランダム化 (B)成果物取得のジョブ別認可(ジョブトークン)
+//   P1-6: プロセス再起動後もジョブトークンで正規に再接続できるようworkDirへ永続化
 
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 /** 起動ごとに変わるランダムトークンを生成する(P1-2-A)。 */
 export function generateStartupToken() {
@@ -59,6 +62,30 @@ export function issueJobToken(jobId) {
 /** 指定ジョブのトークンと一致するか。ジョブ自体が存在しなければ常に false。 */
 export function isValidJobToken(jobId, candidate) {
   return isValidToken(candidate, jobTokens.get(jobId));
+}
+
+/**
+ * P1-6: jobTokens registry はプロセス再起動で消える(メモリのみ)。再起動後も、以前このプロセスが
+ * 正規に発行したトークンでの再接続(SSE再購読)を許可できるよう、workDir配下にも同じトークンを
+ * 永続化しておく(state.jsonと同じ信頼境界=ローカルの作業ディレクトリ)。
+ */
+export function persistJobToken(workDir, token) {
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.writeFileSync(path.join(workDir, "job-token.txt"), token, "utf-8");
+}
+
+/** 永続化されたジョブトークンを読む(無ければ null)。 */
+export function loadPersistedJobToken(workDir) {
+  const p = path.join(workDir, "job-token.txt");
+  if (!fs.existsSync(p)) return null;
+  const v = fs.readFileSync(p, "utf-8").trim();
+  return v || null;
+}
+
+/** 既に発行済みのトークンをメモリのregistryへ再登録する(新規生成しない点がissueJobTokenと異なる)。
+ *  再起動後、永続化トークンとの一致を確認できた場合にのみ呼ぶ想定。 */
+export function restoreJobToken(jobId, token) {
+  jobTokens.set(jobId, token);
 }
 
 /** Host ヘッダが 127.0.0.1:port / localhost:port のいずれかであること(B)。 */
