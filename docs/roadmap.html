@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P0-5-A",
-    "next": "実装済みの範囲でP1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P0-5-Aは実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK)ができ次第、改めてdoneにする。",
+    "active": "P1-2",
+    "next": "P1-2(ローカルAPIに誰でもアクセスできる状態を無くす・5葉: 起動時トークン/Origin-Host検証/magic byte/サイズ上限/レート制限)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "PR #12(server側のorient別ラベル修正)がCI緑化直後にauto-mergeされた後、CodeRabbitから新たな指摘: server(pipeline-runner.mjs)はorientに応じたlabel(縦長/横長)を送るようになったが、フロント(webapp-mockup/app.js)のSSEハンドラがd.labelを一切読まず常に固定のEDITING_LABEL[stage]を表示していたため、修正が画面に一切反映されていなかった。app.jsのes.onmessageでd.labelを分割代入し、有れば優先表示(無ければ従来通りEDITING_LABEL[stage]にフォールバック)するよう修正。合わせてrenderLabel(orient)を独立関数として切り出しcontract testで縦長/横長を検証(tests/smoke.mjsに2件追加・計26 PASS)。",
-      "trouble": "PR #11・#12とも必須チェック(ci-green/roadmap-required)緑化直後にauto-merge.ymlで即マージされ、その後届いたCodeRabbitの指摘に追いつけない事象が2回連続発生(docs/failures.md 2026-07-25の既知パターンと同型)。マージ済みブランチへの追いpushは避け、その都度mainから枝を作り直して是正PRを出し直している。実ffmpegでの向き反映(portrait/landscape)の最終確認は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK、P0-5-Aはdoingのまま)。"
+      "done": "P1-1(非信頼文字起こしのプロンプト注入対策・5葉)を完了。共通ハードニングモジュール video-shorts/src/claude-safety.mjs を新設し、(A)ツール無効化(NO_TOOLS_ARGS=--tools \"\")・(B)子プロセスへ渡す環境変数のallowlist化(buildSafeEnv、ANTHROPIC_API_KEY等の秘密情報は含めない)・(C)ジョブ専用の隔離cwd(createIsolatedCwd、OS tmpdir配下でリポジトリのCLAUDE.mdを読ませない)・(D)非信頼テキストを乱数nonceタグで区切りデータと明示するwrapUntrustedTextを実装。server/claude-select.mjsとsrc/digest-editor.mjsの両spawn呼び出しに適用し、buildPrompt/draftPrompt/revisePrompt/durationFixPromptの文字起こし埋め込みをwrapUntrustedText経由に差し替え。tests/smoke.mjsにP1-1-A〜E契約テスト5件を追加(計32 PASS)。CI(ci-green/roadmap-required/CodeQL)全て緑を確認し、P1-1-A〜Eのevidenceに当該CI run URLを記入してdone化(PR #14)。",
+      "trouble": "特になし。"
     },
     "updated": "2026-07-28"
   },
@@ -197,13 +197,13 @@
                   "kind": "state",
                   "theme": "AIにツールを使わせない",
                   "meaning": "文字起こし処理中はAIがファイル操作などをできない",
-                  "detail": "claude -p 呼び出し時にツール呼び出しを無効化する。",
-                  "status": "todo",
+                  "detail": "claude -p 呼び出し時にツール呼び出しを無効化する。video-shorts/src/claude-safety.mjs の NO_TOOLS_ARGS(--tools \"\")を server/claude-select.mjs と src/digest-editor.mjs の両spawn呼び出しに適用(PR #14)。claude --help で --tools フラグの実在を確認し、実claude CLIでも動作を手動確認済み。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "文字起こし処理のclaude -p呼び出しでツールが無効化されている",
                       "verify": "起動コマンド/設定を確認し、ツール無効化フラグ(--no-tools相当)が渡っていることをコードレビューし、実行時ログでツール呼び出しが発生しないことを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30340120258/job/90213583341"
                     }
                   ]
                 },
@@ -212,13 +212,13 @@
                   "kind": "state",
                   "theme": "AIに渡る環境変数を最小限にする",
                   "meaning": "PCの秘密情報(APIキー等)がAIに見えない",
-                  "detail": "環境変数をallowlist方式に制限して子プロセスへ渡す。",
-                  "status": "todo",
+                  "detail": "環境変数をallowlist方式に制限して子プロセスへ渡す。claude-safety.mjsのbuildSafeEnv()(PATH/HOME等の最小限のみ・ANTHROPIC_API_KEY等の秘密情報は除外)を両spawn呼び出しに適用(PR #14)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "claude -p の子プロセスに渡る環境変数がallowlistのみである",
                       "verify": "spawn呼び出しのenvオプションを確認し、allowlist外の環境変数(existing process.env全体)が渡っていないことを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30340120258/job/90213583341"
                     }
                   ]
                 },
@@ -227,13 +227,13 @@
                   "kind": "state",
                   "theme": "AIの作業場所を隔離する",
                   "meaning": "AIが他のお客様のファイルに触れない",
-                  "detail": "隔離された作業ディレクトリ(cwd)で実行する。",
-                  "status": "todo",
+                  "detail": "隔離された作業ディレクトリ(cwd)で実行する。claude-safety.mjsのcreateIsolatedCwd(jobId)(OS tmpdir配下・ジョブごとに別ディレクトリ)を両spawn呼び出しに適用(PR #14)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "claude -p の実行cwdが隔離された専用ディレクトリである",
                       "verify": "spawn呼び出しのcwdオプションが、ジョブ専用の隔離ディレクトリを指していることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30340120258/job/90213583341"
                     }
                   ]
                 },
@@ -242,13 +242,13 @@
                   "kind": "state",
                   "theme": "文字起こし結果は「データ」であって「命令」ではないと明示する",
                   "meaning": "動画の中の声が命令として実行されない",
-                  "detail": "文字起こしテキストをプロンプト中で明示的にデータとして区切る境界を設ける。",
-                  "status": "todo",
+                  "detail": "文字起こしテキストをプロンプト中で明示的にデータとして区切る境界を設ける。claude-safety.mjsのwrapUntrustedText(乱数nonceタグで区切り、指示として解釈しない旨を明記)を、select-segments.mjsのbuildPromptとdigest-editor.mjsのdraftPrompt/revisePrompt/durationFixPromptに適用(PR #14)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "プロンプト内で文字起こし文字列がデータとして明示区切りされ、指示として解釈されない",
                       "verify": "buildPrompt等の実装を確認し、非信頼テキストがdelimiter/schema等で区切られていることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30340120258/job/90213583341"
                     }
                   ]
                 },
@@ -257,13 +257,13 @@
                   "kind": "state",
                   "theme": "実際に攻撃を試して防げることを確認する",
                   "meaning": "「動画に命令文を仕込む」攻撃を試して防げる",
-                  "detail": "敵対的な注入内容を含むテスト入力で防御を検証するテストを追加する。",
-                  "status": "todo",
+                  "detail": "敵対的な注入内容を含むテスト入力で防御を検証するテストを追加する。tests/smoke.mjsに「偽の指示+偽の閉じタグ」を仕込んだ文字起こしを与え、本物の閉じタグが1つだけであること(乱数nonceのため偽装不可)を検証するテストを追加(PR #14)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "プロンプト注入を含む文字起こしを与えるテストが存在し、注入が実行されないことを確認する",
                       "verify": "node --test 等でプロンプト注入ペイロードを含む文字起こしを与え、意図しないツール実行/情報漏洩が起きないことを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30340120258/job/90213583341"
                     }
                   ]
                 }

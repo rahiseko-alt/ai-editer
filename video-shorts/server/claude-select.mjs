@@ -12,6 +12,11 @@ import {
   buildPrompt,
   parseResponse,
 } from "../src/select-segments.mjs";
+import {
+  buildSafeEnv,
+  createIsolatedCwd,
+  NO_TOOLS_ARGS,
+} from "../src/claude-safety.mjs";
 
 const CLAUDE_TIMEOUT_MS = 300_000; // 1 chunk あたり 5 分（10 分尺 chunk・--bare 起動で十分余裕）
 const POOL = Number(process.env.CLAUDE_SELECT_POOL ?? 3); // 同時実行 chunk 数
@@ -20,9 +25,10 @@ const POOL = Number(process.env.CLAUDE_SELECT_POOL ?? 3); // 同時実行 chunk 
  * 1 chunk 分のプロンプトを claude -p に渡し、segments 配列を返す。
  * @param {string} promptDoc - buildPrompt の出力
  * @param {(msg:string)=>void} onLog
+ * @param {string} cwd - ジョブ専用の隔離ディレクトリ（createIsolatedCwd の出力）
  * @returns {Promise<object[]>} keepText を持つ segments
  */
-function runOneChunk(promptDoc, onLog) {
+function runOneChunk(promptDoc, onLog, cwd) {
   const stdinPayload =
     promptDoc +
     "\n\n---\n" +
@@ -35,12 +41,14 @@ function runOneChunk(promptDoc, onLog) {
     //   300s タイムアウトを食い潰していた。MCP を切ると 300s→5.5s（実測）。モデルは変えない＝選定品質不変。
     // ※ --bare は MCP/hook を全スキップして更に軽いが OAuth ログインまで剥がし "Not logged in" になる
     //   （サブスク無料運用が壊れる）ため使用不可。MCP だけ切る本フラグが正解。
+    // 非信頼な文字起こしを渡す呼び出しなので P1-1 ハードニング（ツール無効化/env allowlist/隔離cwd）を適用する。
     const child = spawn(
       "claude",
-      ["-p", "--strict-mcp-config", "--output-format", "json"],
+      ["-p", "--strict-mcp-config", "--output-format", "json", ...NO_TOOLS_ARGS],
       {
         windowsHide: true,
-        env: process.env,
+        env: buildSafeEnv(),
+        cwd,
       }
     );
 
@@ -141,9 +149,10 @@ export async function runClaudeSelect(workDir, onLog = () => {}) {
 
   onLog(`[claude-select] ${chunks.length} chunk に分割（プール ${POOL} 並列）`);
 
+  const cwd = createIsolatedCwd(path.basename(workDir));
   let done = 0;
   const results = await runPool(chunks, POOL, async (chunk) => {
-    const segs = await runOneChunk(buildPrompt(chunk, 0), onLog);
+    const segs = await runOneChunk(buildPrompt(chunk, 0), onLog, cwd);
     done++;
     onLog(`[claude-select] ${done}/${chunks.length} chunk 完了（+${segs.length} 件）`);
     return segs;
