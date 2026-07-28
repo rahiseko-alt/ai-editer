@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-P1",
-    "next": "P1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P1グループの残り(P1-2〜P1-12)、その後P2グループ(UI/UX)へ続く。",
+    "active": "P0-5-A",
+    "next": "実装済みの範囲でP1-1(非信頼文字起こしのプロンプト注入対策・5葉)から着手する。P0-5-Aは実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK)ができ次第、改めてdoneにする。",
     "handoff": {
-      "done": "P0-5(Web UIの設定が生成物へ反映されない問題)を是正。resolveJobSettings()を新設しUIのcut/size/cutMinをpipeline.mjsのmode/orient/targetMinutesへ変換、state.json初期作成時に書き込み、select/renderサブプロセスへ--modeを明示的に渡すよう修正(P0-5-A)。着手時の再調査でdigest-editorが「本数で切る」targetCountに未対応と判明したため、レンダラー未実装の1:1・4:5と合わせてUIから除去(P0-5-B)。server/job-params.mjsを新設しクエリ値のサポート契約を検証。tests/smoke.mjsに契約テスト7件を追加(計24 PASS)。これでG-P0配下は完了。",
-      "trouble": "digestモード(分数で切る)はrunDigestEditorが自前でclaude -pを呼びllm-response.jsonを直接書くため、topic専用だったclaude-select.mjsの二重呼び出しを避ける分岐が必要だった(気づかず実装すると分数指定時に選定結果が上書きされていた)。実ffmpegでの向き反映(portrait/landscape)は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK)。"
+      "done": "P0-5(Web UIの設定が生成物へ反映されない問題)のコード修正を実施。resolveJobSettings()を新設しUIのcut/size/cutMinをpipeline.mjsのmode/orient/targetMinutesへ変換、state.json初期作成時に書き込み(targetMinutesも含む)、select/renderサブプロセスへ--modeを明示的に渡すよう修正。着手時の再調査でdigest-editorが「本数で切る」targetCountに未対応と判明したため、レンダラー未実装の1:1・4:5と合わせてUIから除去(P0-5-B・done)。server/job-params.mjsを新設しクエリ値のサポート契約を検証、フロント側のcutMin入力も同じ範囲(1-60)へ正規化し表示と送信値のズレを解消。レンダリング進捗ラベルをorientに応じて縦長/横長で出し分け。tests/smoke.mjsに契約テスト7件を追加(計24 PASS)。PR #11のCodeRabbitレビューで、P0-5-Aを「実出力解像度が一致する」まで検証していないのにdone扱いしていた誤りを指摘され是正(evidence除去・statusをdoingへ差し戻し)。",
+      "trouble": "PR #11は必須チェック(ci-green/roadmap-required)緑化直後にauto-merge.ymlで即マージされ、その後届いたCodeRabbitの指摘(P0-5-Aの時期尚早なdone化・targetMinutes未永続化・cutMin正規化不一致・landscape時の進捗ラベル不一致)に対応できなかった(docs/failures.md 2026-07-25の既知パターンと同型)。マージ済みブランチへの追いpushを避け、mainから枝を作り直して本コミットで是正・新PRとして出し直す。digestモード(分数で切る)はrunDigestEditorが自前でclaude -pを呼びllm-response.jsonを直接書くため、topic専用だったclaude-select.mjsの二重呼び出しを避ける分岐が必要だった。実ffmpegでの向き反映(portrait/landscape)は、このサンドボックスにffmpegを導入できず引き続き未検証(G-TESTINFRA-RENDERCHECK)。"
     },
     "updated": "2026-07-28"
   },
@@ -150,13 +150,13 @@
                   "kind": "state",
                   "theme": "画面で選んだ設定が、そのまま動画に反映される",
                   "meaning": "「16:9を選んだのに9:16で出てくる」が起きない",
-                  "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。resolveJobSettings()でUIのcut/size/cutMinをmode/orient/targetMinutesへ変換し、state.json初期作成時に書き込み、select/renderサブプロセスへ--modeを明示的に渡すよう修正(PR #11)。実ffmpeg出力での確認はG-TESTINFRA-RENDERCHECK(ffmpeg未導入で保留)に依存するため、今回はUI選択値→mode/orient/targetMinutes変換とサブプロセス引数伝播をcontract testで担保。",
-                  "status": "done",
+                  "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。resolveJobSettings()でUIのcut/size/cutMinをmode/orient/targetMinutesへ変換し、state.json初期作成時に書き込み(targetMinutesも含む)、select/renderサブプロセスへ--modeを明示的に渡すよう修正済み(PR #11)。ただし本criteriaは「実出力解像度が一致する」まで含むため、実ffmpeg出力での確認(G-TESTINFRA-RENDERCHECK、ffmpeg未導入で保留)ができるまではdoneにしない(2026-07-28 independent-verifier相当の指摘により是正: contract testはUI→mode/orient/targetMinutes変換とサブプロセス引数伝播までしか担保せず、実出力解像度の一致は未確認だった)。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "画面選択→state→CLI引数→実出力解像度が一致する",
                       "verify": "画面操作(または contract test)で選択値と実出力ファイルの解像度/向きを1対1照合し一致することを確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30337609336/job/90205827866"
+                      "evidence": ""
                     }
                   ]
                 },

@@ -117,9 +117,15 @@ function updateSubDesc() {
 function showCut() {
   document.querySelectorAll(".cut-note").forEach((p) => p.classList.toggle("hidden", p.dataset.for !== state.cut));
 }
+// サーバー(server/job-params.mjs)の正規化(1-60の有限値のみ許可・それ以外は既定3)と
+// 表示・送信内容を一致させる（空/範囲外のまま「0分」等と表示してサーバー設定とずれるのを防ぐ）。
+function normalizeCutMin(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 && n <= 60 ? n : 3;
+}
 const cutMinInput = $("cut-min");
 if (cutMinInput) cutMinInput.addEventListener("input", () => {
-  state.cutMin = +cutMinInput.value; refresh();
+  state.cutMin = normalizeCutMin(cutMinInput.value); refresh();
 });
 function cutText() {
   if (state.cut === "topic") return "話題で切る（AIが切れ目を判断）";

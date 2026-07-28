@@ -258,6 +258,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     stage: "init",
     mode,
     orient,
+    targetMinutes,
     sub: opts.sub === "none" ? "none" : "on",
   };
   writeState(workDir, state);
@@ -322,7 +323,8 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // ── Stage r: レンダリング ────────────────────────────────────
   job.stage = "r";
-  broadcast(jobId, { stage: "r", status: "active", label: "縦長の動画に整えています" });
+  const renderLabel = orient === "landscape" ? "横長の動画に整えています" : "縦長の動画に整えています";
+  broadcast(jobId, { stage: "r", status: "active", label: renderLabel });
 
   const renderArgs = [PIPELINE_MJS, "render", workDir, "--mode", mode];
   if (noSub) renderArgs.push("--no-sub");
