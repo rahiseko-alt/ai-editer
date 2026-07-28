@@ -18,12 +18,29 @@ import {
   isRunning,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
+import {
+  generateStartupToken,
+  extractToken,
+  isValidToken,
+  isAllowedHost,
+  isAllowedOrigin,
+  looksLikeVideo,
+  createRateLimiter,
+  MAX_UPLOAD_BYTES,
+} from "./security.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const STATIC_ROOT = path.join(ROOT, "webapp-mockup");
 const WORK_ROOT = path.join(ROOT, "work");
 const OUT_ROOT = path.join(ROOT, "output");
+
+// P1-2(A): 起動ごとに変わるトークン。正規のページ(index.html)にのみ埋め込んで配布する。
+const SERVER_TOKEN = generateStartupToken();
+process.stderr.write(`[kosespark] startup token (このプロセス限り有効): ${SERVER_TOKEN}\n`);
+
+// P1-2(E): ジョブ起動(POST /api/jobs)へのレート制限。単一利用者のローカルツール前提の固定ウィンドウ。
+const jobsRateLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
 
 // ── MIME マップ ───────────────────────────────────────────────
 const MIME = {
@@ -119,6 +136,20 @@ function serveStatic(req, res) {
 
   const ext = path.extname(resolved).toLowerCase();
   const mime = MIME[ext] ?? "application/octet-stream";
+
+  // P1-2(A): index.html にのみ起動時トークンを埋め込んで配布する（正規ページだけが読める。
+  // 別オリジンの悪意あるページはこのレスポンス本文を読めないため、トークンを盗めない）。
+  if (reqPath === "/index.html") {
+    const html = fs.readFileSync(resolved, "utf-8");
+    const tokenScript = `<script>window.__KOSESPARK_TOKEN__=${JSON.stringify(SERVER_TOKEN)};</script>\n`;
+    const injected = html.includes("</head>")
+      ? html.replace("</head>", `${tokenScript}</head>`)
+      : tokenScript + html;
+    const data = Buffer.from(injected, "utf-8");
+    res.writeHead(200, { "Content-Type": mime, "Content-Length": data.length });
+    return res.end(data);
+  }
+
   const stat = fs.statSync(resolved);
   res.writeHead(200, {
     "Content-Type": mime,
@@ -133,6 +164,17 @@ async function handlePostJobs(req, res) {
   const url = new URL(req.url, "http://x");
   const { sub, cut, size, cutMin, name } = parseJobParams(url.searchParams);
 
+  // P1-2(E): レート制限（単一利用者のローカルツール前提の固定ウィンドウ）
+  if (!jobsRateLimiter.allow("global")) {
+    return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+  }
+
+  // P1-2(D): 宣言サイズが上限超過なら本文を受け取る前に拒否
+  const declaredLength = Number(req.headers["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_UPLOAD_BYTES) {
+    return jsonRes(res, 413, { error: "ファイルが大きすぎます" });
+  }
+
   // ファイル名からジョブID生成・サニタイズ
   const rawId = makeJobId(name);
   const jobId = safeId(rawId);
@@ -145,14 +187,49 @@ async function handlePostJobs(req, res) {
   fs.mkdirSync(workDir, { recursive: true });
   const inputPath = path.join(workDir, `input${ext}`);
 
-  // リクエストボディをストリームで保存（全量メモリ展開しない）
-  await new Promise((resolve, reject) => {
-    const ws = createWriteStream(inputPath);
-    req.pipe(ws);
-    ws.on("finish", resolve);
-    ws.on("error", reject);
-    req.on("error", reject);
-  });
+  // リクエストボディをストリームで保存（全量メモリ展開しない）。
+  // 併せて P1-2(C) 先頭チャンクのmagic byte検証と、P1-2(D) 実受信量の上限超過検知(宣言値が
+  // 無い/嘘の場合の保険)を行う。
+  let rejection = null;
+  try {
+    await new Promise((resolve, reject) => {
+      const ws = createWriteStream(inputPath);
+      let receivedBytes = 0;
+      let checkedSignature = false;
+
+      const abort = (status, message) => {
+        rejection = { status, message };
+        req.pause();
+        ws.destroy();
+        reject(new Error(message));
+      };
+
+      req.on("data", (chunk) => {
+        if (rejection) return;
+        receivedBytes += chunk.length;
+        if (!checkedSignature) {
+          checkedSignature = true;
+          if (!looksLikeVideo(chunk)) return abort(415, "動画ファイルとして認識できません");
+        }
+        if (receivedBytes > MAX_UPLOAD_BYTES) return abort(413, "ファイルが大きすぎます");
+        ws.write(chunk);
+      });
+      req.on("end", () => {
+        if (!rejection) ws.end();
+      });
+      req.on("error", (e) => {
+        if (!rejection) reject(e);
+      });
+      ws.on("finish", resolve);
+      ws.on("error", (e) => {
+        if (!rejection) reject(e);
+      });
+    });
+  } catch (e) {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    if (rejection) return jsonRes(res, rejection.status, { error: rejection.message });
+    throw e;
+  }
 
   // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
   const started = startJob(jobId, inputPath, { sub, cut, size, cutMin });
@@ -238,10 +315,26 @@ function handleClip(req, res, jobId, file) {
   fs.createReadStream(clipPath).pipe(res);
 }
 
+// P1-2(B): Host/Origin検証(常時)＋(A)起動時トークン検証(/api/*のみ)。
+// 静的ファイル配信(GET /)は公開情報のみのため対象外(ページを開く最初の一歩を塞がないため)。
+function isAuthorizedApiRequest(req, url) {
+  if (!isAllowedHost(req.headers.host, PORT)) return false;
+  if (!isAllowedOrigin(req.headers.origin, PORT)) return false;
+  const token = extractToken(req, url.searchParams);
+  return isValidToken(token, SERVER_TOKEN);
+}
+
 // ── ルーティング ─────────────────────────────────────────────
 async function handleRequest(req, res) {
-  const { pathname } = new URL(req.url, "http://x");
+  const url = new URL(req.url, "http://x");
+  const { pathname } = url;
   const method = req.method.toUpperCase();
+
+  if (pathname.startsWith("/api/")) {
+    if (!isAuthorizedApiRequest(req, url)) {
+      return jsonRes(res, 401, { error: "Unauthorized" });
+    }
+  }
 
   // POST /api/jobs
   if (method === "POST" && pathname === "/api/jobs") {

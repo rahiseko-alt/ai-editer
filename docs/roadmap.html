@@ -118,10 +118,10 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P1-2",
-    "next": "P1-2(ローカルAPIに誰でもアクセスできる状態を無くす・5葉: 起動時トークン/Origin-Host検証/magic byte/サイズ上限/レート制限)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-3",
+    "next": "P1-3(同名ファイルを同時にアップロードしても混線しない)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-1(非信頼文字起こしのプロンプト注入対策・5葉)を完了。共通ハードニングモジュール video-shorts/src/claude-safety.mjs を新設し、(A)ツール無効化(NO_TOOLS_ARGS=--tools \"\")・(B)子プロセスへ渡す環境変数のallowlist化(buildSafeEnv、ANTHROPIC_API_KEY等の秘密情報は含めない)・(C)ジョブ専用の隔離cwd(createIsolatedCwd、OS tmpdir配下でリポジトリのCLAUDE.mdを読ませない)・(D)非信頼テキストを乱数nonceタグで区切りデータと明示するwrapUntrustedTextを実装。server/claude-select.mjsとsrc/digest-editor.mjsの両spawn呼び出しに適用し、buildPrompt/draftPrompt/revisePrompt/durationFixPromptの文字起こし埋め込みをwrapUntrustedText経由に差し替え。tests/smoke.mjsにP1-1-A〜E契約テスト5件を追加(計32 PASS)。CI(ci-green/roadmap-required/CodeQL)全て緑を確認し、P1-1-A〜Eのevidenceに当該CI run URLを記入してdone化(PR #14)。",
+      "done": "P1-2(ローカルAPIに誰でもアクセスできる状態を無くす・5葉)を完了。server/security.mjsを新設し、(A)起動時トークン(generateStartupToken、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込み)・(B)Origin/Host検証(isAllowedHost/isAllowedOrigin)・(C)magic byte検証(looksLikeVideo、MP4/WebM/AVI/MPEG-TS)・(D)アップロード上限(MAX_UPLOAD_BYTES=500MB、宣言値+実測の両方で強制)・(E)レート制限(createRateLimiter、60秒10回)を実装。server/index.mjsの全/api/*入口でトークン+Origin/Host検証を必須化し、POST /api/jobsにレート制限・アップロード上限・magic byte検証を適用。webapp-mockup/app.jsをトークン付き呼び出し(fetchはヘッダ、EventSource/ダウンロードリンクはクエリ)へ更新。tests/smoke.mjsにP1-2-A〜E契約テスト8件を追加(計39 PASS)。ローカルで実サーバーを起動しcurlで無トークン401・不正Origin401・非動画415・正常202を実地確認済み。",
       "trouble": "特になし。"
     },
     "updated": "2026-07-28"
@@ -281,8 +281,8 @@
                   "kind": "state",
                   "theme": "起動ごとの合言葉(トークン)で守る",
                   "meaning": "サーバー起動時に発行される合言葉を知らないと操作できない",
-                  "detail": "起動時トークンによる認可を追加する。",
-                  "status": "todo",
+                  "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "全APIエンドポイントが起動時生成トークンによる認可を要求する",
@@ -296,8 +296,8 @@
                   "kind": "state",
                   "theme": "他のサイトからの操作を拒否する",
                   "meaning": "悪意あるWebサイトを開いただけでは操作されない",
-                  "detail": "Origin/Hostヘッダ検証を追加する。",
-                  "status": "todo",
+                  "detail": "Origin/Hostヘッダ検証を追加する。isAllowedHost/isAllowedOrigin(server/security.mjs)を全/api/*の入口で検証(DNS rebinding・他オリジンfetch/XHR対策)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "許可外のOrigin/Hostからのリクエストが拒否される",
@@ -311,8 +311,8 @@
                   "kind": "state",
                   "theme": "アップロードされたファイルの中身を確認する",
                   "meaning": "動画のふりをした別のファイルが処理されない",
-                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。",
-                  "status": "todo",
+                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。looksLikeVideo()(MP4/WebM/AVI/MPEG-TSのシグネチャ)で先頭チャンクを検査し、該当しなければ415で拒否(server/index.mjs handlePostJobs)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "拡張子と異なる中身のファイルアップロードが拒否される",
@@ -326,8 +326,8 @@
                   "kind": "state",
                   "theme": "大きすぎるファイルを拒否する",
                   "meaning": "巨大ファイルでサーバーが固まらない",
-                  "detail": "アップロードサイズの上限を追加する。",
-                  "status": "todo",
+                  "detail": "アップロードサイズの上限を追加する。MAX_UPLOAD_BYTES(500MB)を、宣言されたContent-Lengthの事前チェックと、受信バイト数の実測(宣言が無い/嘘の場合の保険)の両方で強制し413で拒否(server/index.mjs handlePostJobs)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "上限を超えるアップロードが拒否される",
@@ -341,8 +341,8 @@
                   "kind": "state",
                   "theme": "短時間に大量リクエストされても耐える",
                   "meaning": "連続攻撃でサーバーが落ちない",
-                  "detail": "レート制限を追加する。",
-                  "status": "todo",
+                  "detail": "レート制限を追加する。createRateLimiter()(固定ウィンドウ・60秒10回)をPOST /api/jobsに適用し、超過は429で拒否(server/index.mjs)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "短時間の大量リクエストがレート制限で拒否される",
