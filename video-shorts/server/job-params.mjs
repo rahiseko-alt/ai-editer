@@ -31,12 +31,17 @@ export function makeJobIdPrefix(filename) {
     .replace(/[^\p{L}\p{N}]+/gu, "-");
 }
 
+// P1-4-A: suffixは128bit(16byte)の暗号乱数。ジョブIDは成果物の取得キーにもなるため、
+// 総当たりが非現実的な強度(業界一般的なセキュアトークンと同水準)を持たせる。
+const JOB_ID_SUFFIX_BYTES = 16;
+
 /**
- * P1-3: 同名ファイルを同時にアップロードしても衝突しないよう、ファイル名由来のprefixに
- * 暗号乱数のsuffixを付けて一意化する（workDir/inputPathがジョブごとに必ず別になる）。
+ * P1-3/P1-4-A: 同名ファイルを同時にアップロードしても衝突せず(P1-3)、かつ他人のジョブIDを
+ * 推測できない(P1-4-A)よう、ファイル名由来のprefixに128bitの暗号乱数suffixを付けて一意化する
+ * （workDir/inputPathがジョブごとに必ず別になる）。
  */
 export function makeUniqueJobId(filename) {
   const prefix = makeJobIdPrefix(filename) || "job";
-  const suffix = crypto.randomBytes(4).toString("hex");
+  const suffix = crypto.randomBytes(JOB_ID_SUFFIX_BYTES).toString("hex");
   return `${prefix}-${suffix}`;
 }

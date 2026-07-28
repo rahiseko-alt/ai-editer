@@ -118,10 +118,10 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P1-4",
-    "next": "P1-4(推測可能IDで成果物取得できてしまう問題・2葉: ジョブIDの暗号学的ランダム化/成果物取得のジョブ別認可)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-5",
+    "next": "P1-5(一部チャンク失敗を成功扱いする問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-3(同名ファイルの同時アップロードで混線する問題)を完了。makeUniqueJobId(server/job-params.mjs)を新設し、ファイル名prefix+暗号乱数(crypto.randomBytes)suffixでjobIdを生成するよう変更。workDir/inputPathがジョブごとに必ず別になり、同名ファイルの同時アップロードでも書込みが衝突しなくなった。tests/smoke.mjsに契約テスト2件を追加(計41 PASS)。実サーバーで同名ファイルを実際に同時アップロードし、双方が別jobIdになり内容も破損しないことをdiffで実地確認済み。",
+      "done": "P1-4(推測可能IDで成果物取得できてしまう問題・2葉)を完了。(A)makeUniqueJobId(server/job-params.mjs)のsuffixを32bit→128bit(16byte crypto.randomBytes)へ強化。(B)issueJobToken/isValidJobToken(server/security.mjs)を新設し、POST /api/jobsの応答にjobId+jobTokenを返し、GET /api/jobs/:id/events・/candidates・GET /api/clips/:id/:fileの3経路すべてで起動時トークンに加えジョブ別トークンの一致を必須化(server/index.mjs)。webapp-mockup/app.jsをjobToken対応(EventSource/候補fetch/クリップDLすべてに付与)へ更新。tests/smoke.mjsに契約テスト4件を追加(計45 PASS)。実サーバーでjobToken無し→403、他ジョブのjobToken→403、正しいjobToken→404(候補未生成だが認可通過)を実地確認済み。",
       "trouble": "特になし。"
     },
     "updated": "2026-07-28"
@@ -380,13 +380,13 @@
                   "kind": "state",
                   "theme": "ジョブIDを推測できない値にする",
                   "meaning": "連番などで他人のIDを当てられない",
-                  "detail": "暗号学的に安全な乱数でジョブIDを生成する。",
-                  "status": "todo",
+                  "detail": "暗号学的に安全な乱数でジョブIDを生成する。makeUniqueJobId(server/job-params.mjs)のsuffixを128bit(16byte crypto.randomBytes)へ強化(P1-3で導入した32bitから引き上げ)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "ジョブIDが暗号学的に推測不能なランダム値である",
                       "verify": "連続して発行されたジョブIDが連番/規則的でなく、統計的に予測不能であることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30355863105/job/90263793025"
                     }
                   ]
                 },
@@ -395,13 +395,13 @@
                   "kind": "state",
                   "theme": "自分のジョブの結果しか取得できないようにする",
                   "meaning": "他人のジョブIDを知っても結果を見られない",
-                  "detail": "成果物(SSE/候補JSON/生成動画)の取得にジョブ別の認可トークンを要求する。",
-                  "status": "todo",
+                  "detail": "成果物(SSE/候補JSON/生成動画)の取得にジョブ別の認可トークンを要求する。issueJobToken/isValidJobToken(server/security.mjs)を新設し、POST /api/jobsの応答にjobIdと併せてjobTokenを返す。GET /api/jobs/:id/events・/candidates・GET /api/clips/:id/:fileの3経路すべてで、起動時トークンに加えジョブ別トークンの一致を必須化(server/index.mjs)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "他人のジョブIDを直接指定してもSSE/候補JSON/動画を取得できない",
                       "verify": "自分が発行していないジョブIDに対するSSE購読・candidates取得・動画ダウンロードがすべて拒否されることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30355863105/job/90263793025"
                     }
                   ]
                 }

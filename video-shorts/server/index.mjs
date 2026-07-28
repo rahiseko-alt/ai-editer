@@ -21,7 +21,10 @@ import { parseJobParams, makeUniqueJobId } from "./job-params.mjs";
 import {
   generateStartupToken,
   extractToken,
+  extractJobToken,
   isValidToken,
+  isValidJobToken,
+  issueJobToken,
   isAllowedHost,
   isAllowedOrigin,
   looksLikeVideo,
@@ -230,7 +233,12 @@ async function handlePostJobs(req, res) {
     return jsonRes(res, 409, { error: "already running", jobId });
   }
 
-  return jsonRes(res, 202, { jobId });
+  // P1-4(B): このジョブ専用のトークンを発行する。起動時トークンは全ジョブ共通のため、
+  // これが無いと同じ起動時トークンを持つ別ジョブの作成者が、jobIdさえ知れば/推測できれば
+  // 他人の成果物(SSE進捗・候補JSON・生成動画)を取得できてしまう。
+  const jobToken = issueJobToken(jobId);
+
+  return jsonRes(res, 202, { jobId, jobToken });
 }
 
 // ── GET /api/jobs/:id/events（SSE） ────────────────────────
@@ -317,6 +325,13 @@ function isAuthorizedApiRequest(req, url) {
   return isValidToken(token, SERVER_TOKEN);
 }
 
+// P1-4(B): 起動時トークンに加え、そのジョブ専用のトークンも一致すること。
+// 起動時トークンだけでは「同じサーバーの別ジョブの作成者」を区別できないため必須。
+function isAuthorizedForJob(req, url, jobId) {
+  const jobToken = extractJobToken(req, url.searchParams);
+  return isValidJobToken(jobId, jobToken);
+}
+
 // ── ルーティング ─────────────────────────────────────────────
 async function handleRequest(req, res) {
   const url = new URL(req.url, "http://x");
@@ -343,6 +358,7 @@ async function handleRequest(req, res) {
   if (method === "GET" && eventsMatch) {
     const id = decodeId(eventsMatch[1]);
     if (id === null) { res.writeHead(400); return res.end("Bad jobId"); }
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
     return handleJobEvents(req, res, id);
   }
 
@@ -351,6 +367,7 @@ async function handleRequest(req, res) {
   if (method === "GET" && candMatch) {
     const id = decodeId(candMatch[1]);
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
     return handleCandidates(req, res, id);
   }
 
@@ -367,6 +384,7 @@ async function handleRequest(req, res) {
       res.writeHead(400);
       return res.end("Bad clip path");
     }
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
     return handleClip(req, res, id, file);
   }
 

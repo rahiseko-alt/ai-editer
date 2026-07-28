@@ -22,12 +22,15 @@ import { draftPrompt, revisePrompt, durationFixPrompt } from "../src/digest-edit
 import {
   generateStartupToken,
   extractToken,
+  extractJobToken,
   isValidToken,
   isAllowedHost,
   isAllowedOrigin,
   looksLikeVideo,
   createRateLimiter,
   MAX_UPLOAD_BYTES,
+  issueJobToken,
+  isValidJobToken,
 } from "../server/security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -449,6 +452,43 @@ t("P1-3: 拡張子や記号だけのファイル名でも空文字列や不正�
   const id = makeUniqueJobId(".mp4");
   assert.ok(id.length > 0);
   assert.ok(/^[\p{L}\p{N}_-]+$/u.test(id));
+});
+
+// ---- P1-4: 推測可能IDで成果物取得できてしまう問題 ----
+
+t("P1-4-A: jobIdの乱数部分は128bit(32桁hex)相当の強度を持つ", () => {
+  const id = makeUniqueJobId("lecture.mp4");
+  const suffix = id.split("-").pop();
+  assert.strictEqual(suffix.length, 32, "16byte(128bit)をhex化すると32桁になる");
+  assert.ok(/^[0-9a-f]{32}$/.test(suffix), "16進数のみで構成されること");
+});
+
+t("P1-4-A: jobIdは呼び出しのたびに暗号学的に無関係な値になる(統計的な偏りが無い)", () => {
+  const ids = new Set();
+  for (let i = 0; i < 1000; i++) ids.add(makeUniqueJobId("a.mp4"));
+  assert.strictEqual(ids.size, 1000, "1000回生成して衝突が無いこと(推測可能なら衝突/規則性が出る)");
+});
+
+t("P1-4-B: ジョブトークンは発行したジョブにしか一致しない(他ジョブ・未発行ジョブは常に拒否)", () => {
+  const tokenA = issueJobToken("job-a");
+  const tokenB = issueJobToken("job-b");
+  assert.notStrictEqual(tokenA, tokenB, "ジョブごとに別トークンが発行されること");
+
+  assert.strictEqual(isValidJobToken("job-a", tokenA), true, "自分のジョブ+正しいトークンは通る");
+  assert.strictEqual(isValidJobToken("job-a", tokenB), false, "他人(別ジョブ)のトークンでは通らない");
+  assert.strictEqual(isValidJobToken("job-nonexistent", tokenA), false, "存在しないジョブは常に拒否");
+  assert.strictEqual(isValidJobToken("job-a", ""), false, "空トークンは拒否");
+  assert.strictEqual(isValidJobToken("job-a", null), false, "トークン無しは拒否");
+});
+
+t("P1-4-B: ジョブトークンはヘッダ優先・無ければクエリから取り出す", () => {
+  const reqWithHeader = { headers: { "x-kosespark-job-token": "h-token" } };
+  assert.strictEqual(extractJobToken(reqWithHeader, new URLSearchParams()), "h-token");
+
+  const reqWithQuery = { headers: {} };
+  assert.strictEqual(extractJobToken(reqWithQuery, new URLSearchParams({ jobToken: "q-token" })), "q-token");
+
+  assert.strictEqual(extractJobToken({ headers: {} }, new URLSearchParams()), null, "どちらにも無ければnull");
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);
