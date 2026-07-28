@@ -1,0 +1,4 @@
+# video-shorts Python 依存
+# 文字起こし: ローカル(faster-whisper) と クラウド(groq) の二段構え
+faster-whisper>=0.10.0
+groq>=1.5.0

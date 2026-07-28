@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>video-shorts 使用説明書</title>
+  <link rel="stylesheet" href="consent.css" />
+  <link rel="stylesheet" href="user-manual.css" />
+</head>
+<body>
+  <main class="card manual">
+    <header class="head">
+      <h1>video-shorts 使用説明書</h1>
+      <p class="sub">長編の動画から「見どころショート」を自動で作るツールです。あなたの PC の中で動き、動画は外に送られません（高速文字起こしを使うときだけ、あなたの鍵で Groq に音声を送ります。また「ダイジェスト」モードでは、文字起こしのテキスト全文を台本作成のため Claude（Anthropic）へ常時自動で送信します。詳しくは4章・7章参照）。</p>
+    </header>
+
+    <nav class="toc">
+      <strong>目次</strong>
+      <ol>
+        <li><a href="#step0">0. 最初に（同意）</a></li>
+        <li><a href="#need">1. 用意するもの</a></li>
+        <li><a href="#setup">2. 初回セットアップ</a></li>
+        <li><a href="#use">3. 使い方（動画→ショート）</a></li>
+        <li><a href="#mode">4. モードの選び方</a></li>
+        <li><a href="#review">5. 候補の確認</a></li>
+        <li><a href="#trouble">6. うまくいかない時</a></li>
+        <li><a href="#faq">7. よくある質問</a></li>
+      </ol>
+    </nav>
+
+    <section id="step0">
+      <h2>0. 最初に（同意）</h2>
+      <p>ご利用の前に、同じフォルダの <span class="kbd">consent.html</span> を開き、外部サービス・AI利用の同意事項をご確認のうえ同意してください。同意すると「控え（同意の証拠）」がダウンロードされます。<strong>控えは保管してください。</strong>構築を代行でご依頼の場合は、担当者にお渡しください。</p>
+    </section>
+
+    <section id="need">
+      <h2>1. 用意するもの（初回のみ・無料）</h2>
+      <table>
+        <tr><th>ソフト</th><th>用途</th><th>入手先</th></tr>
+        <tr><td>Node.js 18 以上</td><td>本体の実行</td><td>nodejs.org（LTS 版）</td></tr>
+        <tr><td>Python 3.12</td><td>文字起こし</td><td>python.org</td></tr>
+        <tr><td>ffmpeg / ffprobe</td><td>動画処理</td><td>ffmpeg.org</td></tr>
+      </table>
+      <p>入れ終わったら、ターミナル（Windows は PowerShell）で次を打ち、バージョンが表示されれば準備完了です。</p>
+      <pre class="cmd">node -v
+python --version
+ffmpeg -version</pre>
+    </section>
+
+    <section id="setup">
+      <h2>2. 初回セットアップ</h2>
+      <ol class="steps">
+        <li>
+          <b>同意</b>：<span class="kbd">consent.html</span> を開いて同意（上記 0）。
+        </li>
+        <li>
+          <b>文字起こしライブラリを入れる</b>（無料）：
+          <pre class="cmd">pip install -r requirements.txt</pre>
+        </li>
+        <li>
+          <b>（任意）高速文字起こしを使う場合だけ</b>：あなたの Groq アカウントで鍵を作り、<span class="kbd">video-shorts/.env</span> に1行だけ書きます。鍵はこのファイル以外に貼らないでください。
+          <pre class="cmd">GROQ_API_KEY=gsk_（console.groq.com/keys で作成した鍵）</pre>
+          鍵が有効か確認：
+          <pre class="cmd">python src/check-groq-key.py</pre>
+          <p class="fine">鍵を設定しなくても、無効でも、ネットが切れても、自動で無料のローカル文字起こしに切り替わるので止まりません。</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="use">
+      <h2>3. 使い方（動画 → ショート）</h2>
+      <p>例として、作業名を <span class="kbd">myvideo</span> とします。上から順に実行してください。</p>
+      <ol class="steps">
+        <li>
+          <b>文字起こし</b>：
+          <pre class="cmd">python src/transcribe.py 入力動画.mp4 work/myvideo/transcript.json</pre>
+        </li>
+        <li>
+          <b>区間選定</b>（AI が見どころを選ぶ）：
+          <pre class="cmd">node pipeline.mjs select work/myvideo</pre>
+        </li>
+        <li>
+          <b>レンダリング</b>（ショートを作る）：
+          <pre class="cmd">node pipeline.mjs render work/myvideo</pre>
+        </li>
+        <li>
+          <b>候補を確認</b>：<span class="kbd">ui/index.html</span> を開き、採用するものを選びます。
+        </li>
+      </ol>
+    </section>
+
+    <section id="mode">
+      <h2>4. モードの選び方</h2>
+      <table>
+        <tr><th>選ぶもの</th><th>意味</th></tr>
+        <tr><td>話題ごと（topic）</td><td>話題の切れ目ごとに1本。全編をカバーしたい時</td></tr>
+        <tr><td>ダイジェスト（digest）</td><td>面白い所だけを1本に凝縮。ハイライトが欲しい時（文字起こし全文を台本作成のため Claude（Anthropic）へ常時自動で送信します）</td></tr>
+        <tr><td>縦 / 横</td><td>縦=SNS リール向け（1080×1920）／横=画面録画など細かい文字を残す用途（1920×1080）</td></tr>
+        <tr><td>字幕 ON / OFF</td><td>字幕を焼き込むか。ONは誤変換に注意（用語辞書で補正可）</td></tr>
+      </table>
+      <p class="fine">モード・縦横・字幕は毎回たずねられます（前回の設定は引き継ぎません）。</p>
+    </section>
+
+    <section id="review">
+      <h2>5. 候補の確認</h2>
+      <p>ショートは「候補」として複数作られます。<span class="kbd">ui/index.html</span> をブラウザで開き、良いものだけを採用してください。すべてを自動採用にはせず、必ず目で見て選びます（見どころの歩留まりは 30〜50% が目安です）。</p>
+    </section>
+
+    <section id="trouble">
+      <h2>6. うまくいかない時</h2>
+      <table>
+        <tr><th>症状</th><th>対処</th></tr>
+        <tr><td><span class="kbd">ffmpeg not found</span></td><td>ffmpeg を入れ直し、<span class="kbd">ffmpeg -version</span> が出るか確認</td></tr>
+        <tr><td>文字起こしが遅い</td><td>ローカルは PC 性能に依存。速くするには Groq 鍵を設定（2-3）</td></tr>
+        <tr><td>Groq が <span class="kbd">[NG]</span></td><td>鍵をコピーし直す／console.groq.com で作り直す。それでも無効なら鍵設定を消せば無料のローカルで動く</td></tr>
+        <tr><td>字幕の誤変換</td><td><span class="kbd">src/term-corrections.json</span> に「誤→正」を追記すると次回から直る</td></tr>
+        <tr><td>候補が少ない/微妙</td><td>歩留まり 30〜50% は仕様。<span class="kbd">ui</span> で採用分だけ使う</td></tr>
+      </table>
+    </section>
+
+    <section id="faq">
+      <h2>7. よくある質問</h2>
+      <dl>
+        <dt>動画は外部に送られますか？</dt>
+        <dd>動画そのものは外部に送られません。処理は PC 内で行われます。高速文字起こし（Groq）を使うときだけ、音声があなたの鍵で Groq に送られます。また、「ダイジェスト（digest）」モードでは、動画ではなく文字起こしのテキスト全文を、台本を組み立てるために Claude（Anthropic）へ常時自動で送信します（都度の確認はありません）。新しいサービスへの登録は不要で、あなたが使っている Claude Code の契約をそのまま利用するため、追加料金も基本的に発生しません。</dd>
+        <dt>お金はかかりますか？</dt>
+        <dd>ツールはローカルで無料動作します。Groq を使い無料枠を超えた分だけ、あなたの Groq アカウントに課金されます（鍵を設定しなければ無料）。</dd>
+        <dt>字幕の変換ミスが気になります。</dt>
+        <dd>用語辞書（<span class="kbd">src/term-corrections.json</span>）に「誤→正」を登録すると、次回の文字起こしから直ります。</dd>
+      </dl>
+    </section>
+
+    <footer class="foot">
+      <span>video-shorts 使用説明書 v1.0（2026-07-04）</span>
+    </footer>
+  </main>
+</body>
+</html>

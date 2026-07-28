@@ -1,0 +1,146 @@
+/* video-shorts 同意画面。法的性質の画面のため装飾より可読性・信頼感を優先。 */
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --ink: #1c2330;
+  --sub: #5b6472;
+  --line: #e2e6ec;
+  --brand: #2563eb;
+  --brand-ink: #ffffff;
+  --ok: #16a34a;
+  --disabled: #b8bfca;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141b;
+    --card: #171d26;
+    --ink: #e8ecf2;
+    --sub: #9aa4b2;
+    --line: #2a323d;
+    --brand: #3b82f6;
+    --disabled: #3a434f;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px clamp(18px, 4vw, 36px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+
+.head h1 { font-size: clamp(20px, 4.5vw, 26px); margin: 0 0 8px; letter-spacing: .01em; }
+.head .sub { color: var(--sub); margin: 0 0 8px; font-size: 15px; }
+.head .services {
+  font-size: 13px; color: var(--sub); margin: 8px 0 0;
+  padding: 8px 12px; background: var(--bg); border: 1px dashed var(--line); border-radius: 8px;
+}
+.ref {
+  font-size: 11px; font-weight: 700; color: var(--hl, #b8860b);
+  border: 1px solid currentColor; border-radius: 999px;
+  padding: 1px 8px; margin-left: 8px; vertical-align: 2px; white-space: nowrap;
+}
+.fine { font-size: 13px; color: var(--sub); }
+:root { --hl: #b8860b; }
+@media (prefers-color-scheme: dark) { :root { --hl: #d9a441; } }
+
+.terms { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; }
+.terms ol { margin: 0; padding: 0; counter-reset: item; list-style: none; }
+.terms li {
+  counter-increment: item;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.terms h2 {
+  font-size: 16px;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.terms h2::before {
+  content: counter(item);
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  display: inline-grid; place-items: center;
+  background: var(--brand); color: var(--brand-ink);
+  border-radius: 50%; font-size: 13px; font-weight: 700;
+}
+.terms p { margin: 0; color: var(--ink); font-size: 15px; }
+.terms strong { color: var(--ink); }
+
+.agree { margin-top: 22px; display: grid; gap: 16px; }
+.field { display: grid; gap: 6px; }
+.field .label { font-size: 14px; color: var(--sub); font-weight: 600; }
+#name {
+  font-size: 16px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink);
+}
+#name:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+.check {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 15px; cursor: pointer; background: var(--bg);
+}
+.check input { width: 22px; height: 22px; margin-top: 1px; accent-color: var(--brand); flex: 0 0 auto; }
+
+#start {
+  font-size: 17px; font-weight: 700;
+  padding: 14px 20px; border: 0; border-radius: 10px;
+  background: var(--brand); color: var(--brand-ink);
+  cursor: pointer; transition: opacity .15s, transform .05s;
+}
+#start:disabled { background: var(--disabled); color: #fff; cursor: not-allowed; }
+#start:not(:disabled):active { transform: translateY(1px); }
+.hint { margin: 0; font-size: 13px; color: var(--sub); }
+
+.receipt {
+  margin-top: 22px; padding: 18px;
+  border: 1px solid var(--ok); border-radius: 12px;
+  background: color-mix(in srgb, var(--ok) 8%, var(--card));
+}
+.receipt h2 { margin: 0 0 6px; font-size: 17px; color: var(--ok); }
+.receipt .note { margin: 0 0 12px; font-size: 14px; color: var(--sub); }
+.receipt-text {
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px; font-size: 13px; margin: 0 0 12px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+.receipt-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.btn-primary {
+  font-size: 16px; font-weight: 700; padding: 13px 20px; border: 0; border-radius: 10px;
+  background: var(--ok); color: #fff; cursor: pointer;
+}
+.btn-primary:active { transform: translateY(1px); }
+.btn-secondary {
+  font-size: 14px; padding: 12px 16px; border: 1px solid var(--brand);
+  background: transparent; color: var(--brand); border-radius: 10px; cursor: pointer;
+}
+.mailnote { font-size: 13px; color: var(--sub); margin: 4px 0 8px; }
+.receipt .note a { color: var(--brand); }
+.evidence { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.evidence > summary { cursor: pointer; font-size: 14px; font-weight: 700; color: var(--sub); }
+.evidence > summary:hover { color: var(--brand); }
+#download {
+  font-size: 14px; padding: 10px 16px; border: 1px solid var(--brand);
+  background: transparent; color: var(--brand); border-radius: 8px; cursor: pointer;
+}
+
+.foot { margin-top: 20px; text-align: center; color: var(--sub); font-size: 12px; }

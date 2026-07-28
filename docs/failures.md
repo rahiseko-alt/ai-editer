@@ -485,3 +485,23 @@
   見ないまま4回リトライしていた）。同じ趣旨の不合格が2回続いた時点で、リトライの方向を変えるのではなく、
   そもそも「このシミュレーションでこの葉をdoneにする」という目標設定自体を疑い、正直に撤退する判断を
   早める。
+
+## 2026-07-28 kosespark-import ブランチが main と共通祖先を持たない別履歴だった／サンドボックスでffmpeg導入不可
+- 事象：`main`(白紙テンプレ)と`kosespark-import`ブランチ(video-shorts実装)を統合する際、`git merge-base`が
+  終了コード1を返し、両者に共通祖先が存在しないことが判明した。`kosespark-import`は「vibe-baseモノレポからの
+  分割」commitを起点に持つ、完全に別履歴のリポジトリがブランチとして持ち込まれたものだった。また、
+  `video-shorts/tests/render-check.mjs`の動作検証のため`apt-get install ffmpeg`を試みたが、このセッションの
+  サンドボックス環境ではUbuntuミラーの一部パッケージが404で取得できず失敗した。
+- 根因：ブランチ名や`git log --graph`の見た目だけでは「同じリポジトリの枝分かれ」と「別リポジトリの持ち込み」
+  を区別できない。`git merge-base`の終了コードを確認するまで、通常の`git merge`が使える前提で作業を進めかけた。
+  ffmpeg導入不可は、このサンドボックスのパッケージミラー可用性がGitHub Actions実行環境と異なるために起きた
+  環境差であり、ローカルで全ての受入検証を再現できるとは限らない。
+- 対処：`git merge`ではなく`git checkout <branch> -- <path>`によるファイル単位の取り込みに切り替え、
+  取り込む範囲(video-shorts/一式と関連運用docsのみ)をユーザーに提案し承認を得てから実行した。ffmpeg依存の
+  `render-check.mjs`は`pnpm -r test`には接続せず、CI側での検証待ちの backlog(`G-TESTINFRA-RENDERCHECK`)として
+  `docs/roadmap.html`に明記した。
+- 教訓：**ブランチ統合の前に必ず`git merge-base <a> <b>`の終了コードで共通祖先の有無を確認する**（0以外＝
+  別履歴。この場合`git merge --allow-unrelated-histories`かファイル単位のcheckoutかを選ぶ判断が要る）。
+  また、**サンドボックスでシステム依存(ffmpeg等)のインストールに失敗しても、それだけでCIも失敗すると
+  即断しない**——ローカルで検証できない項目は「検証できなかった」と正直に記録し、CIのrun結果を実際の
+  証拠として待つ（自己申告で済ませない）。

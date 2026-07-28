@@ -117,30 +117,753 @@
 <script type="application/json" id="roadmap-data">
 {
   "meta": {
-    "title": "ロードマップ（白紙テンプレ）",
-    "template": true,
-    "active": "ROOT",
-    "next": "【初回】この案件のゴールを頂点に原子ツリーを描く。meta.handoff.nav（初回接続トップ手順ナビ）に従い、AGENTS.md『新規案件の初期化フロー(0〜6)』の6でこの roadmap.html を描き直す。描き直したら meta.template を false にする。ツリー確定まで実装・調査・ファイル作成には着手しない。",
+    "title": "kosespark video-shorts ロードマップ",
+    "active": "G-P0",
+    "next": "P0-5(Web UIの設定が生成物へ反映される)から着手する。次点はP1グループ(セキュリティ・正しさ)。",
     "handoff": {
-      "done": "（白紙テンプレの初期状態）まだ何も実施していません。これはコピー元テンプレのロードマップです。実作業を始める前に、必ず下の nav（初回接続トップ手順ナビ）を上から順に辿ってください。",
-      "trouble": "無し",
-      "nav": [
-        "1. チェックイン：この handoff と meta.active/meta.next を読み、ユーザーへ『白紙テンプレなので、まず案件のゴールをヒアリングして原子ツリーを描きます』と丁寧語で伝える。",
-        "2. 機械強制(新リポジトリで1回だけ／管理者の手作業。CIやAIからは不可)：(a)リポジトリを Public にする(無料Private では branch protection/Ruleset が効かない)。(b)main に ci-green 必須化＝Settings→Rules→Rulesets→New branch ruleset で Enforcement=Active・Target=Include default branch・Require status checks(ci-green)・さらに『Require a pull request before merging』(Required approvals=0のまま)も必ずチェックする(これが無いと main への直pushでCIを丸ごと迂回できる＝実地で確認済みの最重要ハマりどころ)。最初のPRが1回走った後、同じ画面で roadmap-required も必須チェックに追加。(c)Settings→Security→Code security で Secret Protection・Push protection を Enable。(d)Dependabot version updates は .github/dependabot.yml が同梱済みなので追加設定不要。詳細は AGENTS.md『新規案件の初期化フロー』手順0。",
-        "3. ヒアリング→リサーチ→提案→承認：AGENTS.md『新規案件の初期化フロー 1〜4』でスタック(クラウド/言語/FW/パッケージ/DB/認証/IaC/テスト/CI/Lint)を確定する。黙って進めない＝ユーザーの明示OKを取る。",
-        "4. 設定：承認された構成を、案件の AGENTS.md(presets/_TEMPLATE.md を複製)に宣言する。",
-        "5. 原子ツリー作成(第一成果物)：案件のゴールを頂点に、この roadmap.html の nodes を原子レベル(1葉=1事実=1verify)まで描き直す。ROOT プレースホルダは破棄。各葉に criteria/verify を置く。",
-        "6. テンプレ解除：meta.template を false（または削除）にし、meta.active を実ノードIDへ、meta.handoff.done/trouble を実セッションの内容へ上書き、nav は削除する。以降 CI(verify-roadmap-evidence)が本物の原子ツリーを機械強制する。",
-        "7. 実装開始：ツリー確定後、meta.active が指す葉から着手する。以降は checkin-checkout スキルの通常運用(handoff 上書き＋failures.md 追記)へ移行する。"
-      ]
+      "done": "リポジトリ統治をcc-v2(本AGENTS.md/docs/roadmap.html)側に一本化。kosespark-importブランチ(main と共通祖先を持たない別履歴＝vibe-baseモノレポからの分割)からvideo-shorts/一式と関連運用docsのみを取り込み、writer-test/engine(Writerエンジン)は今回スコープ外としてマスター判断で見送り。未使用だったNext.jsサンプル(apps/web, packages/ui)を削除し、pnpm-workspace.yaml/package.json/CIのsmokeジョブをvideo-shorts中心に更新。2026-07-27監査提案の残作業(P0-5・P1全12件・P2全9件のうちvideo-shorts対象22件)を原子分解し本ロードマップへ登録。加えて取り込み時の調査でLint未導入・render-check.mjsのCI未接続を発見しG-TESTINFRAとして追跡、memory.mdのP1保留事項(lecture.mp4素材)もG-PENDINGとして引き継いだ。",
+      "trouble": "kosespark-importはmainと共通祖先を持たない別履歴だったためgit mergeでなくファイル単位checkoutで取り込んだ。旧統治(memory.md/.claude/hooks/*のvibe-base系ゲート、root直下のfailures.md/hypotheses.md/risk-diagnosis.md)はAGENTS.md/roadmap.htmlに一本化する方針のため取り込んでいない。このサンドボックスはパッケージミラーの404でffmpegを導入できずtests/render-check.mjsを手元検証できなかった(CI側での検証に委ねる)。"
     },
     "updated": "2026-07-28"
   },
   "nodes": [
-    { "id":"ROOT", "kind":"state",
-      "theme":"（白紙）ここに案件のゴールを置く",
-      "meaning":"コピー直後のテンプレ。実作業前に描き直す単一プレースホルダ",
-      "detail":"この ROOT はテンプレの残骸。meta.handoff.nav（初回接続トップ手順ナビ）に従い、案件のゴールを頂点にした原子ツリーへ描き直し、meta.template を false にする。それまで実装着手しない" }
+    {
+      "id": "GOAL",
+      "kind": "state",
+      "theme": "video-shorts を安全に販売継続できる状態にする",
+      "meaning": "2026-07-27 監査(FAIL判定)の残作業を是正し、購入者が安心して使える品質に戻す",
+      "children": [
+        {
+          "id": "G-P0",
+          "kind": "state",
+          "theme": "配布直結の致命的な欠陥が無い",
+          "meaning": "お客様が受け取る配布物が、選んだ設定通りに動く",
+          "children": [
+            {
+              "id": "P0-5",
+              "kind": "state",
+              "theme": "Web UIで選んだ設定が、実際の動画に反映される",
+              "meaning": "画面で16:9や分数を選んでも、今は無視されて既定値で処理されてしまう",
+              "children": [
+                {
+                  "id": "P0-5-A",
+                  "kind": "state",
+                  "theme": "画面で選んだ設定が、そのまま動画に反映される",
+                  "meaning": "「16:9を選んだのに9:16で出てくる」が起きない",
+                  "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "画面選択→state→CLI引数→実出力解像度が一致する",
+                      "verify": "画面操作(または contract test)で選択値と実出力ファイルの解像度/向きを1対1照合し一致することを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P0-5-B",
+                  "kind": "state",
+                  "theme": "実装されていない選択肢が画面に出ない",
+                  "meaning": "選べるのに動かない項目(1:1・4:5)がお客様の目に触れない",
+                  "detail": "レンダラー未実装の選択肢をUIから除去する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "レンダラーが対応していない選択肢がUI上に存在しない",
+                      "verify": "webapp-mockup のUIコードとrender-vertical.mjsの対応表を突き合わせ、UI選択肢⊆実装済み比率であることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: server/pipeline-runner.mjs:241-247 が作るstateにmode/sub/orientが無い。opts.cut/opts.sizeも後段で未使用。1:1/4:5はレンダラー未実装。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P0-5）"
+            }
+          ]
+        },
+        {
+          "id": "G-P1",
+          "kind": "state",
+          "theme": "重大なセキュリティ・正しさの欠陥が無い",
+          "meaning": "個人情報や動画データが漏れたり、失敗が成功と表示されたりしない",
+          "children": [
+            {
+              "id": "P1-1",
+              "kind": "state",
+              "theme": "動画の中身にAIへの命令が仕込まれても暴走しない",
+              "meaning": "文字起こし結果をAIにそのまま渡すと、動画内の音声が命令として実行されてしまう危険がある",
+              "children": [
+                {
+                  "id": "P1-1-A",
+                  "kind": "state",
+                  "theme": "AIにツールを使わせない",
+                  "meaning": "文字起こし処理中はAIがファイル操作などをできない",
+                  "detail": "claude -p 呼び出し時にツール呼び出しを無効化する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "文字起こし処理のclaude -p呼び出しでツールが無効化されている",
+                      "verify": "起動コマンド/設定を確認し、ツール無効化フラグ(--no-tools相当)が渡っていることをコードレビューし、実行時ログでツール呼び出しが発生しないことを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-1-B",
+                  "kind": "state",
+                  "theme": "AIに渡る環境変数を最小限にする",
+                  "meaning": "PCの秘密情報(APIキー等)がAIに見えない",
+                  "detail": "環境変数をallowlist方式に制限して子プロセスへ渡す。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "claude -p の子プロセスに渡る環境変数がallowlistのみである",
+                      "verify": "spawn呼び出しのenvオプションを確認し、allowlist外の環境変数(existing process.env全体)が渡っていないことを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-1-C",
+                  "kind": "state",
+                  "theme": "AIの作業場所を隔離する",
+                  "meaning": "AIが他のお客様のファイルに触れない",
+                  "detail": "隔離された作業ディレクトリ(cwd)で実行する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "claude -p の実行cwdが隔離された専用ディレクトリである",
+                      "verify": "spawn呼び出しのcwdオプションが、ジョブ専用の隔離ディレクトリを指していることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-1-D",
+                  "kind": "state",
+                  "theme": "文字起こし結果は「データ」であって「命令」ではないと明示する",
+                  "meaning": "動画の中の声が命令として実行されない",
+                  "detail": "文字起こしテキストをプロンプト中で明示的にデータとして区切る境界を設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "プロンプト内で文字起こし文字列がデータとして明示区切りされ、指示として解釈されない",
+                      "verify": "buildPrompt等の実装を確認し、非信頼テキストがdelimiter/schema等で区切られていることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-1-E",
+                  "kind": "state",
+                  "theme": "実際に攻撃を試して防げることを確認する",
+                  "meaning": "「動画に命令文を仕込む」攻撃を試して防げる",
+                  "detail": "敵対的な注入内容を含むテスト入力で防御を検証するテストを追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "プロンプト注入を含む文字起こしを与えるテストが存在し、注入が実行されないことを確認する",
+                      "verify": "node --test 等でプロンプト注入ペイロードを含む文字起こしを与え、意図しないツール実行/情報漏洩が起きないことを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: 非信頼な文字起こしテキストが claude -p へ渡り、ツールと全環境変数を継承する。プロンプト注入とローカル情報参照の危険。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-1）"
+            },
+            {
+              "id": "P1-2",
+              "kind": "state",
+              "theme": "ローカルAPIに誰でもアクセスできる状態を無くす",
+              "meaning": "同じPC上の別のアプリやサイトから、勝手にジョブを起動されたりファイルを盗まれたりしない",
+              "children": [
+                {
+                  "id": "P1-2-A",
+                  "kind": "state",
+                  "theme": "起動ごとの合言葉(トークン)で守る",
+                  "meaning": "サーバー起動時に発行される合言葉を知らないと操作できない",
+                  "detail": "起動時トークンによる認可を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "全APIエンドポイントが起動時生成トークンによる認可を要求する",
+                      "verify": "トークンを付けないリクエストが401/403で拒否され、正しいトークン付きリクエストが成功することを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-2-B",
+                  "kind": "state",
+                  "theme": "他のサイトからの操作を拒否する",
+                  "meaning": "悪意あるWebサイトを開いただけでは操作されない",
+                  "detail": "Origin/Hostヘッダ検証を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "許可外のOrigin/Hostからのリクエストが拒否される",
+                      "verify": "許可外Originヘッダを付けたリクエストが拒否されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-2-C",
+                  "kind": "state",
+                  "theme": "アップロードされたファイルの中身を確認する",
+                  "meaning": "動画のふりをした別のファイルが処理されない",
+                  "detail": "アップロードのmagic byte(実ファイル形式)検証を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "拡張子と異なる中身のファイルアップロードが拒否される",
+                      "verify": "偽装した拡張子のファイル(中身は動画でない)をアップロードし拒否されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-2-D",
+                  "kind": "state",
+                  "theme": "大きすぎるファイルを拒否する",
+                  "meaning": "巨大ファイルでサーバーが固まらない",
+                  "detail": "アップロードサイズの上限を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "上限を超えるアップロードが拒否される",
+                      "verify": "上限を超えるサイズのファイルアップロードが413等で拒否されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-2-E",
+                  "kind": "state",
+                  "theme": "短時間に大量リクエストされても耐える",
+                  "meaning": "連続攻撃でサーバーが落ちない",
+                  "detail": "レート制限を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "短時間の大量リクエストがレート制限で拒否される",
+                      "verify": "短時間に閾値超のリクエストを送り、一部が429等で拒否されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
+            },
+            {
+              "id": "P1-3",
+              "kind": "state",
+              "theme": "同名ファイルを同時にアップロードしても混線しない",
+              "meaning": "2人のお客様(または同じお客様の2操作)が同時に同じファイル名を使っても、片方が壊れない",
+              "detail": "根拠: 実行中判定より前に同じinput.*をtruncateする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-3）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "ジョブ単位(UUID等)でアップロード先を分離し、同名ファイルの同時投入で互いのファイルを上書き/破損させない",
+                  "verify": "同名ファイルを同時に2件アップロードするテストで、両方のジョブが独立して完了することを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-4",
+              "kind": "state",
+              "theme": "他人のジョブの結果を推測して覗けない",
+              "meaning": "ジョブIDを当てずっぽうで変えても、他のお客様の動画が見られない",
+              "children": [
+                {
+                  "id": "P1-4-A",
+                  "kind": "state",
+                  "theme": "ジョブIDを推測できない値にする",
+                  "meaning": "連番などで他人のIDを当てられない",
+                  "detail": "暗号学的に安全な乱数でジョブIDを生成する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "ジョブIDが暗号学的に推測不能なランダム値である",
+                      "verify": "連続して発行されたジョブIDが連番/規則的でなく、統計的に予測不能であることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-4-B",
+                  "kind": "state",
+                  "theme": "自分のジョブの結果しか取得できないようにする",
+                  "meaning": "他人のジョブIDを知っても結果を見られない",
+                  "detail": "成果物(SSE/候補JSON/生成動画)の取得にジョブ別の認可トークンを要求する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "他人のジョブIDを直接指定してもSSE/候補JSON/動画を取得できない",
+                      "verify": "自分が発行していないジョブIDに対するSSE購読・candidates取得・動画ダウンロードがすべて拒否されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: SSE、候補JSON、生成動画にジョブ認可がなく、IDが推測可能。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-4）"
+            },
+            {
+              "id": "P1-5",
+              "kind": "state",
+              "theme": "一部だけ失敗したのに「成功」と表示しない",
+              "meaning": "3本頼んで1本しか作れなかった時、ちゃんと「一部失敗」と分かる",
+              "detail": "根拠: 1チャンク失敗でも他が成功すると欠落を黙って確定する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-5）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "一部のチャンクが失敗した場合、全体が成功と表示されずincomplete/failed状態になる",
+                  "verify": "一部チャンクが失敗する入力でパイプラインを実行し、最終状態がsuccessではなくincomplete/failedになることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-6",
+              "kind": "state",
+              "theme": "サーバーが再起動しても、進行中だった処理の状況が分かる",
+              "meaning": "処理中にサーバーが落ちて再起動しても、画面が固まったままにならない",
+              "detail": "根拠: job状態がメモリのみで、再接続はunknownのまま。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-6）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "サーバー再起動後、進行中だったジョブの状態がクライアントへ通知される(永久待機しない)",
+                  "verify": "ジョブ実行中にサーバーを再起動し、クライアントのSSE再接続でinterrupted等の明示状態が通知されることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-8",
+              "kind": "state",
+              "theme": "同じ名前の動画を別々に処理しても混線しない",
+              "meaning": "「lecture.mp4」を2回別々に処理しても、前の処理結果が上書きされない",
+              "detail": "根拠: CLIジョブがbasenameだけでwork/outputを決める。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-8）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "CLIジョブのwork/outputパスがbasenameだけでなくUUID等で一意化され、同名動画の別ジョブが状態を共有しない",
+                  "verify": "同名動画ファイルで2回別々にpipeline.mjs initを実行し、work/outputが別ディレクトリになり互いに干渉しないことを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-9",
+              "kind": "state",
+              "theme": "字幕クリップが不自然に離れた発言をつなげない",
+              "meaning": "全然違う場面の発言同士が1つのクリップに混ざらない",
+              "children": [
+                {
+                  "id": "P1-9-A",
+                  "kind": "state",
+                  "theme": "クリップ内の時間差に上限を設ける",
+                  "meaning": "遠く離れた発言同士が1クリップに混ざらない",
+                  "detail": "クリップ内の前後語の時間差に最大gapを設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "クリップ内の前後語の時間差が最大gapを超えない",
+                      "verify": "最大gapを超える時間差の語を含む入力で、それらが同一クリップに結合されないことを確認するテストを実行する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-9-B",
+                  "kind": "state",
+                  "theme": "発言の時系列順を保つ",
+                  "meaning": "クリップ内で会話の順番が入れ替わらない",
+                  "detail": "クリップ内の語順が入力の時系列順を保つよう制約する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "クリップ内の語順が入力の時系列順を保っている(遠隔語の逆転連結がない)",
+                      "verify": "時系列順が入れ替わりうる入力で、生成クリップ内の語順が時系列を保つことを確認するテストを実行する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-9-C",
+                  "kind": "state",
+                  "theme": "発言のカバー率が一定以上であることを確認する",
+                  "meaning": "クリップが元の発言をちゃんとカバーしている",
+                  "detail": "クリップの発話カバレッジ(coverage)に閾値を設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "クリップの発話カバレッジが閾値を満たす",
+                      "verify": "低カバレッジになりうる入力で、閾値未満のクリップが生成されない(または除外される)ことを確認するテストを実行する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: reverse matchが前方語と100秒後の後方語を1クリップにできる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-9）"
+            },
+            {
+              "id": "P1-10",
+              "kind": "state",
+              "theme": "配布物に開発中のゴミファイルが混ざらない",
+              "meaning": "お客様に渡すZIPに、余計な内部ファイルが入っていない",
+              "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイル(skill/等)を混入させない",
+                  "verify": "build-dist.mjsを実行し、生成されたdist/ZIPの内容が許可リストと完全一致し余剰ファイルが0件であることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-11",
+              "kind": "state",
+              "theme": "依存ライブラリに既知の重大な脆弱性が無い",
+              "meaning": "使っている部品(ライブラリ)に、既に知られている危険な穴が無い",
+              "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
+                  "verify": "pnpm audit --audit-level moderate（または npm audit）を実行し、High/Critical脆弱性が0件であることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P1-12",
+              "kind": "state",
+              "theme": "外部ツールの意図しないバージョンが実行されない",
+              "meaning": "`uvx`/`npx`が裏で違うバージョンを勝手に取ってこない",
+              "children": [
+                {
+                  "id": "P1-12-A",
+                  "kind": "state",
+                  "theme": "外部ツールのバージョンを固定する",
+                  "meaning": "実行するたびに違うバージョンが動く事故を防ぐ",
+                  "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
+                      "verify": "呼び出しコマンドにバージョン/hash指定があることをコードレビューし、固定前後で実行結果が再現することを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P1-12-B",
+                  "kind": "state",
+                  "theme": "初回実行時に同意を得る",
+                  "meaning": "何が実行されるか知らないまま外部ツールが動かない",
+                  "detail": "バージョン固定前の初回実行に同意フローを設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
+                      "verify": "初回セットアップ手順を実行し、外部ツール実行前に同意確認が挟まることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: uvx無指定版、npx -y ...@latestのように可変依存を事前承認で実行している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-12）"
+            }
+          ]
+        },
+        {
+          "id": "G-P2",
+          "kind": "state",
+          "theme": "UI/UXの品質欠陥が無い",
+          "meaning": "画面が崩れたり、キーボードだけで操作できなかったりしない",
+          "children": [
+            {
+              "id": "P2-1",
+              "kind": "state",
+              "theme": "設定ファイルの書き込み中にデータが壊れない",
+              "meaning": "処理中に電源が落ちても、状態ファイルが壊れて読めなくならない",
+              "detail": "根拠: JSONを最終pathへ直接truncate書込みしている。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-1）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "状態JSON書込みがsibling temp+fsync+atomic renameで行われ、書込み中の破損読み出しがない",
+                  "verify": "書込み処理中に強制終了するテスト(または fault injection)で、既存の状態JSONが壊れずに残ることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-2",
+              "kind": "state",
+              "theme": "音声や映像が欠けている動画を正しく検出する",
+              "meaning": "音が無い動画を「0秒の音声」として見逃さない",
+              "detail": "根拠: A/V verifierがストリーム欠落を0秒扱いする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-2）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "A/V検証が音声/映像streamの欠落を「長さ0秒」ではなく検証失敗として扱う",
+                  "verify": "音声または映像streamが欠落した動画をav-verify.mjsへ入力し、FAILとして検出されることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-3",
+              "kind": "state",
+              "theme": "字幕の表示タイミングがずれない",
+              "meaning": "字幕がコンマ何秒か早く/遅く出るズレが起きない",
+              "detail": "根拠: ASS時刻の100センチ秒繰上げが不備。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-3）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "字幕(ASS)タイムスタンプのcentisecond→時分秒変換で繰り上げが正しく行われる",
+                  "verify": "99センチ秒台をまたぐ境界値でbuildAssを実行し、時分秒への繰り上げが正しいことを確認するテストを実行する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-4",
+              "kind": "state",
+              "theme": "古いジョブのデータがPCの容量を圧迫し続けない",
+              "meaning": "使わなくなった動画データが自動的に片付く",
+              "children": [
+                {
+                  "id": "P2-4-A",
+                  "kind": "state",
+                  "theme": "古いジョブを自動削除する",
+                  "meaning": "何日か経ったジョブのファイルが自動で消える",
+                  "detail": "ジョブ/成果物にTTLを設け、期限切れ分を自動削除する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "ジョブ/成果物にTTLがあり、期限切れ分が自動削除される",
+                      "verify": "TTLを短く設定した状態でジョブを作成し、TTL経過後にファイルが自動削除されることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P2-4-B",
+                  "kind": "state",
+                  "theme": "保存容量に上限を設ける",
+                  "meaning": "ディスクを使い切ってPCが動かなくなるのを防ぐ",
+                  "detail": "保存容量にクォータ上限を設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "保存容量にクォータ上限があり、超過時に新規保存が拒否/警告される",
+                      "verify": "クォータ上限に達するまでジョブを作成し、超過時の挙動(拒否/警告)を確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P2-4-C",
+                  "kind": "state",
+                  "theme": "同時に動かせるジョブ数に上限を設ける",
+                  "meaning": "一度に大量のジョブを投げてPCが固まらない",
+                  "detail": "同時接続/同時ジョブ数に上限を設ける。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "同時ジョブ数に上限があり、超過リクエストが拒否/キューイングされる",
+                      "verify": "上限を超える数のジョブを同時に投入し、超過分が拒否またはキューイングされることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: ジョブと成果物にTTL/容量管理がない。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-4）"
+            },
+            {
+              "id": "P2-5",
+              "kind": "state",
+              "theme": "スマホ幅で画面が崩れない",
+              "meaning": "スマホでも操作できる1カラム表示になる",
+              "detail": "根拠: 375pxで2カラムを維持し、右カラムが約96pxへ圧縮され崩壊する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-5）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "モバイル幅(375px)で1カラムレイアウトになり、プレビューが後段に移動している",
+                  "verify": "375px幅でwebapp-mockupを表示し、レイアウトが1カラムになり要素が重ならないことを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-6",
+              "kind": "state",
+              "theme": "文字が小さすぎて読めない箇所が無い",
+              "meaning": "どの画面でも文字がちゃんと読める大きさになっている",
+              "detail": "根拠: 最小文字が11.5px(webapp-mockup/measure.mjs実測)。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-6）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "全テキストの最小フォントサイズが13px以上(主要説明は14px以上)である",
+                  "verify": "node webapp-mockup/measure.mjsを実行し、最小フォントサイズが13px以上であることを確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-7",
+              "kind": "state",
+              "theme": "選択した項目が支援技術にも正しく伝わる",
+              "meaning": "スクリーンリーダーを使う人にも、選んだ項目が選ばれていると伝わる",
+              "detail": "根拠: 選択chipのARIA状態が未同期。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-7）",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "選択chipのARIA状態(aria-pressed等)が選択状態と同期している",
+                  "verify": "選択chipをクリックし、aria-pressed(またはradio semantics)が選択状態と一致して変化することをDOM検査で確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "P2-8",
+              "kind": "state",
+              "theme": "ポップアップ画面がキーボードだけで操作できる",
+              "meaning": "マウスが無くても、モーダルを開いて閉じて元の画面に戻れる",
+              "children": [
+                {
+                  "id": "P2-8-A",
+                  "kind": "state",
+                  "theme": "モーダルを開いたら最初にフォーカスが移る",
+                  "meaning": "モーダルが開いた瞬間にキー操作を続けられる",
+                  "detail": "モーダル表示時に初期フォーカスを設定する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "モーダル表示時に初期フォーカスが移動する",
+                      "verify": "モーダルを開き、開いた直後にfocusがモーダル内要素にあることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P2-8-B",
+                  "kind": "state",
+                  "theme": "モーダルの外にTabで抜けられない",
+                  "meaning": "背後の画面を誤操作しない",
+                  "detail": "モーダル内でfocus trapを効かせる。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "モーダル内でfocus trapが効いている(モーダル外にTabで抜けない)",
+                      "verify": "モーダルを開いた状態でTabキーを連打し、フォーカスがモーダル内要素間のみを巡回することを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P2-8-C",
+                  "kind": "state",
+                  "theme": "Escapeキーでモーダルが閉じる",
+                  "meaning": "キーボードだけでモーダルを閉じられる",
+                  "detail": "Escapeキーでモーダルを閉じる処理を追加する。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "Escapeキーでモーダルが閉じる",
+                      "verify": "モーダルを開いた状態でEscapeキーを押し、モーダルが閉じることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                },
+                {
+                  "id": "P2-8-D",
+                  "kind": "state",
+                  "theme": "モーダルを閉じたら元の場所にフォーカスが戻る",
+                  "meaning": "閉じた後にどこを操作していたか見失わない",
+                  "detail": "モーダルを閉じた後、開く前にフォーカスがあった要素へ復帰させる。",
+                  "status": "todo",
+                  "criteria": [
+                    {
+                      "text": "モーダルを閉じた後、元の要素へフォーカスが復帰する",
+                      "verify": "モーダルを開く前にfocusしていた要素を記録し、モーダルを閉じた後に同じ要素へfocusが戻ることを確認する",
+                      "evidence": ""
+                    }
+                  ]
+                }
+              ],
+              "detail": "根拠: modalのフォーカス管理が無い。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-8）"
+            }
+          ]
+        },
+        {
+          "id": "G-TESTINFRA",
+          "kind": "state",
+          "theme": "継続開発を支えるテスト基盤が整っている",
+          "meaning": "コードを直したときに、機械が正しく緑/赤を判定してくれる",
+          "children": [
+            {
+              "id": "G-TESTINFRA-LINT",
+              "kind": "state",
+              "theme": "video-shortsにLintが導入されている",
+              "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
+              "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
+                  "verify": "pnpm --filter video-shorts lintを実行し、実際にコード内容を検査した上でexit 0になることを確認する（echoやプレースホルダでの緑ではない）",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
+              "id": "G-TESTINFRA-RENDERCHECK",
+              "kind": "state",
+              "theme": "レンダリングの実機検証がCIで自動実行される",
+              "meaning": "「実際に動画が正しく出力される」ことを毎回機械が確認してくれる",
+              "detail": "tests/render-check.mjsはsamples/test-16x9.mp4(.gitignore対象で未コミット)とffmpegを要求するため、現状CI未接続で手動実行のみ。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "小さなサンプルmp4をリポジトリに同梱し、CI環境にffmpegを導入した上でtests/render-check.mjsがCIで自動実行される",
+                  "verify": "CI run上でtests/render-check.mjsがPASSし、その run URL が得られることを確認する",
+                  "evidence": ""
+                }
+              ]
+            }
+          ],
+          "detail": "取り込み時の調査(2026-07-28)で判明した既存ギャップ。監査提案には無いが、以後の開発品質のために追跡する。"
+        },
+        {
+          "id": "G-PENDING",
+          "kind": "state",
+          "theme": "保留中の意思決定が片付いている",
+          "meaning": "作業が宙に浮いたまま止まっている案件が無い",
+          "children": [
+            {
+              "id": "G-PENDING-LECTURE",
+              "kind": "state",
+              "theme": "テスト素材(lecture.mp4)の使い道をマスターが決めている",
+              "meaning": "何を作るか決まっていない動画素材が放置されない",
+              "detail": "work/hensyu01/にlecture.mp4(2048×1046・18分24秒)が配置され文字起こし済みだが、編集モード/字幕/縦横のヒアリング未実施でstate.json未作成のまま宙に浮いている(2026-07-23〜)。決め打ち禁止のため、何を作るかをマスターに確認してから着手する。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "lecture.mp4で何を作るか(編集モード/字幕/縦横)がマスター承認により確定し、pipeline.mjs initが実行されている",
+                  "verify": "確定した仕様でpipeline.mjs initを実行し、work/hensyu01/state.jsonが生成されることを確認する",
+                  "evidence": ""
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "detail": "2026-07-28 マスター指示により「docs/audits/2026-07-27-kosespark-test-review-proposal.md のP0-5・P1全12件・P2全9件を全て改善する」を確定範囲とする（うちP0-1〜4・P0-6とP1-7/P2-9(Writerエンジン)を除く。Writer側は今回このリポジトリへ未取り込みのためスコープ外）。"
+    }
   ]
 }
 </script>

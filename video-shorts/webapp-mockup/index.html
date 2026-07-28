@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kosespark 無料版 — 動画をショートに（モック）</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles-cards.css" />
+  <link rel="stylesheet" href="styles-overlay.css" />
+  <link rel="stylesheet" href="styles-editing.css" />
+</head>
+<body>
+  <!-- デザイン確認用モック。実処理は未接続。
+       2カラム非対称「設定｜確認プレビュー」・PC横長専用・スクロール禁止。
+       北欧高品質配色（warm off-white背景/sage単色アクセント/tonal surface/soft shadow）。
+       デバイス枠固定・内側の.video-areaだけがサイズに応じてcontain表示。 -->
+
+  <!-- ===== 上部バー ===== -->
+  <header class="topbar" role="banner">
+    <div class="brand">
+      <span class="spark" aria-hidden="true">✦</span> kosespark
+      <span class="badge">無料版</span>
+    </div>
+    <button class="pro-btn" id="pro-btn">有料版はこちら →</button>
+  </header>
+
+  <!-- ===== 本体 2カラム ===== -->
+  <main class="two-col" role="main">
+
+    <!-- ==================== 左：設定カラム ==================== -->
+    <div class="col-settings" id="col-settings">
+
+      <!-- グループ1: 動画 -->
+      <section class="settings-group" id="card-video" aria-labelledby="h-video">
+        <h2 class="group-label" id="h-video">
+          <span class="step-n" aria-hidden="true">1</span> 動画
+        </h2>
+        <label class="drop" id="drop" for="file">
+          <input type="file" id="file" accept="video/*" hidden />
+          <span class="drop-ico" aria-hidden="true">⬆</span>
+          <span class="drop-text" id="drop-text">動画をドロップ<br>またはクリックで選択</span>
+        </label>
+        <div class="filebar hidden" id="filebar">
+          <span aria-hidden="true">🎬</span>
+          <span class="file-name" id="file-name">—</span>
+          <button class="link" id="clear-file">変更</button>
+        </div>
+        <p class="group-note" id="file-note-hint">この動画はこのPCの中だけで処理されます（外部に送りません）。</p>
+      </section>
+
+      <!-- グループ2: 字幕 -->
+      <section class="settings-group" id="card-sub" aria-labelledby="h-sub">
+        <h2 class="group-label" id="h-sub">
+          <span class="step-n" aria-hidden="true">2</span> 字幕
+        </h2>
+        <div class="chips sub-toggle" data-group="sub" role="group" aria-label="字幕のあり・なし">
+          <button class="chip sub-chip is-on" data-val="none">なし</button>
+          <button class="chip sub-chip" data-val="on">あり</button>
+        </div>
+        <p class="group-note" id="sub-desc">字幕は付けません。</p>
+      </section>
+
+      <!-- グループ3: カット -->
+      <section class="settings-group" id="card-cut" aria-labelledby="h-cut">
+        <h2 class="group-label" id="h-cut">
+          <span class="step-n" aria-hidden="true">3</span> カットの目安
+        </h2>
+        <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
+          <button class="chip is-on" data-val="topic">話題で切る</button>
+          <button class="chip" data-val="minutes">分数で切る</button>
+          <button class="chip" data-val="count">本数で切る</button>
+        </div>
+        <div class="cut-detail" id="cut-detail">
+          <p class="cut-note" data-for="topic">AIが話題の切れ目を判断して自動でカットします。</p>
+          <p class="cut-note hidden" data-for="minutes">
+            <label for="cut-min">分数：</label>
+            <input type="number" id="cut-min" value="3" min="1" max="60" />
+            分以内で、区切りの良いところで切ります。
+          </p>
+          <p class="cut-note hidden" data-for="count">
+            <label for="cut-cnt">本数：</label>
+            <input type="number" id="cut-cnt" value="5" min="1" max="50" />
+            本に分割（区切りの良い所で）。
+          </p>
+        </div>
+      </section>
+
+      <!-- グループ4: サイズ -->
+      <section class="settings-group" id="card-size" aria-labelledby="h-size">
+        <h2 class="group-label" id="h-size">
+          <span class="step-n" aria-hidden="true">4</span> サイズ
+        </h2>
+        <div class="size-chips" data-group="size" role="group" aria-label="動画サイズ">
+          <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16">
+            <span class="size-ratio">縦 9:16</span>
+            <span class="size-use">ショート / リール / TikTok</span>
+          </button>
+          <button class="chip size-chip" data-val="1:1" data-ar="1/1">
+            <span class="size-ratio">正方形 1:1</span>
+            <span class="size-use">Instagram 投稿</span>
+          </button>
+          <button class="chip size-chip" data-val="4:5" data-ar="4/5">
+            <span class="size-ratio">縦 4:5</span>
+            <span class="size-use">Instagram 縦長</span>
+          </button>
+          <button class="chip size-chip" data-val="16:9" data-ar="16/9">
+            <span class="size-ratio">横 16:9</span>
+            <span class="size-use">YouTube 通常</span>
+          </button>
+        </div>
+      </section>
+
+    </div><!-- /col-settings -->
+
+    <!-- ==================== 右：確認カラム ==================== -->
+    <div class="col-preview" id="col-preview">
+
+      <!-- 端末切替タブ -->
+      <div class="device-tabs" role="group" aria-label="プレビュー端末切替">
+        <button class="device-tab is-on" id="tab-phone" data-device="phone" aria-pressed="true">スマホ</button>
+        <button class="device-tab" id="tab-pc" data-device="pc" aria-pressed="false">PC</button>
+      </div>
+
+      <!-- プレビュー枠エリア -->
+      <div class="preview-wrap">
+        <!-- スマホ端末フレーム -->
+        <div class="device-frame phone-device" id="phone-frame" aria-label="スマホプレビュー">
+          <div class="device-notch" aria-hidden="true"></div>
+          <div class="device-screen" id="device-screen">
+            <div class="video-area" id="video-area-phone" aria-label="動画プレビュー領域（スマホ）"></div>
+            <span class="phone-placeholder" id="phone-placeholder-phone">動画を選ぶと<br>ここにプレビュー</span>
+          </div>
+          <div class="device-home" aria-hidden="true"></div>
+        </div>
+        <!-- PC端末フレーム -->
+        <div class="device-frame pc-device hidden" id="pc-frame" aria-label="PCプレビュー">
+          <div class="pc-topbar" aria-hidden="true">
+            <span class="pc-dot"></span><span class="pc-dot"></span><span class="pc-dot"></span>
+          </div>
+          <div class="pc-screen" id="pc-screen">
+            <div class="video-area" id="video-area-pc" aria-label="動画プレビュー領域（PC）"></div>
+            <span class="phone-placeholder" id="phone-placeholder-pc">動画を選ぶと<br>ここにプレビュー</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI確認サマリ -->
+      <div class="summary-wrap" id="confirm-card" aria-labelledby="h-ai">
+        <h2 class="group-label" id="h-ai">
+          <span class="step-star" aria-hidden="true">✦</span> AIの確認
+        </h2>
+        <div class="bubble">
+          <p id="ai-text">上で動画と設定を選ぶと、ここで内容を確認します。</p>
+          <ul class="summary hidden" id="summary" aria-live="polite"></ul>
+        </div>
+      </div>
+
+      <!-- アクション＋進捗 -->
+      <div class="actions-wrap">
+        <div class="actions">
+          <button class="btn ghost hidden" id="btn-show-result">編集済動画一覧</button>
+          <button class="btn cta" id="btn-run" disabled>編集実行</button>
+        </div>
+        <p class="cta-hint" id="cta-hint">動画を入れると押せます。</p>
+        <p class="progress-note hidden" id="progress-note">ふつう1〜3分ほどで終わります。そのままお待ちください。</p>
+        <ol class="progress hidden" id="progress" aria-live="polite" aria-label="処理進捗">
+          <li data-k="t">話し言葉を文字にしています</li>
+          <li data-k="s">良い場面を選んでいます</li>
+          <li data-k="r">縦長の動画に整えています</li>
+        </ol>
+      </div>
+
+    </div><!-- /col-preview -->
+
+  </main>
+
+  <!-- ===== 結果オーバーレイ（左からスライドイン）===== -->
+  <div class="result-overlay hidden" id="result-overlay" role="dialog" aria-modal="true" aria-label="処理結果">
+    <aside class="result-panel" id="result-panel">
+      <div class="result-head">
+        <h2>編集済み動画一覧</h2>
+        <div class="result-head-actions">
+          <button class="result-close" id="result-close" aria-label="閉じる">×</button>
+        </div>
+      </div>
+      <div class="job-list hidden" id="job-list"></div>
+      <div class="tabs" role="tablist">
+        <button class="tab is-on" data-tab="keep" role="tab" aria-selected="true" aria-controls="tab-keep">採用候補 <b id="keep-n">0</b></button>
+        <button class="tab" data-tab="trash" role="tab" aria-selected="false" aria-controls="tab-trash">使わない候補 <b id="trash-n">0</b></button>
+      </div>
+      <div class="tab-body" id="tab-keep" role="tabpanel">
+        <p class="placeholder">実行すると、ショート候補がここに並びます。</p>
+      </div>
+      <div class="tab-body hidden" id="tab-trash" role="tabpanel">
+        <p class="placeholder">NG・準備中・雑談など、今回は使わない部分をここにまとめます。必要なら採用に戻せます。</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ===== 編集中ウィンドウ（通常画面の上にふわっと浮く小窓・暗幕なし）===== -->
+  <div class="editing-card hidden" id="editing-card" role="status" aria-label="編集中">
+    <div class="snip-stage" aria-hidden="true">
+      <svg class="snip-svg" viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg">
+        <!-- フィルム（左へ流れる。外側=黒の縁＋スプロケット穴、中=白い映像コマ） -->
+        <g class="film">
+          <rect class="film-edge" x="-40" y="28" width="280" height="24" rx="2" />
+          <rect class="film-pic"  x="-40" y="33" width="280" height="14" />
+          <g class="film-frame">
+            <line x1="-20" y1="33" x2="-20" y2="47" />
+            <line x1="20"  y1="33" x2="20"  y2="47" />
+            <line x1="60"  y1="33" x2="60"  y2="47" />
+            <line x1="100" y1="33" x2="100" y2="47" />
+            <line x1="140" y1="33" x2="140" y2="47" />
+            <line x1="180" y1="33" x2="180" y2="47" />
+            <line x1="220" y1="33" x2="220" y2="47" />
+          </g>
+          <line class="sprocket" x1="-40" y1="30.5" x2="240" y2="30.5" />
+          <line class="sprocket" x1="-40" y1="49.5" x2="240" y2="49.5" />
+        </g>
+        <!-- ハサミ（チャコール単色シルエット・刃が開閉） -->
+        <g class="scissors">
+          <g class="blade top">
+            <polygon class="sil" points="100,40 141,27 147,35 105,45" />
+            <circle class="sil"  cx="78" cy="47" r="8.5" />
+            <circle class="hole" cx="78" cy="47" r="2.8" />
+          </g>
+          <g class="blade bot">
+            <polygon class="sil" points="100,40 141,53 147,45 105,35" />
+            <circle class="sil"  cx="78" cy="33" r="8.5" />
+            <circle class="hole" cx="78" cy="33" r="2.8" />
+          </g>
+          <circle class="hole" cx="100" cy="40" r="2.2" />
+        </g>
+      </svg>
+    </div>
+    <p class="editing-title">編集中…</p>
+    <div class="editing-steps" id="editing-steps" aria-hidden="true">
+      <span class="estep" data-k="t"></span>
+      <span class="estep" data-k="s"></span>
+      <span class="estep" data-k="r"></span>
+    </div>
+    <p class="editing-status" id="editing-status">動画を読み込んでいます</p>
+    <p class="editing-eta"><b id="editing-elapsed">0:00</b> 経過 ・ ふつう1〜3分で終わります</p>
+    <div class="editing-error hidden" id="editing-error">
+      <p class="editing-error-msg" id="editing-error-msg">編集できませんでした</p>
+      <button class="btn ghost" id="editing-error-close">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ===== 編集できないカード（話し声なし等・通常画面の上に浮く小窓）===== -->
+  <div class="cantedit-card hidden" id="cantedit-card" role="dialog" aria-label="編集できません">
+    <div class="ce-mark" aria-hidden="true">
+      <svg class="ce-svg" viewBox="0 0 48 48">
+        <rect x="19" y="9" width="10" height="20" rx="5" />
+        <path d="M14 23 a10 10 0 0 0 20 0" />
+        <line x1="24" y1="33" x2="24" y2="39" />
+        <line x1="18" y1="39" x2="30" y2="39" />
+        <line class="slash" x1="11" y1="11" x2="37" y2="37" />
+      </svg>
+    </div>
+    <h2 class="ce-title">この動画は編集できません</h2>
+    <p class="ce-reason" id="cantedit-reason">話し声が見つかりませんでした。</p>
+    <div class="ce-guide">
+      <div class="ce-col ce-ok"><b>◎ 編集できる</b><span>解説・Vlog・対談・実況など、人が話している動画</span></div>
+      <div class="ce-col ce-ng"><b>× できない</b><span>音楽だけ・無音・歓声や雑音のみの動画</span></div>
+    </div>
+    <button class="btn cta" id="cantedit-retry">別の動画を選ぶ</button>
+  </div>
+
+  <!-- ===== 編集実行の最終確認（画面中央モーダル）===== -->
+  <div class="confirm-overlay hidden" id="confirm-overlay" role="dialog" aria-modal="true" aria-label="編集実行の確認">
+    <div class="confirm-card" id="confirm-modal">
+      <h2 class="confirm-title">編集内容の確認</h2>
+      <ul class="summary" id="confirm-summary" aria-live="polite"></ul>
+      <p class="confirm-ask">この内容で編集を実行してよろしいですか？</p>
+      <div class="confirm-actions">
+        <button class="btn ghost" id="confirm-back">戻る</button>
+        <button class="btn cta" id="confirm-run">実行する</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

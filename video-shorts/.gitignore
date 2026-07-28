@@ -1,0 +1,16 @@
+# 生成物・大容量バイナリはコミットしない（コード/UI/docs のみ追跡）
+output/
+work/
+samples/
+*.mp4
+*.wav
+*.ass
+*.srt
+
+# UI に配置するデモ/プレビュー動画と生成 manifest（生成物）
+ui/*.mp4
+ui/candidates.json
+
+# Python 実行時キャッシュ
+__pycache__/
+*.pyc

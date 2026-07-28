@@ -1,0 +1,7 @@
+{
+  "name": "video-shorts",
+  "private": true,
+  "scripts": {
+    "test": "node tests/smoke.mjs && python3 tests/transcribe-corrections-check.py"
+  }
+}

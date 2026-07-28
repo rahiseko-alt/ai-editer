@@ -29,16 +29,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm -r typecheck
+        run: pnpm -r --if-present typecheck
 
       - name: Lint
-        run: pnpm -r lint
+        run: pnpm -r --if-present lint
 
       - name: Test
         run: pnpm -r test
 
       - name: Build
-        run: pnpm -r build
+        run: pnpm -r --if-present build
 
       - name: Audit (fail on moderate+)
         run: pnpm audit --audit-level moderate
@@ -47,7 +47,7 @@ jobs:
         run: node scripts/verify-roadmap-evidence.mjs
 
   smoke:
-    name: 起動スモーク (build → start → curl 200 + marker)
+    name: 起動スモーク (start → curl 200 + marker)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,20 +66,17 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm -r build
-
       # 到達性を外部事実(HTTP 200＋本文マーカー)で縛る。スクショにしない。
-      - name: Smoke (next start → curl 200 + 'cc-v2 monorepo')
+      - name: Smoke (video-shorts server start → curl 200 + 'kosespark')
         run: |
-          pnpm --filter web start &
+          node video-shorts/server/index.mjs &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
           # 起動待ち（最大60秒）
           ready=0
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5178 || true)
             if [ "$code" = "200" ]; then ready=1; break; fi
             sleep 2
           done
@@ -89,13 +86,13 @@ jobs:
           fi
 
           # 本文に既知マーカーを含むこと
-          body=$(curl -sf http://localhost:3000)
-          if ! printf '%s' "$body" | grep -q 'cc-v2 monorepo'; then
-            echo "FAIL: body did not contain marker 'cc-v2 monorepo'"
+          body=$(curl -sf http://127.0.0.1:5178)
+          if ! printf '%s' "$body" | grep -q 'kosespark'; then
+            echo "FAIL: body did not contain marker 'kosespark'"
             exit 1
           fi
 
-          echo "SMOKE OK: HTTP 200 かつ本文に 'cc-v2 monorepo' を確認"
+          echo "SMOKE OK: HTTP 200 かつ本文に 'kosespark' を確認"
 
   # 集約ゲート＝branch protection が要求する「安定した1つの必須チェック」。
   # 内部ジョブ(quality/smoke)の名前や中身が変わっても context 名は 'ci-green' で不変。
