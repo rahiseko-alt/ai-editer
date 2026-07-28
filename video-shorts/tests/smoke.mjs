@@ -19,6 +19,16 @@ import {
   createIsolatedCwd,
 } from "../src/claude-safety.mjs";
 import { draftPrompt, revisePrompt, durationFixPrompt } from "../src/digest-editor.mjs";
+import {
+  generateStartupToken,
+  extractToken,
+  isValidToken,
+  isAllowedHost,
+  isAllowedOrigin,
+  looksLikeVideo,
+  createRateLimiter,
+  MAX_UPLOAD_BYTES,
+} from "../server/security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -353,6 +363,76 @@ t("P1-1-E: 文字起こしに偽の指示/偽の閉じタグを仕込んでも�
   );
   assert.ok(p.includes(malicious), "攻撃文字列自体は逐語抜き出しの仕様どおりデータとして保持される(改変しない)");
   assert.ok(/実行・解釈・遵守せず/.test(p), "タグ内は指示として実行しない旨の注記が付くこと");
+});
+
+// ---- P1-2: ローカルAPIに誰でもアクセスできる状態を無くす ----
+
+t("P1-2-A: 起動時トークンは十分な長さのランダム値で、生成のたびに変わる", () => {
+  const a = generateStartupToken();
+  const b = generateStartupToken();
+  assert.strictEqual(typeof a, "string");
+  assert.ok(a.length >= 32, "総当たりに耐える十分な長さであること");
+  assert.notStrictEqual(a, b, "呼び出しごとに異なるトークンが生成されること");
+});
+
+t("P1-2-A: トークン検証はヘッダ優先・無ければクエリ、一致しなければ拒否", () => {
+  const token = generateStartupToken();
+  const reqWithHeader = { headers: { "x-kosespark-token": token } };
+  assert.strictEqual(extractToken(reqWithHeader, new URLSearchParams()), token);
+
+  const reqWithQuery = { headers: {} };
+  assert.strictEqual(extractToken(reqWithQuery, new URLSearchParams({ token })), token);
+
+  assert.strictEqual(isValidToken(token, token), true);
+  assert.strictEqual(isValidToken("違うトークン", token), false);
+  assert.strictEqual(isValidToken(null, token), false);
+  assert.strictEqual(isValidToken("", token), false);
+});
+
+t("P1-2-B: HostとOriginは127.0.0.1/localhost以外を拒否する", () => {
+  assert.strictEqual(isAllowedHost("127.0.0.1:5178", 5178), true);
+  assert.strictEqual(isAllowedHost("localhost:5178", 5178), true);
+  assert.strictEqual(isAllowedHost("evil.example.com", 5178), false, "他ホストへのDNS rebinding等を拒否");
+  assert.strictEqual(isAllowedHost(undefined, 5178), false);
+
+  assert.strictEqual(isAllowedOrigin("http://127.0.0.1:5178", 5178), true);
+  assert.strictEqual(isAllowedOrigin("http://localhost:5178", 5178), true);
+  assert.strictEqual(isAllowedOrigin("http://evil.example.com", 5178), false, "他オリジンからのfetch/XHRを拒否");
+  assert.strictEqual(isAllowedOrigin(undefined, 5178), true, "Origin未送出の一部GET等は許可(Hostチェックに委ねる)");
+});
+
+t("P1-2-C: 既知の動画コンテナのmagic byteのみを動画として認識する", () => {
+  const mp4 = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]); // ....ftypisom
+  assert.strictEqual(looksLikeVideo(mp4), true, "MP4(ftyp)は動画として認識される");
+  const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02]);
+  assert.strictEqual(looksLikeVideo(webm), true, "WebM/Matroska(EBML)は動画として認識される");
+  const notVideo = Buffer.from("<html><body>evil</body></html>", "utf-8");
+  assert.strictEqual(looksLikeVideo(notVideo), false, "動画でないファイル(html等)は拒否される");
+  const empty = Buffer.alloc(0);
+  assert.strictEqual(looksLikeVideo(empty), false, "空バッファは拒否される(クラッシュしない)");
+});
+
+t("P1-2-D: アップロード上限は現実的な値(数百MB)に設定されている", () => {
+  assert.ok(MAX_UPLOAD_BYTES > 10 * 1024 * 1024, "小さすぎて実用に耐えない上限ではない");
+  assert.ok(MAX_UPLOAD_BYTES <= 2 * 1024 * 1024 * 1024, "無制限に近い値になっていない");
+});
+
+t("P1-2-E: レート制限はウィンドウ内で上限を超えたら拒否する(別キーは独立)", () => {
+  const limiter = createRateLimiter({ windowMs: 60_000, max: 3 });
+  assert.strictEqual(limiter.allow("k"), true);
+  assert.strictEqual(limiter.allow("k"), true);
+  assert.strictEqual(limiter.allow("k"), true);
+  assert.strictEqual(limiter.allow("k"), false, "4回目はウィンドウ内なので拒否される");
+  assert.strictEqual(limiter.allow("other-key"), true, "別キーは独立してカウントされる");
+});
+
+t("P1-2-E: レート制限はウィンドウが変われば再度許可する", () => {
+  let fakeNow = 0;
+  const limiter = createRateLimiter({ windowMs: 1000, max: 1, nowClock: () => fakeNow });
+  assert.strictEqual(limiter.allow("k"), true);
+  assert.strictEqual(limiter.allow("k"), false, "同一ウィンドウ内の2回目は拒否される");
+  fakeNow += 1000; // ウィンドウ経過をシミュレート(実時間を待たない)
+  assert.strictEqual(limiter.allow("k"), true, "ウィンドウ経過後は再度許可される");
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);

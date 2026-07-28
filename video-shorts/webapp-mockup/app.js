@@ -10,6 +10,18 @@ const state = {
 };
 const $ = (id) => document.getElementById(id);
 
+// P1-2(A): サーバーがindex.html配信時に埋め込む起動時トークン。
+// fetch系はヘッダで、EventSource/ダウンロードリンクはカスタムヘッダを付けられないためクエリで送る。
+const API_TOKEN = window.__KOSESPARK_TOKEN__ || "";
+function withTokenHeader(init = {}) {
+  return { ...init, headers: { ...(init.headers || {}), "X-Kosespark-Token": API_TOKEN } };
+}
+function withTokenQuery(url) {
+  const u = new URL(url, window.location.origin);
+  u.searchParams.set("token", API_TOKEN);
+  return u.pathname + u.search;
+}
+
 // ---- ファイル ----
 const drop = $("drop"), fileInput = $("file");
 ["dragover", "dragenter"].forEach((e) =>
@@ -287,13 +299,13 @@ function run() {
     name: state.file.name,
   });
   if (state.cut === "minutes") params.set("cutMin", String(state.cutMin));
-  fetch(`/api/jobs?${params}`, { method: "POST", body: state.file })
+  fetch(`/api/jobs?${params}`, withTokenHeader({ method: "POST", body: state.file }))
     .then((res) => {
       if (!res.ok) return res.json().then((d) => Promise.reject(d.error || d.message || "ジョブ作成失敗"));
       return res.json();
     })
     .then(({ jobId }) => {
-      const es = new EventSource(`/api/jobs/${jobId}/events`);
+      const es = new EventSource(withTokenQuery(`/api/jobs/${jobId}/events`));
 
       es.onmessage = (ev) => {
         let d;
@@ -315,7 +327,7 @@ function run() {
 
       es.addEventListener("done", () => {
         es.close();
-        fetch(`/api/jobs/${jobId}/candidates`)
+        fetch(`/api/jobs/${jobId}/candidates`, withTokenHeader())
           .then((r) => {
             if (!r.ok) return r.json().then((d) => Promise.reject(d.error || d.message || "候補取得失敗"));
             return r.json();
@@ -402,7 +414,7 @@ function renderResults() {
 function downloadClip(c) {
   const job = activeJob(); if (!job) return;
   const a = document.createElement("a");
-  a.href = `/api/clips/${job.jobId}/${encodeURIComponent(c.file)}`;
+  a.href = withTokenQuery(`/api/clips/${job.jobId}/${encodeURIComponent(c.file)}`);
   a.download = c.file;
   a.click();
 }
