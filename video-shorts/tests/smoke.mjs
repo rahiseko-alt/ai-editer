@@ -27,6 +27,7 @@ import {
   isAllowedHost,
   isAllowedOrigin,
   looksLikeVideo,
+  createSignatureSniffer,
   createRateLimiter,
   MAX_UPLOAD_BYTES,
   issueJobToken,
@@ -415,10 +416,11 @@ t("P1-2-C: 既知の動画コンテナのmagic byteのみを動画として認�
   const empty = Buffer.alloc(0);
   assert.strictEqual(looksLikeVideo(empty), false, "空バッファは拒否される(クラッシュしない)");
 
-  // 本物のMPEG-TS: 188バイトごとに同期バイト0x47が並ぶ(パケット4個ぶん)
+  // MPEG-TSの同期パターン: 188バイトごとに同期バイト0x47が並ぶ(パケット4個ぶん。同期バイト
+  // 以外は判定に無関係なため0で埋めた合成データで、実ファイルのfixtureではない)
   const ts = Buffer.alloc(188 * 4);
   for (let i = 0; i < 4; i++) ts[i * 188] = 0x47;
-  assert.strictEqual(looksLikeVideo(ts), true, "本物のMPEG-TS(複数パケット同期)は動画として認識される");
+  assert.strictEqual(looksLikeVideo(ts), true, "MPEG-TS同期パターン(複数パケット同期)は動画として認識される");
 
   // 独立検証(independent-verifier)が実証したバイパス: 先頭バイトだけ0x47にした非動画ファイル
   const fakeG = Buffer.concat([
@@ -431,6 +433,36 @@ t("P1-2-C: 既知の動画コンテナのmagic byteのみを動画として認�
     false,
     "先頭バイトのみ0x47の非動画ファイルは拒否される(単一バイト判定のバイパスを許さない)"
   );
+});
+
+t("P1-2-C: createSignatureSnifferは同期バイトが複数チャンクに分割されても正しく判定する(単一チャンクの先頭バイトのみでは判定しない)", () => {
+  // CodeRabbitレビューで指摘された回帰: 正当なMPEG-TSでも、TCPの都合で最初のdataチャンクが
+  // 判定に必要な752バイト未満のことがある。1チャンク目だけで判定すると誤って415になりうる。
+  const ts = Buffer.alloc(188 * 4);
+  for (let i = 0; i < 4; i++) ts[i * 188] = 0x47;
+
+  const sniffer1 = createSignatureSniffer();
+  // 最初のチャンクは100バイトのみ(判定に必要な752バイト未満)
+  let result = sniffer1.push(ts.subarray(0, 100));
+  assert.strictEqual(result.decided, false, "十分な先頭バイト数が揃うまでは判定を確定しない");
+  // 残りを1バイトずつ小分けにして送っても、揃った時点で正しく動画と判定される
+  for (let i = 100; i < ts.length - 1; i++) {
+    result = sniffer1.push(ts.subarray(i, i + 1));
+    assert.strictEqual(result.decided, false, `${i}バイト目時点ではまだ判定に必要な量に満たない`);
+  }
+  result = sniffer1.push(ts.subarray(ts.length - 1));
+  assert.strictEqual(result.decided, true, "必要バイト数が揃った時点で判定が確定する");
+  assert.strictEqual(result.ok, true, "分割されたMPEG-TSの同期バイトは正しく動画と判定される");
+  assert.strictEqual(result.head.equals(ts), true, "分割されたチャンクは欠落なく結合される");
+
+  // ファイル全体が判定に必要な量(752バイト)未満のまま終端するケース(小さい非動画ファイル)
+  const sniffer2 = createSignatureSniffer();
+  const tiny = Buffer.from("<html>evil</html>", "utf-8");
+  let pushResult = sniffer2.push(tiny);
+  assert.strictEqual(pushResult.decided, false, "752バイト未満なら push だけでは確定しない");
+  const finishResult = sniffer2.finish();
+  assert.strictEqual(finishResult.decided, true, "finish()でストリーム終端時に確定判定する");
+  assert.strictEqual(finishResult.ok, false, "752バイト未満の非動画データは拒否される");
 });
 
 t("P1-2-D: アップロード上限は現実的な値(数百MB)に設定されている", () => {
