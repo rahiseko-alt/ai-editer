@@ -293,6 +293,15 @@ async function cmdRender(workDir, opts = {}) {
     }
   }
 
+  if (mode === "digest" && manifest.length > 0 && digest === null) {
+    writeJson(path.join(outDir, "candidates.json"),
+      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest });
+    state.stage = "render_failed";
+    state.candidates = manifest.length;
+    saveState(workDir, state);
+    die("レンダ失敗: digestモードの最終連結（ダイジェスト動画）が生成できませんでした。上の [FAIL] ログを確認してください。");
+  }
+
   writeJson(path.join(outDir, "candidates.json"),
     { id: state.id, mode, generated: manifest.length, digest, candidates: manifest });
   state.stage = "rendered";
