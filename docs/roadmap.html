@@ -118,10 +118,10 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-DELIVERY-HOOK-FFMPEG",
-    "next": "PRを出しCIの hook-session-start ジョブが緑になるのを確認したら、その run URL を G-DELIVERY-HOOK-FFMPEG/PYTHON/LOCALSAFE の evidence に、start-here.md 追記のcommit SHAを G-DELIVERY-DOC の evidence に記入して4葉をdone化する。その後 P1-8(同じ名前の動画を別々に処理しても混線しない。CLIジョブのwork/outputパスがbasenameだけで一意化されていない問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-8",
+    "next": "P1-8(同じ名前の動画を別々に処理しても混線しない。CLIジョブのwork/outputパスがbasenameだけで一意化されていない問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "2026-07-28マスター指示(配布パターン「Claude Codeあり×PCなし」をまず完成させる)を受け、G-DELIVERY配下に原子ツリー4葉(G-DELIVERY-HOOK-FFMPEG/HOOK-PYTHON/HOOK-LOCALSAFE/DOC)を新設。session-start-hookスキルに従い `.claude/hooks/session-start.sh` を新設し `.claude/settings.json` のSessionStartに配線した。$CLAUDE_CODE_REMOTE が真の場合のみffmpeg・文字起こしライブラリ(faster-whisper/groq)の有無を確認し、無ければ自動導入する。無い/偽の場合(手元PCでの通常セッション)は即終了しapt/pipに一切触れない。実地検証として、実際にsudo apt-get remove/pip uninstallでffmpeg・python両ライブラリを強制欠落させた状態からこのフックを実行し、両方とも自動導入されffmpeg -version/python3 -c importが成功することを確認した(ローカルno-op側も、明示的に環境変数を外した状態で無音・即終了することを確認)。この過程で `sudo apt-get update -y` が、本リポジトリの用途とは無関係な野良PPA(deadsnakes/ondrej/php。実行環境イメージに元から設定されていたapt source)への403で非ゼロ終了し、スクリプト冒頭の `set -euo pipefail` によりffmpeg導入(apt-get install)まで到達できず無言で失敗する不具合を発見。update行だけ `|| true` を付け、無関係sourceの失敗ではinstallまでの到達を止めないよう修正した(詳細はdocs/failures.md 2026-07-28追記)。CI(.github/workflows/ci.yml)に `hook-session-start` ジョブを追加し、CI上でも同様にffmpeg/pythonライブラリを一旦除去してから本フックで再導入できることを毎回機械検証する体制にした(外部install依存でflaky化しうるため、必須ゲート`ci-green`には含めていない)。video-shorts/start-here.mdの冒頭に、クラウド版Claude Codeセッションのみ(PC無し)で使う場合はffmpeg等が既に自動導入済みである旨を追記(G-DELIVERY-DOC)。ローカルでtypecheck/lint/test/build/audit/roadmap-evidence検査はすべてgreenを確認済み。evidenceはCI run URL/commit SHAが確定していないため4葉とも未記入のまま(critProgress未充足=検証待ち)でPRを作成する。",
+      "done": "2026-07-28マスター指示(配布パターン「Claude Codeあり×PCなし」をまず完成させる)を受け、G-DELIVERY配下に原子ツリー4葉(G-DELIVERY-HOOK-FFMPEG/HOOK-PYTHON/HOOK-LOCALSAFE/DOC)を新設・done化した。session-start-hookスキルに従い `.claude/hooks/session-start.sh` を新設し `.claude/settings.json` のSessionStartに配線した。$CLAUDE_CODE_REMOTE が真の場合のみffmpeg・文字起こしライブラリ(faster-whisper/groq)の有無を確認し、無ければ自動導入する。無い/偽の場合(手元PCでの通常セッション)は即終了しapt/pipに一切触れない。実地検証として、実際にsudo apt-get remove/pip uninstallでffmpeg・python両ライブラリを強制欠落させた状態からこのフックを実行し、両方とも自動導入されffmpeg -version/python3 -c importが成功することを確認した(ローカルno-op側も、明示的に環境変数を外した状態で無音・即終了することを確認)。この過程で `sudo apt-get update -y` が、本リポジトリの用途とは無関係な野良PPA(deadsnakes/ondrej/php。実行環境イメージに元から設定されていたapt source)への403で非ゼロ終了し、スクリプト冒頭の `set -euo pipefail` によりffmpeg導入(apt-get install)まで到達できず無言で失敗する不具合を発見。update行だけ `|| true` を付け、無関係sourceの失敗ではinstallまでの到達を止めないよう修正した(詳細はdocs/failures.md 2026-07-28追記)。CI(.github/workflows/ci.yml)に `hook-session-start` ジョブを追加し、CI上でも同様にffmpeg/pythonライブラリを一旦除去してから本フックで再導入できることを毎回機械検証する体制にした(外部install依存でflaky化しうるため、必須ゲート`ci-green`には含めていない)。video-shorts/start-here.mdの冒頭に、クラウド版Claude Codeセッションのみ(PC無し)で使う場合はffmpeg等が既に自動導入済みである旨を追記(G-DELIVERY-DOC)。PR #22の初回push後、CI(pull_request契機ではなくpush契機で同一commitに対し先に完走した hook-session-start ジョブ)が成功したのを確認し、そのrun URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196)をG-DELIVERY-HOOK-FFMPEG/PYTHON/LOCALSAFEのevidenceに、start-here.md追記を含むcommit SHA(52ffde650a4b0cdbb87ef902b58b32a933006354)をG-DELIVERY-DOCのevidenceに記入して4葉ともdone化した。PR #22は現在draft(CI green確認後にready化してマージする)。",
       "trouble": "上記のapt-get update失敗(本筋と無関係な野良PPAの403で `set -e` により全体が止まり、ffmpeg自体は標準リポジトリから取得可能だったにもかかわらず導入まで到達しなかった)。実地でsudoの効く環境で実行して初めて再現し、ローカルでの机上コードレビューだけでは気付けなかった。"
     },
     "updated": "2026-07-28"
@@ -870,7 +870,7 @@
                 {
                   "text": "クラウドセッション開始時、ffmpegが自動導入され使える",
                   "verify": "CLAUDE_CODE_REMOTE=trueでsession-start.shを実行した後、ffmpeg -versionが成功することを確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
                 }
               ]
             },
@@ -885,7 +885,7 @@
                 {
                   "text": "クラウドセッション開始時、faster-whisper/groqが自動導入され使える",
                   "verify": "CLAUDE_CODE_REMOTE=trueでsession-start.shを実行した後、python3 -c \"import faster_whisper, groq\"が成功することを確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
                 }
               ]
             },
@@ -900,7 +900,7 @@
                 {
                   "text": "CLAUDE_CODE_REMOTEが未設定/偽の場合、session-start.shはapt/pipを一切実行せず即終了する",
                   "verify": "CLAUDE_CODE_REMOTEを設定せずsession-start.shを実行し、apt-get/pipが呼ばれず即座に終了する(exit 0)ことを確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
                 }
               ]
             },
@@ -915,7 +915,7 @@
                 {
                   "text": "start-here.mdに、PC不要でクラウドのClaude Codeだけで完結できる使い方が明記されている",
                   "verify": "start-here.mdを読み、当該案内が含まれることを確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/52ffde650a4b0cdbb87ef902b58b32a933006354"
                 }
               ]
             }
