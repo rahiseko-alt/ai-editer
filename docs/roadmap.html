@@ -121,8 +121,8 @@
     "active": "P1-8",
     "next": "P1-8(同じ名前の動画を別々に処理しても混線しない。CLIジョブのwork/outputパスがbasenameだけで一意化されていない問題)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "P1-6(サーバー再起動後SSEが永久待機する問題)に着手し、done化・PR #21作成まで完了。根本原因はジョブ進捗(pipeline-runner.mjsのjobs Map)とジョブ別認可トークン(security.mjsのjobTokens Map)が両方ともメモリのみで再起動で消えること。1回目の修正(ジョブトークンのworkDir永続化+subscribeJobのinterrupted化)をindependent-verifierに検証依頼したところFAIL判定: 起動時トークン(P1-2-A)がジョブトークンより先に/api/*全体をゲートしており、再起動で別値になるため、開きっぱなしのEventSourceが旧起動時トークンのまま自動再接続すると401で弾かれevent: interruptedへ到達できないと、実サーバー2プロセスでの実証込みで指摘された(単体テストはHTTPルーティング全体を通さず関数を直接呼ぶだけだったため検出できていなかった)。是正: /api/*全体の必須ゲートをHost/Origin検証のみに縮小し(isAllowedApiOrigin)、起動時トークン必須はPOST /api/jobs(新規ジョブ作成)のみに限定(isValidStartupToken)、既存ジョブ系ルート(events/candidates/clips)はジョブトークンのみで認可(isAuthorizedForJob。起動時トークンでの迂回は追加しなかった=一度追加したところ、自作の統合テストが「同じ起動時トークンを知っているだけの別ジョブの作成者が他人のjobIdへアクセスできてしまう」P1-4-Bの回帰を検出したため削除)。実サーバーを2プロセス起動する統合テスト(tests/restart-reconnect-check.mjs、pnpm testに追加)を新設。2回目のindependent-verifier検証でPASS判定(実サーバー2プロセスでの再現、P1-4-B回帰なし、パストラバーサル対策、POST /api/jobsの起動時トークン必須、webapp-mockup/app.jsのinterruptedハンドラを独自に確認済み)。evidence(CI run URL)を記入しstatusをdoneにし、PR #21を作成済み(現在draft。CI green確認後にready化してマージする)。",
-      "trouble": "1回目の実装がindependent-verifierにFAIL判定された。単体テスト(smoke.mjs)だけでは検出できないバグ(起動時トークンのゲート順序)だったため、実プロセスを2回起動する統合テストを追加して埋めた。さらにその是正の過程で、自分自身が新しい回帰(起動時トークンによるジョブトークン迂回)を一度混入させたが、追加した統合テスト自身がそれを即座に検出できたため、CIに乗る前に気づけた。"
+      "done": "2026-07-28マスター指示(配布パターン「Claude Codeあり×PCなし」をまず完成させる)を受け、G-DELIVERY配下に原子ツリー4葉(G-DELIVERY-HOOK-FFMPEG/HOOK-PYTHON/HOOK-LOCALSAFE/DOC)を新設・done化した。session-start-hookスキルに従い `.claude/hooks/session-start.sh` を新設し `.claude/settings.json` のSessionStartに配線した。$CLAUDE_CODE_REMOTE が真の場合のみffmpeg・文字起こしライブラリ(faster-whisper/groq)の有無を確認し、無ければ自動導入する。無い/偽の場合(手元PCでの通常セッション)は即終了しapt/pipに一切触れない。実地検証として、実際にsudo apt-get remove/pip uninstallでffmpeg・python両ライブラリを強制欠落させた状態からこのフックを実行し、両方とも自動導入されffmpeg -version/python3 -c importが成功することを確認した(ローカルno-op側も、明示的に環境変数を外した状態で無音・即終了することを確認)。この過程で `sudo apt-get update -y` が、本リポジトリの用途とは無関係な野良PPA(deadsnakes/ondrej/php。実行環境イメージに元から設定されていたapt source)への403で非ゼロ終了し、スクリプト冒頭の `set -euo pipefail` によりffmpeg導入(apt-get install)まで到達できず無言で失敗する不具合を発見。update行だけ `|| true` を付け、無関係sourceの失敗ではinstallまでの到達を止めないよう修正した(詳細はdocs/failures.md 2026-07-28追記)。CI(.github/workflows/ci.yml)に `hook-session-start` ジョブを追加し、CI上でも同様にffmpeg/pythonライブラリを一旦除去してから本フックで再導入できることを毎回機械検証する体制にした(外部install依存でflaky化しうるため、必須ゲート`ci-green`には含めていない)。video-shorts/start-here.mdの冒頭に、クラウド版Claude Codeセッションのみ(PC無し)で使う場合はffmpeg等が既に自動導入済みである旨を追記(G-DELIVERY-DOC)。PR #22の初回push後、CI(pull_request契機ではなくpush契機で同一commitに対し先に完走した hook-session-start ジョブ)が成功したのを確認し、そのrun URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196)をG-DELIVERY-HOOK-FFMPEG/PYTHON/LOCALSAFEのevidenceに、start-here.md追記を含むcommit SHA(52ffde650a4b0cdbb87ef902b58b32a933006354)をG-DELIVERY-DOCのevidenceに記入して4葉ともdone化した。PR #22は現在draft(CI green確認後にready化してマージする)。",
+      "trouble": "上記のapt-get update失敗(本筋と無関係な野良PPAの403で `set -e` により全体が止まり、ffmpeg自体は標準リポジトリから取得可能だったにもかかわらず導入まで到達しなかった)。実地でsudoの効く環境で実行して初めて再現し、ローカルでの机上コードレビューだけでは気付けなかった。"
     },
     "updated": "2026-07-28"
   },
@@ -852,6 +852,75 @@
             }
           ],
           "detail": "取り込み時の調査(2026-07-28)で判明した既存ギャップ。監査提案には無いが、以後の開発品質のために追跡する。"
+        },
+        {
+          "id": "G-DELIVERY",
+          "kind": "state",
+          "theme": "パソコンを持っていない人でも、クラウドのClaude Codeだけでショート動画を作れる",
+          "meaning": "「自分のPCが無い」ことを理由に使ってもらえない人を減らせる",
+          "children": [
+            {
+              "id": "G-DELIVERY-HOOK-FFMPEG",
+              "kind": "state",
+              "theme": "クラウドのセッションを開いた瞬間に、動画処理(ffmpeg)が使える状態になっている",
+              "meaning": "毎回コマンドを手打ちで導入しなくても、最初から動画を切ったり字幕を焼いたりできる",
+              "detail": "session-start-hookスキルに従い.claude/hooks/session-start.shを新設。$CLAUDE_CODE_REMOTEが真の場合のみffmpegの有無を確認し、無ければapt-get installで導入する。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "クラウドセッション開始時、ffmpegが自動導入され使える",
+                  "verify": "CLAUDE_CODE_REMOTE=trueでsession-start.shを実行した後、ffmpeg -versionが成功することを確認する",
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
+                }
+              ]
+            },
+            {
+              "id": "G-DELIVERY-HOOK-PYTHON",
+              "kind": "state",
+              "theme": "クラウドのセッションを開いた瞬間に、文字起こし(faster-whisper/groq)が使える状態になっている",
+              "meaning": "毎回pip installを手打ちしなくても、最初から動画の文字起こしができる",
+              "detail": "同フックで、video-shorts/requirements.txt(faster-whisper/groq)の導入有無をpython -c importで確認し、無ければpip installする。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "クラウドセッション開始時、faster-whisper/groqが自動導入され使える",
+                  "verify": "CLAUDE_CODE_REMOTE=trueでsession-start.shを実行した後、python3 -c \"import faster_whisper, groq\"が成功することを確認する",
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
+                }
+              ]
+            },
+            {
+              "id": "G-DELIVERY-HOOK-LOCALSAFE",
+              "kind": "state",
+              "theme": "手元のPCで普段どおり作業する分には、このクラウド向け自動導入が一切割り込んでこない",
+              "meaning": "PCを持っている人の作業を、PCが無い人向けの仕組みが邪魔しない",
+              "detail": "session-start.shの先頭で$CLAUDE_CODE_REMOTEを判定し、真でなければ即終了する(session-start-hookスキルの推奨パターン)。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "CLAUDE_CODE_REMOTEが未設定/偽の場合、session-start.shはapt/pipを一切実行せず即終了する",
+                  "verify": "CLAUDE_CODE_REMOTEを設定せずsession-start.shを実行し、apt-get/pipが呼ばれず即座に終了する(exit 0)ことを確認する",
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30409747978/job/90443016196"
+                }
+              ]
+            },
+            {
+              "id": "G-DELIVERY-DOC",
+              "kind": "state",
+              "theme": "「PCが無くても、クラウドのClaude Codeだけで完結できる」ことが案内文書に書いてある",
+              "meaning": "この使い方があることを、案内を読んだ人が知ることができる",
+              "detail": "start-here.md(または関連ドキュメント)に、ローカルPC無し・クラウドのClaude Codeセッションだけで使える旨を追記する。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "start-here.mdに、PC不要でクラウドのClaude Codeだけで完結できる使い方が明記されている",
+                  "verify": "start-here.mdを読み、当該案内が含まれることを確認する",
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/52ffde650a4b0cdbb87ef902b58b32a933006354"
+                }
+              ]
+            }
+          ],
+          "detail": "2026-07-28 マスター指示: 配布パターン「Claude Codeあり×PCなし(クラウド上のClaude Codeセッションのみで完結)」をまず完成させる。スタック・アーキテクチャは変更せず(既存のNode/Python/ffmpeg/Claude Code構成のまま)、セッション起動時の環境自動整備で対応する。"
         },
         {
           "id": "G-PENDING",
