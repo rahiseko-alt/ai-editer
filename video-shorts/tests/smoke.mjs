@@ -11,7 +11,8 @@ import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segment
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
 import { resolveJobSettings, renderLabel, subscribeJob } from "../server/pipeline-runner.mjs";
-import { parseJobParams, makeUniqueJobId } from "../server/job-params.mjs";
+import { parseJobParams } from "../server/job-params.mjs";
+import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
   ALLOWED_ENV_VARS,
   NO_TOOLS_ARGS,

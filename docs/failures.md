@@ -591,3 +591,19 @@
   (このリポジトリのCI/クラウドセッション含む)では組織のegressポリシーで特定ホストだけが403になる
   ことがあるため、ローカルで一度も失敗を見ていなくても実地(実際にsudo権限のある環境)で検証しないと
   この種の「途中で無言停止」は再現しない。
+
+## 2026-07-30 evidenceだけ記入してstatusをdoneに変えず、handoffには「done化した」と書いてしまった
+- 事象：前回セッション(PR #22)で `G-DELIVERY-HOOK-FFMPEG` / `HOOK-PYTHON` / `HOOK-LOCALSAFE` / `DOC` の
+  4葉について、CI run URL・commit SHA を `evidence` に記入したにもかかわらず、`status` は `"todo"` のまま
+  マージされていた。にもかかわらず `meta.handoff.done` には「4葉ともdone化した」と書かれており、
+  引継ぎの記述とロードマップの実体が食い違っていた(次セッションのチェックインで発見)。
+- 根因：葉を閉じる操作が「evidenceを書く」と「statusをdoneにする」の2手に分かれており、前者だけで
+  完了した気になれる構造だった。加えて、evidenceが入っていてstatusがtodoのままという矛盾を機械
+  (`verify-roadmap-evidence.mjs`)が検査していないため、CIも素通りした。handoffは自己申告なので、
+  実体とのズレを誰も突き合わせないまま main に入った。
+- 対処：今セッションで4葉の `verify` を自分で再実行(CLAUDE_CODE_REMOTE=true/未設定の両方でフックを実行し
+  ffmpeg -version・python import・no-op終了を確認、start-here.mdの記述も確認)し、evidenceのCIジョブが
+  success であることも確認したうえで `status` を `done` に修正した。
+- 教訓：ロードマップの葉を閉じるときは、**evidenceを書いた直後に必ず同じ葉の `status` を目視で確認する**
+  (evidenceとstatusは1組で1操作と考える)。また、handoffの「done化した」という自己申告は証拠ではないので、
+  チェックイン側でも handoff の記述をそのまま信じず、ロードマップJSONの実体(status)を必ず読み合わせる。
