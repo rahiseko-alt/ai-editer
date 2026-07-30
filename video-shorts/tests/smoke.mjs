@@ -215,6 +215,53 @@ t("逆マッチング(R-5①): digest経路(preserveOrder)は下限を伝播せ�
   assert.strictEqual(out[0].start, 0.0);
 });
 
+// ---- P1-9: 字幕クリップが不自然に離れた発言をつなげない ----
+
+// 部分一致は keepText の「頭」と「尻」を別々に探すため、制約が無いと遠く離れた発言を
+// 1クリップに繋いでしまう。頭が冒頭(0.0-2.0s)、尻が100秒後(100.0-102.0s)に現れる素材。
+const distantTranscript = {
+  language: "ja",
+  duration: 102.0,
+  words: [
+    { w: "あいうえお", start: 0.0, end: 2.0 },
+    { w: "ぜんぜんべつのはなし", start: 50.0, end: 60.0 },
+    { w: "かきくけこ", start: 100.0, end: 102.0 },
+  ],
+  segments: [{ start: 0.0, end: 102.0, text: "あいうえおぜんぜんべつのはなしかきくけこ" }],
+};
+
+t("P1-9-A: 頭と尻の一致が最大gapより離れていたら、同一クリップに結合しない", () => {
+  // keepText 全体は一致しない。頭「あいうえお」は0.0-2.0s、尻「かきくけこ」は100.0-102.0sに
+  // あり、その間は98秒空いている（MAX_MATCH_GAP_SEC=10 を大きく超える）。
+  const out = resolveSegments([{ keepText: "あいうえおかきくけこ", hook: "h" }], distantTranscript);
+  assert.strictEqual(out.length, 1, "頭側だけの区間として残るべき（丸ごと消さない）");
+  assert.ok(
+    out[0].end <= 2.0,
+    `98秒離れた尻の語まで繋いではいけない (start=${out[0].start} end=${out[0].end})`,
+  );
+});
+
+t("P1-9-B: 尻の一致が頭の一致より前にある場合、順番を逆転させて結合しない", () => {
+  // keepText「かきくけこあいうえお」は、頭「かきくけこ」が100.0s、尻「あいうえお」が0.0sに出る。
+  // 繋ぐと会話の順番が逆転するため繋がず、長く一致した片側だけを区間にする。
+  const out = resolveSegments([{ keepText: "かきくけこあいうえお", hook: "h" }], distantTranscript);
+  assert.strictEqual(out.length, 1, "片側の区間として残るべき");
+  assert.ok(out[0].start < out[0].end, "start<end の正しい向きの区間であること");
+  assert.ok(
+    out[0].end - out[0].start <= 2.0,
+    `逆転した2箇所を跨ぐ区間になってはいけない (start=${out[0].start} end=${out[0].end})`,
+  );
+});
+
+t("P1-9-C: keepTextのカバー率が閾値未満の区間は採用しない", () => {
+  // 20文字のうち先頭4文字「あいうえ」しか一致しない＝カバー率0.2（MIN_MATCH_COVERAGE=0.5未満）。
+  const out = resolveSegments(
+    [{ keepText: "あいうえまったくちがうもじれつがつづく", hook: "h" }],
+    distantTranscript,
+  );
+  assert.strictEqual(out.length, 0, "ごく一部しか当たっていない区間は捨てるべき");
+});
+
 // ---- P0-5: Web UIの設定が生成物へ反映される（画面選択→mode/orient契約） ----
 
 t("resolveJobSettings: cut=topic → mode=topic / size=9:16 → orient=portrait", () => {

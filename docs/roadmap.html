@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "P1-9",
-    "next": "P1-9(字幕クリップが不自然に離れた発言をつなげない。A=クリップ内の時間差に上限 / B=発言の時系列順を保つ / C=カバー率が一定以上、の3葉)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
+    "active": "P1-10",
+    "next": "P1-10(配布物に開発中のゴミファイルが混ざらない)から着手する。P0-5-Aは引き続き実ffmpeg出力での解像度/向き確認(G-TESTINFRA-RENDERCHECK、環境的に保留)ができ次第doneにする。",
     "handoff": {
-      "done": "チェックインで、前回セッションの引継ぎが「G-DELIVERY配下4葉をdone化した」と述べる一方、実体はstatusがtodoのまま残っている食い違いを発見し、各verifyを再実行のうえ是正した(教訓はdocs/failures.md 2026-07-30)。続けてmeta.nextに従いP1-8(同名動画のCLIジョブ混線)を実装。判断として、ID生成(makeUniqueJobId)はserver/job-params.mjsからsrc/job-id.mjsへ切り出しCLI/サーバーで1実装を共有した(pipeline.mjsは配布物だがserver/はbuild-dist.mjsで配布除外のため、共有コードは配布対象のsrc/側に置く必要がある)。混線の検証は関数単体では不十分なため、実プロセスでinitを2回起動するtests/cli-job-isolation-check.mjsを新設しpnpm testへ組み込んだ。",
-      "trouble": "ロードマップの葉を閉じる操作がevidence記入とstatus変更の2手に分かれており、前者だけ実施してhandoffには「done化した」と書ける構造になっている(今回それが実際に起きていた)。verify-roadmap-evidence.mjsもこの矛盾(evidenceありstatusがtodo)は検査しないためCIも素通りする。今回は手作業で是正したが、機械検査の追加は未着手。"
+      "done": "P1-9(逆マッチングが遠く離れた発言を1クリップに繋ぐ問題)をA/B/Cの3葉とも実装。src/reverse-match.mjsの部分一致は keepText の頭と尻を joined 全体から独立に探すため、制約が無いと冒頭の語と100秒後の語を1区間にできてしまっていた。判断として、繋げない場合も区間を丸ごと捨てず「長く一致した片側だけ」を採用する方針にした(素材を活かすため)。閾値はMAX_MATCH_GAP_SEC=10秒・MIN_MATCH_COVERAGE=0.5をモジュール定数として置き、resolveSegments/matchOneのoptsで上書きできるようにした(env経由にはしていない)。digest経路は尺の実測にのみresolveSegmentsを使うため、厳格化は実測精度の改善方向に働く。",
+      "trouble": "無し。"
     },
     "updated": "2026-07-30"
   },
@@ -464,8 +464,8 @@
                   "kind": "state",
                   "theme": "クリップ内の時間差に上限を設ける",
                   "meaning": "遠く離れた発言同士が1クリップに混ざらない",
-                  "detail": "クリップ内の前後語の時間差に最大gapを設ける。",
-                  "status": "todo",
+                  "detail": "クリップ内の前後語の時間差に最大gapを設ける。対処: src/reverse-match.mjs の部分一致で、頭の一致が終わってから尻の一致が始まるまでの空きがMAX_MATCH_GAP_SEC(既定10秒)を超える場合は結合せず、長く一致した片側だけを区間にする。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "クリップ内の前後語の時間差が最大gapを超えない",
@@ -479,8 +479,8 @@
                   "kind": "state",
                   "theme": "発言の時系列順を保つ",
                   "meaning": "クリップ内で会話の順番が入れ替わらない",
-                  "detail": "クリップ内の語順が入力の時系列順を保つよう制約する。",
-                  "status": "todo",
+                  "detail": "クリップ内の語順が入力の時系列順を保つよう制約する。対処: 尻の一致が頭の一致より前に現れる場合は結合せず片側のみ採用する(従来はstart>endとなり区間ごと消えていた)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "クリップ内の語順が入力の時系列順を保っている(遠隔語の逆転連結がない)",
@@ -494,8 +494,8 @@
                   "kind": "state",
                   "theme": "発言のカバー率が一定以上であることを確認する",
                   "meaning": "クリップが元の発言をちゃんとカバーしている",
-                  "detail": "クリップの発話カバレッジ(coverage)に閾値を設ける。",
-                  "status": "todo",
+                  "detail": "クリップの発話カバレッジ(coverage)に閾値を設ける。対処: keepTextのうち実際に一致した文字の割合がMIN_MATCH_COVERAGE(既定0.5)未満なら区間を採用しない(従来はconfidence下限0.3で残っていた)。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "クリップの発話カバレッジが閾値を満たす",

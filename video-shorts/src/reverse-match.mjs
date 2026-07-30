@@ -5,6 +5,14 @@
 //       最長一致のスライディング窓で先頭/末尾 word を特定 → その start/end を採用。
 //       完全一致が無い場合は最良部分一致（カバー率最大の窓）を返し confidence を下げる。
 
+// P1-9: 部分一致は keepText の「頭」と「尻」を joined 全体から独立に探すため、制約が無いと
+// 本来ひと続きの引用のはずが「100秒離れた別の場面の発言」を1クリップに繋いでしまう
+// （docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-9）。以下3つの制約で防ぐ。
+/** P1-9-A: 頭一致の終わり〜尻一致の始まりに許す空き時間の上限（秒）。超えたら繋がない。 */
+export const MAX_MATCH_GAP_SEC = 10;
+/** P1-9-C: keepText のうち実際に一致した割合の下限。下回る区間は採用しない。 */
+export const MIN_MATCH_COVERAGE = 0.5;
+
 /** 比較用にテキストを正規化（空白・記号除去・小文字化）。日本語はそのまま結合。 */
 export function normalize(text) {
   return (text || "")
@@ -31,9 +39,12 @@ function buildCharIndex(words) {
  * 1区間ぶんの残すテキストを transcript に逆マッチングし start/end を確定。
  * @param {number} [minCharPos=0] 探索開始 char 位置。同一フレーズが複数回出現する素材で
  *   直前マッチの末尾以降から探し、2つ目以降の出現を選ぶために使う（呼び出し元が時系列で持ち回る）。
+ * @param {{maxGapSec?:number,minCoverage?:number}} [opts] P1-9 の制約値（既定は上の定数）。
  * @returns {{start:number,end:number,confidence:number,matchedText:string,endCharPos:number}|null}
  */
-export function matchOne(keepText, words, charIndex, minCharPos = 0) {
+export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) {
+  const maxGapSec = Number.isFinite(opts.maxGapSec) ? opts.maxGapSec : MAX_MATCH_GAP_SEC;
+  const minCoverage = Number.isFinite(opts.minCoverage) ? opts.minCoverage : MIN_MATCH_COVERAGE;
   const target = normalize(keepText);
   if (!target || words.length === 0) return null;
   const { joined, charToWord } = charIndex;
@@ -59,14 +70,44 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0) {
   const tailPos = longestSuffixMatch(joined, target, minCharPos);
   if (headPos.len === 0 && tailPos.len === 0) return null;
 
-  const startCharPos = headPos.len > 0 ? headPos.pos : tailPos.pos;
-  const rawEndCharPos =
-    tailPos.len > 0 ? tailPos.pos + tailPos.len - 1 : headPos.pos + headPos.len - 1;
+  // 頭と尻の両方が見つかったときだけ「繋ぐ」判断をする。繋がない場合は、長く一致した側の
+  // 領域だけを1区間として採用する（区間を丸ごと捨てるより素材を活かせる）。
+  let joinable = headPos.len > 0 && tailPos.len > 0;
+  if (joinable && tailPos.pos < headPos.pos) {
+    // P1-9-B: 尻の一致が頭の一致より前に現れている＝繋ぐと会話の順番が逆転する。
+    joinable = false;
+  }
+  if (joinable) {
+    // P1-9-A: 頭の一致が終わってから尻の一致が始まるまでが空きすぎている＝別の場面の発言。
+    const headEndWord = words[charToWord[headPos.pos + headPos.len - 1]];
+    const tailStartWord = words[charToWord[tailPos.pos]];
+    if (!headEndWord || !tailStartWord) return null;
+    if (tailStartWord.start - headEndWord.end > maxGapSec) joinable = false;
+  }
+
+  let startCharPos;
+  let rawEndCharPos;
+  let matchedChars;
+  if (joinable) {
+    startCharPos = headPos.pos;
+    rawEndCharPos = tailPos.pos + tailPos.len - 1;
+    // 頭と尻は target 上で前半・後半にあたるため、一致文字数の合計が target 長を超えることは
+    // 重なった場合のみ。重複分を二重に数えないよう target 長で頭打ちにする。
+    matchedChars = Math.min(target.length, headPos.len + tailPos.len);
+  } else {
+    const useHead = headPos.len >= tailPos.len;
+    const side = useHead ? headPos : tailPos;
+    startCharPos = side.pos;
+    rawEndCharPos = side.pos + side.len - 1;
+    matchedChars = side.len;
+  }
   const endCharPos = Math.min(rawEndCharPos, charToWord.length - 1);
   const startWord = words[charToWord[startCharPos]];
   const endWord = words[charToWord[endCharPos]];
   if (!startWord || !endWord) return null;
-  const coverage = (headPos.len + tailPos.len) / target.length;
+  const coverage = matchedChars / target.length;
+  // P1-9-C: keepText のごく一部しか当たっていない区間は、別の発言を拾っている可能性が高い。
+  if (coverage < minCoverage) return null;
   return {
     start: startWord.start,
     end: endWord.end,
@@ -107,7 +148,8 @@ function longestSuffixMatch(joined, target, fromPos = 0) {
  * start/end/confidence を付与した区間配列を返す。マッチ失敗は除外。
  */
 export function resolveSegments(llmSegments, transcript, opts = {}) {
-  const { preserveOrder = false } = opts;
+  const { preserveOrder = false, maxGapSec, minCoverage } = opts;
+  const matchOpts = { maxGapSec, minCoverage };
   const words = transcript.words || [];
   const charIndex = buildCharIndex(words);
   const out = [];
@@ -117,10 +159,10 @@ export function resolveSegments(llmSegments, transcript, opts = {}) {
   let cursor = 0;
   for (const seg of llmSegments) {
     const minCharPos = preserveOrder ? 0 : cursor;
-    let m = matchOne(seg.keepText, words, charIndex, minCharPos);
+    let m = matchOne(seg.keepText, words, charIndex, minCharPos, matchOpts);
     // topic で「時系列前進の下限より前にしか出現しない」＝LLMが時系列順を守らない選定のとき、
     // 下限を外して全体から再探索し区間の消失を防ぐ（code-review advisory・plan リカバリー案）。
-    if (!m && !preserveOrder && minCharPos > 0) m = matchOne(seg.keepText, words, charIndex, 0);
+    if (!m && !preserveOrder && minCharPos > 0) m = matchOne(seg.keepText, words, charIndex, 0, matchOpts);
     if (!m) continue;
     if (m.end <= m.start) continue; // 不正区間は捨てる
     // cursor は単調前進（Math.max）で維持し、再探索で前方一致しても後退させない。
