@@ -67,14 +67,27 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
   // 2) 部分一致: target を前方から縮めながら最長の一致窓を探す（頭出し用）
   //    さらに末尾も同様に探し、両端 word で区間を張る。
   const headPos = longestPrefixMatch(joined, target, minCharPos);
-  const tailPos = longestSuffixMatch(joined, target, minCharPos);
+  let tailPos = longestSuffixMatch(joined, target, minCharPos);
   if (headPos.len === 0 && tailPos.len === 0) return null;
+
+  // 尻の一致は「最初に見つかった出現」なので、それが頭の範囲に食い込んでいても、頭より後ろに
+  // 別の出現があるならそちらが本来の尻である可能性が高い。頭の直後から探し直してから判断する。
+  if (
+    headPos.len > 0 &&
+    tailPos.len > 0 &&
+    tailPos.pos <= headPos.pos + headPos.len - 1
+  ) {
+    const afterHead = longestSuffixMatch(joined, target, headPos.pos + headPos.len);
+    if (afterHead.len > 0) tailPos = afterHead;
+  }
 
   // 頭と尻の両方が見つかったときだけ「繋ぐ」判断をする。繋がない場合は、長く一致した側の
   // 領域だけを1区間として採用する（区間を丸ごと捨てるより素材を活かせる）。
   let joinable = headPos.len > 0 && tailPos.len > 0;
-  if (joinable && tailPos.pos < headPos.pos) {
-    // P1-9-B: 尻の一致が頭の一致より前に現れている＝繋ぐと会話の順番が逆転する。
+  if (joinable && tailPos.pos <= headPos.pos + headPos.len - 1) {
+    // P1-9-B: 尻の一致が頭の一致より前にある＝繋ぐと会話の順番が逆転する。
+    // 頭の範囲に食い込んでいる場合（同じ出現に頭と尻の両方が当たっている場合を含む）も、
+    // 繋ぐと同じ文字を二重に数えて matchedChars が実際より大きくなるため結合しない。
     joinable = false;
   }
   if (joinable) {
