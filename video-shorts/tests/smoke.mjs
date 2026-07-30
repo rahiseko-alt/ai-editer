@@ -264,6 +264,57 @@ t("P1-9-C: 頭と尻が素材の同じ出現に当たっている場合、一致
   assert.strictEqual(out.length, 0, "同じ出現を二重計上してカバー率を水増ししてはいけない");
 });
 
+// 頭の範囲と尻の一致が重なるケース（境界のオフバイワン防止）。
+// joined = "あいうえおかきくけこ"（"あいうえお" 0.0-2.0s / "かきくけこ" 2.0-4.0s）。
+const overlapTranscript = {
+  language: "ja",
+  duration: 4.0,
+  words: [
+    { w: "あいうえお", start: 0.0, end: 2.0 },
+    { w: "かきくけこ", start: 2.0, end: 4.0 },
+  ],
+  segments: [{ start: 0.0, end: 4.0, text: "あいうえおかきくけこ" }],
+};
+
+t("P1-9-C: 尻の一致が頭の範囲の内側から始まる場合も結合しない", () => {
+  // 頭「あいうえお」は 0-4文字目、尻「うえおか」は 2文字目から始まり頭に食い込む。
+  const out = resolveSegments(
+    [{ keepText: "あいうえおんうえおか", hook: "h" }],
+    overlapTranscript,
+  );
+  assert.strictEqual(out.length, 1, "頭側だけの区間として残るべき");
+  assert.strictEqual(out[0].end, 2.0, "頭の範囲に食い込む尻まで繋いではいけない");
+});
+
+t("P1-9-C: 尻の一致が頭の範囲の最後の文字ちょうどから始まる場合も結合しない", () => {
+  // 頭「あいうえお」は 0-4文字目、尻「おかきく」は 4文字目（頭の最後の文字）から始まる。
+  const out = resolveSegments(
+    [{ keepText: "あいうえおんおかきく", hook: "h" }],
+    overlapTranscript,
+  );
+  assert.strictEqual(out.length, 1, "頭側だけの区間として残るべき");
+  assert.strictEqual(out[0].end, 2.0, "境界（頭の最終文字）で始まる尻も結合対象にしてはいけない");
+});
+
+t("P1-9-A: 尻の最初の出現が頭と重なっていても、後ろに別の出現があればそちらで結合する", () => {
+  // 「あいうえお」が2回出る素材で keepText も「あいうえお」を2回含む。尻の最初の出現は
+  // 頭と同じ位置（重なり）だが、後ろの出現なら順番も時間差も問題ないので繋げるべき。
+  const repeated = {
+    language: "ja",
+    duration: 6.0,
+    words: [
+      { w: "あいうえお", start: 0.0, end: 2.0 },
+      { w: "さしすせそ", start: 2.0, end: 4.0 },
+      { w: "あいうえお", start: 4.0, end: 6.0 },
+    ],
+    segments: [{ start: 0.0, end: 6.0, text: "あいうえおさしすせそあいうえお" }],
+  };
+  const out = resolveSegments([{ keepText: "あいうえおあいうえお", hook: "h" }], repeated);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].start, 0.0, "1回目の出現から始まるべき");
+  assert.strictEqual(out[0].end, 6.0, "重なりを理由に2回目の出現を捨ててはいけない");
+});
+
 t("P1-9-C: keepTextのカバー率が閾値未満の区間は採用しない", () => {
   // 20文字のうち先頭4文字「あいうえ」しか一致しない＝カバー率0.2（MIN_MATCH_COVERAGE=0.5未満）。
   const out = resolveSegments(
