@@ -73,8 +73,10 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
   // 頭と尻の両方が見つかったときだけ「繋ぐ」判断をする。繋がない場合は、長く一致した側の
   // 領域だけを1区間として採用する（区間を丸ごと捨てるより素材を活かせる）。
   let joinable = headPos.len > 0 && tailPos.len > 0;
-  if (joinable && tailPos.pos < headPos.pos) {
-    // P1-9-B: 尻の一致が頭の一致より前に現れている＝繋ぐと会話の順番が逆転する。
+  if (joinable && tailPos.pos <= headPos.pos + headPos.len - 1) {
+    // P1-9-B: 尻の一致が頭の一致より前にある＝繋ぐと会話の順番が逆転する。
+    // 頭の範囲に食い込んでいる場合（同じ出現に頭と尻の両方が当たっている場合を含む）も、
+    // 繋ぐと同じ文字を二重に数えて matchedChars が実際より大きくなるため結合しない。
     joinable = false;
   }
   if (joinable) {
