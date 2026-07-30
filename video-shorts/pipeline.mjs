@@ -26,6 +26,7 @@ import { concatClips } from "./src/concat.mjs";
 import { DEFAULT_MODE, getMode, isValidMode } from "./src/select-modes.mjs";
 import { runDigestEditor } from "./src/digest-editor.mjs";
 import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./src/timing.mjs";
+import { makeUniqueJobId } from "./src/job-id.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -78,7 +79,10 @@ function cmdInit(input, mode, sub, orientArg) {
         "  縦横も毎回ヒアリング必須です（前回の引き継ぎ禁止）。\n" +
         "  横=画面録画など細かい文字を残す用途 / 縦=SNSリール等の縦枠用途。");
   }
-  const id = path.basename(input).replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}]+/gu, "-");
+  // P1-8: ファイル名だけで id を決めると、別々の「lecture.mp4」を処理したときに work/output を
+  // 共有してしまい、前のジョブの state.json やクリップを上書きする。サーバー経路(P1-3)と同じく
+  // ファイル名由来のprefix＋乱数suffixで、ジョブごとに必ず別ディレクトリになるようにする。
+  const id = makeUniqueJobId(input);
   const workDir = path.join(WORK_ROOT, id);
   fs.mkdirSync(workDir, { recursive: true });
   stageStart(workDir, "init");

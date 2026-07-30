@@ -17,7 +17,8 @@ import {
   unsubscribeJob,
   isRunning,
 } from "./pipeline-runner.mjs";
-import { parseJobParams, makeUniqueJobId } from "./job-params.mjs";
+import { parseJobParams } from "./job-params.mjs";
+import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
   generateStartupToken,
   extractToken,

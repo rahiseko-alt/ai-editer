@@ -865,7 +865,7 @@
               "theme": "クラウドのセッションを開いた瞬間に、動画処理(ffmpeg)が使える状態になっている",
               "meaning": "毎回コマンドを手打ちで導入しなくても、最初から動画を切ったり字幕を焼いたりできる",
               "detail": "session-start-hookスキルに従い.claude/hooks/session-start.shを新設。$CLAUDE_CODE_REMOTEが真の場合のみffmpegの有無を確認し、無ければapt-get installで導入する。",
-              "status": "todo",
+              "status": "done",
               "criteria": [
                 {
                   "text": "クラウドセッション開始時、ffmpegが自動導入され使える",
@@ -880,7 +880,7 @@
               "theme": "クラウドのセッションを開いた瞬間に、文字起こし(faster-whisper/groq)が使える状態になっている",
               "meaning": "毎回pip installを手打ちしなくても、最初から動画の文字起こしができる",
               "detail": "同フックで、video-shorts/requirements.txt(faster-whisper/groq)の導入有無をpython -c importで確認し、無ければpip installする。",
-              "status": "todo",
+              "status": "done",
               "criteria": [
                 {
                   "text": "クラウドセッション開始時、faster-whisper/groqが自動導入され使える",
@@ -895,7 +895,7 @@
               "theme": "手元のPCで普段どおり作業する分には、このクラウド向け自動導入が一切割り込んでこない",
               "meaning": "PCを持っている人の作業を、PCが無い人向けの仕組みが邪魔しない",
               "detail": "session-start.shの先頭で$CLAUDE_CODE_REMOTEを判定し、真でなければ即終了する(session-start-hookスキルの推奨パターン)。",
-              "status": "todo",
+              "status": "done",
               "criteria": [
                 {
                   "text": "CLAUDE_CODE_REMOTEが未設定/偽の場合、session-start.shはapt/pipを一切実行せず即終了する",
@@ -910,7 +910,7 @@
               "theme": "「PCが無くても、クラウドのClaude Codeだけで完結できる」ことが案内文書に書いてある",
               "meaning": "この使い方があることを、案内を読んだ人が知ることができる",
               "detail": "start-here.md(または関連ドキュメント)に、ローカルPC無し・クラウドのClaude Codeセッションだけで使える旨を追記する。",
-              "status": "todo",
+              "status": "done",
               "criteria": [
                 {
                   "text": "start-here.mdに、PC不要でクラウドのClaude Codeだけで完結できる使い方が明記されている",
