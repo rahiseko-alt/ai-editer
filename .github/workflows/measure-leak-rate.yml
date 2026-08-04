@@ -1,0 +1,53 @@
+name: 実素材での見落とし率を計測 (M-5-C)
+
+# ロードマップ M-5-C の verify を、誰でも再現できる公開の run として回す。
+#
+# ci-green（マージの関所）に入れていないのは、この計測が外部（Wikimedia）から素材を
+# 取得するため。ネットワークの調子でマージが止まるのは関所の役割ではない。
+# 代わりに、この run の URL 自体が M-5-C の evidence になる（公開されていて誰でも中身を
+# 確認でき、AI が書き換えられない外部事実）。
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "計測する長さ（秒）"
+        required: false
+        default: "30"
+      start:
+        description: "素材の開始位置（秒）"
+        required: false
+        default: "0"
+
+jobs:
+  measure:
+    name: 実素材(パブリックドメイン)で素顔が残る割合を測る
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+
+      # 版の指定は requirements.txt を唯一の正とする（CI 本体と同じやり方）
+      - name: Install opencv
+        run: |
+          spec=$(grep -E '^opencv-python-headless' video-shorts/requirements.txt)
+          if [ -z "$spec" ]; then
+            echo "FAIL: opencv-python-headless が video-shorts/requirements.txt に見つかりません"
+            exit 1
+          fi
+          python -m pip install "$spec"
+
+      - name: 計測
+        run: |
+          python3 scripts/measure-leak-rate.py \
+            --seconds "${{ inputs.seconds }}" \
+            --start "${{ inputs.start }}"

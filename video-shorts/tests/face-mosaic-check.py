@@ -934,6 +934,91 @@ check(
     "手順9でモザイク版(-mosaic.mp4)をコピーする記述が見つかりません",
 )
 
+# --- 読み切った直後にデコーダを殺していないか（成功したのに失敗と報告する事故）---
+# ffmpeg は stdout を閉じてから自分が終了するまでに僅かな間がある。その隙に terminate
+# すると終了コードが -15 になり、全コマを正しく焼き終えたのに「入力動画の読み出しに
+# 失敗しました」と落ちる。
+#
+# 実機では出たり出なかったりする競合なので、本物の ffmpeg では再現が運任せになる
+# （実際、時間差で再現させようとしたら是正前のコードでも素通りした）。そこで
+# **「stdout は閉じたが、まだ終了していない」状態そのもの** を必ず返す身代わりを差し込む。
+# poll() が常に None を返す＝競合の当たりを毎回引く、ということ。
+# 是正前のコードならこれで必ず落ち、是正後なら必ず通る。
+import importlib.util  # noqa: E402
+import io  # noqa: E402
+
+raw_path = os.path.join(tmp_dir, "frames.raw")
+subprocess.run(
+    shlex.split(f'ffmpeg -v error -i "{src_video}" -f rawvideo -pix_fmt bgr24 -y "{raw_path}"'),
+    capture_output=True)
+
+
+class _NotYetExitedDecoder:
+    """コマは全部渡し終えたが、まだ終了していないデコーダ。"""
+
+    def __init__(self, data):
+        self.stdout = io.BytesIO(data)
+        self.returncode = None
+        self.terminated = False
+
+    def poll(self):
+        return None  # 「まだ終了していない」＝ここが競合の当たり
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15  # SIGTERM で殺された印
+
+    def wait(self):
+        if self.returncode is None:
+            self.returncode = 0  # 放っておけば正常終了する
+        return self.returncode
+
+
+_spec = importlib.util.spec_from_file_location("apply_mosaic_cli", CLI)
+_amc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_amc)
+_real_popen = subprocess.Popen
+_fake_dec = _NotYetExitedDecoder(open(raw_path, "rb").read())
+
+
+def _lingering_popen(cmd, **kw):
+    """デコーダの呼び出しだけを身代わりに差し替える。
+
+    `stdout=PIPE` で見分けてはいけない。同じ run() の中で ffprobe も
+    capture_output（＝stdout=PIPE）で呼ばれるため、そちらまで差し替わって
+    解像度の取得が壊れる（実際に壊して気づいた）。
+    デコーダだけが「ffmpeg で、出力先が標準出力(`-`)」という形をしている。
+    """
+    if list(cmd)[:1] == ["ffmpeg"] and list(cmd)[-1] == "-":
+        return _fake_dec
+    return _real_popen(cmd, **kw)
+
+
+_amc.subprocess.Popen = _lingering_popen
+try:
+    _n = _amc.run(src_video, os.path.join(tmp_dir, "linger.mp4"))
+    linger_ok, linger_err = _n > 0, ""
+except RuntimeError as e:
+    linger_ok, linger_err = False, str(e)
+finally:
+    _amc.subprocess.Popen = _real_popen
+
+check(
+    "M-4-F: 読み切った後のデコーダを殺さない（成功したのに失敗と報告しない）",
+    linger_ok and not _fake_dec.terminated,
+    linger_err or "読み切った後なのに terminate（SIGTERM）を送っています",
+)
+
+# --- 終了コード（--help を異常終了扱いにしない）---
+help_run = subprocess.run([sys.executable, CLI, "--help"], capture_output=True, text=True)
+bad_run = subprocess.run([sys.executable, CLI, "--存在しない指定"], capture_output=True, text=True)
+check(
+    # `e.code or 2` と書くと 0 が偽と見なされ、--help まで異常終了(2)になっていた
+    "M-4-F: --help は正常終了(0)、指定の誤りは異常終了(0以外)を返す",
+    help_run.returncode == 0 and bad_run.returncode != 0,
+    f"--help={help_run.returncode} 誤指定={bad_run.returncode}",
+)
+
 shutil.rmtree(tmp_dir, ignore_errors=True)
 
 

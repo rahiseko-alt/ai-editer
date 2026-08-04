@@ -86,10 +86,14 @@ def run(input_path, output_path, target=None, strength="普通"):
     size = width * height * 3
     total = 0
     pending = []
+    # 読み切ったのか、例外で抜けたのかを区別する。区別しないと、下の後始末で
+    # 「正常に読み終えた ffmpeg」まで terminate してしまう（下のコメント参照）。
+    reached_eof = False
     try:
         while True:
             buf = dec.stdout.read(size)
             if len(buf) < size:
+                reached_eof = True
                 break
             # bytearray にすると書き換え可能になり、複製を省いてそのまま焼ける
             pending.append(np.frombuffer(bytearray(buf), np.uint8).reshape(height, width, 3))
@@ -112,9 +116,15 @@ def run(input_path, output_path, target=None, strength="普通"):
         except BrokenPipeError:
             pass  # エンコーダが先に落ちている場合。下の returncode 検査で拾う
         enc.wait()
-        if dec.poll() is None:
+        if not reached_eof and dec.poll() is None:
             # 読み残しがあると ffmpeg はパイプへの書き込みで止まり wait() が返らない。
             # 例外で途中終了したときに、ここで永久に固まらないよう先に止める。
+            #
+            # 逆に、読み切った(reached_eof)ときに止めてはいけない。ffmpeg は stdout を
+            # 閉じてから終了するまでに僅かな間があり、その隙に poll() が None のまま
+            # terminate すると returncode が -15 になる。全コマを正しく焼き終えたのに
+            # 下の検査が「入力動画の読み出しに失敗しました」と誤って落とすことになる。
+            # 読み切った側は、書き込む先がもう無いので固まらない＝黙って待てばよい。
             dec.terminate()
         dec.stdout.close()
         dec.wait()
@@ -149,7 +159,10 @@ def main(argv):
     try:
         args = parser.parse_args(argv[1:])
     except SystemExit as e:
-        return int(e.code or 2)
+        # argparse は --help でも SystemExit(0) を投げる。`e.code or 2` と書くと
+        # 0 が偽と見なされて 2 になり、`--help` が異常終了扱いになってしまう。
+        # argparse が決めた終了コードをそのまま返す（不明なときだけ 2）。
+        return 2 if e.code is None else int(e.code)
     input_path, output_path = args.input_path, args.output_path
     target, strength = args.target, args.strength
 
