@@ -34,6 +34,27 @@ jobs:
       - name: Lint
         run: pnpm -r --if-present lint
 
+      # ランナーイメージ同梱の python3 に依存すると、GitHub がイメージを更新した際に
+      # リポジトリ側の変更なしに ci-green(必須チェック)が壊れうる。版を固定する。
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 顔モザイクのテスト(tests/face-mosaic-check.py)が cv2 を使う。
+      # requirements.txt 全体は文字起こしの重い依存を含み CI では不要なので opencv だけを入れる。
+      # 版の指定は requirements.txt を唯一の正とし、そこから抜き出して使う(二重管理で食い違わせない)。
+      # 入れずにテストをスキップさせるのは AGENTS.md が禁じる「偽の緑」にあたるため行わない。
+      - name: Install Python deps for face tests (opencv only)
+        run: |
+          spec=$(grep -E '^opencv-python-headless' video-shorts/requirements.txt)
+          if [ -z "$spec" ]; then
+            echo "FAIL: opencv-python-headless が video-shorts/requirements.txt に見つかりません"
+            exit 1
+          fi
+          echo "installing: $spec"
+          python -m pip install "$spec"
+
       - name: Test
         run: pnpm -r test
 
