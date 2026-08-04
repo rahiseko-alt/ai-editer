@@ -1119,12 +1119,12 @@
                   "kind": "state",
                   "theme": "顔を隠すのに必要な部品が配布物に入っている",
                   "meaning": "お客様が別途ダウンロードしなくても動く",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "build-dist が生成した配布物に、顔検出と顔識別のモデルファイルが含まれる",
                       "verify": "node video-shorts/build-dist.mjs を実行し、dist 配下に当該モデルファイルが存在することをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1134,12 +1134,12 @@
                   "theme": "同梱した部品の利用許諾が配布物に入っている",
                   "meaning": "他人の作ったものを、決まりを守って同梱している",
                   "detail": "YuNet=MIT(著作権表示の保持が必要)、SFace=Apache 2.0(再配布時にライセンス本文の同梱が必要)。両モデルとも配布元READMEに「このディレクトリの全ファイルが当該ライセンス」と明記されており、.onnx の重みも対象に含まれる。",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "配布物に、同梱モデルのライセンス本文ファイルが空でない状態で含まれる",
                       "verify": "dist 配下に各モデルのライセンス本文ファイルが存在し、サイズが0でないことをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1148,12 +1148,12 @@
                   "kind": "state",
                   "theme": "お客様の導入手順が増えていない",
                   "meaning": "今までどおり「実行して」と言うだけで準備が終わる",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "既存の pip install -r requirements.txt だけで顔処理のライブラリが入り、導入手順にコマンドが追加されていない",
                       "verify": "requirements.txt に必要パッケージ行が存在し、かつ start-here.md の導入ステップにインストールコマンドが追加されていないことをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1162,12 +1162,12 @@
                   "kind": "state",
                   "theme": "隠したい人をチャットで指定できる",
                   "meaning": "画面を作らなくても、誰を隠すかを選べる",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "動画から検出した顔が、番号付きの画像ファイルとして作業フォルダに書き出される",
                       "verify": "顔が写る動画を処理し、作業フォルダ配下に連番の顔画像ファイルが出力されることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1176,12 +1176,12 @@
                   "kind": "state",
                   "theme": "毎回モザイクの要否を聞かれる",
                   "meaning": "かけ忘れたまま出力される、が起きない",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "日々の運用手順書に、モザイクの要否を確認する質問が含まれている",
                       "verify": "skill/video-shorts/SKILL.md の毎回のヒアリング項目にモザイク要否の質問があることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 }
@@ -1214,12 +1214,12 @@
                   "theme": "ショート1本あたりの処理時間が実用範囲に収まる",
                   "meaning": "モザイクを付けたら待ち時間が倍増した、が起きない",
                   "detail": "事前検証(4コアXeon 2.80GHz・1080p/30fps・顔3人)では、モザイク無し17.3〜19.2秒に対し有り24.3〜24.8秒で、追加は約6秒(動画長の約10%)だった。この実測を踏まえ受入ラインを動画長の50%以内に置く。",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "60秒の動画に対するモザイク処理の追加時間が動画長の50%以内に収まる",
                       "verify": "60秒の固定テスト動画でモザイク有無の処理時間差を計測し、30秒以内であることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
