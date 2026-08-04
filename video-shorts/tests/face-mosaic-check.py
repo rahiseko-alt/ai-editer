@@ -57,10 +57,12 @@ def load(name):
 one = load("face-one.png")
 two = load("face-two.png")
 
-check("M-1-A: 1人の固定素材から顔が1件検出される", len(detect_faces(one)) == 1, f"got {len(detect_faces(one))}")
-check("M-1-A: 2人の固定素材から顔が2件検出される", len(detect_faces(two)) == 2, f"got {len(detect_faces(two))}")
-
+# detect_faces は detector を渡さないと毎回 ONNX を読み直すので、結果は使い回す。
 boxes = detect_faces(one)
+boxes_two = detect_faces(two)
+check("M-1-A: 1人の固定素材から顔が1件検出される", len(boxes) == 1, f"got {len(boxes)}")
+check("M-1-A: 2人の固定素材から顔が2件検出される", len(boxes_two) == 2, f"got {len(boxes_two)}")
+
 x, y, w, h = boxes[0]
 check(
     "M-1-A: 返る顔位置が画像内に収まった正の矩形である",
@@ -108,7 +110,7 @@ check(
 
 tracker = FaceTracker()
 overlaps = []
-for i, (f, t) in enumerate(zip(frames, truth)):
+for i, t in enumerate(truth):
     tracks = tracker.update(t, frame_index=i)
     if t:
         best = max((iou(tr.box, t[0]) for tr in tracks), default=0.0)
@@ -133,6 +135,26 @@ check(
     "M-1-B: キーフレーム間の順序が入れ替わってもIDごとに補間される（枠が別人へ飛ばない）",
     abs(mid[1][0] - 5.0) < 1e-6 and abs(mid[2][0] - 105.0) < 1e-6,
     f"got {mid}",
+)
+
+
+def ids_for(order):
+    """隣り合う2人を、指定した検出順で2フレーム流したときの (位置 -> トラックID) を返す。"""
+    tr = FaceTracker()
+    a0, b0 = (100.0, 100.0, 60.0, 75.0), (170.0, 100.0, 60.0, 75.0)  # 顔幅より近い間隔
+    tr.update([a0, b0], frame_index=0)
+    a1, b1 = (104.0, 100.0, 60.0, 75.0), (174.0, 100.0, 60.0, 75.0)
+    nxt = [a1, b1] if order == "同順" else [b1, a1]
+    tracks = tr.update(nxt, frame_index=1)
+    return {round(t.box[0]): t.id for t in tracks}
+
+
+check(
+    # 貪欲法だと、先に見た検出が後の検出にとってより近いトラックを奪い人物が入れ替わる。
+    # 距離の近い順に一意割り当てすれば検出順に依存しない。
+    "M-1-B: 隣り合う2人は、検出の順序が入れ替わってもトラックIDが入れ替わらない",
+    ids_for("同順") == ids_for("逆順"),
+    f"同順={ids_for('同順')} / 逆順={ids_for('逆順')}",
 )
 
 
@@ -197,36 +219,100 @@ check(
 # 顔の大きさを変えても隠しきれることを、実際に検出器で確かめる。
 # 「比率だけ」「絶対値だけ」では隠しきれない大きさがあるため、両方効いていることの回帰防止。
 scale_leaks = []
+undetected = []
+fixed_leaks = []
 for scale in (0.6, 1.0, 1.6, 2.4):
     im = cv2.resize(one, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     ih, iw = im.shape[:2]
     cw, ch = iw + 200, ih + 120
-    cv_frame = np.full((ch, cw, 3), (64, 48, 32), np.uint8)
-    cv_frame[60 : 60 + ih, 100 : 100 + iw] = im
+    base = np.full((ch, cw, 3), (64, 48, 32), np.uint8)
+    base[60 : 60 + ih, 100 : 100 + iw] = im
     d = create_detector(cw, ch)
-    found = detect_faces(cv_frame, d)
+    found = detect_faces(base, d)
     if not found:
+        # 黙って飛ばすとその倍率が何の根拠も出さないまま緑になる（サイレント失敗禁止）
+        undetected.append(scale)
         continue
-    apply_mosaic(cv_frame, found[0], )
-    if detect_faces(cv_frame, d):
+    ratio_applied = base.copy()
+    apply_mosaic(ratio_applied, found[0])
+    if detect_faces(ratio_applied, d):
         scale_leaks.append((scale, int(found[0][3])))
+    # 同じ場面を固定8pxでも隠してみる。比率を採った理由（固定値では大きい顔で破れる）を
+    # 検証するための対照。隠す範囲は同じで、ブロックの大きさだけが違う。
+    fixed_applied = base.copy()
+    apply_mosaic(fixed_applied, found[0], block=8)
+    if detect_faces(fixed_applied, d):
+        fixed_leaks.append((scale, int(found[0][3])))
+check(
+    "M-1-D: 全ての倍率で顔が検出できる（前提の確認）",
+    not undetected,
+    f"検出できなかった scale={undetected}",
+)
 check(
     "M-1-D: 顔の大きさが変わっても隠しきれる（小さい顔=比率／大きい顔=絶対値の両方が効く）",
     not scale_leaks,
     f"隠しきれなかった (scale, 顔高さ)={scale_leaks}",
 )
-
-# 固定8pxでは顔が判別可能なまま残ることを、実際に検出器で確かめる（この比較が
-# 「顔サイズ比で持つ」という設計判断の根拠。roadmap M-1-D の detail 参照）
-weak = one.copy()
-apply_mosaic(weak, detect_faces(one)[0], block=8)
-strong = one.copy()
-apply_mosaic(strong, detect_faces(one)[0])
-det_small = create_detector(one.shape[1], one.shape[0])
 check(
-    "M-1-D: 顔サイズ比で決めた粗さは、固定8pxより確実に隠せている",
-    len(detect_faces(strong, det_small)) == 0,
-    f"強={len(detect_faces(strong, det_small))}件 / 固定8px={len(detect_faces(weak, det_small))}件",
+    # ここが緑にならない＝固定値でも隠せてしまう＝比率を採る根拠が消える、ということ。
+    # 根拠が実際に成立していることを毎回確かめる（対照が無いと設計判断が検証されない）。
+    "M-1-D: 対照として、固定8pxでは大きい顔を隠しきれない（比率を採る根拠）",
+    fixed_leaks,
+    f"固定8pxでも全倍率で隠せてしまった（比率設計の根拠が成立していない） leaks={fixed_leaks}",
+)
+
+# -------------------------------------------------- 実素材で必ず起きる状況への耐性
+# 顧客の動画は「顔が写らない場面」「顔が画面端で切れる場面」「スマホの縦動画」を必ず含む。
+# ここで落ちると処理全体が止まるため、葉の受入条件とは別に回帰を防ぐ。
+
+blank = [np.full((240, 320, 3), (64, 48, 32), np.uint8) for _ in range(3)]
+try:
+    out_blank, tr_blank = mosaic_frames(blank)
+    ok_blank = len(out_blank) == len(blank) and not tr_blank.tracks
+except Exception as e:  # noqa: BLE001 - 落ちないこと自体が検証対象
+    ok_blank, e_blank = False, e
+check("顔が1つも写っていない場面でも落ちず、フレーム数が変わらない", ok_blank)
+
+# 顔が画面の四隅にはみ出す位置にある場合（枠が画面外へ出る）
+edge_ok = True
+fh, fw = one.shape[:2]
+for ox, oy in ((-fw // 3, -fh // 3), (0, -fh // 3), (-fw // 3, 0)):
+    canvas = np.full((260, 340, 3), (64, 48, 32), np.uint8)
+    sx0, sy0 = max(0, ox), max(0, oy)
+    crop = one[max(0, -oy) :, max(0, -ox) :]
+    ch2 = min(canvas.shape[0] - sy0, crop.shape[0])
+    cw2 = min(canvas.shape[1] - sx0, crop.shape[1])
+    canvas[sy0 : sy0 + ch2, sx0 : sx0 + cw2] = crop[:ch2, :cw2]
+    d_edge = create_detector(canvas.shape[1], canvas.shape[0])
+    for b in detect_faces(canvas, d_edge):
+        try:
+            apply_mosaic(canvas, b)
+        except Exception:  # noqa: BLE001
+            edge_ok = False
+check("顔が画面端にかかって枠が画面外へ出ても落ちない", edge_ok)
+
+# スマホの縦動画（9:16）でも検出と隠しが成立する
+portrait = np.full((640, 360, 3), (64, 48, 32), np.uint8)
+portrait[80 : 80 + fh, 70 : 70 + fw] = one
+d_por = create_detector(360, 640)
+found_por = detect_faces(portrait, d_por)
+if found_por:
+    apply_mosaic(portrait, found_por[0])
+check(
+    "縦動画(9:16)でも顔を検出して隠せる",
+    bool(found_por) and not detect_faces(portrait, d_por),
+    f"検出={len(found_por)}件 / 隠した後の残り={len(detect_faces(portrait, d_por))}件",
+)
+
+# 顔がブロックの下限より小さい場合（遠くに写った人）でも塗り潰せる
+tiny = np.full((120, 160, 3), (64, 48, 32), np.uint8)
+tiny_face = cv2.resize(one, (24, 27), interpolation=cv2.INTER_AREA)
+tiny[40:67, 50:74] = tiny_face
+before_tiny = tiny.copy()
+apply_mosaic(tiny, (50.0, 40.0, 24.0, 27.0))
+check(
+    "顔がモザイク1ブロックより小さくても、その範囲が塗り潰される",
+    not np.array_equal(before_tiny[40:67, 50:74], tiny[40:67, 50:74]),
 )
 
 

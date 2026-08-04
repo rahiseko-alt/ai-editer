@@ -15,9 +15,18 @@ PyTorch や onnxruntime は不要。
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 
-import cv2
+try:
+    import cv2
+except ImportError:  # 客の環境で未導入のとき、スタックトレースではなく直せる指示を出す
+    sys.stderr.write(
+        "[ERROR] opencv 未インストール。`pip install -r requirements.txt` を実行してください"
+        "（顔モザイクに必要です。`pip` が無ければ `pip3` / `python -m pip` を試してください）。\n"
+    )
+    sys.exit(3)
+
 import numpy as np
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "face_detection_yunet_2023mar.onnx")
@@ -97,11 +106,14 @@ def block_size_for(face_h: float, ratio: float = BLOCK_RATIO_DEFAULT) -> int:
 def expand_box(box, frame_w: int, frame_h: int, margin: float = MARGIN_RATIO):
     """顔枠を輪郭ぶん広げ、画面外へはみ出さないよう丸める。"""
     x, y, w, h = box
-    m = w * margin
-    x0 = max(0, int(round(x - m)))
-    y0 = max(0, int(round(y - m)))
-    x1 = min(frame_w, int(round(x + w + m)))
-    y1 = min(frame_h, int(round(y + h + m)))
+    # 縦横それぞれの辺から広げる。顔枠は横より縦が長いので、幅由来の余白を上下にも
+    # 使うと縦方向の拡張率が足りず、髪と顎が枠から出る。
+    mx = w * margin
+    my = h * margin
+    x0 = max(0, round(x - mx))
+    y0 = max(0, round(y - my))
+    x1 = min(frame_w, round(x + w + mx))
+    y1 = min(frame_h, round(y + h + my))
     return x0, y0, max(0, x1 - x0), max(0, y1 - y0)
 
 
@@ -139,23 +151,36 @@ class FaceTracker:
         for t in self.tracks:
             t.seen = False
 
-        for b in boxes:
+        # 検出を順番に見て「空いている中で一番近いトラック」へ割り当てる貪欲法は、
+        # 先に処理された検出が、後の検出にとってより近いトラックを奪いうる。
+        # 探索半径は顔幅1.5個ぶんなので隣り合った2人は互いの半径に入り、これが起きると
+        # 人物が入れ替わる ＝ M-1-B が防ごうとしている当の失敗そのものになる。
+        # そこで全ての(検出, トラック)の距離を先に出し、近い順に一意割り当てする。
+        # こうすると結果が検出の順序に依存しない。
+        pairs = []
+        for bi, b in enumerate(boxes):
             cx, cy = b[0] + b[2] / 2, b[1] + b[3] / 2
-            best, best_d = None, MATCH_DISTANCE_RATIO
             for t in self.tracks:
-                if t.seen:
-                    continue
                 tx, ty = t.box[0] + t.box[2] / 2, t.box[1] + t.box[3] / 2
                 d = ((cx - tx) ** 2 + (cy - ty) ** 2) ** 0.5 / max(b[2], 1.0)
-                if d < best_d:
-                    best, best_d = t, d
-            if best is None:
+                if d < MATCH_DISTANCE_RATIO:
+                    pairs.append((d, bi, t))
+        matched: dict[int, Track] = {}
+        for _d, bi, t in sorted(pairs, key=lambda p: p[0]):
+            if bi in matched or t.seen:
+                continue
+            t.seen = True
+            matched[bi] = t
+
+        for bi, b in enumerate(boxes):
+            t = matched.get(bi)
+            if t is None:
                 self._next_id += 1
-                best = Track(id=self._next_id, box=tuple(b))
-                self.tracks.append(best)
-            best.box = tuple(b)
-            best.seen = True
-            best.missed = 0
+                t = Track(id=self._next_id, box=tuple(b))
+                t.seen = True
+                self.tracks.append(t)
+            t.box = tuple(b)
+            t.missed = 0
 
         held = False
         for t in self.tracks:
