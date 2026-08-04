@@ -934,7 +934,159 @@ check(
     "手順9でモザイク版(-mosaic.mp4)をコピーする記述が見つかりません",
 )
 
+# --- 読み切った直後にデコーダを殺していないか（成功したのに失敗と報告する事故）---
+# ffmpeg は stdout を閉じてから自分が終了するまでに僅かな間がある。その隙に terminate
+# すると終了コードが -15 になり、全コマを正しく焼き終えたのに「入力動画の読み出しに
+# 失敗しました」と落ちる。
+#
+# 実機では出たり出なかったりする競合なので、本物の ffmpeg では再現が運任せになる
+# （実際、時間差で再現させようとしたら是正前のコードでも素通りした）。そこで
+# **「stdout は閉じたが、まだ終了していない」状態そのもの** を必ず返す身代わりを差し込む。
+# poll() が常に None を返す＝競合の当たりを毎回引く、ということ。
+# 是正前のコードならこれで必ず落ち、是正後なら必ず通る。
+import importlib.util  # noqa: E402
+import io  # noqa: E402
+
+raw_path = os.path.join(tmp_dir, "frames.raw")
+subprocess.run(
+    shlex.split(f'ffmpeg -v error -i "{src_video}" -f rawvideo -pix_fmt bgr24 -y "{raw_path}"'),
+    capture_output=True)
+
+
+class _NotYetExitedDecoder:
+    """コマは全部渡し終えたが、まだ終了していないデコーダ。"""
+
+    def __init__(self, data):
+        self.stdout = io.BytesIO(data)
+        self.returncode = None
+        self.terminated = False
+
+    def poll(self):
+        return None  # 「まだ終了していない」＝ここが競合の当たり
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15  # SIGTERM で殺された印
+
+    def wait(self):
+        if self.returncode is None:
+            self.returncode = 0  # 放っておけば正常終了する
+        return self.returncode
+
+
+_spec = importlib.util.spec_from_file_location("apply_mosaic_cli", CLI)
+_amc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_amc)
+_real_popen = subprocess.Popen
+_fake_dec = _NotYetExitedDecoder(open(raw_path, "rb").read())
+
+
+def _lingering_popen(cmd, **kw):
+    """デコーダの呼び出しだけを身代わりに差し替える。
+
+    `stdout=PIPE` で見分けてはいけない。同じ run() の中で ffprobe も
+    capture_output（＝stdout=PIPE）で呼ばれるため、そちらまで差し替わって
+    解像度の取得が壊れる（実際に壊して気づいた）。
+    デコーダだけが「ffmpeg で、出力先が標準出力(`-`)」という形をしている。
+    """
+    if list(cmd)[:1] == ["ffmpeg"] and list(cmd)[-1] == "-":
+        return _fake_dec
+    return _real_popen(cmd, **kw)
+
+
+_amc.subprocess.Popen = _lingering_popen
+try:
+    _n = _amc.run(src_video, os.path.join(tmp_dir, "linger.mp4"))
+    linger_ok, linger_err = _n > 0, ""
+except RuntimeError as e:
+    linger_ok, linger_err = False, str(e)
+finally:
+    _amc.subprocess.Popen = _real_popen
+
+check(
+    "M-4-F: 読み切った後のデコーダを殺さない（成功したのに失敗と報告しない）",
+    linger_ok and not _fake_dec.terminated,
+    linger_err or "読み切った後なのに terminate（SIGTERM）を送っています",
+)
+
+# --- 終了コード（--help を異常終了扱いにしない）---
+help_run = subprocess.run([sys.executable, CLI, "--help"], capture_output=True, text=True)
+bad_run = subprocess.run([sys.executable, CLI, "--存在しない指定"], capture_output=True, text=True)
+check(
+    # `e.code or 2` と書くと 0 が偽と見なされ、--help まで異常終了(2)になっていた
+    "M-4-F: --help は正常終了(0)、指定の誤りは異常終了(0以外)を返す",
+    help_run.returncode == 0 and bad_run.returncode != 0,
+    f"--help={help_run.returncode} 誤指定={bad_run.returncode}",
+)
+
 shutil.rmtree(tmp_dir, ignore_errors=True)
+
+# ---------------------------------------------------------------- M-5-C
+# 計測ワークフローが計測スクリプトを「実際に呼べる」か。
+# 存在しない引数(--start)を渡していて、回した瞬間に argparse の使い方エラーで
+# 落ちる状態になっていた。ワークフローは PR の CI では動かないので、誰も気づかない
+# まま「これが evidence になります」と言える。呼び出し側と受け側の食い違いは
+# 手順書のときと同じ壊れ方なので、機械で固定する。
+import re  # noqa: E402
+
+MEASURE = os.path.join(REPO, "scripts", "measure-leak-rate.py")
+WORKFLOW = os.path.join(REPO, ".github", "workflows", "measure-leak-rate.yml")
+check(
+    "M-5-C: 計測スクリプトと計測ワークフローが配置されている（前提の確認）",
+    os.path.exists(MEASURE) and os.path.exists(WORKFLOW),
+)
+
+wf_text = open(WORKFLOW, encoding="utf-8").read()
+
+# ワークフローが渡す「--旗 "$環境変数"」と、その環境変数が受け取る入力名、
+# さらに入力の既定値をたどって、実際に組み立てられるコマンド行を再現する。
+run_block = wf_text.split("measure-leak-rate.py")[-1]
+flag_env = re.findall(r'--([a-z][a-z0-9-]*)\s+"\$([A-Z_]+)"', run_block)
+env_input = dict(re.findall(r"([A-Z_]+):\s*\$\{\{\s*inputs\.([a-z_]+)\s*\}\}", wf_text))
+
+# workflow_dispatch の inputs 節だけを切り出し、宣言された入力名と既定値を拾う
+inputs_block = wf_text.split("workflow_dispatch:")[-1].split("\npermissions:")[0]
+input_defaults, declared_inputs, current = {}, [], None
+for line in inputs_block.split("\n"):
+    name = re.match(r"^ {6}([a-z_]+):\s*$", line)
+    if name:
+        current = name.group(1)
+        declared_inputs.append(current)
+    d = re.match(r'^\s+default:\s*"?([^"\n]*)"?\s*$', line)
+    if d and current:
+        input_defaults.setdefault(current, d.group(1))
+
+wf_argv = []
+for flag, env_name in flag_env:
+    wf_argv += [f"--{flag}", input_defaults.get(env_input.get(env_name, ""), "")]
+
+# 画面で選べる入力が、全部そのままスクリプトへ渡っているか。
+# 「1つでも旗があれば合格」にすると、--case の受け渡しを消しても素通りし、
+# crowd を選んで実行したのに既定の all を測る、という黙った食い違いが残る。
+# 期待する組み合わせを書き写すのではなく、**宣言された入力の集合**と突き合わせる
+# （書き写すと、入力を増やしたときにテスト側の更新漏れで同じ穴が開く）。
+wired_inputs = sorted(env_input.get(env, "") for _, env in flag_env)
+check(
+    "M-5-C: 画面で選べる入力が、すべて計測スクリプトへ渡っている",
+    wired_inputs == sorted(declared_inputs) and all(v for v in wf_argv) and bool(declared_inputs),
+    f"宣言された入力={sorted(declared_inputs)} / 渡している入力={wired_inputs} / 引数={wf_argv}",
+)
+
+# 実際にそのコマンド行を計測スクリプトの受け口に食わせる。
+# 「--help に文字列が載っている」だけでは、値の型や選択肢の食い違いを拾えない。
+dry = subprocess.run(
+    [sys.executable, "-c",
+     "import importlib.util, sys\n"
+     f"spec = importlib.util.spec_from_file_location('m', r'{MEASURE}')\n"
+     "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+     "m.build_parser().parse_args(sys.argv[1:])\n"] + wf_argv,
+    capture_output=True, text=True)
+check(
+    # 存在しない引数(--start)を渡していて、回した瞬間に落ちる状態になっていた
+    "M-5-C: 計測ワークフローが組み立てるコマンドを、計測スクリプトがそのまま受け取れる",
+    dry.returncode == 0,
+    f"引数={wf_argv} / {(dry.stderr or '')[-300:]}",
+)
 
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")

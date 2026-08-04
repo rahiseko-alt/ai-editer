@@ -30,3 +30,10 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# M-5-C の計測作業フォルダ（取得した実素材と出力。第三者の映像ではないが素材はコミットしない）
+_m5c_work/
+
+# Python のキャッシュ（リポジトリ直下の scripts/ でも生成される）
+__pycache__/
+*.pyc
