@@ -1,6 +1,6 @@
 """実素材で「素顔が残ったコマ」の割合を測る（ロードマップ M-5-C の verify）。
 
-    python3 scripts/measure-leak-rate.py [--seconds N] [--start N] [--url URL]
+    python3 scripts/measure-leak-rate.py [--seconds N] [--case all|interview|crowd] [--url URL]
 
 なぜこの形なのか
 ----------------
