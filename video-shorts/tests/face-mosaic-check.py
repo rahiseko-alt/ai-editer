@@ -196,7 +196,13 @@ check(
 
 # ---------------------------------------------------------------- M-1-D
 # 「出力の顔部分を顔検出器にかけても顔として検出されない」
-covered, _ = mosaic_frames(frames[:6], detector=create_detector(frames[0].shape[1], frames[0].shape[0]))
+# この合成列は顔が最大90px/コマで動く（実際の取材映像の6倍以上）。追従の限界を見るため、
+# ここでは検出を間引かない最も厳しい設定で確かめる。間引いた場合の限界は下の別項目で測る。
+covered, _ = mosaic_frames(
+    frames[:6],
+    detector=create_detector(frames[0].shape[1], frames[0].shape[0]),
+    detect_every=1,
+)
 recheck = create_detector(covered[0].shape[1], covered[0].shape[0])
 leaks = [i for i, f in enumerate(covered) if len(detect_faces(f, recheck)) > 0]
 check("M-1-D: モザイク後のフレームから顔が検出されない", not leaks, f"素顔が残ったフレーム={leaks}")
@@ -439,6 +445,108 @@ except ValueError:
 finally:
     os.remove(blank_path)
 check("M-2: 顔が写っていない写真を登録しようとしたら、理由を示して止まる", reg_ok)
+
+
+# ================================================================ M-3
+# 隠しそこねを見つけて直せる。
+#   M-3-A 隠しそこねた可能性のある場面が自動で示される
+#   M-3-B 隠しそこねを後から手で直せる
+
+import shutil  # noqa: E402
+
+from face_mosaic import (  # noqa: E402
+    DETECT_EVERY_DEFAULT,
+    DETECT_WIDTH_DEFAULT,
+    apply_manual_masks,
+    detection_scale,
+    review_frames,
+    write_review_images,
+)
+
+# ---------------------------------------------------------------- M-3-A
+tracker_r = FaceTracker(hold_frames=8)
+for i, t in enumerate(gapped):
+    tracker_r.update(t, frame_index=i)
+marks = review_frames(tracker_r, total_frames=len(gapped))
+check(
+    "M-3-A: 顔を見失って補完した区間が、確認対象として拾い出される",
+    set(GAP).issubset(set(marks)),
+    f"拾い出されたコマ={marks} / 欠落させたコマ={list(GAP)}",
+)
+
+review_dir = os.path.join(FIXTURES, "..", "_review_tmp")
+shutil.rmtree(review_dir, ignore_errors=True)
+written = write_review_images(frames, marks, review_dir)
+check(
+    "M-3-A: 確認用の静止画がファイルとして書き出される",
+    written and all(os.path.exists(p) and os.path.getsize(p) > 0 for p in written),
+    f"書き出し={len(written)}枚",
+)
+check(
+    "M-3-A: 書き出した静止画が元フレームと同じ解像度である（確認のために画質を落とさない）",
+    cv2.imread(written[0]).shape == frames[0].shape,
+    f"{cv2.imread(written[0]).shape} vs {frames[0].shape}",
+)
+shutil.rmtree(review_dir, ignore_errors=True)
+
+# ---------------------------------------------------------------- M-3-B
+manual = [f.copy() for f in frames[:10]]
+# 単色の背景を隠しても画素は変わらないので、実際に顔が写っている位置を指定する
+# （自動処理が取りこぼした顔を人が手で塞ぐ、という本来の使い方に合わせる）
+BOX = detect_faces(frames[5], det)[0]
+bx, by, bw2, bh2 = [int(v) for v in BOX]
+region = (slice(by, by + bh2), slice(bx, bx + bw2))
+before_manual = manual[5][region].copy()
+apply_manual_masks(manual, [{"start": 4, "end": 6, "box": BOX}])
+check(
+    "M-3-B: 指定した区間の指定位置に、後から隠しを足せる",
+    not np.array_equal(before_manual, manual[5][region]),
+)
+check(
+    "M-3-B: 指定した区間の外は変わらない",
+    np.array_equal(manual[0], frames[0]) and np.array_equal(manual[9], frames[9]),
+)
+# 手で足した隠しが、実際に顔を隠せていること（位置を書いただけで終わらない）
+det_manual = create_detector(manual[5].shape[1], manual[5].shape[0])
+covered_here = [b for b in detect_faces(manual[5], det_manual)
+                if abs(b[0] - BOX[0]) < BOX[2] and abs(b[1] - BOX[1]) < BOX[3]]
+check(
+    "M-3-B: 手で足した隠しで、その顔が実際に検出されなくなる",
+    not covered_here,
+    f"隠したはずの位置に残った顔={covered_here}",
+)
+
+
+# ================================================================ 出力画質
+# 高速化のために縮小するのは「検出用のコピー」だけで、出力は原寸のまま焼く。
+# ここが崩れると、速くなった代わりに納品物が使えなくなる。
+src_frames = [f.copy() for f in frames[:4]]
+out_q, _ = mosaic_frames(src_frames)
+check(
+    "出力フレームの解像度が入力と同一である（検出用の縮小が出力に波及しない）",
+    all(o.shape == s.shape for o, s in zip(out_q, frames[:4])),
+    f"{[o.shape for o in out_q]} vs {[s.shape for s in frames[:4]]}",
+)
+# 顔の外側は1画素も書き換わっていないこと（＝背景が再圧縮・再サンプルされていない）
+face_box = detect_faces(frames[0], det)[0]
+fx, fy, fw2, fh2 = [int(v) for v in face_box]
+pad = int(fw2 * 0.6)
+mask_free = (slice(0, max(0, fy - pad)), slice(None))
+check(
+    "顔以外の領域は1画素も書き換わらない（背景の画質が落ちない）",
+    np.array_equal(out_q[0][mask_free], frames[0][mask_free]),
+)
+check(
+    "検出用の縮小率は出力に影響しない（1920幅なら960幅で検出=0.5倍）",
+    abs(detection_scale(1920, 1080, 960) - 0.5) < 1e-9
+    and detection_scale(640, 360, 960) == 1.0,
+    f"{detection_scale(1920, 1080, 960)} / {detection_scale(640, 360, 960)}",
+)
+check(
+    "既定の検出設定が、実測で取りこぼしの出ない値になっている",
+    DETECT_WIDTH_DEFAULT >= 960 and DETECT_EVERY_DEFAULT <= 3,
+    f"width={DETECT_WIDTH_DEFAULT} every={DETECT_EVERY_DEFAULT}",
+)
 
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")

@@ -66,6 +66,26 @@ BLOCK_MIN_PX = 12
 # 隠す矩形を顔枠より広げる比（髪・顎・輪郭を含めるため）。
 MARGIN_RATIO = 0.18
 
+# 検出だけを行うときの横幅。**出力の解像度・画質はこの値に関係なく一切落ちない**
+# （縮小するのは検出用のコピーだけで、モザイクは原寸のフレームに焼く）。
+#
+# ただし縮小すると「小さく写った顔を取りこぼす」。1080p素材での実測:
+#     検出幅1920 -> 顔高さ 20px まで検出できる / 60秒の検出に 111.8秒
+#     検出幅1280 -> 顔高さ 25px まで          / 55.5秒
+#     検出幅 960 -> 顔高さ 30px まで          / 30.3秒
+#     検出幅 640 -> 顔高さ 45px まで          / 13.4秒
+#     検出幅 480 -> 顔高さ 65px まで          /  8.3秒
+#     検出幅 320 -> 顔高さ 95px まで          /  4.2秒
+# 既定は 960。1080p で顔高さ30px は画面高の約2.8%（かなり遠くの通行人相当）で、
+# ここを下回る顔まで隠したい素材では detect_width を上げる。速度と保護のつまみ。
+DETECT_WIDTH_DEFAULT = 960
+# 何フレームおきに検出するか。間は直前と次の検出をトラックIDで対応付けて補間する。
+# 顔高さ245pxで動きの速さを変えて素顔が出るコマを実測した結果:
+#     3px/コマ・8px/コマ・15px/コマ -> 間引き1〜5のいずれでも 0/40コマ
+#    30px/コマ(1秒で画面をほぼ横断する速さ) -> 間引き5でだけ 1/40コマ
+# 実際の取材映像は15px/コマ以下に収まるため、既定3でも取りこぼしは出ない。
+DETECT_EVERY_DEFAULT = 3
+
 # 検出が途切れたとき、直前の位置で隠しを継続する最大フレーム数。
 # 横を向いた・手で顔を触った程度の一瞬の欠落を埋める。
 HOLD_FRAMES_DEFAULT = 8
@@ -284,7 +304,8 @@ def interpolate(prev_rows, next_rows, weight: float):
 
 
 def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float = BLOCK_RATIO_DEFAULT,
-                  detector=None, block_for=None, people=None, ratio_for=None, recognizer=None):
+                  detector=None, block_for=None, people=None, ratio_for=None, recognizer=None,
+                  detect_every: int = DETECT_EVERY_DEFAULT, detect_width: int = DETECT_WIDTH_DEFAULT):
     """フレーム列を順に処理し、顔を追従モザイクで隠したフレーム列を返す。
 
     people に register_person() の結果を並べると、その人だけ隠し方を変えられる（M-2）。
@@ -299,16 +320,34 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
     rec = recognizer
     if people and rec is None:
         rec = create_recognizer()
+    labels_by_id: dict[int, str] = {}
 
-    out = []
+    frames = list(frames)
+    if not frames:
+        return [], tracker
+    fh, fw = frames[0].shape[:2]
     det = detector
-    for i, frame in enumerate(frames):
-        work = frame.copy()
-        if det is None:
-            det = create_detector(work.shape[1], work.shape[0])
-        raw = detect_faces_raw(work, det)
-        boxes = [(float(b[0]), float(b[1]), float(b[2]), float(b[3])) for b in raw]
-        tracks = tracker.update(boxes, frame_index=i)
+    scale = 1.0
+    if det is None:
+        scale = detection_scale(fw, fh, detect_width)
+        det = create_detector(max(1, int(fw * scale)), max(1, int(fh * scale)))
+
+    # --- 1周目: 数フレームおきにだけ検出し、各トラックの位置と人物を出す ---
+    # 単一のパスで済ませようとすると「次の検出」が未来にあるため補間できず、最初の区間で
+    # 枠が直前の位置に取り残されて素顔が出る。先に位置を出し切ってから焼く。
+    keys: dict[int, dict[int, tuple[float, float, float, float]]] = {}
+    for i in range(0, len(frames), detect_every):
+        work = frames[i]
+        # 検出だけ縮小した画で行い、結果を原寸へ戻す（出力の解像度は落とさない）
+        small = work if scale == 1.0 else cv2.resize(
+            work, (max(1, int(fw * scale)), max(1, int(fh * scale))), interpolation=cv2.INTER_NEAREST
+        )
+        raw = detect_faces_raw(small, det)
+        boxes = [
+            (float(b[0]) / scale, float(b[1]) / scale, float(b[2]) / scale, float(b[3]) / scale)
+            for b in raw
+        ]
+        tracker.update(boxes, frame_index=i)
 
         # 誰かを見分ける必要があるときだけ照合する。トラックごとに数回だけ数えて確定させ、
         # 毎フレーム照合しない（結論は変わらないのに費用だけ増えるため）。
@@ -317,9 +356,9 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
                 if sum(tgt.votes.values()) >= RECOGNITION_VOTES:
                     continue
                 try:
-                    sig = face_signature(work, b, rec)
+                    sig = face_signature(small, b, rec)
                 except cv2.error:
-                    continue  # 向きが取れない等で特徴を作れない顔は、次のフレームで見直す
+                    continue  # 向きが取れない等で特徴を作れない顔は、次の検出で見直す
                 label = "_other"
                 for p in people:
                     matched_person, _score = same_person(p["signature"], sig, rec)
@@ -329,11 +368,72 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
                 tgt.votes[label] = tgt.votes.get(label, 0) + 1
                 tgt.label = max(tgt.votes, key=tgt.votes.get)
 
-        for t in tracks:
+        keys[i] = {t.id: t.box for t in tracker.tracks}
+        for t in tracker.tracks:
+            labels_by_id[t.id] = t.label
+
+    # --- 2周目: 全フレームへ焼く。検出していない間はトラックIDで対応付けて補間する ---
+    out = []
+    for i, frame in enumerate(frames):
+        work = frame.copy()
+        k0 = (i // detect_every) * detect_every
+        a = keys.get(k0, {})
+        b = keys.get(k0 + detect_every)
+        draw = interpolate(a, b, (i - k0) / detect_every) if b else a
+        for tid, box in draw.items():
             if block_for is not None:
-                blk = block_for(t)
-                apply_mosaic(work, t.box, block=blk, ratio=ratio)
+                apply_mosaic(work, box, block=block_for(tid), ratio=ratio)
             else:
-                apply_mosaic(work, t.box, ratio=ratio_for.get(t.label, ratio))
+                apply_mosaic(work, box, ratio=ratio_for.get(labels_by_id.get(tid, "_other"), ratio))
         out.append(work)
     return out, tracker
+
+
+def detection_scale(frame_w: int, frame_h: int, detect_width: int = DETECT_WIDTH_DEFAULT) -> float:
+    """検出だけを行う縮小率。既に十分小さい画はそのまま使う（拡大はしない）。"""
+    if detect_width <= 0 or frame_w <= detect_width:
+        return 1.0
+    return detect_width / float(frame_w)
+
+
+def review_frames(tracker, total_frames: int, margin: int = 2) -> list[int]:
+    """人が確認すべきコマ番号を返す（M-3-A）。
+
+    「検出が途切れて直前の位置で埋めたコマ」＝隠しそこねている可能性が最も高い場面。
+    全編を目視させるのは現実的でないので、機械が既に把握しているここだけを提示する。
+    前後 margin コマも含めるのは、途切れの入り口と出口が実際にずれやすいため。
+    """
+    marked = set()
+    for i in set(tracker.held_frames):
+        for k in range(i - margin, i + margin + 1):
+            if 0 <= k < total_frames:
+                marked.add(k)
+    return sorted(marked)
+
+
+def write_review_images(frames, indices, out_dir, prefix="review"):
+    """確認用の静止画を書き出す（M-3-A）。書き出したパスを返す。"""
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+    for i in indices:
+        if not (0 <= i < len(frames)):
+            continue
+        path = os.path.join(out_dir, f"{prefix}-{i:06d}.png")
+        cv2.imwrite(path, frames[i])
+        written.append(path)
+    return written
+
+
+def apply_manual_masks(frames, masks, ratio: float = BLOCK_RATIO_DEFAULT):
+    """手で指定した隠しを、指定コマの範囲へ後から足す（M-3-B）。
+
+    masks は {"start": 開始コマ, "end": 終了コマ(含む), "box": (x, y, w, h)} の並び。
+    自動処理が取りこぼした場面を、作り直さずに塞ぐための経路。
+    """
+    for m in masks:
+        start = max(0, int(m["start"]))
+        end = min(len(frames) - 1, int(m["end"]))
+        box = tuple(float(v) for v in m["box"])
+        for i in range(start, end + 1):
+            apply_mosaic(frames[i], box, block=m.get("block"), ratio=m.get("ratio", ratio))
+    return frames
