@@ -118,11 +118,11 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "M-4-A",
-    "next": "PR #31 のマージ後、M-4(お客様が今までどおり受け取って使える)へ進む。build-dist の同梱検査・ライセンス同梱検査・導入手順が増えていないことの検査をテスト化し、SKILL.md へモザイク要否の質問(M-4-E)と対象者の顔画像書き出し(M-4-D)を組み込む。M-5-C(実素材での見落とし率)はマスターから実素材の動画提供を受け次第に実施する。P1-10/P1-11/P1-12 等の既存todoは G-MOSAIC 完了後に再開する。",
+    "active": "M-5-C",
+    "next": "M-5-C(実際の動画での顔の見落とし率)だけが残る。マスターから実素材の動画(1〜2分で可)の提供を受け次第、出力に顔検出を掛け直して素顔が残ったコマの割合を計測し記録する。実素材の見落とし率次第では M-3(手動修正)の作り込みを厚くする判断が要る。その後 P1-10/P1-11/P1-12 等の既存todoへ戻る。",
     "handoff": {
-      "done": "M-1(PR #28)・M-2(PR #29)・M-3(PR #30)に続き、PR #30 のレビュー指摘5件を PR #31 で是正した。うち2件は保護に穴が開くもの(検出間隔に0以下を渡すとモザイク無しのフレームが素通しで返る／フレーム数が検出間隔で割り切れないときの末尾コマが確認対象から漏れる)。残る3件は書き出し失敗の握り潰しと、検証が主張を裏付けていなかった2箇所。回帰テストを3件足し、テストは39件->44件。実装の設計判断と実測表は G-MOSAIC / M-1-B / M-1-D / M-2-A の detail と face_mosaic.py の定数コメントを参照。",
-      "trouble": "PR #30 がレビュー指摘の反映前にマージされ、保護に穴が開く2件を含む5件が未修正のまま main に入った。追いかけて PR #31 で是正済み。また PR #31 の初回 push で roadmap-required が落ちた(コード修正だけで roadmap を触っていなかった)。CodeRabbitのレビュー枠上限には計4回当たっている。詳細と教訓は docs/failures.md 2026-08-04 に追記。"
+      "done": "M-1〜M-3(PR #28-#31)に続き、M-4の5葉とM-5-Bを実装した。対象者を番号付き画像で切り出す src/face_choices.py を新設し、SKILL.md の毎回のヒアリングに顔モザイクの要否(手順2の4問目)と対象者の選び方(手順3.5)を組み込んだ。配布物へのモデル/ライセンス同梱と導入手順が増えていないことも機械検査にした。M-5-Bは受入ライン(動画長の50%以内)に対し当初133%で落ちたが、原因が1080pフレームの複製(処理時間の9割)と判明したため複製を省く経路を足し21〜23%に収めた。テストは44件->60件。",
+      "trouble": "M-5-B の速度計測用テストが、複製を省く指定で走らせた結果として比較元のフレームを破壊しており、後続の検証が常に緑になっていた(破壊前のコマを控える形に是正)。計測系のコードが検証対象を壊す型の誤りで、docs/failures.md 2026-08-04 の『計測コードを疑う』と同じ根。CodeRabbitのレビュー枠上限には計5回当たっている。"
     },
     "updated": "2026-08-04"
   },
@@ -1119,12 +1119,12 @@
                   "kind": "state",
                   "theme": "顔を隠すのに必要な部品が配布物に入っている",
                   "meaning": "お客様が別途ダウンロードしなくても動く",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "build-dist が生成した配布物に、顔検出と顔識別のモデルファイルが含まれる",
                       "verify": "node video-shorts/build-dist.mjs を実行し、dist 配下に当該モデルファイルが存在することをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1134,12 +1134,12 @@
                   "theme": "同梱した部品の利用許諾が配布物に入っている",
                   "meaning": "他人の作ったものを、決まりを守って同梱している",
                   "detail": "YuNet=MIT(著作権表示の保持が必要)、SFace=Apache 2.0(再配布時にライセンス本文の同梱が必要)。両モデルとも配布元READMEに「このディレクトリの全ファイルが当該ライセンス」と明記されており、.onnx の重みも対象に含まれる。",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "配布物に、同梱モデルのライセンス本文ファイルが空でない状態で含まれる",
                       "verify": "dist 配下に各モデルのライセンス本文ファイルが存在し、サイズが0でないことをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1148,12 +1148,12 @@
                   "kind": "state",
                   "theme": "お客様の導入手順が増えていない",
                   "meaning": "今までどおり「実行して」と言うだけで準備が終わる",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "既存の pip install -r requirements.txt だけで顔処理のライブラリが入り、導入手順にコマンドが追加されていない",
                       "verify": "requirements.txt に必要パッケージ行が存在し、かつ start-here.md の導入ステップにインストールコマンドが追加されていないことをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1162,12 +1162,12 @@
                   "kind": "state",
                   "theme": "隠したい人をチャットで指定できる",
                   "meaning": "画面を作らなくても、誰を隠すかを選べる",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "動画から検出した顔が、番号付きの画像ファイルとして作業フォルダに書き出される",
                       "verify": "顔が写る動画を処理し、作業フォルダ配下に連番の顔画像ファイルが出力されることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1176,12 +1176,12 @@
                   "kind": "state",
                   "theme": "毎回モザイクの要否を聞かれる",
                   "meaning": "かけ忘れたまま出力される、が起きない",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "日々の運用手順書に、モザイクの要否を確認する質問が含まれている",
                       "verify": "skill/video-shorts/SKILL.md の毎回のヒアリング項目にモザイク要否の質問があることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 }
@@ -1199,12 +1199,12 @@
                   "kind": "state",
                   "theme": "既存のテストが通ったままである",
                   "meaning": "新機能の追加で他が壊れていない",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "ワークスペース全体の型/Lint/テスト/ビルドがCIで緑になる",
                       "verify": "CI(ci-green)のrunが success であることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
@@ -1214,12 +1214,12 @@
                   "theme": "ショート1本あたりの処理時間が実用範囲に収まる",
                   "meaning": "モザイクを付けたら待ち時間が倍増した、が起きない",
                   "detail": "事前検証(4コアXeon 2.80GHz・1080p/30fps・顔3人)では、モザイク無し17.3〜19.2秒に対し有り24.3〜24.8秒で、追加は約6秒(動画長の約10%)だった。この実測を踏まえ受入ラインを動画長の50%以内に置く。",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "60秒の動画に対するモザイク処理の追加時間が動画長の50%以内に収まる",
                       "verify": "60秒の固定テスト動画でモザイク有無の処理時間差を計測し、30秒以内であることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30879006406"
                     }
                   ]
                 },
