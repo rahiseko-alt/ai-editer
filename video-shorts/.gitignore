@@ -3,6 +3,10 @@ output/
 work/
 samples/
 *.mp4
+*.webm
+*.mov
+*.mkv
+*.m4a
 *.wav
 *.ass
 *.srt
