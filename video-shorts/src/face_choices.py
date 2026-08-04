@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -106,7 +107,8 @@ def main(argv):
 
     try:
         found = write_face_choices(frames, out_dir, detect_every=1)
-    except (OSError, RuntimeError) as e:
+    except (OSError, RuntimeError, cv2.error) as e:
+        # write_face_choices は OpenCV を呼ぶので cv2.error も上がりうる
         sys.stderr.write(f"[ERROR] {e}\n")
         return 1
     if not found:

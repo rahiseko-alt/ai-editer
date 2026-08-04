@@ -45,7 +45,12 @@ jobs:
       # 「関数が正しい値を返す」ではなく「成果物が正しい」まで確かめるため ffmpeg が要る。
       # 入っていないからテストを飛ばす、は AGENTS.md が禁じる「偽の緑」なので入れる。
       - name: Install ffmpeg (成果物まで検証するテストで使う)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          # 版は固定していない。将来ランナー側の更新で壊れたとき原因を追えるよう記録する
+          # (固定そのものは roadmap P1-12「外部ツールのバージョン固定」で扱う)
+          ffmpeg -version | head -1
 
       # 顔モザイクのテスト(tests/face-mosaic-check.py)が cv2 を使う。
       # requirements.txt 全体は文字起こしの重い依存を含み CI では不要なので opencv だけを入れる。
