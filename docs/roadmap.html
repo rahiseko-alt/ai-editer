@@ -119,10 +119,10 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "M-2-A",
-    "next": "M-2(特定の人だけ隠し方を変えられる)へ進む。SFace(Apache2.0)のモデルとライセンスを src/models/ へ同梱し、face_mosaic.py の mosaic_frames(block_for=...) に参照顔の照合を接続する。M-5-C(実素材での見落とし率)はマスターから実素材の動画提供を受け次第に実施する。P1-10/P1-11/P1-12 等の既存todoは G-MOSAIC 完了後に再開する。",
+    "next": "M-3(隠しそこねを見つけて直せる)へ進む。FaceTracker.held_frames(検出が途切れて保持で埋めたフレーム)を確認用の静止画として書き出し、時刻と位置を指定して隠しを足せる経路を作る。M-5-C(実素材での見落とし率)はマスターから実素材の動画提供を受け次第に実施する。P1-10/P1-11/P1-12 等の既存todoは G-MOSAIC 完了後に再開する。",
     "handoff": {
-      "done": "G-MOSAIC の原子ツリーを作成し(PR #27 マージ済み)、続けて M-1 の4葉を実装した。src/face_mosaic.py を新設し、YuNetモデルとMITライセンス本文を src/models/ へ同梱、tests/face-mosaic-check.py(16件)と固定素材を追加、requirements.txt と CI に opencv を配線した。技術選定・設計上の必須事項・実測値は G-MOSAIC / M-1-B / M-1-D の detail を参照。",
-      "trouble": "M-1-D の実装当初、モザイクの粗さを顔サイズ比のみで決めたところテストが落ちた。実測すると閾値は比率だけでも絶対値だけでも決まらず(小さい顔ほど必要な比が大きく、大きい顔では絶対値が10px前後で頭打ち)、両方の max を取る形に是正した。実測表は M-1-D の detail に記録。"
+      "done": "G-MOSAIC の原子ツリー作成(PR #27)と M-1 の4葉実装(PR #28)を終え、続けて M-2 の3葉を実装した。SFaceモデルとApache 2.0ライセンス本文を src/models/ へ同梱し、face_mosaic.py に参照顔の登録・照合・人物ごとの粒度切替を追加、固定素材2枚(同一人物の別写真/別人)とテストを足した(計29件)。設計上の判断と実測値は G-MOSAIC / M-1-B / M-1-D / M-2-A の detail を参照。",
+      "trouble": "PR #28 のレビューで、トラック割り当てが検出順に依存し隣り合う2人で人物が入れ替わりうる欠陥を指摘され是正した(M-1-B が防ぐはずの当の失敗だった)。また CodeRabbit のレビュー枠上限に2回当たり、待ち時間が発生した(docs/failures.md 2026-07-30 の既知事象)。"
     },
     "updated": "2026-08-04"
   },

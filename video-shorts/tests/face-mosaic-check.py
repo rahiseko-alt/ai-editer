@@ -1,10 +1,13 @@
-"""顔モザイク（ロードマップ M-1）のテスト。
+"""顔モザイク（ロードマップ M-1 / M-2）のテスト。
 
 各テストは roadmap の葉と1対1に対応する:
   M-1-A 動画に写っている顔の位置が分かる
   M-1-B 顔が動いても隠したまま追いかける
   M-1-C 一瞬顔を見失っても素顔が出ない
   M-1-D 隠した顔は本当に判別できなくなっている
+  M-2-A 登録した人と同じ人を見分けられる
+  M-2-B 別の人を登録した人と取り違えない
+  M-2-C 人によって隠す粗さが実際に変わる
 
 固定素材は tests/fixtures/（NASA の public domain 写真から顔部分を切り出したもの）。
 動画ファイルは .gitignore 対象のためコミットせず、動きのある場面はテスト内で
@@ -314,6 +317,128 @@ check(
     "顔がモザイク1ブロックより小さくても、その範囲が塗り潰される",
     not np.array_equal(before_tiny[40:67, 50:74], tiny[40:67, 50:74]),
 )
+
+
+
+
+# ================================================================ M-2
+# 特定の人だけ隠し方を変えられる。
+#   M-2-A 登録した人と同じ人を見分けられる
+#   M-2-B 別の人を登録した人と取り違えない
+#   M-2-C 人によって隠す粗さが実際に変わる
+#
+# 固定素材は「同一人物の別々の写真」と「別人」。撮影年が13年違う2枚を同一人物の組に使う
+# （簡単すぎる条件で緑にしない）。
+
+from face_mosaic import (  # noqa: E402
+    RECOGNITION_THRESHOLD,
+    create_recognizer,
+    detect_faces_raw,
+    face_signature,
+    mosaic_frames as mosaic_frames_m2,
+    register_person,
+    same_person,
+)
+
+rec = create_recognizer()
+
+
+def signature_of(name):
+    img = load(name)
+    faces = detect_faces_raw(img, create_detector(img.shape[1], img.shape[0]))
+    if not faces:
+        raise AssertionError(f"固定素材から顔を検出できません: {name}")
+    return face_signature(img, max(faces, key=lambda b: b[2] * b[3]), rec)
+
+
+sig_one = signature_of("face-one.png")        # 本人(1969年撮影)
+sig_one_alt = signature_of("face-one-alt.png")  # 本人の別写真(1956年撮影)
+sig_other = signature_of("face-other.png")      # 別人
+
+# ---------------------------------------------------------------- M-2-A
+same_ok, same_score = same_person(sig_one, sig_one_alt, rec)
+check(
+    "M-2-A: 同一人物の別々の写真どうしの類似度が判定閾値以上になる",
+    same_ok,
+    f"類似度={same_score:.4f} (閾値={RECOGNITION_THRESHOLD})",
+)
+
+# ---------------------------------------------------------------- M-2-B
+diff_ok, diff_score = same_person(sig_one, sig_other, rec)
+check(
+    "M-2-B: 別人どうしの類似度が判定閾値未満になる",
+    not diff_ok,
+    f"類似度={diff_score:.4f} (閾値={RECOGNITION_THRESHOLD})",
+)
+
+# 2人が写った素材の中から、登録した人だけを選び出せる（誤認も取り逃しも無い）
+two_img = load("face-two.png")
+two_raw = detect_faces_raw(two_img, create_detector(two_img.shape[1], two_img.shape[0]))
+labels = []
+for b in sorted(two_raw, key=lambda r: r[0]):
+    ok, _ = same_person(sig_one_alt, face_signature(two_img, b, rec), rec)
+    labels.append(ok)
+check(
+    "M-2-B: 2人写った場面で、登録した人だけが選ばれる（もう1人は選ばれない）",
+    labels == [True, False],
+    f"左から順の判定={labels}（期待=[True, False]）",
+)
+
+# ---------------------------------------------------------------- M-2-C
+target = register_person(os.path.join(FIXTURES, "face-one-alt.png"), name="target")
+COARSE, FINE = 1.0 / 4.0, 1.0 / 12.0
+out_m2, tracker_m2 = mosaic_frames_m2(
+    [two_img.copy()],
+    people=[target],
+    ratio_for={"target": COARSE, "_other": FINE},
+)
+found_labels = sorted(t.label for t in tracker_m2.tracks)
+check(
+    "M-2-C: 1つの場面で、登録した人と他の人が別々の人物として扱われる",
+    found_labels == ["_other", "target"],
+    f"判定されたラベル={found_labels}",
+)
+
+
+def block_count(image, box):
+    """モザイク後の領域に、色の異なるブロックがいくつ並んでいるかを数える。
+
+    ブロックが粗いほど数は少なくなる。塗りの粗さを外から観測するための指標。
+    """
+    x, y, w, h = [int(v) for v in box]
+    roi = image[y : y + h, x : x + w]
+    return len(np.unique(roi.reshape(-1, roi.shape[2]), axis=0))
+
+
+boxes_sorted = sorted(two_raw, key=lambda r: r[0])
+n_target = block_count(out_m2[0], boxes_sorted[0][:4])
+n_other = block_count(out_m2[0], boxes_sorted[1][:4])
+check(
+    # 粗い(1/4)ほど色の種類が少なく、細かい(1/12)ほど多くなる。
+    "M-2-C: 1つの出力フレーム内で、登録した人と他の人の隠しの粗さが指定どおり異なる",
+    n_target < n_other,
+    f"登録者(粗い指定)の色数={n_target} / 他の人(細かい指定)の色数={n_other}",
+)
+
+# 見分けに失敗しても素顔が出ないこと（未登録扱いでも必ず隠れる）＝設計上の安全側
+det_two = create_detector(out_m2[0].shape[1], out_m2[0].shape[0])
+check(
+    "M-2-C: 登録の有無にかかわらず、写っている顔は全て隠れている",
+    not detect_faces(out_m2[0], det_two),
+    f"素顔が残った={len(detect_faces(out_m2[0], det_two))}件",
+)
+
+# 参照写真に顔が写っていない場合は、黙って「登録できた」ことにせず理由を出して止まる
+blank_path = os.path.join(FIXTURES, "..", "_no_face_tmp.png")
+cv2.imwrite(blank_path, np.full((120, 160, 3), (64, 48, 32), np.uint8))
+try:
+    register_person(blank_path)
+    reg_ok = False
+except ValueError:
+    reg_ok = True
+finally:
+    os.remove(blank_path)
+check("M-2: 顔が写っていない写真を登録しようとしたら、理由を示して止まる", reg_ok)
 
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
