@@ -31,6 +31,11 @@ STRENGTH = {
     "弱め": 1.0 / 11.0,
 }
 CHUNK_FRAMES = 300  # 一度に抱えるコマ数（1080pで約1.8GB を超えないようにする）
+# 次のかたまりの先頭を数コマ先読みしてから焼く。
+# 先読みが無いと、かたまりの末尾は「次の検出」が存在せず直前の位置を流用することになり、
+# (a) 枠が古いまま焼かれる (b) 確認が要るコマとして記録され、確認リストが実際には
+# 問題の無いコマで埋まる。実測でも毎かたまり2コマ（1.7%）が機械的に記録されていた。
+LOOKAHEAD_FRAMES = 8
 
 
 def probe(path):
@@ -70,19 +75,27 @@ def run(input_path, output_path, target=None, strength="普通"):
 
     size = width * height * 3
     total = 0
-    chunk = []
+    pending = []
     try:
         while True:
             buf = dec.stdout.read(size)
             if len(buf) < size:
                 break
             # bytearray にすると書き換え可能になり、複製を省いてそのまま焼ける
-            chunk.append(np.frombuffer(bytearray(buf), np.uint8).reshape(height, width, 3))
-            if len(chunk) >= CHUNK_FRAMES:
-                total += _flush(chunk, enc, people, ratio_for)
-                chunk = []
-        if chunk:
-            total += _flush(chunk, enc, people, ratio_for)
+            pending.append(np.frombuffer(bytearray(buf), np.uint8).reshape(height, width, 3))
+            if len(pending) >= CHUNK_FRAMES + LOOKAHEAD_FRAMES:
+                # 先読みぶんは次のかたまりでも使うので、焼かれる前に控えておく
+                carry = [f.copy() for f in pending[CHUNK_FRAMES : CHUNK_FRAMES + LOOKAHEAD_FRAMES]]
+                out, _tracker = mosaic_frames(
+                    pending[: CHUNK_FRAMES + LOOKAHEAD_FRAMES],
+                    people=people, ratio_for=ratio_for, copy_frames=False,
+                )
+                for frame in out[:CHUNK_FRAMES]:
+                    enc.stdin.write(frame.tobytes())
+                total += CHUNK_FRAMES
+                pending = carry + pending[CHUNK_FRAMES + LOOKAHEAD_FRAMES :]
+        if pending:
+            total += _flush(pending, enc, people, ratio_for)
     finally:
         enc.stdin.close()
         enc.wait()
