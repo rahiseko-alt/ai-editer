@@ -2,3 +2,8 @@
 # 文字起こし: ローカル(faster-whisper) と クラウド(groq) の二段構え
 faster-whisper>=0.10.0
 groq>=1.5.0
+
+# 顔モザイク: 顔検出(YuNet)は opencv 同梱の cv2.FaceDetectorYN を使う。
+# モデル本体は src/models/ に同梱しているので追加ダウンロードは発生しない。
+# headless 版はGUI依存を持たないぶん軽い（本ツールはプレビュー画面を出さない）。
+opencv-python-headless>=4.9.0

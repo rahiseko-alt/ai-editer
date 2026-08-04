@@ -2,6 +2,6 @@
   "name": "video-shorts",
   "private": true,
   "scripts": {
-    "test": "node tests/smoke.mjs && python3 tests/transcribe-corrections-check.py && node tests/restart-reconnect-check.mjs && node tests/cli-job-isolation-check.mjs"
+    "test": "node tests/smoke.mjs && python3 tests/transcribe-corrections-check.py && python3 tests/face-mosaic-check.py && node tests/restart-reconnect-check.mjs && node tests/cli-job-isolation-check.mjs"
   }
 }

@@ -34,6 +34,13 @@ jobs:
       - name: Lint
         run: pnpm -r --if-present lint
 
+      # 顔モザイクのテスト(tests/face-mosaic-check.py)が cv2 を使う。
+      # requirements.txt 全体は文字起こしの重い依存を含み CI では不要なので、
+      # ここでは opencv だけを入れる。入れずにテストをスキップさせるのは
+      # AGENTS.md が禁じる「偽の緑」にあたるため行わない。
+      - name: Install Python deps for face tests (opencv only)
+        run: python3 -m pip install --break-system-packages 'opencv-python-headless>=4.9.0'
+
       - name: Test
         run: pnpm -r test
 
