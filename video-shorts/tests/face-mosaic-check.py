@@ -1039,17 +1039,19 @@ check(
 wf_text = open(WORKFLOW, encoding="utf-8").read()
 
 # ワークフローが渡す「--旗 "$環境変数"」と、その環境変数が受け取る入力名、
-# さらに入力の既定値をたどって、実際に組み立たられるコマンド行を再現する。
+# さらに入力の既定値をたどって、実際に組み立てられるコマンド行を再現する。
 run_block = wf_text.split("measure-leak-rate.py")[-1]
 flag_env = re.findall(r'--([a-z][a-z0-9-]*)\s+"\$([A-Z_]+)"', run_block)
 env_input = dict(re.findall(r"([A-Z_]+):\s*\$\{\{\s*inputs\.([a-z_]+)\s*\}\}", wf_text))
 
-# inputs: 配下を行単位でたどり、各入力の default を拾う
-input_defaults, current = {}, None
-for line in wf_text.split("\n"):
+# workflow_dispatch の inputs 節だけを切り出し、宣言された入力名と既定値を拾う
+inputs_block = wf_text.split("workflow_dispatch:")[-1].split("\npermissions:")[0]
+input_defaults, declared_inputs, current = {}, [], None
+for line in inputs_block.split("\n"):
     name = re.match(r"^ {6}([a-z_]+):\s*$", line)
     if name:
         current = name.group(1)
+        declared_inputs.append(current)
     d = re.match(r'^\s+default:\s*"?([^"\n]*)"?\s*$', line)
     if d and current:
         input_defaults.setdefault(current, d.group(1))
@@ -1058,10 +1060,16 @@ wf_argv = []
 for flag, env_name in flag_env:
     wf_argv += [f"--{flag}", input_defaults.get(env_input.get(env_name, ""), "")]
 
+# 画面で選べる入力が、全部そのままスクリプトへ渡っているか。
+# 「1つでも旗があれば合格」にすると、--case の受け渡しを消しても素通りし、
+# crowd を選んで実行したのに既定の all を測る、という黙った食い違いが残る。
+# 期待する組み合わせを書き写すのではなく、**宣言された入力の集合**と突き合わせる
+# （書き写すと、入力を増やしたときにテスト側の更新漏れで同じ穴が開く）。
+wired_inputs = sorted(env_input.get(env, "") for _, env in flag_env)
 check(
-    "M-5-C: 計測ワークフローの引数の渡し方を読み取れる（前提の確認）",
-    bool(flag_env) and all(v for v in wf_argv),
-    f"読み取り結果: {wf_argv}",
+    "M-5-C: 画面で選べる入力が、すべて計測スクリプトへ渡っている",
+    wired_inputs == sorted(declared_inputs) and all(v for v in wf_argv) and bool(declared_inputs),
+    f"宣言された入力={sorted(declared_inputs)} / 渡している入力={wired_inputs} / 引数={wf_argv}",
 )
 
 # 実際にそのコマンド行を計測スクリプトの受け口に食わせる。
