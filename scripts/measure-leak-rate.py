@@ -101,6 +101,11 @@ def count_frames_with_face(path):
     finally:
         proc.stdout.close()
         proc.wait()
+    if proc.returncode != 0:
+        # 短い読み取りは「最後まで読んだ」と「途中で壊れた」の両方で起きる。
+        # 区別せずに数え上げを返すと、**途中までしか見ていない結果**を
+        # 「見落とし率」として記録してしまう。計測は途中経過を出さずに落とす。
+        raise RuntimeError(f"動画の復号に失敗しました（終了コード {proc.returncode}）: {path}")
     return total, with_face, faces
 
 
@@ -151,18 +156,23 @@ def measure_one(url, seg_key, seconds, work):
     }
 
 
-def main(argv):
+def build_parser():
+    """引数の受け口。ワークフローとの食い違いをテストから検査できるよう関数に出す。"""
     parser = argparse.ArgumentParser(
         prog="measure-leak-rate.py",
         description="実素材で素顔が残ったコマの割合を測る（M-5-C）",
     )
     parser.add_argument("--url", default=DEFAULT_URL, help="実素材の取得元URL")
     parser.add_argument("--label", default=DEFAULT_LABEL, help="結果に記録する素材名")
-    parser.add_argument("--seconds", type=float, default=30.0, help="1区間あたりの長さ（秒）")
+    parser.add_argument("--seconds", type=float, default=20.0, help="1区間あたりの長さ（秒）")
     parser.add_argument("--case", default="all", choices=["all"] + list(SEGMENTS),
                         help="測る区間")
     parser.add_argument("--work", default=None, help="作業フォルダ")
-    args = parser.parse_args(argv[1:])
+    return parser
+
+
+def main(argv):
+    args = build_parser().parse_args(argv[1:])
 
     work = args.work or os.path.join(REPO, "_m5c_work")
     os.makedirs(work, exist_ok=True)

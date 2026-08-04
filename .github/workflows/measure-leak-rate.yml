@@ -10,13 +10,20 @@ on:
   workflow_dispatch:
     inputs:
       seconds:
-        description: "計測する長さ（秒）"
+        description: "1区間あたりの計測する長さ（秒）"
         required: false
-        default: "30"
-      start:
-        description: "素材の開始位置（秒）"
+        default: "20"
+      case:
+        description: "測る区間"
         required: false
-        default: "0"
+        default: "all"
+        type: choice
+        options: ["all", "interview", "crowd"]
+
+# 外部から取ってきた動画を扱うので、トークンには最小限しか持たせない。
+# この処理に認証済みの Git は要らない（読み取りだけ）。
+permissions:
+  contents: read
 
 jobs:
   measure:
@@ -24,6 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 後続のステップで認証済み Git を使わないため、資格情報を残さない
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -46,8 +56,13 @@ jobs:
           fi
           python -m pip install "$spec"
 
+      # 入力は run の本文へ直接展開せず env 経由で渡す。直接書くとシェルが動く前に
+      # 文字列として埋め込まれ、入力に含まれる引用符でコマンドの意味が変わりうる。
       - name: 計測
+        env:
+          MEASURE_SECONDS: ${{ inputs.seconds }}
+          MEASURE_CASE: ${{ inputs.case }}
         run: |
           python3 scripts/measure-leak-rate.py \
-            --seconds "${{ inputs.seconds }}" \
-            --start "${{ inputs.start }}"
+            --seconds "$MEASURE_SECONDS" \
+            --case "$MEASURE_CASE"

@@ -1021,6 +1021,65 @@ check(
 
 shutil.rmtree(tmp_dir, ignore_errors=True)
 
+# ---------------------------------------------------------------- M-5-C
+# 計測ワークフローが計測スクリプトを「実際に呼べる」か。
+# 存在しない引数(--start)を渡していて、回した瞬間に argparse の使い方エラーで
+# 落ちる状態になっていた。ワークフローは PR の CI では動かないので、誰も気づかない
+# まま「これが evidence になります」と言える。呼び出し側と受け側の食い違いは
+# 手順書のときと同じ壊れ方なので、機械で固定する。
+import re  # noqa: E402
+
+MEASURE = os.path.join(REPO, "scripts", "measure-leak-rate.py")
+WORKFLOW = os.path.join(REPO, ".github", "workflows", "measure-leak-rate.yml")
+check(
+    "M-5-C: 計測スクリプトと計測ワークフローが配置されている（前提の確認）",
+    os.path.exists(MEASURE) and os.path.exists(WORKFLOW),
+)
+
+wf_text = open(WORKFLOW, encoding="utf-8").read()
+
+# ワークフローが渡す「--旗 "$環境変数"」と、その環境変数が受け取る入力名、
+# さらに入力の既定値をたどって、実際に組み立たられるコマンド行を再現する。
+run_block = wf_text.split("measure-leak-rate.py")[-1]
+flag_env = re.findall(r'--([a-z][a-z0-9-]*)\s+"\$([A-Z_]+)"', run_block)
+env_input = dict(re.findall(r"([A-Z_]+):\s*\$\{\{\s*inputs\.([a-z_]+)\s*\}\}", wf_text))
+
+# inputs: 配下を行単位でたどり、各入力の default を拾う
+input_defaults, current = {}, None
+for line in wf_text.split("\n"):
+    name = re.match(r"^ {6}([a-z_]+):\s*$", line)
+    if name:
+        current = name.group(1)
+    d = re.match(r'^\s+default:\s*"?([^"\n]*)"?\s*$', line)
+    if d and current:
+        input_defaults.setdefault(current, d.group(1))
+
+wf_argv = []
+for flag, env_name in flag_env:
+    wf_argv += [f"--{flag}", input_defaults.get(env_input.get(env_name, ""), "")]
+
+check(
+    "M-5-C: 計測ワークフローの引数の渡し方を読み取れる（前提の確認）",
+    bool(flag_env) and all(v for v in wf_argv),
+    f"読み取り結果: {wf_argv}",
+)
+
+# 実際にそのコマンド行を計測スクリプトの受け口に食わせる。
+# 「--help に文字列が載っている」だけでは、値の型や選択肢の食い違いを拾えない。
+dry = subprocess.run(
+    [sys.executable, "-c",
+     "import importlib.util, sys\n"
+     f"spec = importlib.util.spec_from_file_location('m', r'{MEASURE}')\n"
+     "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+     "m.build_parser().parse_args(sys.argv[1:])\n"] + wf_argv,
+    capture_output=True, text=True)
+check(
+    # 存在しない引数(--start)を渡していて、回した瞬間に落ちる状態になっていた
+    "M-5-C: 計測ワークフローが組み立てるコマンドを、計測スクリプトがそのまま受け取れる",
+    dry.returncode == 0,
+    f"引数={wf_argv} / {(dry.stderr or '')[-300:]}",
+)
+
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
 sys.exit(1 if failed else 0)
