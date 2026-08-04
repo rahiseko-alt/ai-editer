@@ -314,6 +314,11 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
 
     block_for(track) を渡すと、ブロックサイズを直接差し替えられる（ratio_for より優先）。
     """
+    if detect_every < 1:
+        # 0以下だと検出が1回も走らず、モザイクの掛かっていないフレームがそのまま返る。
+        # 黙って素通しするのは最悪の失敗なので、ここで止める。
+        raise ValueError(f"detect_every は1以上にしてください（受け取った値: {detect_every}）")
+
     tracker = FaceTracker(hold_frames=hold_frames)
     people = people or []
     ratio_for = ratio_for or {}
@@ -379,7 +384,14 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
         k0 = (i // detect_every) * detect_every
         a = keys.get(k0, {})
         b = keys.get(k0 + detect_every)
-        draw = interpolate(a, b, (i - k0) / detect_every) if b else a
+        if b is None:
+            # フレーム数が detect_every で割り切れないときの末尾。次の検出が無いので
+            # 直前の位置を流用する＝枠が古い。ここは素顔が残りうるので確認対象に入れる。
+            draw = a
+            if a and i > k0:
+                tracker.held_frames.append(i)
+        else:
+            draw = interpolate(a, b, (i - k0) / detect_every)
         for tid, box in draw.items():
             if block_for is not None:
                 apply_mosaic(work, box, block=block_for(tid), ratio=ratio)
@@ -419,7 +431,10 @@ def write_review_images(frames, indices, out_dir, prefix="review"):
         if not (0 <= i < len(frames)):
             continue
         path = os.path.join(out_dir, f"{prefix}-{i:06d}.png")
-        cv2.imwrite(path, frames[i])
+        if not cv2.imwrite(path, frames[i]):
+            # imwrite は失敗しても例外を出さず False を返す。書けていないパスを
+            # 「書き出した」として返すと、確認したつもりの取りこぼしが生まれる。
+            raise OSError(f"確認用の静止画を書き出せませんでした: {path}")
         written.append(path)
     return written
 
