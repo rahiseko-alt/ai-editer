@@ -595,5 +595,171 @@ except (OSError, cv2.error):
 check("確認用の静止画を書き出せなかったら、黙って成功扱いにせず止まる", write_failed_loudly)
 
 
+# ================================================================ M-4
+# お客様が今までどおり受け取って使える。
+#   M-4-A 顔を隠すのに必要な部品が配布物に入っている
+#   M-4-B 同梱した部品の利用許諾が配布物に入っている
+#   M-4-C お客様の導入手順が増えていない
+#   M-4-D 隠したい人をチャットで指定できる
+#   M-4-E 毎回モザイクの要否を聞かれる
+
+import subprocess  # noqa: E402
+
+from face_mosaic import write_face_choices  # noqa: E402
+
+PKG = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+REPO = os.path.abspath(os.path.join(PKG, ".."))
+DIST = os.path.join(REPO, "dist", "kosespark-video-shorts")
+
+# ---------------------------------------------------------------- M-4-A / M-4-B
+build = subprocess.run(
+    [sys.executable and "node", os.path.join(PKG, "build-dist.mjs")],
+    capture_output=True, text=True,
+)
+check("M-4-A: 配布物のビルドが成功する（前提の確認）", build.returncode == 0,
+      (build.stderr or build.stdout)[-300:])
+
+MODELS = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"]
+missing_models = [m for m in MODELS
+                  if not os.path.exists(os.path.join(DIST, "src", "models", m))]
+check(
+    "M-4-A: 配布物に、顔検出と顔識別のモデルファイルが含まれる",
+    not missing_models,
+    f"見つからなかったモデル={missing_models}",
+)
+
+LICENSES = ["LICENSE-yunet.txt", "LICENSE-sface.txt"]
+bad_licenses = []
+for name in LICENSES:
+    path = os.path.join(DIST, "src", "models", name)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        bad_licenses.append(name)
+check(
+    # 他人の作ったものを同梱する以上、許諾の本文を一緒に配るのは義務
+    "M-4-B: 配布物に、同梱モデルのライセンス本文が空でない状態で含まれる",
+    not bad_licenses,
+    f"欠けている/空のライセンス={bad_licenses}",
+)
+
+# ---------------------------------------------------------------- M-4-C
+req = open(os.path.join(PKG, "requirements.txt"), encoding="utf-8").read()
+check(
+    "M-4-C: 顔処理のライブラリが requirements.txt に記載されている",
+    any(line.strip().startswith("opencv-python") for line in req.splitlines()),
+    "requirements.txt に opencv の行がない",
+)
+start_here = open(os.path.join(PKG, "start-here.md"), encoding="utf-8").read()
+install_cmds = [ln for ln in start_here.splitlines()
+                if "pip install" in ln and "requirements.txt" not in ln]
+check(
+    # 既存の pip install -r requirements.txt 以外のインストール手順が増えていないこと
+    "M-4-C: 導入手順に新しいインストールコマンドが追加されていない",
+    not install_cmds,
+    f"増えていたコマンド={install_cmds}",
+)
+check(
+    "M-4-C: 配布物側の requirements.txt にも顔処理のライブラリが入る",
+    "opencv-python" in open(os.path.join(DIST, "requirements.txt"), encoding="utf-8").read(),
+)
+
+# ---------------------------------------------------------------- M-4-D
+choice_dir = os.path.join(FIXTURES, "..", "_faces_tmp")
+shutil.rmtree(choice_dir, ignore_errors=True)
+canvas = np.full((600, 900, 3), (64, 48, 32), np.uint8)
+canvas[100 : 100 + two.shape[0], 100 : 100 + two.shape[1]] = two
+picks = write_face_choices([canvas] * 3, choice_dir, detect_every=1)
+check(
+    "M-4-D: 動画から検出した顔が、番号付きの画像ファイルとして書き出される",
+    [p["index"] for p in picks] == [1, 2]
+    and all(os.path.exists(p["path"]) and os.path.getsize(p["path"]) > 0 for p in picks),
+    f"書き出し={[(p['index'], os.path.basename(p['path'])) for p in picks]}",
+)
+check(
+    # 同じ人が何枚も並ぶと、どれを選べばよいか分からなくなる
+    "M-4-D: 1人につき1枚だけ書き出される（同じ人が重複しない）",
+    len(picks) == 2 and len({p["track_id"] for p in picks}) == 2,
+    f"枚数={len(picks)} / 人数={len({p['track_id'] for p in picks})}",
+)
+check(
+    "M-4-D: 顔が写っていない動画では、空の結果を返して落ちない",
+    write_face_choices([np.full((200, 300, 3), (64, 48, 32), np.uint8)] * 2,
+                       choice_dir, detect_every=1) == [],
+)
+shutil.rmtree(choice_dir, ignore_errors=True)
+
+# 配布物にも切り出しの入口が入っていること（顧客の手元で動かないと意味がない）
+check(
+    "M-4-D: 対象者を切り出す入口が配布物に含まれる",
+    os.path.exists(os.path.join(DIST, "src", "face_choices.py")),
+)
+
+# ---------------------------------------------------------------- M-4-E
+skill = open(os.path.join(PKG, "skill", "video-shorts", "SKILL.md"), encoding="utf-8").read()
+check(
+    # 聞き忘れると素顔のまま納品されるので、毎回のヒアリングに入っている必要がある
+    "M-4-E: 毎回のヒアリング項目に、モザイクの要否を確認する質問がある",
+    "顔モザイクの要否" in skill,
+)
+check(
+    "M-4-E: 対象者の選び方（番号で答える）が手順書に書かれている",
+    "face_choices.py" in skill and "番号" in skill,
+)
+check(
+    "M-4-E: 手順書が配布物に含まれる",
+    os.path.exists(os.path.join(DIST, "skill", "video-shorts", "SKILL.md")),
+)
+
+
+# ================================================================ M-5
+#   M-5-B ショート1本あたりの処理時間が実用範囲に収まる
+# （M-5-A「既存のテストが通ったままである」は CI が審判なのでここでは扱わない）
+
+import time  # noqa: E402
+
+# 実素材と同じ 1080p のコマを組み立てて測る。フレーム複製を省く経路(copy_frames=False)は
+# 動画から読み出したコマをそのまま捨てる本番の使い方に対応する。
+BENCH_FPS = 30
+BENCH_SECONDS = 2
+bench_face = cv2.resize(one, None, fx=2.2, fy=2.2, interpolation=cv2.INTER_CUBIC)
+bfh, bfw = bench_face.shape[:2]
+bench_frames = []
+for i in range(BENCH_FPS * BENCH_SECONDS):
+    canvas_b = np.full((1080, 1920, 3), (64, 48, 32), np.uint8)
+    bx = 200 + (i * 6) % (1920 - bfw - 400)
+    canvas_b[200 : 200 + bfh, bx : bx + bfw] = bench_face
+    bench_frames.append(canvas_b)
+
+# 速度計測は複製を省く指定で走らせるため bench_frames を破壊する。
+# 後段の比較用に、破壊前のコマを1枚控えておく。
+pristine = bench_frames[0].copy()
+
+t_start = time.time()
+mosaic_frames(bench_frames, copy_frames=False)
+elapsed = time.time() - t_start
+ratio = elapsed / BENCH_SECONDS
+check(
+    # 受入ラインは動画長の50%以内。複製を省く前は133%で落ちていた
+    # （1080pのフレーム複製が処理時間の9割を占めていたため）。
+    "M-5-B: モザイク処理の時間が動画長の50%以内に収まる",
+    ratio <= 0.5,
+    f"素材{BENCH_SECONDS}秒に対し {elapsed:.1f}秒 = {ratio * 100:.0f}%（受入は50%以内）",
+)
+
+# 複製を省く指定が実際に効いていること（効いていないと上の測定が意味を失う）
+src_a = [pristine.copy(), pristine.copy()]
+mosaic_frames(src_a, copy_frames=True)
+check(
+    "M-5-B: 既定では渡したフレームを書き換えない（呼び出し側が元を使える）",
+    np.array_equal(src_a[0], pristine),
+    f"書き換わった画素数={int((src_a[0] != pristine).sum())}",
+)
+src_b = [pristine.copy(), pristine.copy()]
+mosaic_frames(src_b, copy_frames=False)
+check(
+    "M-5-B: 複製を省く指定では、渡したフレームが直接書き換わる",
+    not np.array_equal(src_b[0], pristine),
+)
+
+
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
 sys.exit(1 if failed else 0)
