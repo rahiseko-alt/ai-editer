@@ -37,7 +37,7 @@ jobs:
       # ランナーイメージ同梱の python3 に依存すると、GitHub がイメージを更新した際に
       # リポジトリ側の変更なしに ci-green(必須チェック)が壊れうる。版を固定する。
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
