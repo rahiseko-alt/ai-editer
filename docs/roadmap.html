@@ -117,11 +117,11 @@
 <script type="application/json" id="roadmap-data">{
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "S-1",
-    "next": "G-SLIM(軽い配布物)を S-1→S-4 の順に進める。終わったら P1-10(配布物のゴミ混入)・P1-11(脆弱性)・P1-12(外部ツールの版固定)へ戻る。",
+    "active": "G-TESTINFRA-ESCAPEPATH",
+    "next": "G-TESTINFRA-ESCAPEPATH(パスにアポストロフィが入ると字幕焼き込みが失敗する)を直す。ffmpeg が使えるようになり実機で再現済み。続けて G-TESTINFRA-RENDERCHECK(レンダリング実機検証をCIへ)と P0-5-A(実出力解像度の一致)も、同じ足かせが外れたので閉じられる。その後 P1-10・P1-11・P1-12。",
     "handoff": {
-      "done": "軽い配布物(G-SLIM)を実装。build-dist.mjs に --slim を追加し、手順書と依存の正本は1つのままビルド時に加工する形にした。詳細は G-SLIM の detail を参照。",
-      "trouble": "無し"
+      "done": "顔モザイク(G-MOSAIC)を完了し、続けて軽い配布物(G-SLIM)を追加した。あわせて普通の編集経路を実機で通しで確認し、未検証だった不具合を1件再現させた。詳細は各ノードの detail を参照。",
+      "trouble": "ffmpeg が使えるようになった結果、「ffmpeg が無いので検証待ち」として止めていた項目が3つとも検証可能になっていたが、足かせが外れたことに自分では気づいていなかった(マスターの質問がきっかけで判明)。教訓は docs/failures.md 2026-08-04 を参照。"
     },
     "updated": "2026-08-04"
   },
@@ -1291,12 +1291,12 @@
               "kind": "state",
               "theme": "軽い配布物がメールに添付できる大きさに収まる",
               "meaning": "ギガファイル便やドライブを経由せず、そのまま送れる",
-              "status": "doing",
+              "status": "done",
               "criteria": [
                 {
                   "text": "軽い版の配布物(zip)が30MB以内に収まる",
                   "verify": "軽い版をビルドしてzipを作り、その大きさが30MB以内であることをテストで確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30896172798"
                 }
               ]
             },
@@ -1305,12 +1305,12 @@
               "kind": "state",
               "theme": "軽い版の手順書に、使えない機能の案内が無い",
               "meaning": "入っていない機能を勧められて、お客様が実行して失敗する事故を防ぐ",
-              "status": "doing",
+              "status": "done",
               "criteria": [
                 {
                   "text": "軽い版の手順書に、顔モザイクの質問・手順・スクリプト名が一切含まれない",
                   "verify": "軽い版の手順書を読み、モザイク関連の語句(モザイク/apply_mosaic_cli.py/face_choices.py)が含まれないことをテストで確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30896172798"
                 }
               ]
             },
@@ -1319,12 +1319,12 @@
               "kind": "state",
               "theme": "軽い版に入っているものだけで、縦型ショートが出来上がる",
               "meaning": "削った結果、肝心の編集が動かなくなっていないことを確かめる",
-              "status": "doing",
+              "status": "done",
               "criteria": [
                 {
                   "text": "軽い版に含まれるファイルだけを使って、動画から縦型のmp4が生成される",
                   "verify": "軽い版のフォルダだけを使ってレンダリングを実行し、出力mp4の高さが幅より大きいことをテストで確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30896172798"
                 }
               ]
             },
@@ -1333,12 +1333,12 @@
               "kind": "state",
               "theme": "標準版は従来どおり顔を隠せる",
               "meaning": "軽い版を足したせいで、今までの配布物が壊れていない",
-              "status": "doing",
+              "status": "done",
               "criteria": [
                 {
                   "text": "標準版の配布物に、モザイクのモデル・スクリプト・手順が従来どおり含まれる",
                   "verify": "標準版をビルドし、モデル2つとapply_mosaic_cli.pyが存在し、手順書にモザイクの手順が残っていることをテストで確認する",
-                  "evidence": ""
+                  "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30896172798"
                 }
               ]
             }
