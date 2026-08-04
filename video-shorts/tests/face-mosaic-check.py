@@ -693,6 +693,39 @@ check(
     os.path.exists(os.path.join(DIST, "src", "face_choices.py")),
 )
 
+# 配る当のCLIを実際に起動して確かめる（関数が動くことと、客が叩く入口が動くことは別）
+import shlex as _shlex  # noqa: E402
+import subprocess as _sp  # noqa: E402
+
+_cli_dir = os.path.join(FIXTURES, "..", "_choices_cli_tmp")
+shutil.rmtree(_cli_dir, ignore_errors=True)
+os.makedirs(_cli_dir, exist_ok=True)
+_plate = os.path.join(_cli_dir, "plate.png")
+_vid = os.path.join(_cli_dir, "src.mp4")
+_c = np.full((720, 1280, 3), (64, 48, 32), np.uint8)
+_c[240 : 240 + two.shape[0], 380 : 380 + two.shape[1]] = two
+cv2.imwrite(_plate, _c)
+_sp.run(_shlex.split(f'ffmpeg -y -loglevel error -loop 1 -i "{_plate}" -t 1 -r 10 '
+                     f'-c:v libx264 -pix_fmt yuv420p "{_vid}"'), capture_output=True)
+_r = _sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+             capture_output=True, text=True)
+_written = sorted(n for n in os.listdir(_cli_dir) if n.startswith("face-") and n.endswith(".png"))
+check(
+    "M-4-D: 配布する切り出しCLIを実行すると、番号付きの顔画像が書き出される",
+    _r.returncode == 0 and _written == ["face-1.png", "face-2.png"],
+    f"終了コード={_r.returncode} 書き出し={_written} {(_r.stderr or '')[-200:]}",
+)
+# 前回の候補が残って別人を選ばせないこと
+open(os.path.join(_cli_dir, "face-9.png"), "wb").write(b"stale")
+_sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+        capture_output=True, text=True)
+check(
+    "M-4-D: 前回の候補画像が残らない（古い候補で別人を選ばせない）",
+    "face-9.png" not in os.listdir(_cli_dir),
+    f"残ったファイル={sorted(os.listdir(_cli_dir))}",
+)
+shutil.rmtree(_cli_dir, ignore_errors=True)
+
 # ---------------------------------------------------------------- M-4-E
 skill = open(os.path.join(PKG, "skill", "video-shorts", "SKILL.md"), encoding="utf-8").read()
 check(
@@ -712,40 +745,56 @@ check(
 
 # ================================================================ M-5
 #   M-5-B ショート1本あたりの処理時間が実用範囲に収まる
+#
+# 受入条件は「60秒の動画に対するモザイク処理の**追加時間**が動画長の50%以内
+# （＝モザイク有無の時間差が30秒以内）」。条件どおり、60秒ぶんのコマ数で、
+# モザイク有りと無しの**差**を測る（総時間ではない／短い素材で代用しない）。
 # （M-5-A「既存のテストが通ったままである」は CI が審判なのでここでは扱わない）
 
 import time  # noqa: E402
 
-# 実素材と同じ 1080p のコマを組み立てて測る。フレーム複製を省く経路(copy_frames=False)は
-# 動画から読み出したコマをそのまま捨てる本番の使い方に対応する。
 BENCH_FPS = 30
-BENCH_SECONDS = 2
+BENCH_SECONDS = 60
 bench_face = cv2.resize(one, None, fx=2.2, fy=2.2, interpolation=cv2.INTER_CUBIC)
 bfh, bfw = bench_face.shape[:2]
-bench_frames = []
-for i in range(BENCH_FPS * BENCH_SECONDS):
+
+
+def bench_frame(i):
+    """1080p のコマを1枚作る（顔が少しずつ動く＝実素材に近い条件）。"""
     canvas_b = np.full((1080, 1920, 3), (64, 48, 32), np.uint8)
     bx = 200 + (i * 6) % (1920 - bfw - 400)
     canvas_b[200 : 200 + bfh, bx : bx + bfw] = bench_face
-    bench_frames.append(canvas_b)
+    return canvas_b
 
-# 速度計測は複製を省く指定で走らせるため bench_frames を破壊する。
-# 後段の比較用に、破壊前のコマを1枚控えておく。
-pristine = bench_frames[0].copy()
 
-t_start = time.time()
-mosaic_frames(bench_frames, copy_frames=False)
-elapsed = time.time() - t_start
-ratio = elapsed / BENCH_SECONDS
+# 60秒ぶんを一度に抱えると1080pで11GBになるため、本番と同じくかたまりに分けて流す。
+# 「モザイク無し」は同じコマ数を同じように作って捨てるだけの経路で、差分がモザイクの費用になる。
+BENCH_CHUNK = 150
+elapsed_without = 0.0
+elapsed_with = 0.0
+for base in range(0, BENCH_FPS * BENCH_SECONDS, BENCH_CHUNK):
+    n_this = min(BENCH_CHUNK, BENCH_FPS * BENCH_SECONDS - base)
+
+    t0 = time.time()
+    plain = [bench_frame(base + k) for k in range(n_this)]
+    for f in plain:  # モザイク無しでも、コマを一通り触る費用は同じだけ掛かる
+        f[0, 0, 0] = f[0, 0, 0]
+    elapsed_without += time.time() - t0
+
+    t0 = time.time()
+    withm = [bench_frame(base + k) for k in range(n_this)]
+    mosaic_frames(withm, copy_frames=False)
+    elapsed_with += time.time() - t0
+
+extra = elapsed_with - elapsed_without
 check(
-    # 受入ラインは動画長の50%以内。複製を省く前は133%で落ちていた
-    # （1080pのフレーム複製が処理時間の9割を占めていたため）。
-    "M-5-B: モザイク処理の時間が動画長の50%以内に収まる",
-    ratio <= 0.5,
-    f"素材{BENCH_SECONDS}秒に対し {elapsed:.1f}秒 = {ratio * 100:.0f}%（受入は50%以内）",
+    "M-5-B: 60秒の動画に対するモザイク処理の追加時間が30秒以内（動画長の50%以内）",
+    extra <= 30.0,
+    f"モザイク有り {elapsed_with:.1f}秒 / 無し {elapsed_without:.1f}秒 / 差 {extra:.1f}秒（受入は30秒以内）",
 )
 
 # 複製を省く指定が実際に効いていること（効いていないと上の測定が意味を失う）
+pristine = bench_frame(0)
 src_a = [pristine.copy(), pristine.copy()]
 mosaic_frames(src_a, copy_frames=True)
 check(
