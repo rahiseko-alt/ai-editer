@@ -768,6 +768,14 @@ check(
 
 import shlex  # noqa: E402
 
+# ffmpeg が無いと、この節は raw な FileNotFoundError で落ちて原因が読み取りにくい。
+# 「無いから飛ばす」は偽の緑になるので、落とすうえで理由を明示する。
+check(
+    "M-4-F: 成果物まで検証するのに必要な ffmpeg が使える（前提の確認）",
+    shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None,
+    "ffmpeg/ffprobe が見つかりません。CI では quality ジョブで導入しています。",
+)
+
 CLI = os.path.join(PKG, "src", "apply_mosaic_cli.py")
 tmp_dir = os.path.join(FIXTURES, "..", "_render_tmp")
 shutil.rmtree(tmp_dir, ignore_errors=True)

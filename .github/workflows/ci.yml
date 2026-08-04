@@ -41,6 +41,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # M-4-F/M-4-G のテストは、実際に動画ファイルを作って出力に顔検出を掛け直す。
+      # 「関数が正しい値を返す」ではなく「成果物が正しい」まで確かめるため ffmpeg が要る。
+      # 入っていないからテストを飛ばす、は AGENTS.md が禁じる「偽の緑」なので入れる。
+      - name: Install ffmpeg (成果物まで検証するテストで使う)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       # 顔モザイクのテスト(tests/face-mosaic-check.py)が cv2 を使う。
       # requirements.txt 全体は文字起こしの重い依存を含み CI では不要なので opencv だけを入れる。
       # 版の指定は requirements.txt を唯一の正とし、そこから抜き出して使う(二重管理で食い違わせない)。
