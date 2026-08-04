@@ -29,11 +29,24 @@ except ImportError:  # 客の環境で未導入のとき、スタックトレー
 
 import numpy as np
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "face_detection_yunet_2023mar.onnx")
+_MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
+MODEL_PATH = os.path.join(_MODELS_DIR, "face_detection_yunet_2023mar.onnx")
+RECOGNIZER_PATH = os.path.join(_MODELS_DIR, "face_recognition_sface_2021dec.onnx")
 
 # 検出のしきい値。低くすると拾いすぎ、高くすると横顔を落とす。
 SCORE_THRESHOLD = 0.6
 NMS_THRESHOLD = 0.3
+
+# 同一人物と判定するコサイン類似度のしきい値（SFace の配布元が推奨する値）。
+# 公有画像での実測は、同一人物(撮影年が13年違う2枚)で0.63、別人どうしで0.18〜0.25。
+# 判定を緩める（下げる）と別人を対象者と誤認しやすくなり、隠すべきでない人に強いモザイクが
+# かかる。逆に上げすぎると対象者を取り逃す。取り逃しはプライバシー事故に直結するため、
+# 迷う場合はしきい値を下げるのではなく「未登録の人にも既定のモザイクをかける」で守る。
+RECOGNITION_THRESHOLD = 0.363
+
+# 1つのトラックにつき何回まで照合するか。毎フレーム照合しても結論はほとんど変わらないのに
+# 費用だけ増えるため、数回の多数決で確定させる（実測: 60秒の動画で照合7秒 -> 0.13秒）。
+RECOGNITION_VOTES = 3
 
 # 顔の高さに対するモザイク1ブロックの比と、絶対値の下限。
 #
@@ -84,15 +97,67 @@ def create_detector(width: int, height: int, model_path: str = MODEL_PATH):
     return det
 
 
-def detect_faces(image, detector=None) -> list[tuple[float, float, float, float]]:
-    """画像から顔の矩形 (x, y, w, h) を返す。検出ゼロなら空リスト。"""
+def detect_faces_raw(image, detector=None):
+    """YuNet の生の検出行を返す。矩形に加えて目・鼻・口の位置を含む。
+
+    顔の向きを揃えてから照合する（alignCrop）のに特徴点が要るので、識別ではこちらを使う。
+    """
     h, w = image.shape[:2]
     det = detector if detector is not None else create_detector(w, h)
     det.setInputSize((w, h))
     _, faces = det.detect(image)
-    if faces is None:
-        return []
-    return [(float(b[0]), float(b[1]), float(b[2]), float(b[3])) for b in faces]
+    return [] if faces is None else list(faces)
+
+
+def detect_faces(image, detector=None) -> list[tuple[float, float, float, float]]:
+    """画像から顔の矩形 (x, y, w, h) を返す。検出ゼロなら空リスト。"""
+    return [
+        (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+        for b in detect_faces_raw(image, detector)
+    ]
+
+
+def create_recognizer(model_path: str = RECOGNIZER_PATH):
+    """SFace 識別器を作る。model_path が無ければ理由の分かる例外にする。"""
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"顔識別モデルが見つかりません: {model_path}\n"
+            "配布物に同梱されているはずのファイルです。src/models/ を確認してください。"
+        )
+    return cv2.FaceRecognizerSF.create(model_path, "")
+
+
+def face_signature(image, raw_face, recognizer=None):
+    """1つの顔から、人物を見分けるための特徴（128次元）を取り出す。"""
+    rec = recognizer if recognizer is not None else create_recognizer()
+    return rec.feature(rec.alignCrop(image, np.asarray(raw_face, dtype=np.float32))).copy()
+
+
+def same_person(sig_a, sig_b, recognizer=None, threshold: float = RECOGNITION_THRESHOLD):
+    """2つの顔の特徴が同一人物かを返す。(判定, 類似度) の組。"""
+    rec = recognizer if recognizer is not None else create_recognizer()
+    score = rec.match(sig_a, sig_b, cv2.FaceRecognizerSF_FR_COSINE)
+    return score >= threshold, float(score)
+
+
+def register_person(image_path, name="target", detector=None, recognizer=None):
+    """隠したい人の写真1枚から、その人を見分けるための特徴を作る。
+
+    顔が写っていなければ理由の分かる例外にする（黙って「登録できた」ことにしない）。
+    """
+    image = cv2.imread(image_path)
+    if image is None:
+        raise FileNotFoundError(f"参照する顔写真が読めません: {image_path}")
+    h, w = image.shape[:2]
+    det = detector if detector is not None else create_detector(w, h)
+    faces = detect_faces_raw(image, det)
+    if not faces:
+        raise ValueError(
+            f"参照写真から顔を見つけられませんでした: {image_path}\n"
+            "正面を向いていて、顔が大きく写っている写真を使ってください。"
+        )
+    biggest = max(faces, key=lambda b: b[2] * b[3])
+    return {"name": name, "signature": face_signature(image, biggest, recognizer)}
 
 
 def block_size_for(face_h: float, ratio: float = BLOCK_RATIO_DEFAULT) -> int:
@@ -172,6 +237,9 @@ class FaceTracker:
             t.seen = True
             matched[bi] = t
 
+        # 入力した検出が、どのトラックに割り当てられたか（入力と同じ並び）。
+        # 識別のとき「この顔は誰のトラックか」を位置の突き合わせで推測せずに済むようにする。
+        self.last_assignment = []
         for bi, b in enumerate(boxes):
             t = matched.get(bi)
             if t is None:
@@ -181,6 +249,7 @@ class FaceTracker:
                 self.tracks.append(t)
             t.box = tuple(b)
             t.missed = 0
+            self.last_assignment.append(t)
 
         held = False
         for t in self.tracks:
@@ -215,21 +284,56 @@ def interpolate(prev_rows, next_rows, weight: float):
 
 
 def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float = BLOCK_RATIO_DEFAULT,
-                  detector=None, block_for=None):
+                  detector=None, block_for=None, people=None, ratio_for=None, recognizer=None):
     """フレーム列を順に処理し、顔を追従モザイクで隠したフレーム列を返す。
 
-    block_for(track) を渡すと、トラックごとにブロックサイズを差し替えられる（M-2 で使う）。
+    people に register_person() の結果を並べると、その人だけ隠し方を変えられる（M-2）。
+    ratio_for は {人物名: 比} で、登録していない人には既定の比を使う。
+    未登録の人にも必ず既定のモザイクはかかる（＝見分けに失敗しても素顔は出ない）。
+
+    block_for(track) を渡すと、ブロックサイズを直接差し替えられる（ratio_for より優先）。
     """
     tracker = FaceTracker(hold_frames=hold_frames)
+    people = people or []
+    ratio_for = ratio_for or {}
+    rec = recognizer
+    if people and rec is None:
+        rec = create_recognizer()
+
     out = []
     det = detector
     for i, frame in enumerate(frames):
         work = frame.copy()
         if det is None:
             det = create_detector(work.shape[1], work.shape[0])
-        boxes = detect_faces(work, det)
-        for t in tracker.update(boxes, frame_index=i):
-            blk = block_for(t) if block_for is not None else None
-            apply_mosaic(work, t.box, block=blk, ratio=ratio)
+        raw = detect_faces_raw(work, det)
+        boxes = [(float(b[0]), float(b[1]), float(b[2]), float(b[3])) for b in raw]
+        tracks = tracker.update(boxes, frame_index=i)
+
+        # 誰かを見分ける必要があるときだけ照合する。トラックごとに数回だけ数えて確定させ、
+        # 毎フレーム照合しない（結論は変わらないのに費用だけ増えるため）。
+        if people:
+            for b, tgt in zip(raw, tracker.last_assignment):
+                if sum(tgt.votes.values()) >= RECOGNITION_VOTES:
+                    continue
+                try:
+                    sig = face_signature(work, b, rec)
+                except cv2.error:
+                    continue  # 向きが取れない等で特徴を作れない顔は、次のフレームで見直す
+                label = "_other"
+                for p in people:
+                    matched_person, _score = same_person(p["signature"], sig, rec)
+                    if matched_person:
+                        label = p["name"]
+                        break
+                tgt.votes[label] = tgt.votes.get(label, 0) + 1
+                tgt.label = max(tgt.votes, key=tgt.votes.get)
+
+        for t in tracks:
+            if block_for is not None:
+                blk = block_for(t)
+                apply_mosaic(work, t.box, block=blk, ratio=ratio)
+            else:
+                apply_mosaic(work, t.box, ratio=ratio_for.get(t.label, ratio))
         out.append(work)
     return out, tracker
