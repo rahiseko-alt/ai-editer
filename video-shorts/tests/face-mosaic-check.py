@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from face_mosaic import (  # noqa: E402
     FaceTracker,
     apply_mosaic,
+    expand_box,
     block_size_for,
     create_detector,
     detect_faces,
@@ -496,11 +497,14 @@ manual = [f.copy() for f in frames[:10]]
 BOX = detect_faces(frames[5], det)[0]
 bx, by, bw2, bh2 = [int(v) for v in BOX]
 region = (slice(by, by + bh2), slice(bx, bx + bw2))
-before_manual = manual[5][region].copy()
+before_by_frame = {i: manual[i][region].copy() for i in (4, 5, 6)}
 apply_manual_masks(manual, [{"start": 4, "end": 6, "box": BOX}])
+changed = [i for i in (4, 5, 6) if not np.array_equal(before_by_frame[i], manual[i][region])]
 check(
-    "M-3-B: 指定した区間の指定位置に、後から隠しを足せる",
-    not np.array_equal(before_manual, manual[5][region]),
+    # 開始・終了の両端を含むことを両端で確かめる。中だけ見ると片端が抜けても緑になる。
+    "M-3-B: 指定した区間の指定位置に、後から隠しを足せる（開始・終了の両端を含む）",
+    changed == [4, 5, 6],
+    f"変化したコマ={changed}（期待=[4, 5, 6]）",
 )
 check(
     "M-3-B: 指定した区間の外は変わらない",
@@ -528,13 +532,23 @@ check(
     f"{[o.shape for o in out_q]} vs {[s.shape for s in frames[:4]]}",
 )
 # 顔の外側は1画素も書き換わっていないこと（＝背景が再圧縮・再サンプルされていない）
-face_box = detect_faces(frames[0], det)[0]
-fx, fy, fw2, fh2 = [int(v) for v in face_box]
-pad = int(fw2 * 0.6)
-mask_free = (slice(0, max(0, fy - pad)), slice(None))
+# 除外範囲は「実際にモザイクを掛けた枠」から作る。パイプラインは縮小した画で検出するため、
+# 原寸で検出し直した枠とは座標が僅かに違う。別物を除外すると検証にならない。
+one_out, one_tracker = mosaic_frames([frames[0].copy()])
+outside_face = np.ones(frames[0].shape[:2], dtype=bool)
+for t in one_tracker.tracks:
+    ex, ey, ew, eh = expand_box(t.box, frames[0].shape[1], frames[0].shape[0])
+    outside_face[ey : ey + eh, ex : ex + ew] = False
 check(
+    "モザイクを掛けた枠が1つ以上ある（前提の確認）",
+    any(not outside_face.all() for _ in [0]) and len(one_tracker.tracks) >= 1,
+    f"tracks={len(one_tracker.tracks)}",
+)
+check(
+    # 上側だけを見ていると、顔の左右・下側が書き換わっても緑になり主張を裏付けない。
     "顔以外の領域は1画素も書き換わらない（背景の画質が落ちない）",
-    np.array_equal(out_q[0][mask_free], frames[0][mask_free]),
+    np.array_equal(one_out[0][outside_face], frames[0][outside_face]),
+    f"書き換わった画素数={int((one_out[0][outside_face] != frames[0][outside_face]).sum())}",
 )
 check(
     "検出用の縮小率は出力に影響しない（1920幅なら960幅で検出=0.5倍）",
@@ -547,6 +561,38 @@ check(
     DETECT_WIDTH_DEFAULT >= 960 and DETECT_EVERY_DEFAULT <= 3,
     f"width={DETECT_WIDTH_DEFAULT} every={DETECT_EVERY_DEFAULT}",
 )
+
+
+# -------------------------------------------------- レビュー指摘に対する回帰テスト
+# いずれも「黙って保護が外れる」種類の穴。緑のまま素通りしないよう固定する。
+
+# 検出間隔に0以下を渡すと、検出が1回も走らずモザイク無しのフレームが返っていた
+for bad in (0, -1):
+    try:
+        mosaic_frames([np.zeros((80, 80, 3), np.uint8)], detect_every=bad)
+        rejected = False
+    except ValueError:
+        rejected = True
+    check(f"検出間隔に {bad} を渡したら、素通しせずに止まる", rejected)
+
+# フレーム数が検出間隔で割り切れないときの末尾は、直前の位置を流用する＝枠が古い。
+# ここが確認対象から漏れると、素顔が残っていても人に示されない。
+tail_frames = frames[:7]  # 7 は既定の検出間隔3で割り切れない
+_out_tail, tracker_tail = mosaic_frames(tail_frames, detect_every=3)
+tail_marks = review_frames(tracker_tail, total_frames=len(tail_frames))
+check(
+    "フレーム数が検出間隔で割り切れないとき、末尾のコマが確認対象に入る",
+    any(i >= 6 for i in tail_marks),
+    f"確認対象={tail_marks}（末尾コマ6が含まれること）",
+)
+
+# 書き出しに失敗したパスを「書き出した」として返すと、確認したつもりの取りこぼしが出る
+try:
+    write_review_images(frames, [0], "/proc/self/cannot-write-here")
+    write_failed_loudly = False
+except (OSError, cv2.error):
+    write_failed_loudly = True
+check("確認用の静止画を書き出せなかったら、黙って成功扱いにせず止まる", write_failed_loudly)
 
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
