@@ -9,6 +9,7 @@
 走査しても結果はほとんど変わらないのに時間だけ掛かるため。
 """
 
+import math
 import os
 import subprocess
 import sys
@@ -55,6 +56,13 @@ def read_frames(path, seconds, width, height, stride=5):
             break
         frames.append(np.frombuffer(buf, np.uint8).reshape(height, width, 3))
     proc.wait()
+    if proc.returncode != 0:
+        # 途中で失敗したコマ列で「○人見つかりました」と報告すると、実際には
+        # 走査できていない区間の人物が抜け落ちたまま先へ進んでしまう。
+        raise RuntimeError(
+            f"ffmpeg が異常終了しました（終了コード {proc.returncode}）: {path}\n"
+            "動画が壊れていないか、ffmpeg が正しく入っているかを確認してください。"
+        )
     return frames
 
 
@@ -65,14 +73,30 @@ def main(argv):
     video, out_dir = argv[1], argv[2]
     seconds = DEFAULT_SECONDS
     if "--seconds" in argv:
-        seconds = float(argv[argv.index("--seconds") + 1])
+        index = argv.index("--seconds")
+        if index + 1 >= len(argv):
+            sys.stderr.write("[ERROR] --seconds には秒数を指定してください。\n")
+            return 2
+        try:
+            seconds = float(argv[index + 1])
+        except ValueError:
+            sys.stderr.write(f"[ERROR] --seconds には数値を指定してください: {argv[index + 1]}\n")
+            return 2
+        if not math.isfinite(seconds) or seconds <= 0:
+            sys.stderr.write(f"[ERROR] --seconds には0より大きい有限の数を指定してください: {seconds}\n")
+            return 2
 
     if not os.path.exists(video):
         sys.stderr.write(f"[ERROR] 動画が見つかりません: {video}\n")
         return 1
 
-    width, height = probe_size(video)
-    frames = read_frames(video, seconds, width, height)
+    try:
+        width, height = probe_size(video)
+        frames = read_frames(video, seconds, width, height)
+    except (OSError, RuntimeError) as e:
+        # 客は非エンジニア。スタックトレースではなく、何をすればよいかを出す。
+        sys.stderr.write(f"[ERROR] {e}\n")
+        return 1
     if not frames:
         sys.stderr.write(
             f"[ERROR] 動画からコマを読み出せませんでした: {video}\n"
@@ -80,7 +104,11 @@ def main(argv):
         )
         return 1
 
-    found = write_face_choices(frames, out_dir, detect_every=1)
+    try:
+        found = write_face_choices(frames, out_dir, detect_every=1)
+    except (OSError, RuntimeError) as e:
+        sys.stderr.write(f"[ERROR] {e}\n")
+        return 1
     if not found:
         # 「顔が写っていない」は正常な結果なので、エラーではなくそう伝える
         print("[OK] この動画からは顔が見つかりませんでした（モザイクの対象者はいません）。")

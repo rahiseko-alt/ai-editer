@@ -15,6 +15,7 @@ PyTorch や onnxruntime は不要。
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 
@@ -496,6 +497,12 @@ def write_face_choices(frames, out_dir, detect_every: int = DETECT_EVERY_DEFAULT
                 best[t.id] = (area, i, t.box)
 
     os.makedirs(out_dir, exist_ok=True)
+    # 前回の候補が残っていると、今回いない人まで一覧に並び、別の動画の人を選ばせてしまう。
+    # この関数が付ける名前(face-<番号>.png)だけを消し、他のファイルには触らない。
+    for name in os.listdir(out_dir):
+        if re.fullmatch(r"face-\d+\.png", name):
+            os.remove(os.path.join(out_dir, name))
+
     out = []
     # 大きく写っている人から順に番号を振る（手前の人＝指定したい人であることが多い）
     for n, (tid, (_area, frame_i, box)) in enumerate(

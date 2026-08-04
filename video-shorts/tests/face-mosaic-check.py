@@ -693,6 +693,39 @@ check(
     os.path.exists(os.path.join(DIST, "src", "face_choices.py")),
 )
 
+# 配る当のCLIを実際に起動して確かめる（関数が動くことと、客が叩く入口が動くことは別）
+import shlex as _shlex  # noqa: E402
+import subprocess as _sp  # noqa: E402
+
+_cli_dir = os.path.join(FIXTURES, "..", "_choices_cli_tmp")
+shutil.rmtree(_cli_dir, ignore_errors=True)
+os.makedirs(_cli_dir, exist_ok=True)
+_plate = os.path.join(_cli_dir, "plate.png")
+_vid = os.path.join(_cli_dir, "src.mp4")
+_c = np.full((720, 1280, 3), (64, 48, 32), np.uint8)
+_c[240 : 240 + two.shape[0], 380 : 380 + two.shape[1]] = two
+cv2.imwrite(_plate, _c)
+_sp.run(_shlex.split(f'ffmpeg -y -loglevel error -loop 1 -i "{_plate}" -t 1 -r 10 '
+                     f'-c:v libx264 -pix_fmt yuv420p "{_vid}"'), capture_output=True)
+_r = _sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+             capture_output=True, text=True)
+_written = sorted(n for n in os.listdir(_cli_dir) if n.startswith("face-") and n.endswith(".png"))
+check(
+    "M-4-D: 配布する切り出しCLIを実行すると、番号付きの顔画像が書き出される",
+    _r.returncode == 0 and _written == ["face-1.png", "face-2.png"],
+    f"終了コード={_r.returncode} 書き出し={_written} {(_r.stderr or '')[-200:]}",
+)
+# 前回の候補が残って別人を選ばせないこと
+open(os.path.join(_cli_dir, "face-9.png"), "wb").write(b"stale")
+_sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+        capture_output=True, text=True)
+check(
+    "M-4-D: 前回の候補画像が残らない（古い候補で別人を選ばせない）",
+    "face-9.png" not in os.listdir(_cli_dir),
+    f"残ったファイル={sorted(os.listdir(_cli_dir))}",
+)
+shutil.rmtree(_cli_dir, ignore_errors=True)
+
 # ---------------------------------------------------------------- M-4-E
 skill = open(os.path.join(PKG, "skill", "video-shorts", "SKILL.md"), encoding="utf-8").read()
 check(
@@ -712,40 +745,56 @@ check(
 
 # ================================================================ M-5
 #   M-5-B ショート1本あたりの処理時間が実用範囲に収まる
+#
+# 受入条件は「60秒の動画に対するモザイク処理の**追加時間**が動画長の50%以内
+# （＝モザイク有無の時間差が30秒以内）」。条件どおり、60秒ぶんのコマ数で、
+# モザイク有りと無しの**差**を測る（総時間ではない／短い素材で代用しない）。
 # （M-5-A「既存のテストが通ったままである」は CI が審判なのでここでは扱わない）
 
 import time  # noqa: E402
 
-# 実素材と同じ 1080p のコマを組み立てて測る。フレーム複製を省く経路(copy_frames=False)は
-# 動画から読み出したコマをそのまま捨てる本番の使い方に対応する。
 BENCH_FPS = 30
-BENCH_SECONDS = 2
+BENCH_SECONDS = 60
 bench_face = cv2.resize(one, None, fx=2.2, fy=2.2, interpolation=cv2.INTER_CUBIC)
 bfh, bfw = bench_face.shape[:2]
-bench_frames = []
-for i in range(BENCH_FPS * BENCH_SECONDS):
+
+
+def bench_frame(i):
+    """1080p のコマを1枚作る（顔が少しずつ動く＝実素材に近い条件）。"""
     canvas_b = np.full((1080, 1920, 3), (64, 48, 32), np.uint8)
     bx = 200 + (i * 6) % (1920 - bfw - 400)
     canvas_b[200 : 200 + bfh, bx : bx + bfw] = bench_face
-    bench_frames.append(canvas_b)
+    return canvas_b
 
-# 速度計測は複製を省く指定で走らせるため bench_frames を破壊する。
-# 後段の比較用に、破壊前のコマを1枚控えておく。
-pristine = bench_frames[0].copy()
 
-t_start = time.time()
-mosaic_frames(bench_frames, copy_frames=False)
-elapsed = time.time() - t_start
-ratio = elapsed / BENCH_SECONDS
+# 60秒ぶんを一度に抱えると1080pで11GBになるため、本番と同じくかたまりに分けて流す。
+# 「モザイク無し」は同じコマ数を同じように作って捨てるだけの経路で、差分がモザイクの費用になる。
+BENCH_CHUNK = 150
+elapsed_without = 0.0
+elapsed_with = 0.0
+for base in range(0, BENCH_FPS * BENCH_SECONDS, BENCH_CHUNK):
+    n_this = min(BENCH_CHUNK, BENCH_FPS * BENCH_SECONDS - base)
+
+    t0 = time.time()
+    plain = [bench_frame(base + k) for k in range(n_this)]
+    for f in plain:  # モザイク無しでも、コマを一通り触る費用は同じだけ掛かる
+        f[0, 0, 0] = f[0, 0, 0]
+    elapsed_without += time.time() - t0
+
+    t0 = time.time()
+    withm = [bench_frame(base + k) for k in range(n_this)]
+    mosaic_frames(withm, copy_frames=False)
+    elapsed_with += time.time() - t0
+
+extra = elapsed_with - elapsed_without
 check(
-    # 受入ラインは動画長の50%以内。複製を省く前は133%で落ちていた
-    # （1080pのフレーム複製が処理時間の9割を占めていたため）。
-    "M-5-B: モザイク処理の時間が動画長の50%以内に収まる",
-    ratio <= 0.5,
-    f"素材{BENCH_SECONDS}秒に対し {elapsed:.1f}秒 = {ratio * 100:.0f}%（受入は50%以内）",
+    "M-5-B: 60秒の動画に対するモザイク処理の追加時間が30秒以内（動画長の50%以内）",
+    extra <= 30.0,
+    f"モザイク有り {elapsed_with:.1f}秒 / 無し {elapsed_without:.1f}秒 / 差 {extra:.1f}秒（受入は30秒以内）",
 )
 
 # 複製を省く指定が実際に効いていること（効いていないと上の測定が意味を失う）
+pristine = bench_frame(0)
 src_a = [pristine.copy(), pristine.copy()]
 mosaic_frames(src_a, copy_frames=True)
 check(
@@ -759,6 +808,125 @@ check(
     "M-5-B: 複製を省く指定では、渡したフレームが直接書き換わる",
     not np.array_equal(src_b[0], pristine),
 )
+
+
+# ================================================================ M-4-F / M-4-G
+# 選んだ設定が、実際に出来上がる動画に反映されるか。
+# 「設定は聞かれたのに出来た動画には掛かっていない」を防ぐ葉なので、
+# 関数呼び出しではなく **実際に動画ファイルを作って顔検出を掛け直す** ところまで見る。
+
+import shlex  # noqa: E402
+
+# ffmpeg が無いと、この節は raw な FileNotFoundError で落ちて原因が読み取りにくい。
+# 「無いから飛ばす」は偽の緑になるので、落とすうえで理由を明示する。
+check(
+    "M-4-F: 成果物まで検証するのに必要な ffmpeg が使える（前提の確認）",
+    shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None,
+    "ffmpeg/ffprobe が見つかりません。CI では quality ジョブで導入しています。",
+)
+
+CLI = os.path.join(PKG, "src", "apply_mosaic_cli.py")
+tmp_dir = os.path.join(FIXTURES, "..", "_render_tmp")
+shutil.rmtree(tmp_dir, ignore_errors=True)
+os.makedirs(tmp_dir, exist_ok=True)
+
+# 2人が写った短い動画を素材として作る（ffmpeg は CI にも入っている）
+src_video = os.path.join(tmp_dir, "src.mp4")
+plate = os.path.join(tmp_dir, "plate.png")
+big_canvas = np.full((720, 1280, 3), (64, 48, 32), np.uint8)
+big_canvas[240 : 240 + two.shape[0], 380 : 380 + two.shape[1]] = two
+cv2.imwrite(plate, big_canvas)
+make = subprocess.run(
+    shlex.split(f'ffmpeg -y -loglevel error -loop 1 -i "{plate}" -t 1 -r 15 '
+                f'-c:v libx264 -pix_fmt yuv420p "{src_video}"'),
+    capture_output=True, text=True,
+)
+check("M-4-F: 検証用の素材動画を作れる（前提の確認）",
+      make.returncode == 0 and os.path.exists(src_video),
+      (make.stderr or "")[-200:])
+
+
+def faces_in_video(path):
+    """動画を実際にデコードし直し、素顔が残っているコマ数を数える。"""
+    probe = subprocess.run(
+        shlex.split(f'ffprobe -v error -select_streams v:0 -show_entries stream=width,height '
+                    f'-of csv=p=0 "{path}"'), capture_output=True, text=True)
+    w, h = [int(v) for v in probe.stdout.strip().split(",")[:2]]
+    proc = subprocess.Popen(
+        shlex.split(f'ffmpeg -v error -i "{path}" -f rawvideo -pix_fmt bgr24 -'),
+        stdout=subprocess.PIPE, bufsize=w * h * 3 * 4)
+    d = create_detector(w, h)
+    total = leaked = 0
+    while True:
+        buf = proc.stdout.read(w * h * 3)
+        if len(buf) < w * h * 3:
+            break
+        total += 1
+        if detect_faces(np.frombuffer(buf, np.uint8).reshape(h, w, 3), d):
+            leaked += 1
+    proc.wait()
+    return total, leaked
+
+
+before_total, before_leak = faces_in_video(src_video)
+check("M-4-F: 素材動画には素顔が写っている（前提の確認）",
+      before_total > 0 and before_leak == before_total,
+      f"{before_leak}/{before_total} コマで顔を検出")
+
+out_video = os.path.join(tmp_dir, "out.mp4")
+run_cli = subprocess.run(
+    [sys.executable if False else "python3", CLI, src_video, out_video],
+    capture_output=True, text=True)
+after_total, after_leak = faces_in_video(out_video) if os.path.exists(out_video) else (0, 0)
+check(
+    # ここが緑にならない＝設定を聞いたのに素顔のまま納品される、ということ
+    "M-4-F: モザイクを有効にしてレンダリングすると、出力動画の顔が隠れている",
+    run_cli.returncode == 0 and after_total == before_total and after_leak == 0,
+    f"終了コード={run_cli.returncode} 出力{after_leak}/{after_total}コマで素顔検出 "
+    f"{(run_cli.stderr or '')[-200:]}",
+)
+
+# ---------------------------------------------------------------- M-4-G
+def block_variety(path, box):
+    """出力動画の1コマ目について、指定領域の色の種類数を返す（粗いほど少ない）。"""
+    proc = subprocess.Popen(
+        shlex.split(f'ffmpeg -v error -i "{path}" -frames:v 1 -f rawvideo -pix_fmt bgr24 -'),
+        stdout=subprocess.PIPE)
+    buf = proc.stdout.read(1280 * 720 * 3)
+    proc.wait()
+    frame = np.frombuffer(buf, np.uint8).reshape(720, 1280, 3)
+    x, y, w2, h2 = [int(v) for v in box]
+    roi = frame[y : y + h2, x : x + w2]
+    return len(np.unique(roi.reshape(-1, 3), axis=0))
+
+
+target_img = os.path.join(FIXTURES, "face-one-alt.png")
+strong_out = os.path.join(tmp_dir, "strong.mp4")
+weak_out = os.path.join(tmp_dir, "weak.mp4")
+r1 = subprocess.run(["python3", CLI, src_video, strong_out, "--target", target_img,
+                     "--strength", "強め"], capture_output=True, text=True)
+r2 = subprocess.run(["python3", CLI, src_video, weak_out, "--target", target_img,
+                     "--strength", "弱め"], capture_output=True, text=True)
+target_box = sorted(detect_faces(big_canvas, create_detector(1280, 720)), key=lambda b: b[0])[0]
+check(
+    "M-4-G: 対象者の指定を変えると、出力動画の同じ顔の隠れ方が変わる",
+    r1.returncode == 0 and r2.returncode == 0
+    and block_variety(strong_out, target_box) < block_variety(weak_out, target_box),
+    f"強め={block_variety(strong_out, target_box) if os.path.exists(strong_out) else 'n/a'} / "
+    f"弱め={block_variety(weak_out, target_box) if os.path.exists(weak_out) else 'n/a'} "
+    f"{(r1.stderr or r2.stderr or '')[-200:]}",
+)
+
+check(
+    "M-4-G: モザイクを焼く入口が配布物に含まれる",
+    os.path.exists(os.path.join(DIST, "src", "apply_mosaic_cli.py")),
+)
+check(
+    "M-4-G: レンダリング後にモザイクを焼く手順が手順書に書かれている",
+    "apply_mosaic_cli.py" in skill and "省略禁止" in skill,
+)
+
+shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
