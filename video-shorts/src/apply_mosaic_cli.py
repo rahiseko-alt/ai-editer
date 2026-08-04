@@ -9,6 +9,8 @@
 SKILL.md の手順7（レンダリング）の後に呼ばれる。
 """
 
+import argparse
+import math
 import os
 import subprocess
 import sys
@@ -19,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from face_mosaic import (  # noqa: E402
     BLOCK_RATIO_DEFAULT,
+    DETECT_EVERY_DEFAULT,
     mosaic_frames,
     register_person,
 )
@@ -35,7 +38,9 @@ CHUNK_FRAMES = 300  # 一度に抱えるコマ数（1080pで約1.8GB を超え�
 # 先読みが無いと、かたまりの末尾は「次の検出」が存在せず直前の位置を流用することになり、
 # (a) 枠が古いまま焼かれる (b) 確認が要るコマとして記録され、確認リストが実際には
 # 問題の無いコマで埋まる。実測でも毎かたまり2コマ（1.7%）が機械的に記録されていた。
-LOOKAHEAD_FRAMES = 8
+# 検出間隔ぶん先を読めば、かたまり末尾に「次の検出」が必ず存在する。
+# 間隔を変えたときに追随させるため、値を直書きせず導出する。
+LOOKAHEAD_FRAMES = max(2, DETECT_EVERY_DEFAULT * 2)
 
 
 def probe(path):
@@ -46,11 +51,16 @@ def probe(path):
          "-of", "default=nw=1", path],
         capture_output=True, text=True,
     ).stdout
-    info = dict(l.split("=", 1) for l in out.strip().split("\n") if "=" in l)
+    info = dict(line.split("=", 1) for line in out.strip().split("\n") if "=" in line)
     if "width" not in info or "height" not in info:
         raise RuntimeError(f"動画の情報を取得できませんでした: {path}")
     num, den = info.get("r_frame_rate", "30/1").split("/")
-    return int(info["width"]), int(info["height"]), float(num) / float(den)
+    # r_frame_rate は 0/0 になる素材がある。そのまま割ると ZeroDivisionError で
+    # トレースバックが客に出るし、0 のまま ffmpeg -r 0 に渡ることにもなる。
+    fps = float(num) / float(den) if float(den) else 0.0
+    if not math.isfinite(fps) or fps <= 0:
+        raise RuntimeError(f"動画のフレームレートを取得できませんでした: {path}")
+    return int(info["width"]), int(info["height"]), fps
 
 
 def run(input_path, output_path, target=None, strength="普通"):
@@ -97,8 +107,16 @@ def run(input_path, output_path, target=None, strength="普通"):
         if pending:
             total += _flush(pending, enc, people, ratio_for)
     finally:
-        enc.stdin.close()
+        try:
+            enc.stdin.close()
+        except BrokenPipeError:
+            pass  # エンコーダが先に落ちている場合。下の returncode 検査で拾う
         enc.wait()
+        if dec.poll() is None:
+            # 読み残しがあると ffmpeg はパイプへの書き込みで止まり wait() が返らない。
+            # 例外で途中終了したときに、ここで永久に固まらないよう先に止める。
+            dec.terminate()
+        dec.stdout.close()
         dec.wait()
 
     if dec.returncode != 0:
@@ -119,26 +137,21 @@ def _flush(chunk, enc, people, ratio_for):
 
 
 def main(argv):
-    if len(argv) < 3:
-        sys.stderr.write(__doc__)
-        return 2
-    input_path, output_path = argv[1], argv[2]
-    target = None
-    strength = "普通"
-    if "--target" in argv:
-        i = argv.index("--target")
-        if i + 1 >= len(argv):
-            sys.stderr.write("[ERROR] --target には顔画像のパスを指定してください。\n")
-            return 2
-        target = argv[i + 1]
-    if "--strength" in argv:
-        i = argv.index("--strength")
-        if i + 1 >= len(argv) or argv[i + 1] not in STRENGTH:
-            sys.stderr.write(
-                f"[ERROR] --strength には {' / '.join(STRENGTH)} のいずれかを指定してください。\n"
-            )
-            return 2
-        strength = argv[i + 1]
+    parser = argparse.ArgumentParser(
+        prog="apply_mosaic_cli.py",
+        description="出来上がった動画に顔モザイクを焼く",
+    )
+    parser.add_argument("input_path", help="入力mp4")
+    parser.add_argument("output_path", help="出力mp4")
+    parser.add_argument("--target", help="他の人と強さを変えたい方の顔画像")
+    parser.add_argument("--strength", choices=list(STRENGTH), default="普通",
+                        help="--target の方に使う強さ")
+    try:
+        args = parser.parse_args(argv[1:])
+    except SystemExit as e:
+        return int(e.code or 2)
+    input_path, output_path = args.input_path, args.output_path
+    target, strength = args.target, args.strength
 
     if not os.path.exists(input_path):
         sys.stderr.write(f"[ERROR] 入力動画が見つかりません: {input_path}\n")

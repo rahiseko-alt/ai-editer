@@ -707,7 +707,7 @@ _c[240 : 240 + two.shape[0], 380 : 380 + two.shape[1]] = two
 cv2.imwrite(_plate, _c)
 _sp.run(_shlex.split(f'ffmpeg -y -loglevel error -loop 1 -i "{_plate}" -t 1 -r 10 '
                      f'-c:v libx264 -pix_fmt yuv420p "{_vid}"'), capture_output=True)
-_r = _sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+_r = _sp.run([sys.executable, os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
              capture_output=True, text=True)
 _written = sorted(n for n in os.listdir(_cli_dir) if n.startswith("face-") and n.endswith(".png"))
 check(
@@ -716,8 +716,9 @@ check(
     f"終了コード={_r.returncode} 書き出し={_written} {(_r.stderr or '')[-200:]}",
 )
 # 前回の候補が残って別人を選ばせないこと
-open(os.path.join(_cli_dir, "face-9.png"), "wb").write(b"stale")
-_sp.run(["python3", os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
+with open(os.path.join(_cli_dir, "face-9.png"), "wb") as _fh:
+    _fh.write(b"stale")
+_sp.run([sys.executable, os.path.join(PKG, "src", "face_choices.py"), _vid, _cli_dir, "--seconds", "1"],
         capture_output=True, text=True)
 check(
     "M-4-D: 前回の候補画像が残らない（古い候補で別人を選ばせない）",
@@ -780,6 +781,7 @@ for base in range(0, BENCH_FPS * BENCH_SECONDS, BENCH_CHUNK):
     for f in plain:  # モザイク無しでも、コマを一通り触る費用は同じだけ掛かる
         f[0, 0, 0] = f[0, 0, 0]
     elapsed_without += time.time() - t0
+    del plain  # 次の測定と同時に抱えると1080pで約1.9GBになる
 
     t0 = time.time()
     withm = [bench_frame(base + k) for k in range(n_this)]
@@ -875,7 +877,7 @@ check("M-4-F: 素材動画には素顔が写っている（前提の確認）",
 
 out_video = os.path.join(tmp_dir, "out.mp4")
 run_cli = subprocess.run(
-    [sys.executable if False else "python3", CLI, src_video, out_video],
+    [sys.executable, CLI, src_video, out_video],
     capture_output=True, text=True)
 after_total, after_leak = faces_in_video(out_video) if os.path.exists(out_video) else (0, 0)
 check(
@@ -903,18 +905,17 @@ def block_variety(path, box):
 target_img = os.path.join(FIXTURES, "face-one-alt.png")
 strong_out = os.path.join(tmp_dir, "strong.mp4")
 weak_out = os.path.join(tmp_dir, "weak.mp4")
-r1 = subprocess.run(["python3", CLI, src_video, strong_out, "--target", target_img,
+r1 = subprocess.run([sys.executable, CLI, src_video, strong_out, "--target", target_img,
                      "--strength", "強め"], capture_output=True, text=True)
-r2 = subprocess.run(["python3", CLI, src_video, weak_out, "--target", target_img,
+r2 = subprocess.run([sys.executable, CLI, src_video, weak_out, "--target", target_img,
                      "--strength", "弱め"], capture_output=True, text=True)
 target_box = sorted(detect_faces(big_canvas, create_detector(1280, 720)), key=lambda b: b[0])[0]
+n_strong_v = block_variety(strong_out, target_box) if os.path.exists(strong_out) else -1
+n_weak_v = block_variety(weak_out, target_box) if os.path.exists(weak_out) else -1
 check(
     "M-4-G: 対象者の指定を変えると、出力動画の同じ顔の隠れ方が変わる",
-    r1.returncode == 0 and r2.returncode == 0
-    and block_variety(strong_out, target_box) < block_variety(weak_out, target_box),
-    f"強め={block_variety(strong_out, target_box) if os.path.exists(strong_out) else 'n/a'} / "
-    f"弱め={block_variety(weak_out, target_box) if os.path.exists(weak_out) else 'n/a'} "
-    f"{(r1.stderr or r2.stderr or '')[-200:]}",
+    r1.returncode == 0 and r2.returncode == 0 and 0 <= n_strong_v < n_weak_v,
+    f"強め={n_strong_v} / 弱め={n_weak_v} {(r1.stderr or r2.stderr or '')[-200:]}",
 )
 
 check(
@@ -924,6 +925,13 @@ check(
 check(
     "M-4-G: レンダリング後にモザイクを焼く手順が手順書に書かれている",
     "apply_mosaic_cli.py" in skill and "省略禁止" in skill,
+)
+check(
+    # 手順7.5でモザイクを焼いても、納品の手順が元ファイルを指していたら素顔が客に渡る。
+    # 実際にそうなっていたので、再発しないよう固定する。
+    "M-4-G: 納品の手順がモザイク版のファイルを指している（素顔を納品しない）",
+    "-mosaic.mp4\" \"output" in skill or "short-01-mosaic.mp4" in skill.split("### 9.")[-1],
+    "手順9でモザイク版(-mosaic.mp4)をコピーする記述が見つかりません",
 )
 
 shutil.rmtree(tmp_dir, ignore_errors=True)
