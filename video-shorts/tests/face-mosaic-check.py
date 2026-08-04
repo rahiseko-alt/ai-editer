@@ -761,5 +761,116 @@ check(
 )
 
 
+# ================================================================ M-4-F / M-4-G
+# 選んだ設定が、実際に出来上がる動画に反映されるか。
+# 「設定は聞かれたのに出来た動画には掛かっていない」を防ぐ葉なので、
+# 関数呼び出しではなく **実際に動画ファイルを作って顔検出を掛け直す** ところまで見る。
+
+import shlex  # noqa: E402
+
+CLI = os.path.join(PKG, "src", "apply_mosaic_cli.py")
+tmp_dir = os.path.join(FIXTURES, "..", "_render_tmp")
+shutil.rmtree(tmp_dir, ignore_errors=True)
+os.makedirs(tmp_dir, exist_ok=True)
+
+# 2人が写った短い動画を素材として作る（ffmpeg は CI にも入っている）
+src_video = os.path.join(tmp_dir, "src.mp4")
+plate = os.path.join(tmp_dir, "plate.png")
+big_canvas = np.full((720, 1280, 3), (64, 48, 32), np.uint8)
+big_canvas[240 : 240 + two.shape[0], 380 : 380 + two.shape[1]] = two
+cv2.imwrite(plate, big_canvas)
+make = subprocess.run(
+    shlex.split(f'ffmpeg -y -loglevel error -loop 1 -i "{plate}" -t 1 -r 15 '
+                f'-c:v libx264 -pix_fmt yuv420p "{src_video}"'),
+    capture_output=True, text=True,
+)
+check("M-4-F: 検証用の素材動画を作れる（前提の確認）",
+      make.returncode == 0 and os.path.exists(src_video),
+      (make.stderr or "")[-200:])
+
+
+def faces_in_video(path):
+    """動画を実際にデコードし直し、素顔が残っているコマ数を数える。"""
+    probe = subprocess.run(
+        shlex.split(f'ffprobe -v error -select_streams v:0 -show_entries stream=width,height '
+                    f'-of csv=p=0 "{path}"'), capture_output=True, text=True)
+    w, h = [int(v) for v in probe.stdout.strip().split(",")[:2]]
+    proc = subprocess.Popen(
+        shlex.split(f'ffmpeg -v error -i "{path}" -f rawvideo -pix_fmt bgr24 -'),
+        stdout=subprocess.PIPE, bufsize=w * h * 3 * 4)
+    d = create_detector(w, h)
+    total = leaked = 0
+    while True:
+        buf = proc.stdout.read(w * h * 3)
+        if len(buf) < w * h * 3:
+            break
+        total += 1
+        if detect_faces(np.frombuffer(buf, np.uint8).reshape(h, w, 3), d):
+            leaked += 1
+    proc.wait()
+    return total, leaked
+
+
+before_total, before_leak = faces_in_video(src_video)
+check("M-4-F: 素材動画には素顔が写っている（前提の確認）",
+      before_total > 0 and before_leak == before_total,
+      f"{before_leak}/{before_total} コマで顔を検出")
+
+out_video = os.path.join(tmp_dir, "out.mp4")
+run_cli = subprocess.run(
+    [sys.executable if False else "python3", CLI, src_video, out_video],
+    capture_output=True, text=True)
+after_total, after_leak = faces_in_video(out_video) if os.path.exists(out_video) else (0, 0)
+check(
+    # ここが緑にならない＝設定を聞いたのに素顔のまま納品される、ということ
+    "M-4-F: モザイクを有効にしてレンダリングすると、出力動画の顔が隠れている",
+    run_cli.returncode == 0 and after_total == before_total and after_leak == 0,
+    f"終了コード={run_cli.returncode} 出力{after_leak}/{after_total}コマで素顔検出 "
+    f"{(run_cli.stderr or '')[-200:]}",
+)
+
+# ---------------------------------------------------------------- M-4-G
+def block_variety(path, box):
+    """出力動画の1コマ目について、指定領域の色の種類数を返す（粗いほど少ない）。"""
+    proc = subprocess.Popen(
+        shlex.split(f'ffmpeg -v error -i "{path}" -frames:v 1 -f rawvideo -pix_fmt bgr24 -'),
+        stdout=subprocess.PIPE)
+    buf = proc.stdout.read(1280 * 720 * 3)
+    proc.wait()
+    frame = np.frombuffer(buf, np.uint8).reshape(720, 1280, 3)
+    x, y, w2, h2 = [int(v) for v in box]
+    roi = frame[y : y + h2, x : x + w2]
+    return len(np.unique(roi.reshape(-1, 3), axis=0))
+
+
+target_img = os.path.join(FIXTURES, "face-one-alt.png")
+strong_out = os.path.join(tmp_dir, "strong.mp4")
+weak_out = os.path.join(tmp_dir, "weak.mp4")
+r1 = subprocess.run(["python3", CLI, src_video, strong_out, "--target", target_img,
+                     "--strength", "強め"], capture_output=True, text=True)
+r2 = subprocess.run(["python3", CLI, src_video, weak_out, "--target", target_img,
+                     "--strength", "弱め"], capture_output=True, text=True)
+target_box = sorted(detect_faces(big_canvas, create_detector(1280, 720)), key=lambda b: b[0])[0]
+check(
+    "M-4-G: 対象者の指定を変えると、出力動画の同じ顔の隠れ方が変わる",
+    r1.returncode == 0 and r2.returncode == 0
+    and block_variety(strong_out, target_box) < block_variety(weak_out, target_box),
+    f"強め={block_variety(strong_out, target_box) if os.path.exists(strong_out) else 'n/a'} / "
+    f"弱め={block_variety(weak_out, target_box) if os.path.exists(weak_out) else 'n/a'} "
+    f"{(r1.stderr or r2.stderr or '')[-200:]}",
+)
+
+check(
+    "M-4-G: モザイクを焼く入口が配布物に含まれる",
+    os.path.exists(os.path.join(DIST, "src", "apply_mosaic_cli.py")),
+)
+check(
+    "M-4-G: レンダリング後にモザイクを焼く手順が手順書に書かれている",
+    "apply_mosaic_cli.py" in skill and "省略禁止" in skill,
+)
+
+shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
 sys.exit(1 if failed else 0)
