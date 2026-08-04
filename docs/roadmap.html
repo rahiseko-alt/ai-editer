@@ -968,7 +968,7 @@
                     {
                       "text": "顔が写った固定テスト素材を処理すると、写っている人数と同じ数の顔位置が返る",
                       "verify": "既知の人数の顔を含む固定テスト素材で顔検出を実行し、検出数が期待値と一致することをテストで確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30875193419"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 },
@@ -983,7 +983,7 @@
                     {
                       "text": "顔が移動する固定テスト動画で、全フレームの隠し枠が実際の顔位置に重なっている",
                       "verify": "顔が移動する固定テスト動画を処理し、全フレームで隠し枠と実際の顔位置の重なり(IoU)が0.5以上であることをテストで確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30875193419"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 },
@@ -997,7 +997,7 @@
                     {
                       "text": "顔検出が途切れたコマでも、直前の位置で隠しが継続する",
                       "verify": "検出結果を人為的に欠落させた入力で処理し、欠落コマにも隠し枠が出力されることをテストで確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30875193419"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 },
@@ -1012,7 +1012,7 @@
                     {
                       "text": "出力動画の顔部分を顔検出器にかけても顔として検出されない",
                       "verify": "出力動画に対して顔検出を再実行し、検出数が0であることをテストで確認する",
-                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30875193419"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 }
@@ -1030,12 +1030,12 @@
                   "kind": "state",
                   "theme": "登録した人と同じ人を見分けられる",
                   "meaning": "隠したい人を取り逃さない",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "同一人物の別々の写真どうしの類似度が判定閾値以上になる",
                       "verify": "同一人物の異なる2枚を照合し、コサイン類似度が閾値(0.363)以上であることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 },
@@ -1044,12 +1044,12 @@
                   "kind": "state",
                   "theme": "別の人を登録した人と取り違えない",
                   "meaning": "関係ない人が対象者と誤判定されない",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "別人どうしの類似度が判定閾値未満になる",
                       "verify": "別人の組み合わせを照合し、コサイン類似度が閾値(0.363)未満であることをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 },
@@ -1058,12 +1058,12 @@
                   "kind": "state",
                   "theme": "人によって隠す粗さが実際に変わる",
                   "meaning": "設定した強さの違いが、出来た動画にちゃんと出ている",
-                  "status": "todo",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "1つの出力フレーム内で、登録した人と他の人の隠しの粗さが指定どおり異なる",
                       "verify": "2人が写る固定テスト動画を粒度違いの設定で処理し、出力フレームの各顔領域の実ブロックサイズが指定値と一致することをテストで確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/30876998631"
                     }
                   ]
                 }
