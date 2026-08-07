@@ -846,13 +846,13 @@
                   "kind": "state",
                   "theme": "記号を含むフォルダ名の動画でも、字幕がちゃんと焼き込まれる",
                   "meaning": "フォルダ名に「'」や「\\」が入っているだけで字幕付き動画の生成に失敗する、が起きない",
-                  "detail": "実測(2026-08-07 ffmpeg 6.1.1)では ' \\ = の3種が失敗し、うち = は本作業で新たに判明した。: は旧実装でも通っていた。tests/render-escape-check.mjs は「ffmpegが正常終了した」だけでなく「字幕なしで焼いた同一フレームと画が異なる」ことまで確認する(字幕が黙って無視される形の退行はコード0で素通りするため)。修正前のコードに対して4件FAILすることを確認済み＝落ちるテストである。",
-                  "status": "doing",
+                  "detail": "実測(2026-08-07 ffmpeg 6.1.1)では ' \\ = の3種が失敗し、うち = は本作業で新たに判明した。: は旧実装でも通っていた。tests/render-escape-check.mjs は「ffmpegが正常終了した」だけでなく「字幕なしで焼いた同一フレームと画が異なる」ことまで確認する(字幕が黙って無視される形の退行はコード0で素通りするため)。修正前のコードに対して4件FAILすることを確認済み＝落ちるテストである。\n\nevidence の run(commit c48a9ff)では7ケース×3項目が全PASSし、各ケースで「字幕が実際に焼き込まれている(基準フレームと差がある)」を確認した。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "コロン/引用符/バックスラッシュ/等号/空白を含むパスの.assを実ffmpegへ渡し、字幕が実際に焼き込まれた動画が生成される",
                       "verify": "ffmpeg導入環境(CI)で tests/render-escape-check.mjs が全PASSすることを、その run URL で確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31228104832/job/93026330787"
                     }
                   ]
                 },
@@ -861,7 +861,7 @@
                   "kind": "state",
                   "theme": "静的解析が指摘していたエスケープ漏れの警告が出なくなっている",
                   "meaning": "「文字列の組み立てが甘い」と機械に指摘された箇所が残っていない",
-                  "detail": "2026-07-28のPR#9でCodeQLが escapeFilterPath に Incomplete string escaping(高深刻度・バックスラッシュ文字をエスケープしていない)を検出していた。本修正で \\ を含む全特殊文字をエスケープ対象にしたため解消する見込みだが、判定は .github/workflows/codeql.yml の実行結果に委ねる。",
+                  "detail": "2026-07-28のPR#9でCodeQLが escapeFilterPath に Incomplete string escaping(高深刻度・バックスラッシュ文字をエスケープしていない)を検出していた。本修正で \\ を含む全特殊文字をエスケープ対象にしたため解消する見込み。\n\n【未確定・人手の確認待ち】PR#41でCodeQL workflow(run 31228104828)とPR上の\"CodeQL\"チェックはいずれもsuccessだが、これは「アラート一覧に該当項目が無い」ことを直接示すものではない(チェックの失敗閾値の設定に依存する)。code scanning alerts API はこのセッションの権限では403で読めず、機械的に確認できなかった。Security → Code scanning の画面で当該アラートがClosedになっていることを人が確認してから done にする。「たぶん直った」で自己採点しない。",
                   "status": "doing",
                   "criteria": [
                     {
