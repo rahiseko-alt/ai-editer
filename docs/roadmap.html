@@ -118,12 +118,12 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-TESTINFRA-ESCAPEPATH",
-    "next": "G-TESTINFRA-ESCAPEPATH(パスにアポストロフィが入ると字幕焼き込みが失敗する)を直す。ffmpeg が使えるようになり実機で再現済み。続けて G-TESTINFRA-RENDERCHECK(レンダリング実機検証をCIへ)と P0-5-A(実出力解像度の一致)も、同じ足かせが外れたので閉じられる。その後 P1-10・P1-11・P1-12。",
+    "next": "G-TESTINFRA-RENDERCHECK(レンダリング実機検証をCIへ)と P0-5-A(実出力解像度の一致)。どちらも ffmpeg が無いことだけを理由に止めていた項目で、足かせは既に外れている。その後 P1-10・P1-11・P1-12。",
     "handoff": {
-      "done": "顔モザイク(G-MOSAIC)を完了し、続けて軽い配布物(G-SLIM)を追加した。あわせて普通の編集経路を実機で通しで確認し、未検証だった不具合を1件再現させた。詳細は各ノードの detail を参照。",
-      "trouble": "ffmpeg が使えるようになった結果、「ffmpeg が無いので検証待ち」として止めていた項目が3つとも検証可能になっていたが、足かせが外れたことに自分では気づいていなかった(マスターの質問がきっかけで判明)。教訓は docs/failures.md 2026-08-04 を参照。"
+      "done": "字幕パスのエスケープ不具合(G-TESTINFRA-ESCAPEPATH)を実機で再現させて直し、退行を捕まえる実機テストを pnpm test に組み込んだ。当初の原因の見立てが実測で誤りだった点を含め、詳細は同ノードの detail を参照。あわせて製品の仕組み解説資料(docs/product-mechanism.md)を追加した。",
+      "trouble": "無し"
     },
-    "updated": "2026-08-04"
+    "updated": "2026-08-07"
   },
   "nodes": [
     {
@@ -839,13 +839,37 @@
               "kind": "state",
               "theme": "動画パスにコロン/引用符が含まれても、レンダリング用フィルタ文字列が壊れない",
               "meaning": "特殊な文字を含むファイル名(Windowsのドライブレター等)でも字幕焼き込みが正しく動く",
-              "detail": "src/render-vertical.mjs の escapeFilterPath(コロンを\\:へ、引用符を'\\''へ置換)に対し、2026-07-28のPR#9でCodeQLが「バックスラッシュ文字をエスケープしていない」(高深刻度)を検出。値は呼出側で既に単一引用符ラップ(ass='...')されており、ffmpegの引用符内エスケープ規則では単一引用符以外は特殊扱いされないため、コロンのエスケープ(\\:の付与)自体が不要かつ有害(パスへ余計なバックスラッシュを混入させ得る)である疑いがある。ただしこのサンドボックスにはffmpegを導入できず(ミラー404)、実機で挙動を確認できないため、推測で書き換えず検証待ちのまま残す。",
-              "status": "todo",
-              "criteria": [
+              "detail": "旧criteriaは「字幕焼き込みが壊れない」と「CodeQLアラートが解消している」の2つの受入事実を1葉に同居させていた(独立して落ちうる＝原子ではない)ため、2026-08-07にAとBへ分割した。判定基準そのものは緩めておらず、両方を満たすことを引き続き要求する。\n\n2026-08-07に実機(ffmpeg 6.1.1)で再現・修正済み。当初の推測「コロンのエスケープが不要かつ有害」は実測で誤りだった(コロンは旧実装でも正常に通る)。真因はffmpegがフィルタのオプション値を2段階(filtergraph解析→フィルタ自身のオプション解析)で解釈するのに、旧実装が1段分しかエスケープしていなかったこと。呼出側の単一引用符は第1段で取り除かれるため、第2段には裸の文字列が渡り、' が引用符の開始と誤認されて落ちていた。あわせて旧実装は全プラットフォームで \\ を / へ置換しており、POSIXでは \\ を含むファイル名が別パスに化けていた(win32のみに限定)。",
+              "children": [
                 {
-                  "text": "コロン/引用符/バックスラッシュを含む素材パスでffmpegへ実際に渡し、字幕焼き込みが壊れず、CodeQLのIncomplete string escapingアラートが解消していることを確認する",
-                  "verify": "ffmpeg導入環境(CI等)でコロン/引用符を含むファイル名の素材からrenderClipを実行しMP4が正しく生成されることを確認し、かつ該当CodeQLアラートがPRで再検出されないことを確認する",
-                  "evidence": ""
+                  "id": "G-TESTINFRA-ESCAPEPATH-A",
+                  "kind": "state",
+                  "theme": "記号を含むフォルダ名の動画でも、字幕がちゃんと焼き込まれる",
+                  "meaning": "フォルダ名に「'」や「\\」が入っているだけで字幕付き動画の生成に失敗する、が起きない",
+                  "detail": "実測(2026-08-07 ffmpeg 6.1.1)では ' \\ = の3種が失敗し、うち = は本作業で新たに判明した。: は旧実装でも通っていた。tests/render-escape-check.mjs は「ffmpegが正常終了した」だけでなく「字幕なしで焼いた同一フレームと画が異なる」ことまで確認する(字幕が黙って無視される形の退行はコード0で素通りするため)。修正前のコードに対して4件FAILすることを確認済み＝落ちるテストである。\n\nevidence の run(commit c48a9ff)では7ケース×3項目が全PASSし、各ケースで「字幕が実際に焼き込まれている(基準フレームと差がある)」を確認した。",
+                  "status": "done",
+                  "criteria": [
+                    {
+                      "text": "コロン/引用符/バックスラッシュ/等号/空白を含むパスの.assを実ffmpegへ渡し、字幕が実際に焼き込まれた動画が生成される",
+                      "verify": "ffmpeg導入環境(CI)で tests/render-escape-check.mjs が全PASSすることを、その run URL で確認する",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31228104832/job/93026330787"
+                    }
+                  ]
+                },
+                {
+                  "id": "G-TESTINFRA-ESCAPEPATH-B",
+                  "kind": "state",
+                  "theme": "静的解析が指摘していたエスケープ漏れの警告が出なくなっている",
+                  "meaning": "「文字列の組み立てが甘い」と機械に指摘された箇所が残っていない",
+                  "detail": "2026-07-28のPR#9でCodeQLが escapeFilterPath に Incomplete string escaping(高深刻度・バックスラッシュ文字をエスケープしていない)を検出していた。本修正で \\ を含む全特殊文字をエスケープ対象にしたため解消する見込み。\n\n【未確定・人手の確認待ち】PR#41でCodeQL workflow(run 31228104828)とPR上の\"CodeQL\"チェックはいずれもsuccessだが、これは「アラート一覧に該当項目が無い」ことを直接示すものではない(チェックの失敗閾値の設定に依存する)。code scanning alerts API はこのセッションの権限では403で読めず、機械的に確認できなかった。Security → Code scanning の画面で当該アラートがClosedになっていることを人が確認してから done にする。「たぶん直った」で自己採点しない。",
+                  "status": "doing",
+                  "criteria": [
+                    {
+                      "text": "escapeFilterPath に対する CodeQL の Incomplete string escaping アラートが再検出されない",
+                      "verify": "本変更を含むPRのCodeQL workflow run で該当アラートが出ていないことを、その run URL で確認する",
+                      "evidence": ""
+                    }
+                  ]
                 }
               ]
             }
