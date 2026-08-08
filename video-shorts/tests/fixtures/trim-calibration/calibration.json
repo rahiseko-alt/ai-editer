@@ -1,0 +1,111 @@
+{
+  "_readme": "G-EDIT-TRIM-B のしきい値校正に使う凍結済み素材。ここに列挙した音声・区間以外を校正に使ってはならない（分離しやすい区間を後から選べると、しきい値も合否も自分に有利にできるため）。",
+  "audio": {
+    "file": "calibration.flac",
+    "sha256": "edb077722b770d109d2568e0f0332ae5af42efa5625dd4ffc39ad51513fec800",
+    "sample_rate": 22050,
+    "channels": 1,
+    "duration_sec": 11.903,
+    "codec": "flac(可逆。再エンコード前の基準音として使う)"
+  },
+  "generated_by": {
+    "tool": "espeak-ng 1.51",
+    "voice": "ja",
+    "speed": 150,
+    "note": "各語を個別に合成し、語間に0.5秒の無音を挟んで設計時刻へ配置した。区間は推定値ではなく設計値。"
+  },
+  "segments": [
+    {
+      "index": 0,
+      "kind": "filler",
+      "text": "えーと",
+      "start": 0.0,
+      "end": 0.813
+    },
+    {
+      "index": 1,
+      "kind": "word",
+      "text": "こんにちは",
+      "start": 1.313,
+      "end": 2.571
+    },
+    {
+      "index": 2,
+      "kind": "filler",
+      "text": "あのー",
+      "start": 3.071,
+      "end": 3.858
+    },
+    {
+      "index": 3,
+      "kind": "word",
+      "text": "ありがとう",
+      "start": 4.358,
+      "end": 5.415
+    },
+    {
+      "index": 4,
+      "kind": "filler",
+      "text": "えーと",
+      "start": 5.915,
+      "end": 6.728
+    },
+    {
+      "index": 5,
+      "kind": "word",
+      "text": "よろしく",
+      "start": 7.228,
+      "end": 8.358
+    },
+    {
+      "index": 6,
+      "kind": "filler",
+      "text": "あのー",
+      "start": 8.858,
+      "end": 9.645
+    },
+    {
+      "index": 7,
+      "kind": "word",
+      "text": "こんにちは",
+      "start": 10.145,
+      "end": 11.403
+    }
+  ],
+  "identity_pairs_for_i": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "different_word_pairs_for_ii": [
+    [
+      1,
+      3
+    ],
+    [
+      1,
+      5
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      3
+    ],
+    [
+      2,
+      5
+    ]
+  ]
+}

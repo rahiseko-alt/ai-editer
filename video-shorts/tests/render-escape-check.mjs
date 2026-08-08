@@ -30,15 +30,37 @@ const WORDS = [
 const ASS_BODY = buildAss(WORDS, "PATH ESCAPE", 2.0);
 
 // 検証するパス。ffmpeg のフィルタ解析で意味を持つ文字を、単独と複合の両方で通す。
-const CASES = [
-  { label: "通常のパス", dir: "plain" },
-  { label: "アポストロフィ '", dir: "it's dir" },
-  { label: "コロン :", dir: "co:lon" },
-  { label: "バックスラッシュ \\", dir: "back\\slash" },
-  { label: "等号 =", dir: "eq=ual" },
-  { label: "カンマ , と角括弧 []", dir: "comma,[bracket]" },
-  { label: "複合 ' : \\ = 空白", dir: "a'b:c\\d=e f" },
+// dir は path.join に渡すセグメントの配列。
+// env FORCE_WIN_CASES=1 で Windows 用のケース集合を他OSでも走らせる（形状の動作確認用）。
+// Windows 実機の禁止文字の扱いまでは再現しないので、これは Windows 検証の代用にはならない。
+const WIN = process.env.FORCE_WIN_CASES === "1" || process.platform === "win32";
+
+// どのプラットフォームでもディレクトリ名に使える文字。
+const COMMON_CASES = [
+  { label: "通常のパス", segs: ["plain"] },
+  { label: "アポストロフィ '", segs: ["it's dir"] },
+  { label: "等号 =", segs: ["eq=ual"] },
+  { label: "カンマ , と角括弧 []", segs: ["comma,[bracket]"] },
 ];
+
+// : と \ は POSIX ではファイル名の正当な1文字なので、そのまま名前に入れて検証する。
+const POSIX_ONLY_CASES = [
+  { label: "コロン :", segs: ["co:lon"] },
+  { label: "バックスラッシュ \\", segs: ["back\\slash"] },
+  { label: "複合 ' : \\ = 空白", segs: ["a'b:c\\d=e f"] },
+];
+
+// Windows では : は禁止文字・\ は区切り文字なので、ディレクトリ名には入れられない
+// （mkdirSync が renderClip に到達する前に落ちる）。ただし Windows の絶対パスは
+// 必ずドライブレターの : と区切りの \ を含むため、ネストしたディレクトリにすれば
+// path.join が \ を挟み、同じ2文字がエスケープ対象として実パスに現れる。
+// ＝名前の付け方は違うが、検証している文字は POSIX 版と同じ。
+const WIN_ONLY_CASES = [
+  { label: "ドライブレターの : とパス区切りの \\（ネスト）", segs: ["nested", "dir"] },
+  { label: "複合 ' = 空白 + ドライブレター/区切り", segs: ["a'b=c d", "sub"] },
+];
+
+const CASES = [...COMMON_CASES, ...(WIN ? WIN_ONLY_CASES : POSIX_ONLY_CASES)];
 
 let fail = 0;
 const check = (cond, msg) => {
@@ -87,8 +109,14 @@ async function main() {
   const baseFrame = await grabFrame(baseOut, 0.5);
   check(baseFrame.length > 0, "字幕なしの基準フレームを取得した");
 
+  // どちらのケース集合を走らせたかを明示する（Windows で走らせた結果を見た人が、
+  // POSIX 固有のケースまで通ったと誤読しないようにする）。
+  console.log(
+    `[INFO] platform=${process.platform} → ${WIN ? "Windows" : "POSIX"} 用のパスケースを実行します（${CASES.length} 件）`
+  );
+
   for (const c of CASES) {
-    const dir = path.join(WORK, "cases", c.dir);
+    const dir = path.join(WORK, "cases", ...c.segs);
     fs.mkdirSync(dir, { recursive: true });
     const assPath = path.join(dir, "sub.ass");
     fs.writeFileSync(assPath, ASS_BODY, "utf-8");
