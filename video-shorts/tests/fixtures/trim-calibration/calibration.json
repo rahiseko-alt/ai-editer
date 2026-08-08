@@ -1,5 +1,5 @@
 {
-  "_readme": "G-EDIT-TRIM-B のしきい値校正に使う凍結済み素材。ここに列挙した音声・区間以外を校正に使ってはならない（分離しやすい区間を後から選べると、しきい値も合否も自分に有利にできるため）。",
+  "_readme": "G-EDIT-TRIM-B のしきい値校正に使う凍結済み素材。ここに列挙した音声・区間以外を校正に使ってはならない（分離しやすい区間を後から選べると、しきい値も合否も自分に有利にできるため）。 区間の切り出しは start/end の秒数ではなく start_sample/end_sample の整数サンプル境界を使うこと(秒数のままだと丸め規則が検証器ごとに変わり、校正距離としきい値が動くため)。",
   "audio": {
     "file": "calibration.flac",
     "sha256": "edb077722b770d109d2568e0f0332ae5af42efa5625dd4ffc39ad51513fec800",
@@ -20,56 +20,72 @@
       "kind": "filler",
       "text": "えーと",
       "start": 0.0,
-      "end": 0.813
+      "end": 0.813,
+      "start_sample": 0,
+      "end_sample": 17927
     },
     {
       "index": 1,
       "kind": "word",
       "text": "こんにちは",
       "start": 1.313,
-      "end": 2.571
+      "end": 2.571,
+      "start_sample": 28952,
+      "end_sample": 56691
     },
     {
       "index": 2,
       "kind": "filler",
       "text": "あのー",
       "start": 3.071,
-      "end": 3.858
+      "end": 3.858,
+      "start_sample": 67716,
+      "end_sample": 85069
     },
     {
       "index": 3,
       "kind": "word",
       "text": "ありがとう",
       "start": 4.358,
-      "end": 5.415
+      "end": 5.415,
+      "start_sample": 96094,
+      "end_sample": 119401
     },
     {
       "index": 4,
       "kind": "filler",
       "text": "えーと",
       "start": 5.915,
-      "end": 6.728
+      "end": 6.728,
+      "start_sample": 130426,
+      "end_sample": 148352
     },
     {
       "index": 5,
       "kind": "word",
       "text": "よろしく",
       "start": 7.228,
-      "end": 8.358
+      "end": 8.358,
+      "start_sample": 159377,
+      "end_sample": 184294
     },
     {
       "index": 6,
       "kind": "filler",
       "text": "あのー",
       "start": 8.858,
-      "end": 9.645
+      "end": 9.645,
+      "start_sample": 195319,
+      "end_sample": 212672
     },
     {
       "index": 7,
       "kind": "word",
       "text": "こんにちは",
       "start": 10.145,
-      "end": 11.403
+      "end": 11.403,
+      "start_sample": 223697,
+      "end_sample": 251436
     }
   ],
   "identity_pairs_for_i": [
@@ -107,5 +123,6 @@
       2,
       5
     ]
-  ]
+  ],
+  "sample_boundary_rule": "start_sample = round(start * sample_rate) / end_sample = round(end * sample_rate)。検証器はこの整数値だけを用いる。"
 }
