@@ -74,6 +74,13 @@ MARKER_BITS = 16
 # 実クリップ(話題ごとで数分、ダイジェストは既定3分)は必ずこの区切りを超えるので、
 # 短い素材だけで測ると「納品物が実際に通る道」を一度も測らないことになる。
 I_FRAMES = apply_mosaic_cli.CHUNK_FRAMES + apply_mosaic_cli.LOOKAHEAD_FRAMES + 34
+# 素材R-P（縦型 9:16）。画面の既定は 9:16 で、この製品の主力もこちら。
+# render-vertical.mjs は 1280x720 を scale=1080:1920:force_original_aspect_ratio=decrease で
+# 1080x607 へ縮めて上下に黒帯を足すので、顔の高さは 216px → 182px（画面の9.5%）になる。
+# 横型より検出の取りこぼし側に寄る独立の条件なので、別に測る。
+PW, PH = 1080, 1920
+P_INNER_H = 607                 # 1280x720 を幅1080に合わせたときの高さ
+P_PAD = (PH - P_INNER_H) // 2   # 上下の黒帯
 
 fail = 0
 
@@ -149,6 +156,24 @@ def build_material_r(path, audio=False, markers=False, frames=None):
     p.stdin.close()
     if p.wait() != 0:
         raise RuntimeError(f"素材Rの書き出しに失敗しました: {path}")
+    return frame
+
+
+def build_material_p(path):
+    """素材R-P を合成する。素材Rの絵を 1080x607 へ縮め、1080x1920 の中央に黒帯で挟む。"""
+    inner = cv2.resize(compose_frame(), (PW, P_INNER_H), interpolation=cv2.INTER_AREA)
+    frame = np.zeros((PH, PW, 3), dtype=np.uint8)
+    frame[P_PAD:P_PAD + P_INNER_H] = inner
+    p = subprocess.Popen(
+        ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
+         "-s", f"{PW}x{PH}", "-r", str(FPS), "-i", "-",
+         "-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path],
+        stdin=subprocess.PIPE)
+    for _ in range(FRAMES):
+        p.stdin.write(frame.tobytes())
+    p.stdin.close()
+    if p.wait() != 0:
+        raise RuntimeError(f"素材R-Pの書き出しに失敗しました: {path}")
     return frame
 
 
@@ -493,6 +518,15 @@ def main():
                 swapped[10], swapped[11] = swapped[11], swapped[10]
             check(swapped != list(range(I_FRAMES)),
                   "対照I: 隣り合う2コマが入れ替わった列なら、この判定は落ちる")
+            # 葉A を、区切りをまたぐ長さでも測る。素材TV(179コマ)も素材R(30コマ)も
+            # 区切り(300)+先読み(6) に届かないため、区切りの手前だけ顔を隠さない実装でも
+            # 素顔が0件と出てしまう（実測: 340コマ中300コマに素顔が写るのに全項目が緑だった）。
+            i_frames = read_frames(i_out)
+            i_hit = sum(1 for n in faces_per_frame(i_frames, create_detector(W, H)) if n > 0)
+            check(i_hit == 0,
+                  f"A: 区切りをまたぐ長さ({I_FRAMES}コマ)でも素顔が検出されるコマが 0/{I_FRAMES}"
+                  f"（実={i_hit}）")
+
             i_vout, i_aout = probe_stream(i_out, "v:0"), probe_stream(i_out, "a:0")
             si, so = i_vin.get("start_time"), i_vout.get("start_time")
             check(si is not None and si == so,
@@ -502,6 +536,32 @@ def main():
                   f"I: 音の頭出し位置が入力と一致する（入力={ti} 出力={to}）")
         else:
             print("      " + (r4.stderr or "")[-800:])
+
+        # ── M: 既定の縦型(9:16)でも素顔が消える ────────────────
+        # 画面の既定は 9:16 で、この製品の主力もこちら。縦型は顔が小さくなる
+        # （画面高さの30%→9.5%）ぶん検出の取りこぼし側に寄るので、横型とは別に測る。
+        m_dir = os.path.join(work, "output", "job5")
+        os.makedirs(m_dir, exist_ok=True)
+        m_clip = os.path.join(m_dir, "p.mp4")
+        build_material_p(m_clip)
+        m_src = read_frames(m_clip)
+        p_det = create_detector(PW, PH)
+        m_before = sum(1 for n in faces_per_frame(m_src, p_det) if n > 0)
+        check(m_before == FRAMES,
+              f"対照M: 縦型でもモザイク無しなら素顔が {m_before}/{FRAMES} コマで検出できる")
+        json.dump({"id": "job5", "digest": None,
+                   "candidates": [{"file": "p.mp4", "path": m_clip}]},
+                  open(os.path.join(m_dir, "candidates.json"), "w", encoding="utf-8"))
+        r5 = subprocess.run(["node", STAGE_MJS, m_dir, os.path.join(work, "work", "job5", "pre-mosaic")],
+                            capture_output=True, text=True)
+        if check(r5.returncode == 0, "縦型の素材でもモザイク工程が正常終了する"):
+            m_after = read_frames(os.path.join(m_dir, "p-mosaic.mp4"))
+            m_hit = sum(1 for n in faces_per_frame(m_after, create_detector(PW, PH)) if n > 0)
+            check(m_hit == 0, f"M: 縦型(9:16)でも素顔が検出されるコマが 0/{FRAMES}（実={m_hit}）")
+            check(m_after and m_after[0].shape[:2] == (PH, PW),
+                  f"M: 縦型の解像度が入力と一致する（実={m_after[0].shape[:2] if m_after else None}）")
+        else:
+            print("      " + (r5.stderr or "")[-800:])
 
         # ── 途中で失敗したときに素顔と加工済みを混在させない ──
         # 1本ずつ確定する作りだと、2本目で失敗したとき「1本目＝加工済み／2本目＝素顔」が
@@ -522,13 +582,37 @@ def main():
         )
         r2 = subprocess.run(["node", STAGE_MJS, f_dir, os.path.join(work, "work", "job2", "pre-mosaic")],
                             capture_output=True, text=True)
-        check(r2.returncode != 0, "J: 途中で失敗したら工程全体が失敗として終わる")
+        check(r2.returncode != 0, "K: 途中で失敗したら工程全体が失敗として終わる")
         left2 = sorted(os.listdir(f_dir))
         masked_left = [n for n in left2 if n.endswith("-mosaic.mp4")]
         check(masked_left == [],
               f"J: 失敗時に作りかけのモザイク版が成果物フォルダに残らない（実={masked_left}）")
         check("a.mp4" in left2 and "b.mp4" in left2,
               f"J: 失敗時は素顔だけの状態に戻る＝素顔と加工済みが混在しない（実={left2}）")
+
+        # 第2段（素顔を退避する所）で失敗した場合も同じであること。
+        # 第1段だけを守っていると、退避の途中で落ちたときに
+        # 「1本目＝退避済み／2本目＝素顔と加工済みが両方」という混在が残る。
+        # 退避先に同名のフォルダを置いて、2本目の移動だけを必ず失敗させる。
+        j2_dir = os.path.join(work, "output", "job6")
+        os.makedirs(j2_dir, exist_ok=True)
+        for name in ("x.mp4", "y.mp4"):
+            build_material_r(os.path.join(j2_dir, name))
+        json.dump({"id": "job6", "digest": None,
+                   "candidates": [{"file": "x.mp4", "path": os.path.join(j2_dir, "x.mp4")},
+                                  {"file": "y.mp4", "path": os.path.join(j2_dir, "y.mp4")}]},
+                  open(os.path.join(j2_dir, "candidates.json"), "w", encoding="utf-8"))
+        j2_stash = os.path.join(work, "work", "job6", "pre-mosaic")
+        os.makedirs(os.path.join(j2_stash, "y.mp4"), exist_ok=True)   # 移動先を塞ぐ
+        with open(os.path.join(j2_stash, "y.mp4", "blocker"), "w") as f:
+            f.write("x")
+        r6 = subprocess.run(["node", STAGE_MJS, j2_dir, j2_stash], capture_output=True, text=True)
+        check(r6.returncode != 0, "K: 退避の途中で失敗しても工程全体が失敗として終わる")
+        left3 = sorted(os.listdir(j2_dir))
+        check([n for n in left3 if n.endswith("-mosaic.mp4")] == [],
+              f"J: 退避の途中で失敗しても、顔を隠した版が成果物フォルダに残らない（実={left3}）")
+        check("x.mp4" in left3 and "y.mp4" in left3,
+              f"J: 退避の途中で失敗しても、素顔は全部そろって成果物フォルダに戻る（実={left3}）")
 
     finally:
         shutil.rmtree(work, ignore_errors=True)

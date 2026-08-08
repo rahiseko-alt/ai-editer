@@ -109,14 +109,31 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
   }
 
   // ── 第2段: 全部そろったので確定する ────────────────────
-  fs.mkdirSync(stashDir, { recursive: true });
+  // ここも失敗しうる（退避先が作れない、ウイルス対策や権限でファイルが動かせない等）。
+  // 途中で落ちたまま放置すると「1本目＝退避済みで顔を隠した版だけ／2本目＝素顔と
+  // 顔を隠した版が両方」という混在が成果物フォルダに残る。第1段と同じく、
+  // 失敗したら素顔だけの状態へ戻す。
+  const moved = [];
   const next = { ...candidates, mosaic: true };
   const byKind = { clip: [], digest: null };
-  for (const m of made) {
-    fs.renameSync(m.src, path.join(stashDir, m.entry.file));
-    const updated = { ...m.entry, file: m.outName, path: m.dst };
-    if (m.kind === "digest") byKind.digest = updated;
-    else byKind.clip.push(updated);
+  try {
+    fs.mkdirSync(stashDir, { recursive: true });
+    for (const m of made) {
+      const stashed = path.join(stashDir, m.entry.file);
+      fs.renameSync(m.src, stashed);
+      moved.push({ from: stashed, to: m.src });
+      const updated = { ...m.entry, file: m.outName, path: m.dst };
+      if (m.kind === "digest") byKind.digest = updated;
+      else byKind.clip.push(updated);
+    }
+  } catch (e) {
+    for (const mv of moved) {
+      try { fs.renameSync(mv.from, mv.to); } catch (_) {}
+    }
+    for (const m of made) {
+      try { fs.rmSync(m.dst, { force: true }); } catch (_) {}
+    }
+    throw e;
   }
   next.candidates = byKind.clip;
   if (byKind.digest) next.digest = byKind.digest;
