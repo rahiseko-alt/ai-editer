@@ -1,5 +1,5 @@
 // server/pipeline-runner.mjs — ジョブごとの段階実行管理
-// transcribe → select(llm-request) → claude-select → render の流れを制御する。
+// transcribe → select(llm-request) → claude-select → render →（選ばれたときだけ）顔モザイク の流れを制御する。
 // 各 spawn の stderr を行単位で取得し SSE 購読者へ push する。
 // npm 依存ゼロ: Node 標準モジュールのみ。
 
@@ -8,9 +8,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
+import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
+const OUT_ROOT = path.join(ROOT, "output");
 const PIPELINE_MJS = path.join(ROOT, "pipeline.mjs");
 const TRANSCRIBE_PY = path.join(ROOT, "src", "transcribe.py");
 
@@ -369,6 +371,31 @@ async function runJob(jobId, inputAbsPath, opts) {
   state.stage = "rendered";
   writeState(workDir, state);
   broadcast(jobId, { stage: "r", status: "done" });
+
+  // ── Stage m: 顔モザイク（選ばれたときだけ） ──────────────────
+  // これまでモザイクは CLI 経路にしか無く、画面から使うと素顔のまま出ていた。
+  // 掛けたときは素顔のファイルを成果物フォルダの外へ退避する（納品はフォルダからの
+  // コピーなので、一覧から隠すだけでは「うっかり素顔を渡す」を防げない）。
+  if (opts.mosaic === "on") {
+    job.stage = "m";
+    broadcast(jobId, { stage: "m", status: "active", label: "顔にモザイクを掛けています" });
+
+    const outDir = path.join(OUT_ROOT, jobId);
+    const candPath = path.join(outDir, "candidates.json");
+    const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
+    const next = applyMosaicStage({
+      outDir,
+      stashDir: path.join(workDir, "pre-mosaic"),
+      candidates: cand,
+      onLog: (ln) => broadcast(jobId, { stage: "m", status: "active", log: ln }),
+    });
+    fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
+
+    state.stage = "mosaicked";
+    state.mosaic = "on";
+    writeState(workDir, state);
+    broadcast(jobId, { stage: "m", status: "done" });
+  }
 
   // ── 完了 ─────────────────────────────────────────────────────
   job.stage = "done";

@@ -368,6 +368,33 @@ t("parseJobParams: サポート内の値はそのまま通る", () => {
   assert.strictEqual(p.sub, "on");
 });
 
+// ---- G-EDIT-MOSAIC-UI: 画面のモザイク選択が設定として通る ----
+// 出来上がりの絵での判定は tests/mosaic-ui-check.py が行う。ここでは
+// 「画面で選んだ値がジョブ設定に載る／選ばなければ載らない」だけを見る。
+t("parseJobParams: モザイクは既定で none（顔を隠す必要がないお客様の使い方を変えない）", () => {
+  const p = parseJobParams(new URLSearchParams({}));
+  assert.strictEqual(p.mosaic, "none");
+});
+
+t("parseJobParams: mosaic=on はそのまま通る", () => {
+  const p = parseJobParams(new URLSearchParams({ mosaic: "on" }));
+  assert.strictEqual(p.mosaic, "on");
+});
+
+t("parseJobParams: サポート外のmosaicは none へ丸められる", () => {
+  const p = parseJobParams(new URLSearchParams({ mosaic: "yes" }));
+  assert.strictEqual(p.mosaic, "none");
+});
+
+t("UI: モザイクの選択肢が画面にあり、選んだ値が送信パラメータに載る", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(/data-group="mosaic"/.test(html), "モザイクのチップ群が画面にある");
+  assert.ok(/data-val="on"[^]*?data-group="mosaic"|data-group="mosaic"[^]*?data-val="on"/.test(html),
+    "「あり」の選択肢がある");
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "選んだ値が /api/jobs のパラメータに載る");
+});
+
 // ---- P0-5-B: レンダラー未実装の選択肢(1:1 / 4:5 / 本数で切る)がUIから除去されている ----
 
 t("webapp-mockup: UIに未実装の選択肢(1:1・4:5・本数で切る)が存在しない", () => {

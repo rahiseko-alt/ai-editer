@@ -4,7 +4,7 @@
 // サイズ選択→.video-area の px のみを変更（contain 計算）。枠は一切変更しない。
 
 const state = {
-  file: null, sub: "none",
+  file: null, sub: "none", mosaic: "none",
   cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
 };
@@ -52,6 +52,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     group.querySelectorAll(".chip").forEach((b) => b.classList.remove("is-on"));
     btn.classList.add("is-on"); state[g] = btn.dataset.val;
     if (g === "sub") updateSubDesc();
+    if (g === "mosaic") updateMosaicDesc();
     if (g === "cut") showCut();
     if (g === "size") updateVideoArea(btn);
     refresh();
@@ -128,6 +129,15 @@ function updateSubDesc() {
   const el = $("sub-desc");
   if (!el) return;
   el.textContent = state.sub === "on" ? "話した言葉を自動で字幕に焼き込みます。" : "字幕は付けません。";
+}
+function updateMosaicDesc() {
+  const el = $("mosaic-desc");
+  if (!el) return;
+  // 「あり」を選んだときは素顔のファイルが手元に残らないことも伝える。
+  // 残らないこと自体が事故防止の仕組みなので、黙って消すと不親切になる。
+  el.textContent = state.mosaic === "on"
+    ? "写り込んだ顔を自動で隠します。素顔のままの動画は書き出されません。"
+    : "写り込んだ顔はそのまま出ます。";
 }
 
 // ---- カット詳細の表示切替＋入力 ----
@@ -299,6 +309,7 @@ function run() {
 
   const params = new URLSearchParams({
     sub: state.sub,
+    mosaic: state.mosaic,
     cut: state.cut,
     size: state.size,
     name: state.file.name,
