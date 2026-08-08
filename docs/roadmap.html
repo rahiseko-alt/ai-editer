@@ -120,8 +120,8 @@
     "active": "G-TESTINFRA-ESCAPEPATH",
     "next": "G-TESTINFRA-RENDERCHECK(レンダリング実機検証をCIへ)と P0-5-A(実出力解像度の一致)。どちらも ffmpeg が無いことだけを理由に止めていた項目で、足かせは既に外れている。その後 P1-10・P1-11・P1-12。",
     "handoff": {
-      "done": "字幕パスのエスケープ不具合(G-TESTINFRA-ESCAPEPATH)を実機で再現させて直し、退行を捕まえる実機テストを pnpm test に組み込んだ。当初の原因の見立てが実測で誤りだった点を含め、詳細は同ノードの detail を参照。あわせて製品の仕組み解説資料(docs/product-mechanism.md)を追加した。",
-      "trouble": "無し"
+      "done": "字幕パスのエスケープ不具合(G-TESTINFRA-ESCAPEPATH)を実機で再現させて直し、退行を捕まえる実機テストを pnpm test に組み込んだ(PR#41)。当初の原因の見立てが実測で誤りだった点を含め、詳細は同ノードの detail を参照。あわせて製品の仕組み解説資料(docs/product-mechanism.md)を追加し、その執筆過程で見つかったコメントと実装の食い違い(音声の -c:a copy 表記と実際の再エンコード)を同資料に記録した。PR#41 マージ後に届いたレビュー指摘4件を本PRで処理した。",
+      "trouble": "draft解除がCodeRabbitのレビュー開始とauto-mergeの対象化を同時に意味するため、レビューが届く前にマージされた(2026-07-25の再発)。以後の手順は docs/failures.md 2026-08-07 を参照。"
     },
     "updated": "2026-08-07"
   },
@@ -866,7 +866,7 @@
                   "criteria": [
                     {
                       "text": "escapeFilterPath に対する CodeQL の Incomplete string escaping アラートが再検出されない",
-                      "verify": "本変更を含むPRのCodeQL workflow run で該当アラートが出ていないことを、その run URL で確認する",
+                      "verify": "GitHubのSecurity → Code scanningで、escapeFilterPath に対する Incomplete string escaping アラートが本修正を含むcommit(0ed74a1以降)に対してClosed/Fixedである(または一覧に存在しない)ことを、そのアラートのURLで確認する。workflow runがsuccessであることは、アラートの不在を示さないので根拠にしない。",
                       "evidence": ""
                     }
                   ]
