@@ -61,6 +61,9 @@ MARGIN_PROBE_PX = 72
 # ubuntu-24.04 / opencv 5.0.0 での実測は 225x247 ＝ 6.03%。
 EXCLUDED_AREA_MAX_PCT = 8.0     # これ以上広いと「見ない範囲」が広がりすぎている
 EXCLUDED_AREA_MIN_PCT = 4.0     # これ以下だと顔枠が縮んでいる（実装が隠す範囲を覆えない）
+# 尺の一致とみなす差（秒）。素材の1コマ(1/15＝0.067秒)や音声の1パケット(1024/48000＝0.021秒)
+# より十分小さく、コマ1つぶんのずれでも検出できる値として置く。
+DURATION_TOLERANCE_SEC = 0.005
 
 fail = 0
 
@@ -270,22 +273,35 @@ def main():
               f"対照C: 画面全体が{TOLERANCE_FAILS_AT}段階ずれたら落ちる"
               f"（許容がこれより緩くないことを固定する）")
 
-        # (2) 除外幅の境界を固定する。顔枠+73px の位置に置いた小さな汚しは落ちなければならない。
-        #     除外幅を72pxより広げるとこの汚しが除外の中に入り、検出できなくなって落ちる。
+        # (2) 除外幅の境界を4辺すべてで固定する。
+        #     除外は mask と同じ式で「顔枠の各辺から72px の手前まで」なので、
+        #     各辺のちょうど外側1列（1行）が「見えていなければならない最初の画素」。
+        #     ここに汚しを置くと、その辺を1pxでも広げた瞬間に隠れて対照が落ちる。
+        #     1辺だけだと、他の3辺を黙って広げられる（面積の上限に当たるまで気づけない）。
+        #     幅を持たせても駄目で、1px広げたときに汚しの残りが見えてしまい固定できない。
         bx, by, bw, bh = boxes[0]
-        # 除外の右端は int(bx+bw)+FACE_MARGIN_PX の手前まで（mask と同じ式）。
-        # よって int(bx+bw)+72 が「除外の外側の1列目」。汚しはこの1列だけに置く。
-        # 幅を持たせると、除外を1px広げても汚しの残りが見えてしまい、72pxを固定できない。
-        px = min(W - 1, int(bx + bw) + MARGIN_PROBE_PX)
-        py = max(0, int(by + bh / 2) - 4)
-        near = []
-        for f in plain:
-            g = f.copy()
-            g[py:py + 8, px:px + 1] = 255
-            near.append(g)
-        check(worst_diff(plain, near, mask) > PIXEL_TOLERANCE,
-              f"対照C: 顔枠+{MARGIN_PROBE_PX}px の1列（除外の外側の1列目）の汚しは落ちる"
-              f"（見ないことにする範囲を{MARGIN_PROBE_PX}pxより広げられないことを固定する）")
+        left, top = int(bx), int(by)
+        right, bottom = int(bx + bw), int(by + bh)
+        cx, cy = int(bx + bw / 2), int(by + bh / 2)
+        sides = [
+            ("右", (slice(cy - 4, cy + 4), slice(right + MARGIN_PROBE_PX, right + MARGIN_PROBE_PX + 1))),
+            ("左", (slice(cy - 4, cy + 4), slice(left - MARGIN_PROBE_PX - 1, left - MARGIN_PROBE_PX))),
+            ("下", (slice(bottom + MARGIN_PROBE_PX, bottom + MARGIN_PROBE_PX + 1), slice(cx - 4, cx + 4))),
+            ("上", (slice(top - MARGIN_PROBE_PX - 1, top - MARGIN_PROBE_PX), slice(cx - 4, cx + 4))),
+        ]
+        for name, sel in sides:
+            rows, cols = sel
+            inside = 0 <= rows.start and rows.stop <= H and 0 <= cols.start and cols.stop <= W
+            if not check(inside, f"対照C: {name}辺の探り位置が画面内にある（実={rows},{cols}）"):
+                continue
+            near = []
+            for f in plain:
+                g = f.copy()
+                g[rows, cols] = 255
+                near.append(g)
+            check(worst_diff(plain, near, mask) > PIXEL_TOLERANCE,
+                  f"対照C: {name}辺の顔枠+{MARGIN_PROBE_PX}px（除外の外側の1列目）の汚しは落ちる"
+                  f"（{name}側の見ない範囲を{MARGIN_PROBE_PX}pxより広げられないことを固定する）")
 
         # (3) 顔から遠い隅も見ていることを示す。
         stained = []
@@ -340,16 +356,29 @@ def main():
             # r_frame_rate を報告しない素材を無言で 30fps 扱いにする経路を持つので、
             # 「音が同じ」「画素が同じ」とは独立に落ちうる受入事実として別に測る。
             vout, aout = probe_stream(g_out, "v:0"), probe_stream(g_out, "a:0")
-            check(vin.get("r_frame_rate") is not None and vout.get("r_frame_rate") == vin.get("r_frame_rate"),
+            # 尺が読めなかったのを 0 とみなすと「どちらも0秒で一致」で素通りする。先に読めたことを見る。
+            readable = True
+            for label, d in (("入力の映像", vin), ("入力の音", ain), ("出力の映像", vout), ("出力の音", aout)):
+                got = d.get("duration")
+                ok = got not in (None, "", "N/A")
+                readable = readable and ok
+                check(ok, f"対照H: {label}の尺が読み取れた（実={got}）")
+            check(vin.get("r_frame_rate") not in (None, "", "0/0")
+                  and vout.get("r_frame_rate") == vin.get("r_frame_rate"),
                   f"H: 映像のfpsが入力と一致する（入力={vin.get('r_frame_rate')} 出力={vout.get('r_frame_rate')}）")
-            vi, vo = float(vin.get("duration", 0)), float(vout.get("duration", 0))
-            check(abs(vi - vo) < 0.005,
-                  f"H: 映像の尺が入力と一致する（入力={vi:.3f}秒 出力={vo:.3f}秒）")
-            ai, ao = float(ain.get("duration", 0)), float(aout.get("duration", 0))
-            check(abs(ai - ao) < 0.005,
-                  f"H: 音の尺が入力と一致する（入力={ai:.3f}秒 出力={ao:.3f}秒）")
-            check(abs(vo - ao) < 0.005,
-                  f"H: 出力の映像と音の尺がそろっている（映像={vo:.3f}秒 音={ao:.3f}秒）")
+            if readable:
+                vi, vo = float(vin["duration"]), float(vout["duration"])
+                ai, ao = float(ain["duration"]), float(aout["duration"])
+                check(abs(vi - vo) < DURATION_TOLERANCE_SEC,
+                      f"H: 映像の尺が入力と一致する（入力={vi:.3f}秒 出力={vo:.3f}秒）")
+                check(abs(ai - ao) < DURATION_TOLERANCE_SEC,
+                      f"H: 音の尺が入力と一致する（入力={ai:.3f}秒 出力={ao:.3f}秒）")
+                # 「出力の映像と音がそろっている」ではなく「映像と音のずれが入力から変わっていない」を見る。
+                # 前者だと、映像が音より少し長い普通の素材（ロードマップの素材TVは0.030秒長い）で、
+                # 何もずらしていない正しい実装まで落ちてしまう。工程が足したずれだけを測る。
+                check(abs((vo - ao) - (vi - ai)) < DURATION_TOLERANCE_SEC,
+                      f"H: 映像と音のずれが入力から変わらない"
+                      f"（入力={vi - ai:+.3f}秒 出力={vo - ao:+.3f}秒）")
         else:
             print("      " + (r3.stderr or "")[-800:])
 
