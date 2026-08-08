@@ -26,6 +26,9 @@ export const FILLERS = [
   "なんか",
 ];
 
+/** 継ぎ目に掛けるフェードの長さ（秒）。短すぎると跳ねが残り、長すぎると語頭が痩せる。 */
+export const SEAM_FADE_SEC = 0.005;
+
 /** 既定: これ以上の長さの無音を「詰めるべき間」とみなす（秒） */
 export const DEFAULT_MIN_SILENCE = 0.20;
 
@@ -162,7 +165,8 @@ function round3(n) {
  * @param {{start:number,end:number}[]} keep 残す区間（時刻の順・重なり無し）
  * @returns {{videoSelect:string, audioSelect:string}|null} 全部残すなら null（フィルタ不要）
  */
-export function buildTrimFilters(keep) {
+export function buildTrimFilters(keep, opts = {}) {
+  const withFade = opts.seamFade !== false;
   const spans = (keep || []).filter((s) => s && s.end > s.start);
   if (spans.length === 0) return null;
 
@@ -173,8 +177,17 @@ export function buildTrimFilters(keep) {
   // trim/atrim は指定した時刻ちょうどで切るため、この余りが出ない。
   const v = spans.map((s, i) =>
     `[0:v]trim=start=${fmt(s.start)}:end=${fmt(s.end)},setpts=PTS-STARTPTS[tv${i}]`);
-  const a = spans.map((s, i) =>
-    `[0:a]atrim=start=${fmt(s.start)}:end=${fmt(s.end)},asetpts=PTS-STARTPTS[ta${i}]`);
+  // 継ぎ目の前後にごく短いフェードを掛ける。掛けないと、波形が途中で急に切り替わって
+  // 「プツッ」という音が入る（葉D が防ぎたい状態）。
+  // 長さは SEAM_FADE_SEC。耳に「消えた」と分からない範囲で、跳ねだけを均す。
+  const a = spans.map((s, i) => {
+    const len = s.end - s.start;
+    const fade = Math.min(SEAM_FADE_SEC, Math.max(0, len / 4));
+    const fadeIn = (!withFade || i === 0) ? "" : `,afade=t=in:st=0:d=${fmt(fade)}`;
+    const fadeOut = (!withFade || i === spans.length - 1) ? "" : `,afade=t=out:st=${fmt(Math.max(0, len - fade))}:d=${fmt(fade)}`;
+    return `[0:a]atrim=start=${fmt(s.start)}:end=${fmt(s.end)},asetpts=PTS-STARTPTS`
+      + `${fadeIn}${fadeOut}[ta${i}]`;
+  });
   const vLabels = spans.map((_, i) => `[tv${i}]`).join("");
   const aLabels = spans.map((_, i) => `[ta${i}]`).join("");
   return {
