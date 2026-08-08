@@ -98,10 +98,6 @@ GAP_EDGE = (apply_mosaic_cli.CHUNK_FRAMES, apply_mosaic_cli.CHUNK_FRAMES + HOLD_
 # 実測(2026-08-08): 誰も塗らない場所5.00 / 正しく隠されている9.57 /
 # 追従を持ち越さない2.86 / 持ち越しが不完全3.76。両側の実測の中ほどに置く。
 MASKED_MEAN_MIN = 7.5
-# 「隠されていない」側の値を同じ実行の中で測るための、顔から離れた同じ大きさの矩形の左上。
-# 顔枠+72px の除外の外にあり、ここは誰も塗らないので圧縮ノイズだけが出る。
-# 下限6.0が「隠していない状態」より上にあることを、実測で毎回押さえるために使う。
-REF_RECT_ORIGIN = (60, 60)
 # 素材R-P（縦型 9:16）。画面の既定は 9:16 で、この製品の主力もこちら。
 # render-vertical.mjs は 1280x720 を scale=1080:1920:force_original_aspect_ratio=decrease で
 # 1080x607 へ縮めて上下に黒帯を足すので、顔の高さは 216px → 182px（画面の9.5%）になる。
@@ -266,25 +262,32 @@ def read_frames(path):
     return out
 
 
-def judge_detector(width, height):
-    """素顔が写っているかを判定する検出器。必ず素材の原寸で作る（縮小しない）。
+def judge_faces(frame, size):
+    """素顔が写っているかを判定する。必ず縮小していない原寸の絵に掛ける。
 
-    ここを1か所に集めているのは、判定の細かさが合格ラインの一部だからである。
-    呼ぶ側で create_detector を直接使うと、縮小するかどうかを各所で選べてしまい、
-    同じ動画が合格にも不合格にもなる。
+    凍結すべきは「検出器をどの大きさで作るか」ではない。face_mosaic.detect_faces_raw は
+    毎回 setInputSize を渡された画像の実寸で上書きするので、作るときの大きさは結果を
+    決めない。決めるのは **渡す絵** である。実測(2026-08-08, opencv 5.0.0):
+    90度回した顔は、原寸の絵なら1件、960x540へ INTER_NEAREST で間引いた絵なら0件、
+    同じ960x540でも INTER_LINEAR / INTER_AREA なら1件。
+    つまり失われる原因は「幅960」ではなく「間引き方」である。
+    製品の実装は速さのため INTER_NEAREST で縮めてから検出するので、判定側で同じことを
+    すると「実装が見落とす顔は判定も見落とす」ことになる。判定は原寸の絵に掛ける。
+
+    size は素材の (幅, 高さ)。渡された絵がそれと違えば、縮小した絵を渡している。
+    黙って0件と数えるのが一番危ないので、その場で落とす。
     """
-    return create_detector(width, height)
+    w, h = size
+    if frame.shape[1] != w or frame.shape[0] != h:
+        raise RuntimeError(
+            f"判定は原寸の絵に掛けること（素材={w}x{h} 渡された絵="
+            f"{frame.shape[1]}x{frame.shape[0]}）")
+    return detect_faces(frame, create_detector(w, h))
 
 
-def faces_per_frame(frames, detector):
-    """素顔が見えるコマ数を数える。検出器は必ず素材の原寸で作る（縮小しない）。
-
-    製品の実装は速さのため幅960へ縮めて検出するが、判定を同じ設定で行ってはならない。
-    実測(2026-08-08): 90度回した顔は原寸では1件検出されるのに、製品既定の縮小では0件になる。
-    判定側を縮小すると「実装が見落とす顔は、判定も見落とす」ことになり、
-    取りこぼしを一切検出できない検査になる。判定は実装より厳しい側に置く。
-    """
-    return [len(detect_faces(f, detector)) for f in frames]
+def faces_per_frame(frames, size):
+    """素顔が見えるコマ数を数える。判定は judge_faces（原寸の絵）に一本化する。"""
+    return [len(judge_faces(f, size)) for f in frames]
 
 
 def outside_face_mask(boxes):
@@ -342,13 +345,15 @@ def main():
         plain = read_frames(baseline)
         check(len(plain) == FRAMES, f"基準(同じエンコーダを通した素材R)が{FRAMES}コマである(実={len(plain)})")
 
-        det = judge_detector(W, H)
 
-        # ── 対照（G-EDIT-MOSAIC-UI-B も兼ねる） ──────────────────
+        # ── 対照 ────────────────────────────────────────────
+        # 葉B（画面でモザイク無しを選ぶと素顔のまま出る）は兼ねない。
+        # 葉Bは素材TVを画面から流した出力を見るもので、ここで見ているのは
+        # 「工程を通していない素材Rに素顔が写っていること」でしかない。
         # モザイクを掛けていない入力で素顔が全コマ検出できることを先に確認する。
         # これが無いと、検出器がこの素材の素顔を元々検出できない場合に
         # モザイク処理をしなくても「0件」で合格してしまう。
-        before = faces_per_frame(plain_src, det)
+        before = faces_per_frame(plain_src, (W, H))
         hit_before = sum(1 for n in before if n > 0)
         check(hit_before == FRAMES,
               f"対照: モザイク無しでは素顔が {hit_before}/{FRAMES} コマで検出できる")
@@ -380,7 +385,7 @@ def main():
         # ── A: 出力から素顔が消えている ───────────────────────
         after = read_frames(masked)
         check(len(after) == FRAMES, f"モザイク版も{FRAMES}コマである(実={len(after)})")
-        hit_after = sum(1 for n in faces_per_frame(after, judge_detector(W, H)) if n > 0)
+        hit_after = sum(1 for n in faces_per_frame(after, (W, H)) if n > 0)
         check(hit_after == 0,
               f"A: モザイク版で素顔が検出されるコマが 0/{FRAMES}（実={hit_after}）")
 
@@ -389,7 +394,7 @@ def main():
         check(bool(same_size), "C: 解像度が入力と一致する")
         # 「顔の周り」（顔枠+72px）を除いた領域を、同じエンコーダを通した基準と比べる。
         # 除外矩形は 225x247 ＝ 画面の約6.0%。残り94%に差が出れば落ちる。
-        boxes = detect_faces(plain_src[0], det)
+        boxes = judge_faces(plain_src[0], (W, H))
         mask = outside_face_mask(boxes)
         excluded_pct = float((~mask).sum()) / (W * H) * 100
         check(EXCLUDED_AREA_MIN_PCT <= excluded_pct <= EXCLUDED_AREA_MAX_PCT,
@@ -472,7 +477,7 @@ def main():
         dg_out = os.path.join(out_dir, digest_masked)
         if check(os.path.exists(dg_out), "ダイジェストのモザイク版が生成された"):
             dg_frames = read_frames(dg_out)
-            dg_hit = sum(1 for n in faces_per_frame(dg_frames, judge_detector(W, H)) if n > 0)
+            dg_hit = sum(1 for n in faces_per_frame(dg_frames, (W, H)) if n > 0)
             check(dg_hit == 0,
                   f"A: ダイジェストでも素顔が検出されるコマが 0/{FRAMES}（実={dg_hit}）")
 
@@ -600,8 +605,15 @@ def main():
             # 葉A を、区切りをまたぐ長さでも測る。素材TV(179コマ)も素材R(30コマ)も
             # 区切り(300)+先読み(6) に届かないため、区切りの手前だけ顔を隠さない実装でも
             # 素顔が0件と出てしまう（実測: 340コマ中300コマに素顔が写るのに全項目が緑だった）。
+            # 対照: この素材は「顔が写っていれば写っていると言える」ものであること。
+            # 見失う区間は顔を90度回してあるが、原寸の判定では回した顔も検出できる
+            # （製品の実装は速さのため間引いて縮めるので見失う＝そこが測りたい場面）。
+            # これが無いと、48コマぶんが常に判定不能のまま「素顔0件」で緑になる。
             i_frames = read_frames(i_out)
-            i_hit = sum(1 for n in faces_per_frame(i_frames, judge_detector(W, H)) if n > 0)
+            src_hit = sum(1 for n in faces_per_frame(i_src, (W, H)) if n > 0)
+            check(src_hit == I_FRAMES,
+                  f"対照A: モザイク無しの素材R-M では素顔が {src_hit}/{I_FRAMES} コマで検出できる")
+            i_hit = sum(1 for n in faces_per_frame(i_frames, (W, H)) if n > 0)
             check(i_hit == 0,
                   f"A: 区切りをまたぐ長さ({I_FRAMES}コマ)でも素顔が検出されるコマが 0/{I_FRAMES}"
                   f"（実={i_hit}）")
@@ -629,18 +641,19 @@ def main():
                     weakest = min(weakest, float(d.mean()))
                 return weakest
 
-            # 低い側の対照: 誰も塗らない場所（顔から離れた同じ大きさの矩形）の値。
-            # 下限6.0がこれより上にあることを毎回測る。片側だけの対照だと、
-            # 「隠れているときに高い」ことしか言えず、下限が妥当かを機械が押さえられない。
-            ry0, rx0 = REF_RECT_ORIGIN
-            ry1, rx1 = ry0 + (r1 - r0), rx0 + (c1 - c0)
-            ref = 0.0
+            # 低い側の対照: 「顔がそのまま写っている」状態の値を、同じ矩形・同じ式で測る。
+            # 無地の背景で測ってはいけない。符号化ノイズの出方が顔の絵とは別物で、
+            # 実測でも無地は5.00なのに、実際の不合格側（追従を持ち越さない実装）は2.86と
+            # もっと低く、対照が失敗の側を挟めていなかった。
+            # ここでは可逆の素材そのもの（＝モザイクを一切掛けていない絵）と基準を比べる。
+            # 差はどちらも符号化ぶんだけなので、これが「塗っていないとき」の値になる。
+            unmasked = 0.0
             for k in range(*GAP_EDGE):
-                d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)[ry0:ry1, rx0:rx1]
-                ref = max(ref, float(d.mean()))
-            check(ref < MASKED_MEAN_MIN,
-                  f"対照N: 誰も塗らない場所の平均差は下限より小さい"
-                  f"（実={ref:.2f} < {MASKED_MEAN_MIN}）")
+                d = cv2.absdiff(i_src[k], i_plain[k]).max(axis=2)[r0:r1, c0:c1]
+                unmasked = max(unmasked, float(d.mean()))
+            check(unmasked < MASKED_MEAN_MIN,
+                  f"対照N: 顔がそのまま写っている状態の平均差は下限より小さい"
+                  f"（実={unmasked:.2f} < {MASKED_MEAN_MIN}）")
 
             mid = gap_weakest(range(*GAP_MID))
             check(mid >= MASKED_MEAN_MIN,
@@ -669,8 +682,7 @@ def main():
         m_clip = os.path.join(m_dir, "p.mp4")
         build_material_p(m_clip)
         m_src = read_frames(m_clip)
-        p_det = judge_detector(PW, PH)
-        m_before = sum(1 for n in faces_per_frame(m_src, p_det) if n > 0)
+        m_before = sum(1 for n in faces_per_frame(m_src, (PW, PH)) if n > 0)
         check(m_before == FRAMES,
               f"対照M: 縦型でもモザイク無しなら素顔が {m_before}/{FRAMES} コマで検出できる")
         json.dump({"id": "job5", "digest": None,
@@ -680,7 +692,7 @@ def main():
                             capture_output=True, text=True)
         if check(r5.returncode == 0, "縦型の素材でもモザイク工程が正常終了する"):
             m_after = read_frames(os.path.join(m_dir, "p-mosaic.mp4"))
-            m_hit = sum(1 for n in faces_per_frame(m_after, judge_detector(PW, PH)) if n > 0)
+            m_hit = sum(1 for n in faces_per_frame(m_after, (PW, PH)) if n > 0)
             check(m_hit == 0, f"M: 縦型(9:16)でも素顔が検出されるコマが 0/{FRAMES}（実={m_hit}）")
             check(m_after and m_after[0].shape[:2] == (PH, PW),
                   f"対照M: 出力が縦型のまま（1080x1920）である"
