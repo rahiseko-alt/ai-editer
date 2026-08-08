@@ -151,3 +151,82 @@ function mergeCuts(cuts) {
 function round3(n) {
   return Math.round(n * 1000) / 1000;
 }
+
+/**
+ * 残す区間だけを取り出してつなぐ ffmpeg のフィルタ式を組み立てる。
+ *
+ * select は「残す区間のどれかに入っているコマだけを通す」判定、
+ * setpts/asetpts は「通したコマを詰めて並べ直す」ための書き換え。
+ * この2つを揃えて掛けないと、切ったぶんの時間が空白として残り、尺が縮まない。
+ *
+ * @param {{start:number,end:number}[]} keep 残す区間（時刻の順・重なり無し）
+ * @returns {{videoSelect:string, audioSelect:string}|null} 全部残すなら null（フィルタ不要）
+ */
+export function buildTrimFilters(keep) {
+  const spans = (keep || []).filter((s) => s && s.end > s.start);
+  if (spans.length === 0) return null;
+
+  // select ではなく trim/atrim + concat で組む。
+  // select は「そのコマを通すか」の判定なので、音声の1コマ(約46ms)の途中に区間の端が
+  // 来ると、そのコマが丸ごと通って尺が余る（実測: 1.000秒×2区間で2.043秒）。
+  // 区間の数だけ余りが積み上がるので、尺を測る受入条件では致命的になる。
+  // trim/atrim は指定した時刻ちょうどで切るため、この余りが出ない。
+  const v = spans.map((s, i) =>
+    `[0:v]trim=start=${fmt(s.start)}:end=${fmt(s.end)},setpts=PTS-STARTPTS[tv${i}]`);
+  const a = spans.map((s, i) =>
+    `[0:a]atrim=start=${fmt(s.start)}:end=${fmt(s.end)},asetpts=PTS-STARTPTS[ta${i}]`);
+  const vLabels = spans.map((_, i) => `[tv${i}]`).join("");
+  const aLabels = spans.map((_, i) => `[ta${i}]`).join("");
+  return {
+    // 映像だけ／音声だけを詰める式（呼び出し側が必要なほうを使う）
+    videoChain: `${v.join(";")};${vLabels}concat=n=${spans.length}:v=1:a=0[tvout]`,
+    audioChain: `${a.join(";")};${aLabels}concat=n=${spans.length}:v=0:a=1[taout]`,
+    count: spans.length,
+  };
+}
+
+/**
+ * 語の時刻を、詰めたあとの時間軸へ写し直す。
+ *
+ * 詰めると時間が前へ詰まるので、字幕の時刻も同じだけ前へ動かさないと
+ * 字幕だけ遅れて出る（葉E が防ぎたい状態）。
+ * 切られた区間に入る語は返さない（もう画面に無いのに字幕だけ出るのを防ぐ）。
+ *
+ * @param {{w:string,start:number,end:number}[]} words
+ * @param {{start:number,end:number}[]} keep
+ * @returns {{w:string,start:number,end:number}[]}
+ */
+export function remapWords(words, keep) {
+  const spans = (keep || []).filter((s) => s && s.end > s.start)
+    .slice().sort((a, b) => a.start - b.start);
+  if (spans.length === 0) return [];
+  // 各区間が、詰めたあとの時間軸のどこから始まるか
+  const offsets = [];
+  let acc = 0;
+  for (const s of spans) { offsets.push(acc); acc += s.end - s.start; }
+
+  const out = [];
+  for (const w of words || []) {
+    if (!w || !Number.isFinite(w.start) || !Number.isFinite(w.end) || w.end <= w.start) continue;
+    // 語が複数の区間にまたがることは無い（区間は語の境目で割ってある）が、
+    // 念のため、語の中心が入る区間を使う。
+    const mid = (w.start + w.end) / 2;
+    const i = spans.findIndex((s) => mid >= s.start && mid < s.end);
+    if (i < 0) continue;                       // 切られた区間の語＝もう画面に無い
+    const s = spans[i];
+    const start = Math.max(s.start, w.start);
+    const end = Math.min(s.end, w.end);
+    if (end <= start) continue;
+    out.push({
+      ...w,
+      start: round3(offsets[i] + (start - s.start)),
+      end: round3(offsets[i] + (end - s.start)),
+    });
+  }
+  return out;
+}
+
+/** ffmpeg のフィルタ式へ入れる秒数（小数3桁で固定。指数表記にしない） */
+function fmt(n) {
+  return (Math.round(n * 1000) / 1000).toFixed(3);
+}
