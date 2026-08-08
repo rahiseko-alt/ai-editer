@@ -136,11 +136,21 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
       else byKind.clip.push(updated);
     }
   } catch (e) {
+    // 戻す作業そのものも失敗しうる（退避を止めた原因＝権限・ロックは戻す側でも起きる）。
+    // 黙って握りつぶすと「混ざったまま、別の理由で失敗しました」と報告することになる。
+    // 戻せなかったものを数え上げ、混在が残っている事実を必ず伝える。
+    const stuck = [];
     for (const mv of moved) {
-      try { fs.renameSync(mv.from, mv.to); } catch (_) {}
+      try { fs.renameSync(mv.from, mv.to); } catch (_) { stuck.push(path.basename(mv.to)); }
     }
     for (const m of made) {
-      try { fs.rmSync(m.dst, { force: true }); } catch (_) {}
+      try { fs.rmSync(m.dst, { force: true }); } catch (_) { stuck.push(m.outName); }
+    }
+    if (stuck.length) {
+      throw new Error(
+        `顔モザイクの後始末に失敗しました。成果物フォルダに素顔と加工済みが混ざったまま残っています` +
+        `（戻せなかったファイル: ${stuck.join(", ")}）。元の失敗: ${e.message}`
+      );
     }
     throw e;
   }

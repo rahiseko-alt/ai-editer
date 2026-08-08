@@ -14,6 +14,7 @@ PyTorch や onnxruntime は不要。
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import sys
@@ -307,7 +308,7 @@ def interpolate(prev_rows, next_rows, weight: float):
 def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float = BLOCK_RATIO_DEFAULT,
                   detector=None, block_for=None, people=None, ratio_for=None, recognizer=None,
                   detect_every: int = DETECT_EVERY_DEFAULT, detect_width: int = DETECT_WIDTH_DEFAULT,
-                  copy_frames: bool = True, tracker=None):
+                  copy_frames: bool = True, tracker=None, carry_from: int | None = None):
     """フレーム列を順に処理し、顔を追従モザイクで隠したフレーム列を返す。
 
     copy_frames=False にすると、渡されたフレームを直接書き換えて複製を省く。
@@ -332,6 +333,12 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
     # 「検出が途切れた区間を直前の位置で埋める」保持が必ず切れ、境目の直後で検出が
     # 落ちたコマに素顔が出る（実測: 区切り直後の3コマが未加工のまま出力された）。
     tracker = tracker if tracker is not None else FaceTracker(hold_frames=hold_frames)
+    # carry_from を渡すと、返すのは「そのコマの検出を取り込む直前」の追従状態になる。
+    # 呼び出し側が末尾を次の呼び出しへ重ねて渡す（先読み）作りだと、重なったコマの検出が
+    # 2回取り込まれ、顔を見失った回数が二重に数えられる。保持の予算（hold_frames×detect_every
+    # ＝24コマ）が境目でだけ18〜20コマへ縮み、24コマ見失うと区切りの所だけ素顔が3コマ出る
+    # （実測 2026-08-08。一本通しでは0コマ）。重なる手前の状態を返せば二重に数えない。
+    carried = None
     people = people or []
     ratio_for = ratio_for or {}
     rec = recognizer
@@ -354,6 +361,8 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
     # 枠が直前の位置に取り残されて素顔が出る。先に位置を出し切ってから焼く。
     keys: dict[int, dict[int, tuple[float, float, float, float]]] = {}
     for i in range(0, len(frames), detect_every):
+        if carry_from is not None and carried is None and i >= carry_from:
+            carried = copy.deepcopy(tracker)
         work = frames[i]
         # 検出だけ縮小した画で行い、結果を原寸へ戻す（出力の解像度は落とさない）
         small = work if scale == 1.0 else cv2.resize(
@@ -410,7 +419,7 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
             else:
                 apply_mosaic(work, box, ratio=ratio_for.get(labels_by_id.get(tid, "_other"), ratio))
         out.append(work)
-    return out, tracker
+    return out, (carried if carried is not None else tracker)
 
 
 def detection_scale(frame_w: int, frame_h: int, detect_width: int = DETECT_WIDTH_DEFAULT) -> float:

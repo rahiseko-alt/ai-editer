@@ -112,6 +112,10 @@ def run(input_path, output_path, target=None, strength="普通"):
                 out, tracker = mosaic_frames(
                     pending[: CHUNK_FRAMES + LOOKAHEAD_FRAMES],
                     people=people, ratio_for=ratio_for, copy_frames=False, tracker=tracker,
+                    # 次の呼び出しへ重ねて渡すコマ（先読み）の手前の状態を受け取る。
+                    # 最後まで進んだ状態を受け取ると、重なったコマの検出が2回取り込まれ、
+                    # 顔を見失った回数が二重に数えられて保持が境目で短くなる。
+                    carry_from=CHUNK_FRAMES,
                 )
                 for frame in out[:CHUNK_FRAMES]:
                     enc.stdin.write(frame.tobytes())

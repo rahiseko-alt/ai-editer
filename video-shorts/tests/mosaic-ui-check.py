@@ -27,6 +27,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 import apply_mosaic_cli  # noqa: E402
+import face_mosaic  # noqa: E402
 from face_mosaic import create_detector, detect_faces  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "face-one.png")
@@ -79,11 +80,22 @@ I_FRAMES = apply_mosaic_cli.CHUNK_FRAMES + apply_mosaic_cli.LOOKAHEAD_FRAMES + 3
 # 1つ目は真ん中＝この測り方が「隠された」を検出できることを示す対照。
 # 2つ目は区切りのちょうど直後＝実装は区切りごとに追従をやり直すため、保持が切れて
 # 素顔が出うる場所。全コマ検出できる絵だけで測ると、この経路を永久に測れない。
-GAP_MID = (150, 156)
-GAP_EDGE = (apply_mosaic_cli.CHUNK_FRAMES, apply_mosaic_cli.CHUNK_FRAMES + 6)
-# 顔の領域が「隠された」と言える差。実測(2026-08-08): 隠されていないと20（圧縮ノイズだけ）、
-# 隠されていると162〜194。間を取って100を境にする。
-MASKED_DIFF_MIN = 100
+# 見失いの長さは実装の「保持の予算」から導く。保持は hold_frames 回ぶんの検出を
+# 我慢する仕組みで、検出は detect_every コマおきなので、予算はコマ数で
+# hold_frames × detect_every ＝ 24 コマ。ここまでは隠し続けられなければならない。
+# 短い見失い（6コマ）だけで測ると、境目で保持が縮んでいても気づけない
+# （実測: 6コマと18コマは通り、24コマで初めて区切りの所だけ素顔が3コマ出た）。
+HOLD_BUDGET = face_mosaic.HOLD_FRAMES_DEFAULT * face_mosaic.DETECT_EVERY_DEFAULT
+# 対照の位置も直書きしない。区切りの値を小さくすると、直書きの位置と区切りの位置が
+# 重なって対照が黙って対照でなくなる。
+GAP_MID = (apply_mosaic_cli.CHUNK_FRAMES // 2,
+           apply_mosaic_cli.CHUNK_FRAMES // 2 + HOLD_BUDGET)
+GAP_EDGE = (apply_mosaic_cli.CHUNK_FRAMES, apply_mosaic_cli.CHUNK_FRAMES + HOLD_BUDGET)
+# 「隠された」の判定。1画素でも変われば合格にすると、顔の端を少し塗っただけの実装でも
+# 通ってしまう。顔の矩形のうち、どれだけの広さが塗り替わったかで見る。
+# 顔の矩形全体の「平均の階調差」で見る。1画素の最大値だと、顔の端を少し塗っただけの
+# 実装でも通ってしまう。平均なら、塗られた広さが足りなければ下がる。
+MASKED_MEAN_MIN = 6.0
 # 素材R-P（縦型 9:16）。画面の既定は 9:16 で、この製品の主力もこちら。
 # render-vertical.mjs は 1280x720 を scale=1080:1920:force_original_aspect_ratio=decrease で
 # 1080x607 へ縮めて上下に黒帯を足すので、顔の高さは 216px → 182px（画面の9.5%）になる。
@@ -580,26 +592,28 @@ def main():
             r0, r1, c0, c1 = gap_rect()
 
             def gap_weakest(rng):
-                """区間のうち「一番隠れていないコマ」の値。最大ではなく最小を取る。
+                """区間のうち「一番隠れていないコマ」で、顔の矩形が塗り替わった割合。
 
-                最大を取ると、区間の一部が隠れていれば通ってしまう。実際に追従の
-                持ち越しを外した実装では、区切り直後の6コマのうち先頭3コマが未加工
-                （差20）、残り3コマが加工済み（差169）で、最大を見ると素通りした。
+                (1) 区間については最大ではなく最小を取る。最大を取ると、区間の一部が
+                    隠れていれば通ってしまう（追従の持ち越しを外した実装では、区切り直後の
+                    先頭3コマが未加工・残りが加工済みで、最大を見ると素通りした）。
+                (2) コマの中は「一番差の大きい1画素」ではなく「塗り替わった画素の割合」で見る。
+                    1画素で判定すると、顔の端を少し塗っただけの実装でも通ってしまう。
                 """
-                weakest = 255
+                weakest = 255.0
                 for k in rng:
-                    d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)
-                    weakest = min(weakest, int(d[r0:r1, c0:c1].max()))
+                    d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)[r0:r1, c0:c1]
+                    weakest = min(weakest, float(d.mean()))
                 return weakest
 
             mid = gap_weakest(range(*GAP_MID))
-            check(mid >= MASKED_DIFF_MIN,
+            check(mid >= MASKED_MEAN_MIN,
                   f"対照N: 真ん中で顔を見失う区間{GAP_MID}は隠されている"
-                  f"（一番隠れていないコマの差={mid}、下限{MASKED_DIFF_MIN}）")
+                  f"（一番隠れていないコマの平均差={mid:.2f}、下限{MASKED_MEAN_MIN}）")
             edge = gap_weakest(range(*GAP_EDGE))
-            check(edge >= MASKED_DIFF_MIN,
+            check(edge >= MASKED_MEAN_MIN,
                   f"N: 区切りの直後{GAP_EDGE}で顔を見失っても隠されている"
-                  f"（一番隠れていないコマの差={edge}、下限{MASKED_DIFF_MIN}）")
+                  f"（一番隠れていないコマの平均差={edge:.2f}、下限{MASKED_MEAN_MIN}）")
 
             i_vout, i_aout = probe_stream(i_out, "v:0"), probe_stream(i_out, "a:0")
             si, so = i_vin.get("start_time"), i_vout.get("start_time")
@@ -675,6 +689,20 @@ def main():
         json.dump({"id": "job7", "digest": None,
                    "candidates": [{"file": "s.mp4", "path": os.path.join(j3_dir, "s.mp4")}]},
                   open(os.path.join(j3_dir, "candidates.json"), "w", encoding="utf-8"))
+        # 対照: この上限の下では書きかけの -mosaic が実際に出来ることを先に示す。
+        # 何も作られずに失敗しただけでも「残らない」は達成できてしまい、
+        # 後始末が効いているのかを見分けられない。工程を通さず直接焼いて確かめる。
+        ctl_dir = os.path.join(work, "ctl")
+        os.makedirs(ctl_dir, exist_ok=True)
+        ctl_src = os.path.join(ctl_dir, "s.mp4")
+        shutil.copy(os.path.join(j3_dir, "s.mp4"), ctl_src)
+        ctl_out = os.path.join(ctl_dir, "s-mosaic.mp4")
+        subprocess.run([sys.executable, os.path.join(ROOT, "src", "apply_mosaic_cli.py"),
+                        ctl_src, ctl_out], capture_output=True, text=True,
+                       preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (8192, 8192)))
+        check(os.path.exists(ctl_out),
+              "対照J: 書き込みの上限の下では、書きかけの -mosaic が実際に出来る")
+
         r7 = subprocess.run(
             ["node", STAGE_MJS, j3_dir, os.path.join(work, "work", "job7", "pre-mosaic")],
             capture_output=True, text=True,
