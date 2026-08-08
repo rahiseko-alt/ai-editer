@@ -281,6 +281,10 @@ async function runJob(jobId, inputAbsPath, opts) {
     orient,
     targetMinutes,
     sub: opts.sub === "none" ? "none" : "on",
+    // 無音・言い淀みを詰めるか。pipeline.mjs のレンダリングが state.trim を見る。
+    // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
+    // （顔モザイクで同じ取りこぼしをしたので、結線を smoke.mjs で押さえる）。
+    trim: opts.trim === "on" ? "on" : "none",
   };
   writeState(workDir, state);
 

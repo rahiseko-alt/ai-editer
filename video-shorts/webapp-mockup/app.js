@@ -4,7 +4,7 @@
 // サイズ選択→.video-area の px のみを変更（contain 計算）。枠は一切変更しない。
 
 const state = {
-  file: null, sub: "none", mosaic: "none",
+  file: null, sub: "none", mosaic: "none", trim: "none",
   cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
 };
@@ -53,6 +53,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     btn.classList.add("is-on"); state[g] = btn.dataset.val;
     if (g === "sub") updateSubDesc();
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
+    if (g === "trim") updateTrimDesc();
     if (g === "cut") showCut();
     if (g === "size") updateVideoArea(btn);
     refresh();
@@ -137,6 +138,15 @@ function updateMosaicStepRow() {
   const es = document.querySelector('.estep[data-k="m"]');
   if (es) es.classList.toggle("hidden", state.mosaic !== "on");
 }
+// 選んだ内容を、専門用語を使わず1行で言い直す（何が起きるかを選ぶ前に分かるように）
+function updateTrimDesc() {
+  const el = $("trim-desc");
+  if (!el) return;
+  el.textContent = state.trim === "on"
+    ? "黙っている時間と「えーと」「あのー」を詰めます。話した中身はそのまま残ります。"
+    : "黙っている時間と「えーと」はそのまま残ります。";
+}
+
 function updateMosaicDesc() {
   const el = $("mosaic-desc");
   if (!el) return;
@@ -319,6 +329,7 @@ function run() {
   const params = new URLSearchParams({
     sub: state.sub,
     mosaic: state.mosaic,
+    trim: state.trim,
     cut: state.cut,
     size: state.size,
     name: state.file.name,

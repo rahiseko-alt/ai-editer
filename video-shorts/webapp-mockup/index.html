@@ -72,10 +72,22 @@
         <p class="group-note" id="mosaic-desc">写り込んだ顔はそのまま出ます。</p>
       </section>
 
+      <!-- 無音・言い淀みを詰める（G-EDIT-TRIM） -->
+      <section class="settings-group" id="card-trim" aria-labelledby="h-trim">
+        <h2 class="group-label" id="h-trim">
+          <span class="step-n" aria-hidden="true">4</span> 間を詰める
+        </h2>
+        <div class="chips trim-toggle" data-group="trim" role="group" aria-label="間を詰めるあり・なし">
+          <button class="chip trim-chip is-on" data-val="none">なし</button>
+          <button class="chip trim-chip" data-val="on">あり</button>
+        </div>
+        <p class="group-note" id="trim-desc">黙っている時間と「えーと」はそのまま残ります。</p>
+      </section>
+
       <!-- グループ3: カット -->
       <section class="settings-group" id="card-cut" aria-labelledby="h-cut">
         <h2 class="group-label" id="h-cut">
-          <span class="step-n" aria-hidden="true">4</span> カットの目安
+          <span class="step-n" aria-hidden="true">5</span> カットの目安
         </h2>
         <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
           <button class="chip is-on" data-val="topic">話題で切る</button>
@@ -94,7 +106,7 @@
       <!-- グループ4: サイズ -->
       <section class="settings-group" id="card-size" aria-labelledby="h-size">
         <h2 class="group-label" id="h-size">
-          <span class="step-n" aria-hidden="true">5</span> サイズ
+          <span class="step-n" aria-hidden="true">6</span> サイズ
         </h2>
         <div class="size-chips" data-group="size" role="group" aria-label="動画サイズ">
           <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16">

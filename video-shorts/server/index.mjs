@@ -166,7 +166,7 @@ function serveStatic(req, res) {
 async function handlePostJobs(req, res) {
   // クエリパラメータ取得
   const url = new URL(req.url, "http://x");
-  const { sub, cut, size, cutMin, mosaic, name } = parseJobParams(url.searchParams);
+  const { sub, cut, size, cutMin, mosaic, trim, name } = parseJobParams(url.searchParams);
 
   // P1-2(E): レート制限（単一利用者のローカルツール前提の固定ウィンドウ）
   if (!jobsRateLimiter.allow("global")) {
@@ -252,7 +252,7 @@ async function handlePostJobs(req, res) {
   }
 
   // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
-  const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic });
+  const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
   if (!started) {
     return jsonRes(res, 409, { error: "already running", jobId });
   }

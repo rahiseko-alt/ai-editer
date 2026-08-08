@@ -396,6 +396,58 @@ t("UI: モザイクのチップ群に「あり」の選択肢がある", () => {
   assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
 });
 
+// ── 間を詰めるの結線（G-EDIT-TRIM） ─────────────────────────
+// 顔モザイクでは、画面からサーバーへ設定が渡っておらず「あり」を選んでも一度も
+// 動いていなかった。同じ取りこぼしを繰り返さないよう、受け渡しの各段を押さえる。
+t("parseJobParams: trim の既定は none（これまでどおり詰めない）", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams()).trim, "none");
+});
+
+t("parseJobParams: trim=on は on として受け取る", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ trim: "on" })).trim, "on");
+});
+
+t("parseJobParams: サポート外の trim は none へ丸められる", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ trim: "yes" })).trim, "none");
+});
+
+t("UI: 間を詰めるのチップ群に「あり」の選択肢がある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  // チップ群の中だけを切り出して見る。HTML全体への正規表現だと、他のグループの
+  // data-val="on" に食いついて、こちらの「あり」を消しても通ってしまう。
+  const m = html.match(/data-group="trim"[^]*?<\/div>/);
+  assert.ok(m, "間を詰めるのチップ群が画面にある");
+  assert.ok(/data-val="on"/.test(m[0]), "そのチップ群の中に「あり」がある");
+  assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
+});
+
+t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");
+  assert.ok(/trim:\s*"none"/.test(app), "画面の初期値が none（既定で詰めない）");
+});
+
+t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
+  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
+  assert.ok(recv && /\btrim\b/.test(recv[1]), "parseJobParams の結果から trim を受け取っていない");
+  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
+  assert.ok(pass && /\btrim\b/.test(pass[1]), "startJob へ trim を渡していない");
+});
+
+t("サーバ: 渡された trim を state.json へ書く（ここを落とすと一度も詰まらない）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  assert.ok(/trim:\s*opts\.trim/.test(src), "state に trim を書いていない");
+});
+
+t("パイプライン: state.trim を見て詰める区間を決めている", () => {
+  const src = fs.readFileSync(path.join(ROOT, "pipeline.mjs"), "utf-8");
+  assert.ok(/state\.trim === "on"/.test(src), "state.trim を見ていない");
+  assert.ok(/planTrim\(/.test(src), "詰める区間を決めていない");
+  assert.ok(/remapWords\(/.test(src), "字幕の時刻を詰めた時間軸へ写していない");
+  assert.ok(/renderClip\([^)]*keep/.test(src), "決めた区間をレンダリングへ渡していない");
+});
+
 // ── 字幕の手直しの結線（G-EDIT-CAPTION） ────────────────────
 // ここで見ているのはソースコードの静的な読み取りで、画面から実際に届いたことの証明ではない。
 // 語が消えたら落ちるが、固定値を渡すような断線は素通りする。実際に届くことは、

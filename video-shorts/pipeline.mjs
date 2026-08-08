@@ -20,6 +20,7 @@ import {
 import { resolveSegments } from "./src/reverse-match.mjs";
 import { mergeShortSegments, snapToSilence } from "./src/snap-boundaries.mjs";
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
+import { planTrim, remapWords } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, clipName, computeCanvas } from "./src/render-vertical.mjs";
 import { concatClips } from "./src/concat.mjs";
@@ -236,17 +237,29 @@ async function cmdRender(workDir, opts = {}) {
   for (let i = 0; i < resolved.length; i++) {
     const seg = resolved[i];
     // 字幕(ASS)生成（--no-sub 指定時はスキップ）
+    // 無音・言い淀みを詰める設定なら、この区間の中で残す部分を先に決める。
+    // 字幕は詰めたあとの時間軸で書かないと、詰めたぶんだけ遅れて出る。
+    const relWordsAll = wordsInRange(transcript.words || [], seg.start, seg.end);
+    let keep = null;
+    let assWords = relWordsAll;
+    let clipDuration = seg.duration;
+    if (state.trim === "on") {
+      const plan = planTrim(relWordsAll, { duration: seg.duration });
+      keep = plan.keep;
+      assWords = remapWords(relWordsAll, plan.keep);
+      clipDuration = plan.keptSeconds;
+      log(`  [TRIM] #${i + 1} ${seg.duration.toFixed(1)}s → ${plan.keptSeconds.toFixed(1)}s（${plan.cutSeconds.toFixed(1)}s 詰めた）`);
+    }
     let assPath = null;
     if (!noSub) {
-      const relWords = wordsInRange(transcript.words || [], seg.start, seg.end);
-      const ass = buildAss(relWords, seg.hook, seg.duration, { style: subStyle, width: canvas.w, height: canvas.h });
+      const ass = buildAss(assWords, seg.hook, clipDuration, { style: subStyle, width: canvas.w, height: canvas.h });
       assPath = path.join(workDir, `clip-${i + 1}.ass`);
       fs.writeFileSync(assPath, ass, "utf-8");
     }
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderClip({ input: state.input, start: seg.start, end: seg.end, assPath, output: outFile, orientation, srcW, srcH });
+      await renderClip({ input: state.input, start: seg.start, end: seg.end, assPath, output: outFile, orientation, srcW, srcH, keep });
       const size = await probeSize(outFile);
       manifest.push({
         index: i + 1,
