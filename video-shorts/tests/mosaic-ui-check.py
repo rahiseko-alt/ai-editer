@@ -95,7 +95,13 @@ GAP_EDGE = (apply_mosaic_cli.CHUNK_FRAMES, apply_mosaic_cli.CHUNK_FRAMES + HOLD_
 # 通ってしまう。顔の矩形のうち、どれだけの広さが塗り替わったかで見る。
 # 顔の矩形全体の「平均の階調差」で見る。1画素の最大値だと、顔の端を少し塗っただけの
 # 実装でも通ってしまう。平均なら、塗られた広さが足りなければ下がる。
-MASKED_MEAN_MIN = 6.0
+# 実測(2026-08-08): 誰も塗らない場所5.00 / 正しく隠されている9.57 /
+# 追従を持ち越さない2.86 / 持ち越しが不完全3.76。両側の実測の中ほどに置く。
+MASKED_MEAN_MIN = 7.5
+# 「隠されていない」側の値を同じ実行の中で測るための、顔から離れた同じ大きさの矩形の左上。
+# 顔枠+72px の除外の外にあり、ここは誰も塗らないので圧縮ノイズだけが出る。
+# 下限6.0が「隠していない状態」より上にあることを、実測で毎回押さえるために使う。
+REF_RECT_ORIGIN = (60, 60)
 # 素材R-P（縦型 9:16）。画面の既定は 9:16 で、この製品の主力もこちら。
 # render-vertical.mjs は 1280x720 を scale=1080:1920:force_original_aspect_ratio=decrease で
 # 1080x607 へ縮めて上下に黒帯を足すので、顔の高さは 216px → 182px（画面の9.5%）になる。
@@ -260,7 +266,24 @@ def read_frames(path):
     return out
 
 
+def judge_detector(width, height):
+    """素顔が写っているかを判定する検出器。必ず素材の原寸で作る（縮小しない）。
+
+    ここを1か所に集めているのは、判定の細かさが合格ラインの一部だからである。
+    呼ぶ側で create_detector を直接使うと、縮小するかどうかを各所で選べてしまい、
+    同じ動画が合格にも不合格にもなる。
+    """
+    return create_detector(width, height)
+
+
 def faces_per_frame(frames, detector):
+    """素顔が見えるコマ数を数える。検出器は必ず素材の原寸で作る（縮小しない）。
+
+    製品の実装は速さのため幅960へ縮めて検出するが、判定を同じ設定で行ってはならない。
+    実測(2026-08-08): 90度回した顔は原寸では1件検出されるのに、製品既定の縮小では0件になる。
+    判定側を縮小すると「実装が見落とす顔は、判定も見落とす」ことになり、
+    取りこぼしを一切検出できない検査になる。判定は実装より厳しい側に置く。
+    """
     return [len(detect_faces(f, detector)) for f in frames]
 
 
@@ -319,7 +342,7 @@ def main():
         plain = read_frames(baseline)
         check(len(plain) == FRAMES, f"基準(同じエンコーダを通した素材R)が{FRAMES}コマである(実={len(plain)})")
 
-        det = create_detector(W, H)
+        det = judge_detector(W, H)
 
         # ── 対照（G-EDIT-MOSAIC-UI-B も兼ねる） ──────────────────
         # モザイクを掛けていない入力で素顔が全コマ検出できることを先に確認する。
@@ -357,7 +380,7 @@ def main():
         # ── A: 出力から素顔が消えている ───────────────────────
         after = read_frames(masked)
         check(len(after) == FRAMES, f"モザイク版も{FRAMES}コマである(実={len(after)})")
-        hit_after = sum(1 for n in faces_per_frame(after, create_detector(W, H)) if n > 0)
+        hit_after = sum(1 for n in faces_per_frame(after, judge_detector(W, H)) if n > 0)
         check(hit_after == 0,
               f"A: モザイク版で素顔が検出されるコマが 0/{FRAMES}（実={hit_after}）")
 
@@ -449,7 +472,7 @@ def main():
         dg_out = os.path.join(out_dir, digest_masked)
         if check(os.path.exists(dg_out), "ダイジェストのモザイク版が生成された"):
             dg_frames = read_frames(dg_out)
-            dg_hit = sum(1 for n in faces_per_frame(dg_frames, create_detector(W, H)) if n > 0)
+            dg_hit = sum(1 for n in faces_per_frame(dg_frames, judge_detector(W, H)) if n > 0)
             check(dg_hit == 0,
                   f"A: ダイジェストでも素顔が検出されるコマが 0/{FRAMES}（実={dg_hit}）")
 
@@ -578,7 +601,7 @@ def main():
             # 区切り(300)+先読み(6) に届かないため、区切りの手前だけ顔を隠さない実装でも
             # 素顔が0件と出てしまう（実測: 340コマ中300コマに素顔が写るのに全項目が緑だった）。
             i_frames = read_frames(i_out)
-            i_hit = sum(1 for n in faces_per_frame(i_frames, create_detector(W, H)) if n > 0)
+            i_hit = sum(1 for n in faces_per_frame(i_frames, judge_detector(W, H)) if n > 0)
             check(i_hit == 0,
                   f"A: 区切りをまたぐ長さ({I_FRAMES}コマ)でも素顔が検出されるコマが 0/{I_FRAMES}"
                   f"（実={i_hit}）")
@@ -605,6 +628,19 @@ def main():
                     d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)[r0:r1, c0:c1]
                     weakest = min(weakest, float(d.mean()))
                 return weakest
+
+            # 低い側の対照: 誰も塗らない場所（顔から離れた同じ大きさの矩形）の値。
+            # 下限6.0がこれより上にあることを毎回測る。片側だけの対照だと、
+            # 「隠れているときに高い」ことしか言えず、下限が妥当かを機械が押さえられない。
+            ry0, rx0 = REF_RECT_ORIGIN
+            ry1, rx1 = ry0 + (r1 - r0), rx0 + (c1 - c0)
+            ref = 0.0
+            for k in range(*GAP_EDGE):
+                d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)[ry0:ry1, rx0:rx1]
+                ref = max(ref, float(d.mean()))
+            check(ref < MASKED_MEAN_MIN,
+                  f"対照N: 誰も塗らない場所の平均差は下限より小さい"
+                  f"（実={ref:.2f} < {MASKED_MEAN_MIN}）")
 
             mid = gap_weakest(range(*GAP_MID))
             check(mid >= MASKED_MEAN_MIN,
@@ -633,7 +669,7 @@ def main():
         m_clip = os.path.join(m_dir, "p.mp4")
         build_material_p(m_clip)
         m_src = read_frames(m_clip)
-        p_det = create_detector(PW, PH)
+        p_det = judge_detector(PW, PH)
         m_before = sum(1 for n in faces_per_frame(m_src, p_det) if n > 0)
         check(m_before == FRAMES,
               f"対照M: 縦型でもモザイク無しなら素顔が {m_before}/{FRAMES} コマで検出できる")
@@ -644,7 +680,7 @@ def main():
                             capture_output=True, text=True)
         if check(r5.returncode == 0, "縦型の素材でもモザイク工程が正常終了する"):
             m_after = read_frames(os.path.join(m_dir, "p-mosaic.mp4"))
-            m_hit = sum(1 for n in faces_per_frame(m_after, create_detector(PW, PH)) if n > 0)
+            m_hit = sum(1 for n in faces_per_frame(m_after, judge_detector(PW, PH)) if n > 0)
             check(m_hit == 0, f"M: 縦型(9:16)でも素顔が検出されるコマが 0/{FRAMES}（実={m_hit}）")
             check(m_after and m_after[0].shape[:2] == (PH, PW),
                   f"対照M: 出力が縦型のまま（1080x1920）である"
@@ -711,6 +747,8 @@ def main():
         left4 = sorted(os.listdir(j3_dir))
         check([n for n in left4 if n.endswith("-mosaic.mp4")] == [],
               f"J: 書きかけの -mosaic が成果物フォルダに残らない（実={left4}）")
+        check("s.mp4" in left4,
+              f"J: 書き込みが途中で止まっても素顔は成果物フォルダに残る（実={left4}）")
 
         # 途中で切れた動画を渡した場合。読み出し側の ffmpeg は警告を出しながら
         # 終了コード0を返すことがあり、終了コードだけを見ていると「短くなった動画」を
@@ -750,6 +788,8 @@ def main():
         left5 = sorted(os.listdir(j4_dir))
         check([n for n in left5 if n.endswith("-mosaic.mp4")] == [],
               f"J: 途中で切れた動画でも -mosaic が残らない（実={left5}）")
+        check("t.mp4" in left5,
+              f"J: 途中で切れた動画でも素顔は成果物フォルダに残る（実={left5}）")
 
         # 第2段（素顔を退避する所）で失敗した場合も同じであること。
         # 第1段だけを守っていると、退避の途中で落ちたときに
