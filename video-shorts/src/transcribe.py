@@ -100,8 +100,72 @@ def load_corrections():
         return {}
 
 
+def fix_words(words, corrections):
+    """words[] へ誤変換辞書を適用する。語をまたいで分割された誤変換にも効かせる。
+
+    素朴に1語ずつ置換すると、誤変換語が複数トークンへ分割されたとき
+    （例 words=[追][患][版]）どの語もキー全体を含まないので直らない。
+    字幕は words[].w から作られるので、これだと画面には誤変換が残ったままになる。
+    そこで全語を連結した文字列で探し、見つかった範囲の語を1語へまとめて置き換える。
+
+    まとめた語の時刻は「最初の語の開始」〜「最後の語の終了」にする。
+    直すのは綴りであって喋った時刻ではないので、範囲は元のまま保つ。
+    範囲の前後にはみ出した文字（語の途中で一致した場合）はそのまま残す。
+    """
+    if not corrections or not words:
+        return words
+
+    out = [dict(w) for w in words]
+    # 置換のたびに連結文字列が変わるので、変化が無くなるまで繰り返す。
+    # 上限は暴走よけ（辞書の件数ぶん回れば足りる）。
+    for _ in range(len(corrections) * len(out) + 1):
+        starts = []
+        pos = 0
+        for w in out:
+            t = w.get("w") if isinstance(w.get("w"), str) else ""
+            starts.append(pos)
+            pos += len(t)
+        text = "".join(
+            (w.get("w") if isinstance(w.get("w"), str) else "") for w in out
+        )
+
+        hit = None
+        for wrong, right in corrections.items():
+            at = text.find(wrong)
+            if at >= 0:
+                # 置換後の語がそのまま同じ誤変換を含むと、無限に見つかり続ける。
+                if wrong in right:
+                    continue
+                hit = (at, wrong, right)
+                break
+        if hit is None:
+            return out
+
+        at, wrong, right = hit
+        end = at + len(wrong)
+        first = _owner_index(starts, out, at)
+        last = _owner_index(starts, out, end - 1)
+        head = out[first].get("w", "")[: at - starts[first]]
+        tail = out[last].get("w", "")[end - starts[last]:]
+        merged = dict(out[first])
+        merged["w"] = head + right + tail
+        if "end" in out[last]:
+            merged["end"] = out[last]["end"]
+        out = out[:first] + [merged] + out[last + 1:]
+
+    return out
+
+
+def _owner_index(starts, words, char_pos):
+    """連結文字列の char_pos が、何番目の語に属するかを返す。"""
+    for i in range(len(words) - 1, -1, -1):
+        if starts[i] <= char_pos:
+            return i
+    return 0
+
+
 def apply_corrections(result, corrections):
-    """words[].w と segments[].text の両方へ誤変換辞書を単純文字列置換で適用する。
+    """words[].w と segments[].text の両方へ誤変換辞書を適用する。
     字幕(words)と区間選定(segments.text→LLM提示)の双方に一貫して効かせるのが目的。"""
     if not corrections:
         return result
@@ -112,9 +176,7 @@ def apply_corrections(result, corrections):
                 s = s.replace(wrong, right)
         return s
 
-    for w in result.get("words", []):
-        if isinstance(w.get("w"), str):
-            w["w"] = fix(w["w"])
+    result["words"] = fix_words(result.get("words", []), corrections)
     for seg in result.get("segments", []):
         if isinstance(seg.get("text"), str):
             seg["text"] = fix(seg["text"])
