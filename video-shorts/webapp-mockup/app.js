@@ -401,6 +401,9 @@ function addJob(jobId, jobToken, candidates, incomplete) {
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
     file: c.file,
+    // 字幕の手直しで「このクリップに写る語」だけを出すために、区間の時刻も持つ
+    start: c.start,
+    end: c.end,
   }));
   jobs.push({
     jobId,
@@ -441,7 +444,7 @@ function renderResults() {
     `<p class="reason">あなたの設定をもとに、AIがそのまま使える部分を${KEEP.length}本選びました。短い・中身が薄い部分は「使わない候補」に入れています。</p>` +
     (KEEP.length
       ? KEEP.map((c, i) =>
-          `<div class="clip-row"><span class="thumb"></span><span class="ch"><b>${esc(c.h)}</b><span>${c.d}・縦型</span></span><button class="clip-btn dl" data-i="${i}">⬇ DL</button></div>`).join("")
+          `<div class="clip-row"><span class="thumb"></span><span class="ch"><b>${esc(c.h)}</b><span>${c.d}・縦型</span></span><button class="clip-btn cap" data-i="${i}">字幕を直す</button><button class="clip-btn dl" data-i="${i}">⬇ DL</button></div>`).join("")
       : `<p class="placeholder">採用できる部分がありませんでした。設定を変えてやり直してみてください。</p>`);
   $("tab-trash").innerHTML =
     `<p class="reason">AIが「今回は使わない」と判断した部分です（NG・準備中・本題外）。必要なら採用に戻せます。</p>` +
@@ -459,9 +462,129 @@ function downloadClip(c) {
   a.click();
 }
 $("tab-keep").addEventListener("click", (e) => {
+  const cap = e.target.closest(".cap");
+  if (cap) {
+    const job = activeJob(); if (!job) return;
+    return openCaptionEditor(job, job.keep[+cap.dataset.i]);
+  }
   const b = e.target.closest(".dl"); if (!b) return;
   const job = activeJob(); if (!job) return;
   downloadClip(job.keep[+b.dataset.i]);
+});
+
+// ── 字幕の手直し（G-EDIT-CAPTION） ─────────────────────────
+// 焼き込む前に文字を直せるようにする。直した内容はサーバへ保存し、
+// 「この字幕で焼き直す」で作り直す。よく出る名前は用語辞書へ覚えさせる。
+let capCtx = null;   // { job, clip, words }
+
+function capStatus(text, isError) {
+  const el = $("caption-status");
+  el.textContent = text || "";
+  el.classList.toggle("err", !!isError);
+}
+
+function openCaptionEditor(job, clip) {
+  if (!job || !clip) return;
+  capCtx = { job, clip, words: [] };
+  $("caption-title").textContent = `字幕を直す — ${clip.h}`;
+  $("caption-editor").classList.remove("hidden");
+  $("tab-keep").classList.add("hidden");
+  capStatus("読み込んでいます…");
+  fetch(withTokenQuery(`/api/jobs/${job.jobId}/captions`, job.jobToken),
+    withTokenHeader({}, job.jobToken))
+    .then((r) => (r.ok ? r.json() : r.json().then((j) => Promise.reject(new Error(j.error || `読み込みに失敗しました（${r.status}）`)))))
+    .then((data) => {
+      capCtx.words = (data.words || []).filter((w) =>
+        clip.start === undefined || clip.end === undefined
+          ? true
+          : w.end > clip.start && w.start < clip.end);
+      renderCaptionWords();
+      capStatus("");
+    })
+    .catch((e) => capStatus(e.message, true));
+}
+
+function renderCaptionWords() {
+  const el = $("caption-words");
+  if (!capCtx || !capCtx.words.length) {
+    el.innerHTML = `<p class="placeholder">この部分に字幕の文字がありません。</p>`;
+    return;
+  }
+  el.innerHTML = capCtx.words.map((w) =>
+    `<span class="caption-word ${w.edited ? "is-edited" : ""}" data-index="${w.index}">` +
+    `<input type="text" value="${esc(w.w)}" data-index="${w.index}" aria-label="字幕の語" />` +
+    (w.edited ? `<span class="caption-orig">元: ${esc(w.original)}</span>` : "") +
+    `</span>`).join("");
+}
+
+// 入力欄を離れたとき（またはEnter）に保存する
+$("caption-words").addEventListener("change", (e) => {
+  const input = e.target.closest("input[data-index]"); if (!input) return;
+  saveCaptionWord(Number(input.dataset.index), input.value);
+});
+$("caption-words").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.matches("input[data-index]")) e.target.blur();
+});
+
+function saveCaptionWord(index, text) {
+  if (!capCtx) return;
+  const { job } = capCtx;
+  capStatus("保存しています…");
+  fetch(withTokenQuery(`/api/jobs/${job.jobId}/captions`, job.jobToken),
+    withTokenHeader({
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, text }),
+    }, job.jobToken))
+    .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "保存に失敗しました")))))
+    .then((j) => {
+      const w = capCtx.words.find((x) => x.index === index);
+      if (w) { w.w = j.after; w.edited = j.after !== w.original; }
+      renderCaptionWords();
+      capStatus("保存しました");
+      offerLearnTerm(j.before, j.after);
+    })
+    .catch((e) => capStatus(e.message, true));
+}
+
+// 直した語を用語辞書へ覚えさせる導線（次の案件から自動で直る）
+function offerLearnTerm(before, after) {
+  if (!capCtx || !before || !after || before === after) return;
+  const el = $("caption-status");
+  const btn = document.createElement("button");
+  btn.className = "clip-btn caption-learn";
+  btn.textContent = `「${before}」→「${after}」を次からも自動で直す`;
+  btn.addEventListener("click", () => {
+    const { job } = capCtx;
+    fetch(withTokenQuery(`/api/jobs/${job.jobId}/terms`, job.jobToken),
+      withTokenHeader({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ before, after }),
+      }, job.jobToken))
+      .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "登録に失敗しました")))))
+      .then(() => capStatus("次からも自動で直します"))
+      .catch((e) => capStatus(e.message, true));
+  });
+  el.appendChild(document.createTextNode(" "));
+  el.appendChild(btn);
+}
+
+$("caption-rebake").addEventListener("click", () => {
+  if (!capCtx) return;
+  const { job } = capCtx;
+  capStatus("焼き直しています…（動画を作り直すので少し待ちます）");
+  fetch(withTokenQuery(`/api/jobs/${job.jobId}/recaption`, job.jobToken),
+    withTokenHeader({ method: "POST" }, job.jobToken))
+    .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "焼き直しに失敗しました")))))
+    .then((j) => capStatus(`焼き直しました（${j.rebuilt}本）`))
+    .catch((e) => capStatus(e.message, true));
+});
+
+$("caption-back").addEventListener("click", () => {
+  capCtx = null;
+  $("caption-editor").classList.add("hidden");
+  $("tab-keep").classList.remove("hidden");
 });
 $("tab-trash").addEventListener("click", (e) => {
   const b = e.target.closest(".move"); if (!b) return;

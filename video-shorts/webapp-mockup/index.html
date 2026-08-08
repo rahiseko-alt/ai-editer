@@ -190,6 +190,22 @@
       <div class="tab-body" id="tab-keep" role="tabpanel">
         <p class="placeholder">実行すると、ショート候補がここに並びます。</p>
       </div>
+      <!-- 字幕の手直し（G-EDIT-CAPTION）。焼き込む前に文字を直せる導線。 -->
+      <div class="caption-editor hidden" id="caption-editor" aria-label="字幕の手直し">
+        <div class="caption-head">
+          <b id="caption-title">字幕を直す</b>
+          <button class="clip-btn" id="caption-back">← 一覧へ戻る</button>
+        </div>
+        <p class="reason" id="caption-hint">
+          聞き間違えられた文字をその場で直せます。直したら「この字幕で焼き直す」を押すと、
+          新しい文字で作り直します。よく出てくる名前は「次からも自動で直す」に登録できます。
+        </p>
+        <div class="caption-words" id="caption-words"></div>
+        <div class="caption-actions">
+          <button class="clip-btn dl" id="caption-rebake">この字幕で焼き直す</button>
+          <span class="caption-status" id="caption-status"></span>
+        </div>
+      </div>
       <div class="tab-body hidden" id="tab-trash" role="tabpanel">
         <p class="placeholder">NG・準備中・雑談など、今回は使わない部分をここにまとめます。必要なら採用に戻せます。</p>
       </div>
