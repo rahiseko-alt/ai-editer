@@ -52,7 +52,15 @@ PIXEL_TOLERANCE = NOISE_FLOOR * 2   # = 10
 # ここを PIXEL_TOLERANCE から導出すると、許容を変えたときに対照も一緒に動いて意味を失う。
 TOLERANCE_PASSES_AT = 10        # 階調差10ちょうどは通らなければならない
 TOLERANCE_FAILS_AT = 11         # 階調差11は落ちなければならない
-MARGIN_PROBE_PX = 73            # 顔枠+73px は除外の外＝汚しを置けば落ちなければならない
+# 顔枠+72px の位置は除外の外側の1列目（除外は bx+bw+FACE_MARGIN_PX の手前まで）。
+# ここに汚しを置くと、除外幅を73px以上に広げた瞬間に隠れて対照が落ちる＝72pxを上から固定する。
+# 73にすると74px以上でしか落ちず、1pxぶん後から緩める余地が残る。
+MARGIN_PROBE_PX = 72
+# 見ないことにする面積の上下限（画面に対する割合）。mask は実行時に検出した顔枠から作るので、
+# 顔検出（OpenCV）の版が変わって枠が大きくなると、免除される面積も黙って広がる。
+# ubuntu-24.04 / opencv 5.0.0 での実測は 225x247 ＝ 6.03%。
+EXCLUDED_AREA_MAX_PCT = 8.0     # これ以上広いと「見ない範囲」が広がりすぎている
+EXCLUDED_AREA_MIN_PCT = 4.0     # これ以下だと顔枠が縮んでいる（実装が隠す範囲を覆えない）
 
 fail = 0
 
@@ -103,6 +111,14 @@ def build_material_r(path, audio=False):
     return frame
 
 
+def probe_stream(path, selector):
+    """ffprobe で1本のストリームの fps・尺・コマ数を取る。"""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", selector,
+                        "-show_entries", "stream=r_frame_rate,duration,nb_frames",
+                        "-of", "default=nw=1", path], capture_output=True, text=True)
+    return dict(l.split("=", 1) for l in r.stdout.strip().split("\n") if "=" in l)
+
+
 def read_audio_pcm(path):
     """音声を 16bit・48000Hz・モノラルの生データとして取り出す。無音なら空。"""
     r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn",
@@ -151,6 +167,8 @@ def main():
     # 合格ラインは ubuntu-24.04 / ffmpeg 6.1.1 での実測に基づく。実際に使った版を記録に残す。
     ver = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout
     print(f"[INFO] {ver.splitlines()[0] if ver else 'ffmpeg 不明'}")
+    # 顔検出の版でも「見ないことにする範囲」が変わる。ffmpeg と同じく記録に残す。
+    print(f"[INFO] opencv {cv2.__version__}")
 
     work = tempfile.mkdtemp(prefix="vs-mosaic-ui-")
     out_dir = os.path.join(work, "output", "job1")
@@ -159,11 +177,15 @@ def main():
 
     try:
         clip = os.path.join(out_dir, "short-01-test.mp4")
-        build_material_r(clip)
+        composed = build_material_r(clip)
         check(os.path.exists(clip), "素材R（1人・16:9・15fps・2秒）を合成した")
 
         plain_src = read_frames(clip)
         check(len(plain_src) == FRAMES, f"素材Rが{FRAMES}コマである(実={len(plain_src)})")
+        # 素材Rが可逆であることを機械で押さえる。ここが非可逆に戻ると、素材そのものが
+        # 符号化器の版で変わり、下で測るノイズの床（＝合格ラインの土台）が黙って崩れる。
+        exact = all(np.array_equal(f, composed) for f in plain_src)
+        check(exact, "素材Rを読み戻したコマが、合成した絵と1画素も違わない（可逆であること）")
 
         # 比較の基準は、モザイク工程と同じエンコーダを一度通した動画にする。
         # 素材Rそのものと比べると、モザイクの境目に出る x264 の圧縮ノイズが
@@ -219,6 +241,10 @@ def main():
         # 除外矩形は 225x247 ＝ 画面の約6.0%。残り94%に差が出れば落ちる。
         boxes = detect_faces(plain_src[0], det)
         mask = outside_face_mask(boxes)
+        excluded_pct = float((~mask).sum()) / (W * H) * 100
+        check(EXCLUDED_AREA_MIN_PCT <= excluded_pct <= EXCLUDED_AREA_MAX_PCT,
+              f"C: 見ないことにする面積が画面の{EXCLUDED_AREA_MIN_PCT}〜{EXCLUDED_AREA_MAX_PCT}%に収まる"
+              f"（実={excluded_pct:.2f}%）")
         worst = worst_diff(plain, after, mask) if same_size else 255
         check(same_size and worst <= PIXEL_TOLERANCE,
               f"C: 顔の周り(顔枠+{FACE_MARGIN_PX}px)を除いた画素が基準と一致する"
@@ -246,17 +272,20 @@ def main():
 
         # (2) 除外幅の境界を固定する。顔枠+73px の位置に置いた小さな汚しは落ちなければならない。
         #     除外幅を72pxより広げるとこの汚しが除外の中に入り、検出できなくなって落ちる。
-        bx, by, bw, bh = (int(v) for v in boxes[0])
-        px0 = min(W - 8, bx + bw + MARGIN_PROBE_PX)
-        py0 = max(0, by + bh // 2 - 4)
+        bx, by, bw, bh = boxes[0]
+        # 除外の右端は int(bx+bw)+FACE_MARGIN_PX の手前まで（mask と同じ式）。
+        # よって int(bx+bw)+72 が「除外の外側の1列目」。汚しはこの1列だけに置く。
+        # 幅を持たせると、除外を1px広げても汚しの残りが見えてしまい、72pxを固定できない。
+        px = min(W - 1, int(bx + bw) + MARGIN_PROBE_PX)
+        py = max(0, int(by + bh / 2) - 4)
         near = []
         for f in plain:
             g = f.copy()
-            g[py0:py0 + 8, px0:px0 + 8] = 255
+            g[py:py + 8, px:px + 1] = 255
             near.append(g)
         check(worst_diff(plain, near, mask) > PIXEL_TOLERANCE,
-              f"対照C: 顔枠+{MARGIN_PROBE_PX}px の位置の汚しは落ちる"
-              f"（見ないことにする範囲が{FACE_MARGIN_PX}pxより広くないことを固定する）")
+              f"対照C: 顔枠+{MARGIN_PROBE_PX}px の1列（除外の外側の1列目）の汚しは落ちる"
+              f"（見ないことにする範囲を{MARGIN_PROBE_PX}pxより広げられないことを固定する）")
 
         # (3) 顔から遠い隅も見ていることを示す。
         stained = []
@@ -291,16 +320,36 @@ def main():
         build_material_r(g_clip, audio=True)
         src_pcm = read_audio_pcm(g_clip)
         check(len(src_pcm) > 0, f"対照G: 音付きの素材に音が入っている（実={len(src_pcm)}バイト）")
+        # 工程は素顔のファイルを成果物フォルダの外へ移すので、入力側の情報は先に取っておく。
+        vin, ain = probe_stream(g_clip, "v:0"), probe_stream(g_clip, "a:0")
         json.dump({"id": "job3", "digest": None,
                    "candidates": [{"file": "c.mp4", "path": g_clip}]},
                   open(os.path.join(g_dir, "candidates.json"), "w", encoding="utf-8"))
         r3 = subprocess.run(["node", STAGE_MJS, g_dir, os.path.join(work, "work", "job3", "pre-mosaic")],
                             capture_output=True, text=True)
         if check(r3.returncode == 0, "音付きの素材でもモザイク工程が正常終了する"):
-            out_pcm = read_audio_pcm(os.path.join(g_dir, "c-mosaic.mp4"))
+            g_out = os.path.join(g_dir, "c-mosaic.mp4")
+            out_pcm = read_audio_pcm(g_out)
             check(len(out_pcm) > 0, f"G: モザイク版に音が残っている（実={len(out_pcm)}バイト）")
             check(out_pcm == src_pcm,
                   f"G: モザイク版の音が入力と一致する（入力={len(src_pcm)} 出力={len(out_pcm)}バイト）")
+
+            # ── H: 尺と速さが元のまま（音と絵がずれない） ──────────
+            # 音のバイト列が一致していても、映像側だけ別のfpsで書き戻されると
+            # 絵が早送り／スローになり、音とずれた動画が出来上がる。実装の probe() は
+            # r_frame_rate を報告しない素材を無言で 30fps 扱いにする経路を持つので、
+            # 「音が同じ」「画素が同じ」とは独立に落ちうる受入事実として別に測る。
+            vout, aout = probe_stream(g_out, "v:0"), probe_stream(g_out, "a:0")
+            check(vin.get("r_frame_rate") is not None and vout.get("r_frame_rate") == vin.get("r_frame_rate"),
+                  f"H: 映像のfpsが入力と一致する（入力={vin.get('r_frame_rate')} 出力={vout.get('r_frame_rate')}）")
+            vi, vo = float(vin.get("duration", 0)), float(vout.get("duration", 0))
+            check(abs(vi - vo) < 0.005,
+                  f"H: 映像の尺が入力と一致する（入力={vi:.3f}秒 出力={vo:.3f}秒）")
+            ai, ao = float(ain.get("duration", 0)), float(aout.get("duration", 0))
+            check(abs(ai - ao) < 0.005,
+                  f"H: 音の尺が入力と一致する（入力={ai:.3f}秒 出力={ao:.3f}秒）")
+            check(abs(vo - ao) < 0.005,
+                  f"H: 出力の映像と音の尺がそろっている（映像={vo:.3f}秒 音={ao:.3f}秒）")
         else:
             print("      " + (r3.stderr or "")[-800:])
 
