@@ -805,6 +805,21 @@
           "meaning": "コードを直したときに、機械が正しく緑/赤を判定してくれる",
           "children": [
             {
+              "id": "G-TESTINFRA-WINCI",
+              "kind": "state",
+              "theme": "Windows実機でも、記号を含むパスの字幕焼き込みが自動で確認される",
+              "meaning": "配布先の多くはWindowsなのに、Windowsで動くかを機械が一度も確かめていない状態を無くす",
+              "detail": "2026-08-08のPR#42レビュー指摘。tests/render-escape-check.mjs は Windows 用のケース集合を持つが、CI は ubuntu-latest でしか回っていない。env FORCE_WIN_CASES=1 は他OSでもWindows用ケース集合を走らせるが、path モジュールはホストのまま(POSIX)なので、ドライブレターのコロンやバックスラッシュ区切りは実際には通っていない＝Windows検証の代用にはならない(テスト側のコメントにも明記済み)。\n\n本PRでは実装しない。windows-latest ランナーの追加は ffmpeg の導入方法(chocolatey)・CI所要時間・auto-merge.yml が全check runのsuccessを要求する設計(＝Windowsジョブが不安定だとマージが止まる)といった、この修正の範囲を超える判断を伴うため、マスターの承認を得てから着手する。",
+              "status": "todo",
+              "criteria": [
+                {
+                  "text": "windows-latest ランナー上で tests/render-escape-check.mjs が FORCE_WIN_CASES 無しで全PASSする",
+                  "verify": "Windows ランナーで実行されたCI runのログで、[INFO] 行が platform=win32 を示した上で全ケースがPASSしていることを、その run URL で確認する",
+                  "evidence": ""
+                }
+              ]
+            },
+            {
               "id": "G-TESTINFRA-LINT",
               "kind": "state",
               "theme": "video-shortsにLintが導入されている",
@@ -861,12 +876,12 @@
                   "kind": "state",
                   "theme": "静的解析が指摘していたエスケープ漏れの警告が出なくなっている",
                   "meaning": "「文字列の組み立てが甘い」と機械に指摘された箇所が残っていない",
-                  "detail": "2026-07-28のPR#9でCodeQLが escapeFilterPath に Incomplete string escaping(高深刻度・バックスラッシュ文字をエスケープしていない)を検出していた。本修正で \\ を含む全特殊文字をエスケープ対象にしたため解消する見込み。\n\n【未確定・人手の確認待ち】PR#41でCodeQL workflow(run 31228104828)とPR上の\"CodeQL\"チェックはいずれもsuccessだが、これは「アラート一覧に該当項目が無い」ことを直接示すものではない(チェックの失敗閾値の設定に依存する)。code scanning alerts API はこのセッションの権限では403で読めず、機械的に確認できなかった。Security → Code scanning の画面で当該アラートがClosedになっていることを人が確認してから done にする。「たぶん直った」で自己採点しない。",
+                  "detail": "2026-07-28のPR#9でCodeQLが escapeFilterPath に Incomplete string escaping(高深刻度・バックスラッシュ文字をエスケープしていない)を検出していた。本修正で \\ を含む全特殊文字をエスケープ対象にしたため解消する見込み。\n\n【未確定・人手の確認待ち】PR#41でCodeQL workflow(run 31228104828)とPR上の\"CodeQL\"チェックはいずれもsuccessだが、これは「アラート一覧に該当項目が無い」ことを直接示すものではない(チェックの失敗閾値の設定に依存する)。code scanning alerts API はこのセッションの権限では403で読めず、機械的に確認できなかった。人が確認してから done にする。「たぶん直った」で自己採点しない。\n\n2026-08-08のレビュー指摘で verify を再度是正した。当初は「Closed/Fixed」を合格条件にしていたが、GitHub の内部状態は open/dismissed/fixed の3つで、UIの\"Closed\"は dismissed(握りつぶし)と fixed(修正済み)の両方を含む。つまり Closed を根拠にすると、誰かが dismiss しただけでも done にできてしまう。合格は fixed のみとする。",
                   "status": "doing",
                   "criteria": [
                     {
                       "text": "escapeFilterPath に対する CodeQL の Incomplete string escaping アラートが再検出されない",
-                      "verify": "GitHubのSecurity → Code scanningで、escapeFilterPath に対する Incomplete string escaping アラートが本修正を含むcommit(0ed74a1以降)に対してClosed/Fixedである(または一覧に存在しない)ことを、そのアラートのURLで確認する。workflow runがsuccessであることは、アラートの不在を示さないので根拠にしない。",
+                      "verify": "escapeFilterPath に対する Incomplete string escaping アラートの state が、本修正を含むcommit(0ed74a1以降)に対して fixed であることを、そのアラートのURLで確認する。アラートが見当たらない場合は、stateで絞り込まずに(open/dismissed/fixed 全件を)一覧してなお該当が無いことまで確認する。【不合格とする状態】(1)state=open、(2)state=dismissed(握りつぶしは修正ではない。UIの\"Closed\"は dismissed と fixed の両方を含むため、Closedの表示だけを根拠にしない)、(3)workflow run が success であること(アラートの不在を示さない)。",
                       "evidence": ""
                     }
                   ]
