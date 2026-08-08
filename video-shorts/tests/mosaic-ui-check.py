@@ -64,6 +64,9 @@ EXCLUDED_AREA_MIN_PCT = 4.0     # これ以下だと顔枠が縮んでいる（�
 # 尺の一致とみなす差（秒）。素材の1コマ(1/15＝0.067秒)や音声の1パケット(1024/48000＝0.021秒)
 # より十分小さく、コマ1つぶんのずれでも検出できる値として置く。
 DURATION_TOLERANCE_SEC = 0.005
+# コマ番号の目印（素材R-M）。1ビット＝8x8画素の升目を横16個＝128x8画素の帯を画面左上に置く。
+MARKER_CELL_PX = 8
+MARKER_BITS = 16
 
 fail = 0
 
@@ -90,24 +93,51 @@ def compose_frame():
     return frame
 
 
-def build_material_r(path, audio=False):
+def stamp_marker(frame, n):
+    """左上に、コマ番号 n を16bitの白黒模様として焼く（1ビット＝8x8画素の升目）。
+
+    最上位ビットが左端の升目。1は白(255,255,255)、0は黒(0,0,0)。
+    顔は画面中央にあるので、この領域はモザイクの対象にならない。
+    """
+    for i in range(MARKER_BITS):
+        bit = (n >> (MARKER_BITS - 1 - i)) & 1
+        x = i * MARKER_CELL_PX
+        frame[0:MARKER_CELL_PX, x:x + MARKER_CELL_PX] = 255 if bit else 0
+    return frame
+
+
+def read_marker(frame):
+    """stamp_marker で焼いた模様からコマ番号を読み戻す。升目の平均が128超なら1。"""
+    n = 0
+    for i in range(MARKER_BITS):
+        x = i * MARKER_CELL_PX
+        cell = frame[0:MARKER_CELL_PX, x:x + MARKER_CELL_PX]
+        n = (n << 1) | (1 if float(cell.mean()) > 128 else 0)
+    return n
+
+
+def build_material_r(path, audio=False, markers=False):
     """素材R を合成する。全コマ同一の絵・15fps・2秒。
 
     書き出しは libx264rgb の可逆（-qp 0 / bgr24）で行う。cv2.VideoWriter の "mp4v" は
     非可逆で、素材そのものが符号化器の実装差で変わってしまうため使わない
     （素材が版で変わると、下で測るノイズの床も版で変わり、合格ラインの根拠が崩れる）。
-    audio=True のときは 440Hz・48000Hz・2秒の正弦波を AAC で足す（葉G用）。
+    audio=True: 左440Hz・右880Hz・48000Hz・2秒のステレオ正弦波を AAC で足す（＝素材R-A、葉G用）。
+      左右で違う音にするのは、左右が入れ替わる壊れ方を検出できるようにするため。
+    markers=True: コマ番号の白黒模様を左上に焼く（＝素材R-M、葉I用）。
+      全コマ同じ絵だと、コマの並びがずれても画素比較では原理的に見えないため。
     """
     frame = compose_frame()
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-"]
     if audio:
-        cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={SECONDS}",
+        cmd += ["-f", "lavfi", "-i",
+                f"aevalsrc=sin(2*PI*440*t)|sin(2*PI*880*t):s=48000:d={SECONDS}",
                 "-c:a", "aac", "-b:a", "128k"]
     cmd += ["-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    for _ in range(FRAMES):
-        p.stdin.write(frame.tobytes())
+    for i in range(FRAMES):
+        p.stdin.write((stamp_marker(frame.copy(), i) if markers else frame).tobytes())
     p.stdin.close()
     if p.wait() != 0:
         raise RuntimeError(f"素材Rの書き出しに失敗しました: {path}")
@@ -115,17 +145,22 @@ def build_material_r(path, audio=False):
 
 
 def probe_stream(path, selector):
-    """ffprobe で1本のストリームの fps・尺・コマ数を取る。"""
+    """ffprobe で1本のストリームの fps・尺・コマ数・頭出し位置・チャンネル数を取る。"""
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", selector,
-                        "-show_entries", "stream=r_frame_rate,duration,nb_frames",
+                        "-show_entries",
+                        "stream=r_frame_rate,duration,nb_frames,start_time,channels,sample_rate",
                         "-of", "default=nw=1", path], capture_output=True, text=True)
     return dict(l.split("=", 1) for l in r.stdout.strip().split("\n") if "=" in l)
 
 
 def read_audio_pcm(path):
-    """音声を 16bit・48000Hz・モノラルの生データとして取り出す。無音なら空。"""
-    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn",
-                        "-f", "s16le", "-ac", "1", "-ar", "48000", "-"],
+    """音声を 16bit の生データとして取り出す。無音なら空。
+
+    チャンネル数・サンプリング周波数は入力のまま（-ac / -ar を指定しない）。
+    モノラルへ混ぜてしまうと、左右の入れ替えやステレオのモノラル化が
+    同じバイト列になり、判定器がチャンネルの違いに対して盲目になる。
+    """
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn", "-f", "s16le", "-"],
                        capture_output=True)
     return r.stdout if r.returncode == 0 else b""
 
@@ -213,8 +248,14 @@ def main():
               f"対照: モザイク無しでは素顔が {hit_before}/{FRAMES} コマで検出できる")
 
         # ── モザイク工程を実行 ────────────────────────────────
+        # ダイジェスト（「分数で切る」を選んだときに客へ渡る連結動画）も同じジョブに含める。
+        # ダイジェストは素顔のクリップを連結して作られ、モザイク工程だけが最後の砦になる。
+        # ここを対象に含めないと、ダイジェストにだけモザイクを掛けない実装でも全部緑になる。
+        digest_clip = os.path.join(out_dir, "digest-job1.mp4")
+        build_material_r(digest_clip)
         cand = {
-            "id": "job1", "mode": "topic", "generated": 1, "digest": None,
+            "id": "job1", "mode": "topic", "generated": 1,
+            "digest": {"file": os.path.basename(digest_clip), "path": digest_clip},
             "candidates": [{"file": os.path.basename(clip), "path": clip}],
         }
         with open(os.path.join(out_dir, "candidates.json"), "w", encoding="utf-8") as f:
@@ -317,6 +358,17 @@ def main():
             after_cand = json.load(f)
         listed = [c["file"] for c in after_cand["candidates"]]
         check(listed == [masked_name], f"D: 候補一覧がモザイク版だけを指す（実={listed}）")
+        digest_masked = "digest-job1-mosaic.mp4"
+        check((after_cand.get("digest") or {}).get("file") == digest_masked,
+              f"D: ダイジェストもモザイク版を指す（実={(after_cand.get('digest') or {}).get('file')}）")
+
+        # ── A/F をダイジェストにも要求する ──────────────────────
+        dg_out = os.path.join(out_dir, digest_masked)
+        if check(os.path.exists(dg_out), "ダイジェストのモザイク版が生成された"):
+            dg_frames = read_frames(dg_out)
+            dg_hit = sum(1 for n in faces_per_frame(dg_frames, create_detector(W, H)) if n > 0)
+            check(dg_hit == 0,
+                  f"A: ダイジェストでも素顔が検出されるコマが 0/{FRAMES}（実={dg_hit}）")
 
         # ── E / F: 素顔の実体が成果物フォルダに残らない ────────
         # 実体が output/<id>/ の外にあるので、名前を直接指定するAPI(/api/clips/:id/:file)も
@@ -326,6 +378,10 @@ def main():
               f"F: 成果物フォルダに素顔のファイルが残っていない（実={left}）")
         check(os.path.exists(os.path.join(stash_dir, os.path.basename(clip))),
               "F: 素顔のファイルは成果物フォルダの外へ退避されている")
+        check(os.path.basename(digest_clip) not in left,
+              f"F: ダイジェストの素顔も成果物フォルダに残っていない（実={left}）")
+        check(os.path.exists(os.path.join(stash_dir, os.path.basename(digest_clip))),
+              "F: ダイジェストの素顔も成果物フォルダの外へ退避されている")
 
         # ── G: モザイクを掛けても音がそのまま残る ──────────────
         # 素材Rは無音なので、A〜F だけでは音が消える・別物になる壊れ方を一切検出できない。
@@ -349,6 +405,14 @@ def main():
             check(len(out_pcm) > 0, f"G: モザイク版に音が残っている（実={len(out_pcm)}バイト）")
             check(out_pcm == src_pcm,
                   f"G: モザイク版の音が入力と一致する（入力={len(src_pcm)} 出力={len(out_pcm)}バイト）")
+            aout_probe = probe_stream(g_out, "a:0")
+            check(ain.get("channels") == "2",
+                  f"対照G: 素材R-Aがステレオである（実={ain.get('channels')}ch）")
+            check(aout_probe.get("channels") == ain.get("channels")
+                  and aout_probe.get("sample_rate") == ain.get("sample_rate"),
+                  f"G: 音のチャンネル数とサンプリング周波数が入力と一致する"
+                  f"（入力={ain.get('channels')}ch/{ain.get('sample_rate')}Hz"
+                  f" 出力={aout_probe.get('channels')}ch/{aout_probe.get('sample_rate')}Hz）")
 
             # ── H: 尺と速さが元のまま（音と絵がずれない） ──────────
             # 音のバイト列が一致していても、映像側だけ別のfpsで書き戻されると
@@ -377,10 +441,44 @@ def main():
                 # 前者だと、映像が音より少し長い普通の素材（ロードマップの素材TVは0.030秒長い）で、
                 # 何もずらしていない正しい実装まで落ちてしまう。工程が足したずれだけを測る。
                 check(abs((vo - ao) - (vi - ai)) < DURATION_TOLERANCE_SEC,
-                      f"H: 映像と音のずれが入力から変わらない"
+                      f"H: 映像と音の尺の差が入力から変わらない"
                       f"（入力={vi - ai:+.3f}秒 出力={vo - ao:+.3f}秒）")
         else:
             print("      " + (r3.stderr or "")[-800:])
+
+        # ── I: 絵が時間軸のどこに載っているかが変わらない ──────────
+        # H は尺と速さしか見ない。コマ数も fps も尺も音のバイト列も保存したまま、
+        # 絵だけを丸ごと数コマ遅らせることができ、その場合 A〜H は全部緑のまま
+        # 口の動きと音がずれた動画が出来上がる。素材Rは全コマ同じ絵なので、
+        # 葉Cの画素比較でもこのずれは原理的に見えない。コマ番号の目印を焼いた
+        # 素材R-M で、出力の各コマが入力の同じ位置のコマであることを直接測る。
+        i_dir = os.path.join(work, "output", "job4")
+        os.makedirs(i_dir, exist_ok=True)
+        i_clip = os.path.join(i_dir, "d.mp4")
+        build_material_r(i_clip, audio=True, markers=True)
+        i_src = read_frames(i_clip)
+        i_vin, i_ain = probe_stream(i_clip, "v:0"), probe_stream(i_clip, "a:0")
+        check([read_marker(f) for f in i_src] == list(range(FRAMES)),
+              "対照I: 素材R-M のコマ番号が 0..29 の順に読み取れる")
+        json.dump({"id": "job4", "digest": None,
+                   "candidates": [{"file": "d.mp4", "path": i_clip}]},
+                  open(os.path.join(i_dir, "candidates.json"), "w", encoding="utf-8"))
+        r4 = subprocess.run(["node", STAGE_MJS, i_dir, os.path.join(work, "work", "job4", "pre-mosaic")],
+                            capture_output=True, text=True)
+        if check(r4.returncode == 0, "目印付きの素材でもモザイク工程が正常終了する"):
+            i_out = os.path.join(i_dir, "d-mosaic.mp4")
+            got = [read_marker(f) for f in read_frames(i_out)]
+            check(got == list(range(FRAMES)),
+                  f"I: 出力の各コマが入力と同じ順・同じ位置にある（実の先頭5件={got[:5]} 件数={len(got)}）")
+            i_vout, i_aout = probe_stream(i_out, "v:0"), probe_stream(i_out, "a:0")
+            si, so = i_vin.get("start_time"), i_vout.get("start_time")
+            check(si is not None and si == so,
+                  f"I: 映像の頭出し位置が入力と一致する（入力={si} 出力={so}）")
+            ti, to = i_ain.get("start_time"), i_aout.get("start_time")
+            check(ti is not None and ti == to,
+                  f"I: 音の頭出し位置が入力と一致する（入力={ti} 出力={to}）")
+        else:
+            print("      " + (r4.stderr or "")[-800:])
 
         # ── 途中で失敗したときに素顔と加工済みを混在させない ──
         # 1本ずつ確定する作りだと、2本目で失敗したとき「1本目＝加工済み／2本目＝素顔」が
