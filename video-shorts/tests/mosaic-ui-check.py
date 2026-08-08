@@ -13,6 +13,7 @@
 
 import json
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -74,13 +75,26 @@ MARKER_BITS = 16
 # 実クリップ(話題ごとで数分、ダイジェストは既定3分)は必ずこの区切りを超えるので、
 # 短い素材だけで測ると「納品物が実際に通る道」を一度も測らないことになる。
 I_FRAMES = apply_mosaic_cli.CHUNK_FRAMES + apply_mosaic_cli.LOOKAHEAD_FRAMES + 34
+# 素材R-M には「顔が一瞬見つからない区間」を2か所置く（顔画像を90度回して検出させない）。
+# 1つ目は真ん中＝この測り方が「隠された」を検出できることを示す対照。
+# 2つ目は区切りのちょうど直後＝実装は区切りごとに追従をやり直すため、保持が切れて
+# 素顔が出うる場所。全コマ検出できる絵だけで測ると、この経路を永久に測れない。
+GAP_MID = (150, 156)
+GAP_EDGE = (apply_mosaic_cli.CHUNK_FRAMES, apply_mosaic_cli.CHUNK_FRAMES + 6)
+# 顔の領域が「隠された」と言える差。実測(2026-08-08): 隠されていないと20（圧縮ノイズだけ）、
+# 隠されていると162〜194。間を取って100を境にする。
+MASKED_DIFF_MIN = 100
 # 素材R-P（縦型 9:16）。画面の既定は 9:16 で、この製品の主力もこちら。
 # render-vertical.mjs は 1280x720 を scale=1080:1920:force_original_aspect_ratio=decrease で
 # 1080x607 へ縮めて上下に黒帯を足すので、顔の高さは 216px → 182px（画面の9.5%）になる。
 # 横型より検出の取りこぼし側に寄る独立の条件なので、別に測る。
 PW, PH = 1080, 1920
-P_INNER_H = 607                 # 1280x720 を幅1080に合わせたときの高さ
-P_PAD = (PH - P_INNER_H) // 2   # 上下の黒帯
+# 縮め方・帯の入れ方は自前で計算せず、製品と同じ ffmpeg のフィルタをそのまま通す。
+# 自前で計算すると (a)算術が合わない（607＋656＋656＝1919）(b)縮小の補間方法が
+# 製品（ffmpeg 既定の bicubic）と違う（cv2 の INTER_AREA）ため、
+# 輪郭の出方＝顔の見つけやすさが変わり、この葉の存在理由そのものが崩れる。
+P_FILTER = ("scale=1080:1920:force_original_aspect_ratio=decrease,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black")
 
 fail = 0
 
@@ -130,7 +144,23 @@ def read_marker(frame):
     return n
 
 
-def build_material_r(path, audio=False, markers=False, frames=None):
+def rotated_face():
+    """検出されない向きにした顔（＝一瞬顔を見失う場面を作るため）。"""
+    face = cv2.imread(FIXTURE, cv2.IMREAD_COLOR)
+    scale = (H * FACE_RATIO) / face.shape[0]
+    face = cv2.resize(face, (max(1, int(face.shape[1] * scale)), max(1, int(face.shape[0] * scale))))
+    return cv2.rotate(face, cv2.ROTATE_90_CLOCKWISE)
+
+
+def gap_rect():
+    """回した顔を置く矩形（画面中央）。ここの画素で「隠されたか」を測る。"""
+    rot = rotated_face()
+    y = (H - rot.shape[0]) // 2
+    x = (W - rot.shape[1]) // 2
+    return y, y + rot.shape[0], x, x + rot.shape[1]
+
+
+def build_material_r(path, audio=False, markers=False, frames=None, gaps=None):
     """素材R を合成する。全コマ同一の絵・15fps・2秒。
 
     書き出しは libx264rgb の可逆（-qp 0 / bgr24）で行う。cv2.VideoWriter の "mp4v" は
@@ -143,6 +173,13 @@ def build_material_r(path, audio=False, markers=False, frames=None):
     """
     n = FRAMES if frames is None else frames
     frame = compose_frame()
+    gap_frame = None
+    if gaps:
+        rot = rotated_face()
+        gap_frame = np.full((H, W, 3), BG, dtype=np.uint8)
+        gy = (H - rot.shape[0]) // 2
+        gx = (W - rot.shape[1]) // 2
+        gap_frame[gy:gy + rot.shape[0], gx:gx + rot.shape[1]] = rot
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-"]
     if audio:
@@ -152,7 +189,10 @@ def build_material_r(path, audio=False, markers=False, frames=None):
     cmd += ["-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     for i in range(n):
-        p.stdin.write((stamp_marker(frame.copy(), i) if markers else frame).tobytes())
+        src = frame
+        if gaps and any(a <= i < b for a, b in gaps):
+            src = gap_frame
+        p.stdin.write((stamp_marker(src.copy(), i) if markers else src).tobytes())
     p.stdin.close()
     if p.wait() != 0:
         raise RuntimeError(f"素材Rの書き出しに失敗しました: {path}")
@@ -160,13 +200,11 @@ def build_material_r(path, audio=False, markers=False, frames=None):
 
 
 def build_material_p(path):
-    """素材R-P を合成する。素材Rの絵を 1080x607 へ縮め、1080x1920 の中央に黒帯で挟む。"""
-    inner = cv2.resize(compose_frame(), (PW, P_INNER_H), interpolation=cv2.INTER_AREA)
-    frame = np.zeros((PH, PW, 3), dtype=np.uint8)
-    frame[P_PAD:P_PAD + P_INNER_H] = inner
+    """素材R-P を合成する。素材Rの絵を、製品と同じフィルタで 1080x1920 の縦型にする。"""
+    frame = compose_frame()
     p = subprocess.Popen(
         ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
-         "-s", f"{PW}x{PH}", "-r", str(FPS), "-i", "-",
+         "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-vf", P_FILTER,
          "-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path],
         stdin=subprocess.PIPE)
     for _ in range(FRAMES):
@@ -494,7 +532,13 @@ def main():
               f"対照I: 素材R-M が区切りをまたぐ長さである"
               f"（{I_FRAMES}コマ > 区切り{apply_mosaic_cli.CHUNK_FRAMES}"
               f"＋先読み{apply_mosaic_cli.LOOKAHEAD_FRAMES}）")
-        build_material_r(i_clip, audio=True, markers=True, frames=I_FRAMES)
+        build_material_r(i_clip, audio=True, markers=True, frames=I_FRAMES,
+                         gaps=[GAP_MID, GAP_EDGE])
+        # 「隠されたか」を測る基準（モザイク工程と同じ符号化を一度通したもの）
+        i_base = os.path.join(work, "i-baseline.mp4")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", i_clip,
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                        "-pix_fmt", "yuv420p", i_base], check=True)
         i_src = read_frames(i_clip)
         i_vin, i_ain = probe_stream(i_clip, "v:0"), probe_stream(i_clip, "a:0")
         check([read_marker(f) for f in i_src] == list(range(I_FRAMES)),
@@ -526,6 +570,36 @@ def main():
             check(i_hit == 0,
                   f"A: 区切りをまたぐ長さ({I_FRAMES}コマ)でも素顔が検出されるコマが 0/{I_FRAMES}"
                   f"（実={i_hit}）")
+
+            # ── N: 区切りの境目でも顔の追従が途切れない ──────────
+            # 実装は長い動画を区切って処理する。区切りごとに追従をやり直すと、
+            # 「検出が途切れた区間を直前の位置で埋める」保持が境目で必ず切れ、
+            # 境目の直後で顔を見失ったコマに素顔が出る（実測: 区切り直後の3コマが
+            # 未加工のまま出力された。差20＝圧縮ノイズだけ）。
+            i_plain = read_frames(i_base)
+            r0, r1, c0, c1 = gap_rect()
+
+            def gap_weakest(rng):
+                """区間のうち「一番隠れていないコマ」の値。最大ではなく最小を取る。
+
+                最大を取ると、区間の一部が隠れていれば通ってしまう。実際に追従の
+                持ち越しを外した実装では、区切り直後の6コマのうち先頭3コマが未加工
+                （差20）、残り3コマが加工済み（差169）で、最大を見ると素通りした。
+                """
+                weakest = 255
+                for k in rng:
+                    d = cv2.absdiff(i_plain[k], i_frames[k]).max(axis=2)
+                    weakest = min(weakest, int(d[r0:r1, c0:c1].max()))
+                return weakest
+
+            mid = gap_weakest(range(*GAP_MID))
+            check(mid >= MASKED_DIFF_MIN,
+                  f"対照N: 真ん中で顔を見失う区間{GAP_MID}は隠されている"
+                  f"（一番隠れていないコマの差={mid}、下限{MASKED_DIFF_MIN}）")
+            edge = gap_weakest(range(*GAP_EDGE))
+            check(edge >= MASKED_DIFF_MIN,
+                  f"N: 区切りの直後{GAP_EDGE}で顔を見失っても隠されている"
+                  f"（一番隠れていないコマの差={edge}、下限{MASKED_DIFF_MIN}）")
 
             i_vout, i_aout = probe_stream(i_out, "v:0"), probe_stream(i_out, "a:0")
             si, so = i_vin.get("start_time"), i_vout.get("start_time")
@@ -559,7 +633,8 @@ def main():
             m_hit = sum(1 for n in faces_per_frame(m_after, create_detector(PW, PH)) if n > 0)
             check(m_hit == 0, f"M: 縦型(9:16)でも素顔が検出されるコマが 0/{FRAMES}（実={m_hit}）")
             check(m_after and m_after[0].shape[:2] == (PH, PW),
-                  f"M: 縦型の解像度が入力と一致する（実={m_after[0].shape[:2] if m_after else None}）")
+                  f"対照M: 出力が縦型のまま（1080x1920）である"
+                  f"（実={m_after[0].shape[:2] if m_after else None}）")
         else:
             print("      " + (r5.stderr or "")[-800:])
 
@@ -589,6 +664,64 @@ def main():
               f"J: 失敗時に作りかけのモザイク版が成果物フォルダに残らない（実={masked_left}）")
         check("a.mp4" in left2 and "b.mp4" in left2,
               f"J: 失敗時は素顔だけの状態に戻る＝素顔と加工済みが混在しない（実={left2}）")
+
+        # 書き込みが途中で止まった場合（容量不足に相当）も同じであること。
+        # 失敗した「その1本」の書きかけは made へ積まれないので、made だけを後始末の
+        # 対象にすると壊れた -mosaic が素顔の隣に残る。納品は -mosaic の方をコピーする
+        # 案内なので、壊れたファイルをそのまま渡す経路になる。
+        j3_dir = os.path.join(work, "output", "job7")
+        os.makedirs(j3_dir, exist_ok=True)
+        build_material_r(os.path.join(j3_dir, "s.mp4"))
+        json.dump({"id": "job7", "digest": None,
+                   "candidates": [{"file": "s.mp4", "path": os.path.join(j3_dir, "s.mp4")}]},
+                  open(os.path.join(j3_dir, "candidates.json"), "w", encoding="utf-8"))
+        r7 = subprocess.run(
+            ["node", STAGE_MJS, j3_dir, os.path.join(work, "work", "job7", "pre-mosaic")],
+            capture_output=True, text=True,
+            preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (8192, 8192)))
+        check(r7.returncode != 0, "K: 書き込みが途中で止まっても工程は失敗として終わる")
+        left4 = sorted(os.listdir(j3_dir))
+        check([n for n in left4 if n.endswith("-mosaic.mp4")] == [],
+              f"J: 書きかけの -mosaic が成果物フォルダに残らない（実={left4}）")
+
+        # 途中で切れた動画を渡した場合。読み出し側の ffmpeg は警告を出しながら
+        # 終了コード0を返すことがあり、終了コードだけを見ていると「短くなった動画」を
+        # 成功として書き出してしまう（実測: 4.000秒の入力に対し出力1.867秒）。
+        j4_dir = os.path.join(work, "output", "job8")
+        os.makedirs(j4_dir, exist_ok=True)
+        # 切り詰めの元は、製品がレンダリングで書き出すのと同じ設定にする
+        # （可逆で書いた素材だと別の理由で落ちてしまい、この経路を測れない）。
+        whole_src = os.path.join(work, "whole-src.mp4")
+        build_material_r(whole_src)
+        whole = os.path.join(work, "whole.mp4")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", whole_src,
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", whole], check=True)
+        with open(whole, "rb") as f:
+            raw = f.read()
+        truncated = os.path.join(j4_dir, "t.mp4")
+        with open(truncated, "wb") as f:
+            f.write(raw[: len(raw) * 95 // 100])     # 末尾5%を落とす
+        # 対照: この切り詰め方が「読み出し側は終了コード0を返すのに、実際は
+        # 最後まで読めていない」状態になっていることを先に確かめる。ここが
+        # 終了コード0でなくなると、別の防波堤で落ちるだけになり、
+        # この葉が狙っている「黙って短い動画を成功として出す」経路を測れなくなる。
+        probe_r = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", truncated, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
+            capture_output=True)
+        got_frames = len(probe_r.stdout) // (W * H * 3)
+        check(probe_r.returncode == 0 and probe_r.stderr.strip() and got_frames < FRAMES,
+              f"対照K: 切り詰めた動画は読み出し側が終了コード0のまま最後まで読めない"
+              f"（rc={probe_r.returncode} コマ={got_frames}/{FRAMES}）")
+        json.dump({"id": "job8", "digest": None,
+                   "candidates": [{"file": "t.mp4", "path": truncated}]},
+                  open(os.path.join(j4_dir, "candidates.json"), "w", encoding="utf-8"))
+        r8 = subprocess.run(["node", STAGE_MJS, j4_dir, os.path.join(work, "work", "job8", "pre-mosaic")],
+                            capture_output=True, text=True)
+        check(r8.returncode != 0, "K: 途中で切れた動画は成功にせず、失敗として終わる")
+        left5 = sorted(os.listdir(j4_dir))
+        check([n for n in left5 if n.endswith("-mosaic.mp4")] == [],
+              f"J: 途中で切れた動画でも -mosaic が残らない（実={left5}）")
 
         # 第2段（素顔を退避する所）で失敗した場合も同じであること。
         # 第1段だけを守っていると、退避の途中で落ちたときに

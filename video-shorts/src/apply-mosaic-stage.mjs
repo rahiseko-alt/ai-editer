@@ -88,20 +88,29 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
 
   // ── 第1段: 全部作る（まだ何も確定させない） ──────────────
   const made = [];
+  let failing = null;
   try {
     for (const t of targets) {
       const src = path.join(outDir, t.entry.file);
       const outName = mosaicName(t.entry.file);
       const dst = path.join(outDir, outName);
+      // 失敗した本人の書きかけも消す。made へ積むのは成功後なので、made だけを
+      // 後始末の対象にすると、書き込みの途中で止まったとき（容量不足など）に
+      // 壊れた -mosaic が素顔の隣に残る。納品はフォルダからのコピーで、
+      // SKILL.md は「-mosaic の方をコピーする」と案内しているため、
+      // 壊れたファイルをそのまま渡す経路になる。
+      failing = dst;
       await runMosaic(python, src, dst, null);
       if (!fs.existsSync(dst)) {
         throw new Error(`顔モザイクの出力が生成されませんでした: ${outName}`);
       }
+      failing = null;
       made.push({ ...t, src, dst, outName });
       if (onLog) onLog(`[OK] 顔を隠しました: ${t.entry.file} → ${outName}`);
     }
   } catch (e) {
     // 作りかけを消して素顔だけの状態へ戻す。素顔と加工済みを混在させない。
+    if (failing) { try { fs.rmSync(failing, { force: true }); } catch (_) {} }
     for (const m of made) {
       try { fs.rmSync(m.dst, { force: true }); } catch (_) {}
     }

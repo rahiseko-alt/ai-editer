@@ -307,7 +307,7 @@ def interpolate(prev_rows, next_rows, weight: float):
 def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float = BLOCK_RATIO_DEFAULT,
                   detector=None, block_for=None, people=None, ratio_for=None, recognizer=None,
                   detect_every: int = DETECT_EVERY_DEFAULT, detect_width: int = DETECT_WIDTH_DEFAULT,
-                  copy_frames: bool = True):
+                  copy_frames: bool = True, tracker=None):
     """フレーム列を順に処理し、顔を追従モザイクで隠したフレーム列を返す。
 
     copy_frames=False にすると、渡されたフレームを直接書き換えて複製を省く。
@@ -327,7 +327,11 @@ def mosaic_frames(frames, hold_frames: int = HOLD_FRAMES_DEFAULT, ratio: float =
         # 黙って素通しするのは最悪の失敗なので、ここで止める。
         raise ValueError(f"detect_every は1以上にしてください（受け取った値: {detect_every}）")
 
-    tracker = FaceTracker(hold_frames=hold_frames)
+    # tracker を渡すと、直前の呼び出しの追従状態を引き継ぐ。長い動画を区切って
+    # 処理する呼び出し側（apply_mosaic_cli）で必須。毎回作り直すと、区切りの境目で
+    # 「検出が途切れた区間を直前の位置で埋める」保持が必ず切れ、境目の直後で検出が
+    # 落ちたコマに素顔が出る（実測: 区切り直後の3コマが未加工のまま出力された）。
+    tracker = tracker if tracker is not None else FaceTracker(hold_frames=hold_frames)
     people = people or []
     ratio_for = ratio_for or {}
     rec = recognizer
