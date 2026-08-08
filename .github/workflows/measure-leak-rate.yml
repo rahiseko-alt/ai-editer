@@ -30,7 +30,7 @@ jobs:
     name: 実素材(パブリックドメイン)で素顔が残る割合を測る
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # 後続のステップで認証済み Git を使わないため、資格情報を残さない
           persist-credentials: false
