@@ -386,13 +386,50 @@ t("parseJobParams: サポート外のmosaicは none へ丸められる", () => {
   assert.strictEqual(p.mosaic, "none");
 });
 
-t("UI: モザイクの選択肢が画面にあり、選んだ値が送信パラメータに載る", () => {
+t("UI: モザイクのチップ群に「あり」の選択肢がある", () => {
   const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
-  assert.ok(/data-group="mosaic"/.test(html), "モザイクのチップ群が画面にある");
-  assert.ok(/data-val="on"[^]*?data-group="mosaic"|data-group="mosaic"[^]*?data-val="on"/.test(html),
-    "「あり」の選択肢がある");
+  // チップ群の中だけを切り出して見る。HTML全体に対する正規表現だと、字幕グループの
+  // data-val="on" に食いついて、モザイクの「あり」を消しても通ってしまう（実際に確認済み）。
+  const m = html.match(/data-group="mosaic"[^]*?<\/div>/);
+  assert.ok(m, "モザイクのチップ群が画面にある");
+  assert.ok(/data-val="on"/.test(m[0]), "そのチップ群の中に「あり」がある");
+  assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
+});
+
+t("UI: 選んだモザイクの値が /api/jobs のパラメータに載る", () => {
   const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "選んだ値が /api/jobs のパラメータに載る");
+  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "送信パラメータに mosaic が入る");
+});
+
+// 画面→サーバの配線。ここが抜けると「画面で選んでもモザイクが掛からない」のに
+// 工程レベルのテスト(tests/mosaic-ui-check.py)は工程を直接叩くので全緑のまま通る。
+// 実際に一度その状態を作ってしまったので、配線そのものを機械で押さえる。
+t("サーバ: 受け取った mosaic をジョブ設定として startJob へ渡す", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
+  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
+  assert.ok(recv, "parseJobParams の戻り値を受け取っている");
+  assert.ok(/\bmosaic\b/.test(recv[1]),
+    "parseJobParams から mosaic を受け取っている（受け取らないと画面の選択が捨てられる）");
+  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
+  assert.ok(pass, "startJob へ設定オブジェクトを渡している");
+  assert.ok(/\bmosaic\b/.test(pass[1]),
+    "startJob へ mosaic を渡している（渡さないとモザイク工程は永久に呼ばれない）");
+});
+
+t("サーバ: モザイク工程(stage m)を走行中として扱う（二重起動を防ぐ）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
+  assert.ok(running && /"m"/.test(running[1]), "startJob の走行中判定に m が入っている");
+  assert.ok(/includes\(j\.stage\)/.test(src) && /"init", "t", "s", "r", "m"/.test(src),
+    "isRunning の走行中判定にも m が入っている");
+});
+
+t("UI: モザイク段(m)の進捗表示の受け皿がある", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/STEP_ORDER\s*=\s*\[[^\]]*"m"/.test(app), "STEP_ORDER に m が入っている");
+  assert.ok(/^\s*m:\s*"/m.test(app), "EDITING_LABEL に m の文言がある");
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(/data-k="m"/.test(html), "進捗欄に m の行がある");
 });
 
 // ---- P0-5-B: レンダラー未実装の選択肢(1:1 / 4:5 / 本数で切る)がUIから除去されている ----

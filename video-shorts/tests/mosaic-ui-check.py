@@ -35,7 +35,17 @@ W, H, FPS, SECONDS = 1280, 720, 15, 2
 FRAMES = FPS * SECONDS          # 30 コマ。全数測定するので短く固定する
 BG = (128, 128, 128)            # 黒以外の既知色
 FACE_RATIO = 0.30               # 顔の高さ ＝ 映像高さの30%
-FACE_NEIGHBORHOOD = 3.0         # 「顔の周り」＝顔枠の縦横3.0倍（実装が隠す範囲の実測 約2.4倍に余裕を見た値）
+
+# 「顔の周り」＝顔枠の外側にこの画素数だけ余白を取った矩形。比較から除外する。
+# 実装が隠すのは expand_box(MARGIN_RATIO=0.18) により検出枠の1.36倍（112x139。実測）だが、
+# 隠した所の境目には x264 の圧縮ノイズがそこからさらに滲む。実測(2026-08-08)では
+# 差が4を超えた画素は顔枠から最大68px（左57/右59/上63/下68）までで、+64px の外は最大5、
+# +80px の外は最大4だった。ノイズの届く距離は顔の大きさではなく符号化ブロックで決まるので、
+# 顔枠の「倍率」ではなく px の余白で定める。
+FACE_MARGIN_PX = 80
+# 許容する階調差。モザイクを掛けると符号化のビット配分が変わり、画面全体に最大4の差が薄く出る
+# （実測）。版差を見て8まで許すが、緩めすぎて壊れを見逃していないことは下の3つの対照で示す。
+PIXEL_TOLERANCE = 8
 
 fail = 0
 
@@ -83,6 +93,26 @@ def faces_per_frame(frames, detector):
     return [len(detect_faces(f, detector)) for f in frames]
 
 
+def outside_face_mask(boxes):
+    """顔枠＋余白（＝比較から除く「顔の周り」）を False にした真偽マップを返す。"""
+    mask = np.ones((H, W), dtype=bool)
+    for (bx, by, bw, bh) in boxes:
+        x0, y0 = max(0, int(bx) - FACE_MARGIN_PX), max(0, int(by) - FACE_MARGIN_PX)
+        x1 = min(W, int(bx + bw) + FACE_MARGIN_PX)
+        y1 = min(H, int(by + bh) + FACE_MARGIN_PX)
+        mask[y0:y1, x0:x1] = False
+    return mask
+
+
+def worst_diff(ref, test, mask):
+    """「顔の周り」を除いた画素の、全コマを通じた最大の階調差。"""
+    worst = 0
+    for a, b in zip(ref, test):
+        d = cv2.absdiff(a, b).max(axis=2)
+        worst = max(worst, int(d[mask].max()))
+    return worst
+
+
 def main():
     work = tempfile.mkdtemp(prefix="vs-mosaic-ui-")
     out_dir = os.path.join(work, "output", "job1")
@@ -94,8 +124,19 @@ def main():
         build_material_r(clip)
         check(os.path.exists(clip), "素材R（1人・16:9・15fps・2秒）を合成した")
 
-        plain = read_frames(clip)
-        check(len(plain) == FRAMES, f"素材Rが{FRAMES}コマである(実={len(plain)})")
+        plain_src = read_frames(clip)
+        check(len(plain_src) == FRAMES, f"素材Rが{FRAMES}コマである(実={len(plain_src)})")
+
+        # 比較の基準は、モザイク工程と同じエンコーダを一度通した動画にする。
+        # 素材Rそのものと比べると、モザイクの境目に出る x264 の圧縮ノイズが
+        # 顔から離れた場所まで滲み、実装が正しくても差分として出てしまう
+        # （それを避けようと除外範囲を広げるのは、原因と違う場所を緩めることになる）。
+        baseline = os.path.join(work, "baseline.mp4")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", clip,
+                        "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
+                        "-pix_fmt", "yuv420p", baseline], check=True)
+        plain = read_frames(baseline)
+        check(len(plain) == FRAMES, f"基準(同じエンコーダを通した素材R)が{FRAMES}コマである(実={len(plain)})")
 
         det = create_detector(W, H)
 
@@ -103,7 +144,7 @@ def main():
         # モザイクを掛けていない入力で素顔が全コマ検出できることを先に確認する。
         # これが無いと、検出器がこの素材の素顔を元々検出できない場合に
         # モザイク処理をしなくても「0件」で合格してしまう。
-        before = faces_per_frame(plain, det)
+        before = faces_per_frame(plain_src, det)
         hit_before = sum(1 for n in before if n > 0)
         check(hit_before == FRAMES,
               f"対照: モザイク無しでは素顔が {hit_before}/{FRAMES} コマで検出できる")
@@ -136,26 +177,34 @@ def main():
         # ── C: 顔以外の絵と寸法・コマ数が元のまま ─────────────
         same_size = after and after[0].shape == plain[0].shape
         check(bool(same_size), "C: 解像度が入力と一致する")
-        # 「顔の周り」を除いた領域を比べる。実装は顔枠に余白を付け、さらに検出の間隔中は
-        # コマ間で枠を保持するため、隠される範囲は検出枠より大きくなる。実測(2026-08-08)では
-        # 検出枠の約2.4倍だったので、顔中心から縦横3.0倍の矩形を「顔の周り」と定める。
-        # この矩形は画面全体の8%程度なので、出力が真っ黒・別の絵・引き伸ばしのいずれでも
-        # 残り92%に差が出て落ちる。再エンコード誤差を見込んで階調差4まで許す。
-        boxes = detect_faces(plain[0], det)
-        mask = np.ones((H, W), dtype=bool)
-        for (bx, by, bw, bh) in boxes:
-            cx, cy = bx + bw / 2, by + bh / 2
-            hw, hh = bw * FACE_NEIGHBORHOOD / 2, bh * FACE_NEIGHBORHOOD / 2
-            x0, y0 = max(0, int(cx - hw)), max(0, int(cy - hh))
-            x1, y1 = min(W, int(cx + hw)), min(H, int(cy + hh))
-            mask[y0:y1, x0:x1] = False
-        worst = 0
-        if same_size:
-            for a, b in zip(plain, after):
-                d = cv2.absdiff(a, b).max(axis=2)
-                worst = max(worst, int(d[mask].max()))
-        check(same_size and worst <= 4,
-              f"C: 顔の周り(顔枠の3.0倍)を除いた画素が入力と一致する（最大差={worst}、許容4）")
+        # 「顔の周り」（顔枠＋80px）を除いた領域を、同じエンコーダを通した基準と比べる。
+        # 除外矩形は 241x263 ＝ 画面の約6.9%。残り93%に差が出れば落ちる。
+        boxes = detect_faces(plain_src[0], det)
+        mask = outside_face_mask(boxes)
+        worst = worst_diff(plain, after, mask) if same_size else 255
+        check(same_size and worst <= PIXEL_TOLERANCE,
+              f"C: 顔の周り(顔枠+{FACE_MARGIN_PX}px)を除いた画素が基準と一致する"
+              f"（最大差={worst}、許容{PIXEL_TOLERANCE}）")
+
+        # ── C の対照: この判定が「壊れ」を実際に検出できることを示す ──────
+        # 許容を8まで緩めているので、緩めすぎて素通しになっていないことを、
+        # わざと壊した3種類の絵で確かめる（どれも許容を超えなければならない）。
+        black = [np.zeros_like(f) for f in plain]
+        check(worst_diff(plain, black, mask) > PIXEL_TOLERANCE,
+              "対照C: 出力が真っ黒なら、この判定は落ちる")
+
+        brighter = [cv2.add(f, PIXEL_TOLERANCE + 1) for f in plain]
+        check(worst_diff(plain, brighter, mask) > PIXEL_TOLERANCE,
+              f"対照C: 画面全体が{PIXEL_TOLERANCE + 1}段階明るいだけでも、この判定は落ちる")
+
+        # 顔から離れた隅に別の絵が紛れ込んだ場合。除外矩形の外もちゃんと見ていることを示す。
+        stained = []
+        for f in plain:
+            g = f.copy()
+            g[20:60, 20:60] = 255
+            stained.append(g)
+        check(worst_diff(plain, stained, mask) > PIXEL_TOLERANCE,
+              "対照C: 顔から離れた隅に別の絵が入っても、この判定は落ちる")
 
         # ── D: 素顔が候補一覧に出てこない ─────────────────────
         with open(os.path.join(out_dir, "candidates.json"), encoding="utf-8") as f:
@@ -171,6 +220,33 @@ def main():
               f"F: 成果物フォルダに素顔のファイルが残っていない（実={left}）")
         check(os.path.exists(os.path.join(stash_dir, os.path.basename(clip))),
               "F: 素顔のファイルは成果物フォルダの外へ退避されている")
+
+        # ── 途中で失敗したときに素顔と加工済みを混在させない ──
+        # 1本ずつ確定する作りだと、2本目で失敗したとき「1本目＝加工済み／2本目＝素顔」が
+        # 成果物フォルダに並び、candidates.json も書き換わらないまま素顔を指す。
+        # これは葉Fが防ごうとしている状況そのもの（人の注意力頼み）なので、
+        # 全部そろってから確定していることを機械で押さえる。
+        f_dir = os.path.join(work, "output", "job2")
+        os.makedirs(f_dir, exist_ok=True)
+        ok_clip = os.path.join(f_dir, "a.mp4")
+        build_material_r(ok_clip)
+        with open(os.path.join(f_dir, "b.mp4"), "wb") as f:
+            f.write(b"not a video")   # 2本目は必ず失敗する
+        json.dump(
+            {"id": "job2", "digest": None,
+             "candidates": [{"file": "a.mp4", "path": ok_clip},
+                            {"file": "b.mp4", "path": os.path.join(f_dir, "b.mp4")}]},
+            open(os.path.join(f_dir, "candidates.json"), "w", encoding="utf-8"),
+        )
+        r2 = subprocess.run(["node", STAGE_MJS, f_dir, os.path.join(work, "work", "job2", "pre-mosaic")],
+                            capture_output=True, text=True)
+        check(r2.returncode != 0, "途中で失敗したら工程全体が失敗として終わる")
+        left2 = sorted(os.listdir(f_dir))
+        masked_left = [n for n in left2 if n.endswith("-mosaic.mp4")]
+        check(masked_left == [],
+              f"失敗時に作りかけのモザイク版が残らない（実={masked_left}）")
+        check("a.mp4" in left2 and "b.mp4" in left2,
+              f"失敗時は素顔だけの状態に戻る＝混在しない（実={left2}）")
 
     finally:
         shutil.rmtree(work, ignore_errors=True)

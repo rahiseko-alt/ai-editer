@@ -11,7 +11,7 @@
 // CLI としても使える（テストから直接叩くため）:
 //   node src/apply-mosaic-stage.mjs <outDir> <stashDir>
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ const MOSAIC_CLI = path.join(HERE, "apply_mosaic_cli.py");
 /**
  * python3 → python の順で使える実行ファイルを選ぶ。
  * "python" 決め打ちだと python3 しか無い環境（多くの Linux ディストリ）で ENOENT になる。
+ * ここだけは同期でよい（--version は数ミリ秒で、工程の開始前に1回だけ走る）。
  */
 export function resolvePython() {
   for (const bin of ["python3", "python"]) {
@@ -38,56 +39,87 @@ export function mosaicName(file) {
 }
 
 /**
- * 成果物1本にモザイクを焼き、素顔を退避する。
- * @returns {{file:string, path:string}} モザイク版の名前と絶対パス
+ * モザイクを1本焼く（非同期）。
+ * 同期実行（spawnSync）にすると、動画の長さと同程度の時間サーバー全体が応答しなくなる
+ * （720p/30fps の10秒動画で実測10秒）。イベントループを止めないよう spawn で待つ。
  */
-function maskOne({ outDir, stashDir, file, python, onLog }) {
-  const src = path.join(outDir, file);
-  const outName = mosaicName(file);
-  const dst = path.join(outDir, outName);
-
-  const r = spawnSync(python, [MOSAIC_CLI, src, dst], { encoding: "utf-8" });
-  if (r.error) throw new Error(`顔モザイクの起動に失敗しました: ${r.error.message}`);
-  if (r.status !== 0) {
-    throw new Error(`顔モザイクが失敗しました (${file}): ${(r.stderr || "").slice(-800)}`);
-  }
-  if (!fs.existsSync(dst)) {
-    throw new Error(`顔モザイクの出力が生成されませんでした: ${outName}`);
-  }
-
-  // 素顔を成果物フォルダの外へ移す。ここで移さないと、候補一覧から隠しても
-  // フォルダを直接見た人が素顔のほうをコピーできてしまう。
-  fs.mkdirSync(stashDir, { recursive: true });
-  fs.renameSync(src, path.join(stashDir, file));
-
-  if (onLog) onLog(`[OK] 顔を隠しました: ${file} → ${outName}`);
-  return { file: outName, path: dst };
+function runMosaic(python, src, dst, onLog) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(python, [MOSAIC_CLI, src, dst], { windowsHide: true });
+    let err = "";
+    child.stderr.on("data", (c) => {
+      const text = c.toString();
+      err += text;
+      if (onLog) text.split("\n").forEach((ln) => ln.trim() && onLog(ln.trim()));
+    });
+    child.on("error", (e) => reject(new Error(`顔モザイクの起動に失敗しました: ${e.message}`)));
+    child.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`顔モザイクが失敗しました: ${err.slice(-800)}`));
+      resolve();
+    });
+  });
 }
 
 /**
  * candidates.json の全成果物にモザイクを焼き、素顔を退避し、manifest を書き換える。
- * 呼び出し側は戻り値で candidates.json を上書きする。
+ *
+ * 【全部そろってから確定する】モザイクは1本ずつ作るが、素顔の退避と成果物フォルダへの
+ * 配置は「全部そろってから」まとめて行う。1本ずつ確定すると、途中で失敗したときに
+ * 「1本目＝顔を隠した版／2本目・3本目＝素顔のまま」が成果物フォルダに並び、
+ * candidates.json も書き換わらないまま素顔を指す。これは葉Fが防ごうとしている状況そのもので、
+ * 「エラーが出るから人が気づく」に頼ることになる。
+ * 失敗したときは、作りかけのモザイク版を消して素顔だけの状態に戻す（混在させない）。
  *
  * @param {object} p
  * @param {string} p.outDir    成果物フォルダ（output/<id>）
  * @param {string} p.stashDir  素顔の退避先（成果物フォルダの外）
  * @param {object} p.candidates candidates.json の中身
  * @param {(s:string)=>void} [p.onLog]
- * @returns {object} 書き換え後の candidates.json の中身
+ * @returns {Promise<object>} 書き換え後の candidates.json の中身
  */
-export function applyMosaicStage({ outDir, stashDir, candidates, onLog }) {
+export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) {
   const python = resolvePython();
-  const next = { ...candidates, mosaic: true };
 
-  next.candidates = (candidates.candidates || []).map((c) => {
-    const masked = maskOne({ outDir, stashDir, file: c.file, python, onLog });
-    return { ...c, ...masked };
-  });
-
+  // 対象（各クリップ＋あればダイジェスト）を一覧にする
+  const targets = (candidates.candidates || []).map((c) => ({ kind: "clip", entry: c }));
   if (candidates.digest && candidates.digest.file) {
-    const masked = maskOne({ outDir, stashDir, file: candidates.digest.file, python, onLog });
-    next.digest = { ...candidates.digest, ...masked };
+    targets.push({ kind: "digest", entry: candidates.digest });
   }
+
+  // ── 第1段: 全部作る（まだ何も確定させない） ──────────────
+  const made = [];
+  try {
+    for (const t of targets) {
+      const src = path.join(outDir, t.entry.file);
+      const outName = mosaicName(t.entry.file);
+      const dst = path.join(outDir, outName);
+      await runMosaic(python, src, dst, null);
+      if (!fs.existsSync(dst)) {
+        throw new Error(`顔モザイクの出力が生成されませんでした: ${outName}`);
+      }
+      made.push({ ...t, src, dst, outName });
+      if (onLog) onLog(`[OK] 顔を隠しました: ${t.entry.file} → ${outName}`);
+    }
+  } catch (e) {
+    // 作りかけを消して素顔だけの状態へ戻す。素顔と加工済みを混在させない。
+    for (const m of made) {
+      try { fs.rmSync(m.dst, { force: true }); } catch (_) {}
+    }
+    throw e;
+  }
+
+  // ── 第2段: 全部そろったので確定する ────────────────────
+  fs.mkdirSync(stashDir, { recursive: true });
+  const next = { ...candidates, mosaic: true };
+  const byKind = { clip: [], digest: null };
+  for (const m of made) {
+    fs.renameSync(m.src, path.join(stashDir, m.entry.file));
+    const updated = { ...m.entry, file: m.outName, path: m.dst };
+    if (m.kind === "digest") byKind.digest = updated;
+    else byKind.clip.push(updated);
+  }
+  next.candidates = byKind.clip;
+  if (byKind.digest) next.digest = byKind.digest;
 
   return next;
 }
@@ -101,10 +133,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   }
   const candPath = path.join(outDir, "candidates.json");
   const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
-  const next = applyMosaicStage({
+  applyMosaicStage({
     outDir, stashDir, candidates: cand,
     onLog: (s) => process.stderr.write(s + "\n"),
+  }).then((next) => {
+    fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
+    console.log(`mosaic applied: ${next.candidates.length} clip(s)`);
+  }).catch((e) => {
+    console.error(e.message);
+    process.exit(1);
   });
-  fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
-  console.log(`mosaic applied: ${next.candidates.length} clip(s)`);
 }

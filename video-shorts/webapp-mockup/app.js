@@ -52,7 +52,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     group.querySelectorAll(".chip").forEach((b) => b.classList.remove("is-on"));
     btn.classList.add("is-on"); state[g] = btn.dataset.val;
     if (g === "sub") updateSubDesc();
-    if (g === "mosaic") updateMosaicDesc();
+    if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
     if (g === "cut") showCut();
     if (g === "size") updateVideoArea(btn);
     refresh();
@@ -129,6 +129,13 @@ function updateSubDesc() {
   const el = $("sub-desc");
   if (!el) return;
   el.textContent = state.sub === "on" ? "話した言葉を自動で字幕に焼き込みます。" : "字幕は付けません。";
+}
+function updateMosaicStepRow() {
+  // モザイクを選ばないときは m の段が来ないので、進捗の行も出さない。
+  const li = document.querySelector('#progress li[data-k="m"]');
+  if (li) li.classList.toggle("hidden", state.mosaic !== "on");
+  const es = document.querySelector('.estep[data-k="m"]');
+  if (es) es.classList.toggle("hidden", state.mosaic !== "on");
 }
 function updateMosaicDesc() {
   const el = $("mosaic-desc");
@@ -230,9 +237,11 @@ const EDITING_LABEL = {
   t: "話し言葉を文字にしています",
   s: "良い場面を選んでいます",
   r: "縦長の動画に整えています",
+  m: "顔にモザイクを掛けています",
 };
-// 3段ステップ（t→s→r）の進捗を編集中窓に反映
-const STEP_ORDER = ["t", "s", "r"];
+// 進捗ステップ（t→s→r→m）を編集中窓に反映。m は顔モザイクを選んだときだけサーバから来る。
+// 受け皿が無いと、モザイクに数分かかっている間ずっと画面が止まって見える。
+const STEP_ORDER = ["t", "s", "r", "m"];
 function setEditingStep(stage, status) {
   const idx = STEP_ORDER.indexOf(stage);
   if (idx < 0) return;

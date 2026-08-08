@@ -48,7 +48,7 @@ function broadcast(jobId, payload, event = null) {
 /** ジョブが実行中（init/t/s/r）かを返す。POST 受理前の二重起動チェック用。 */
 export function isRunning(jobId) {
   const j = jobs.get(jobId);
-  return !!j && ["init", "t", "s", "r"].includes(j.stage);
+  return !!j && ["init", "t", "s", "r", "m"].includes(j.stage);
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
@@ -206,7 +206,7 @@ export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/s/r）なら二重起動を拒否。
   // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
-  const RUNNING = ["init", "t", "s", "r"];
+  const RUNNING = ["init", "t", "s", "r", "m"];
   if (existing && RUNNING.includes(existing.stage)) {
     return false;
   }
@@ -383,7 +383,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     const outDir = path.join(OUT_ROOT, jobId);
     const candPath = path.join(outDir, "candidates.json");
     const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
-    const next = applyMosaicStage({
+    const next = await applyMosaicStage({
       outDir,
       stashDir: path.join(workDir, "pre-mosaic"),
       candidates: cand,
