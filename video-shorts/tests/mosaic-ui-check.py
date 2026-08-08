@@ -25,6 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+import apply_mosaic_cli  # noqa: E402
 from face_mosaic import create_detector, detect_faces  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "face-one.png")
@@ -67,6 +68,12 @@ DURATION_TOLERANCE_SEC = 0.005
 # コマ番号の目印（素材R-M）。1ビット＝8x8画素の升目を横16個＝128x8画素の帯を画面左上に置く。
 MARKER_CELL_PX = 8
 MARKER_BITS = 16
+# 葉I の素材の長さ。実装の区切り(CHUNK_FRAMES)と先読み(LOOKAHEAD_FRAMES)を実行時に読み、
+# それを必ず超える長さにする。直書きすると、メモリ調整で CHUNK_FRAMES を上げた瞬間に
+# 区切りをまたがなくなり、何も試していないのに緑のままになる。
+# 実クリップ(話題ごとで数分、ダイジェストは既定3分)は必ずこの区切りを超えるので、
+# 短い素材だけで測ると「納品物が実際に通る道」を一度も測らないことになる。
+I_FRAMES = apply_mosaic_cli.CHUNK_FRAMES + apply_mosaic_cli.LOOKAHEAD_FRAMES + 34
 
 fail = 0
 
@@ -116,7 +123,7 @@ def read_marker(frame):
     return n
 
 
-def build_material_r(path, audio=False, markers=False):
+def build_material_r(path, audio=False, markers=False, frames=None):
     """素材R を合成する。全コマ同一の絵・15fps・2秒。
 
     書き出しは libx264rgb の可逆（-qp 0 / bgr24）で行う。cv2.VideoWriter の "mp4v" は
@@ -127,16 +134,17 @@ def build_material_r(path, audio=False, markers=False):
     markers=True: コマ番号の白黒模様を左上に焼く（＝素材R-M、葉I用）。
       全コマ同じ絵だと、コマの並びがずれても画素比較では原理的に見えないため。
     """
+    n = FRAMES if frames is None else frames
     frame = compose_frame()
     cmd = ["ffmpeg", "-y", "-v", "error",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-"]
     if audio:
         cmd += ["-f", "lavfi", "-i",
-                f"aevalsrc=sin(2*PI*440*t)|sin(2*PI*880*t):s=48000:d={SECONDS}",
+                f"aevalsrc=sin(2*PI*440*t)|sin(2*PI*880*t):s=48000:d={n / FPS:.6f}",
                 "-c:a", "aac", "-b:a", "128k"]
     cmd += ["-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    for i in range(FRAMES):
+    for i in range(n):
         p.stdin.write((stamp_marker(frame.copy(), i) if markers else frame).tobytes())
     p.stdin.close()
     if p.wait() != 0:
@@ -455,11 +463,17 @@ def main():
         i_dir = os.path.join(work, "output", "job4")
         os.makedirs(i_dir, exist_ok=True)
         i_clip = os.path.join(i_dir, "d.mp4")
-        build_material_r(i_clip, audio=True, markers=True)
+        # 素材の長さは実装の区切りから導く。実クリップ（話題ごとで数分、ダイジェストは既定3分）は
+        # 必ず区切りをまたぐので、短い素材だけで測ると納品物が通る道を一度も測らないことになる。
+        check(I_FRAMES > apply_mosaic_cli.CHUNK_FRAMES + apply_mosaic_cli.LOOKAHEAD_FRAMES,
+              f"対照I: 素材R-M が区切りをまたぐ長さである"
+              f"（{I_FRAMES}コマ > 区切り{apply_mosaic_cli.CHUNK_FRAMES}"
+              f"＋先読み{apply_mosaic_cli.LOOKAHEAD_FRAMES}）")
+        build_material_r(i_clip, audio=True, markers=True, frames=I_FRAMES)
         i_src = read_frames(i_clip)
         i_vin, i_ain = probe_stream(i_clip, "v:0"), probe_stream(i_clip, "a:0")
-        check([read_marker(f) for f in i_src] == list(range(FRAMES)),
-              "対照I: 素材R-M のコマ番号が 0..29 の順に読み取れる")
+        check([read_marker(f) for f in i_src] == list(range(I_FRAMES)),
+              f"対照I: 素材R-M のコマ番号が 0..{I_FRAMES - 1} の順に読み取れる")
         json.dump({"id": "job4", "digest": None,
                    "candidates": [{"file": "d.mp4", "path": i_clip}]},
                   open(os.path.join(i_dir, "candidates.json"), "w", encoding="utf-8"))
@@ -468,8 +482,17 @@ def main():
         if check(r4.returncode == 0, "目印付きの素材でもモザイク工程が正常終了する"):
             i_out = os.path.join(i_dir, "d-mosaic.mp4")
             got = [read_marker(f) for f in read_frames(i_out)]
-            check(got == list(range(FRAMES)),
+            ordered = got == list(range(I_FRAMES))
+            check(ordered,
                   f"I: 出力の各コマが入力と同じ順・同じ位置にある（実の先頭5件={got[:5]} 件数={len(got)}）")
+            # 「並びが崩れていないこと」を合格条件にする以上、崩れているときに落ちる対照が要る。
+            dropped = got[:5] + got[6:]
+            check(dropped != list(range(I_FRAMES)), "対照I: 1コマ抜けた列なら、この判定は落ちる")
+            swapped = list(got)
+            if len(swapped) > 11:
+                swapped[10], swapped[11] = swapped[11], swapped[10]
+            check(swapped != list(range(I_FRAMES)),
+                  "対照I: 隣り合う2コマが入れ替わった列なら、この判定は落ちる")
             i_vout, i_aout = probe_stream(i_out, "v:0"), probe_stream(i_out, "a:0")
             si, so = i_vin.get("start_time"), i_vout.get("start_time")
             check(si is not None and si == so,
@@ -499,13 +522,13 @@ def main():
         )
         r2 = subprocess.run(["node", STAGE_MJS, f_dir, os.path.join(work, "work", "job2", "pre-mosaic")],
                             capture_output=True, text=True)
-        check(r2.returncode != 0, "途中で失敗したら工程全体が失敗として終わる")
+        check(r2.returncode != 0, "J: 途中で失敗したら工程全体が失敗として終わる")
         left2 = sorted(os.listdir(f_dir))
         masked_left = [n for n in left2 if n.endswith("-mosaic.mp4")]
         check(masked_left == [],
-              f"失敗時に作りかけのモザイク版が残らない（実={masked_left}）")
+              f"J: 失敗時に作りかけのモザイク版が成果物フォルダに残らない（実={masked_left}）")
         check("a.mp4" in left2 and "b.mp4" in left2,
-              f"失敗時は素顔だけの状態に戻る＝混在しない（実={left2}）")
+              f"J: 失敗時は素顔だけの状態に戻る＝素顔と加工済みが混在しない（実={left2}）")
 
     finally:
         shutil.rmtree(work, ignore_errors=True)
