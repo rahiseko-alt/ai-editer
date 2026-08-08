@@ -18,6 +18,10 @@ import {
   isRunning,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
+import {
+  readEdits, saveWordEdit, applyEdits, editPairs,
+} from "../src/caption-store.mjs";
+import { appendTerm, DICT_PATH } from "../src/term-dictionary.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
   generateStartupToken,
@@ -384,6 +388,102 @@ function isAuthorizedForJob(req, url, jobId) {
   return false;
 }
 
+// ── 字幕の手直し（G-EDIT-CAPTION） ──────────────────────────
+// 新しい書き込み口は3つ。いずれも /api/* 共通の Host/Origin 検査に加えて、
+// ジョブごとのトークン（isAuthorizedForJob）を通す。ここを緩めると、
+// 便利にした結果として他人のジョブを書き換えられる穴になる（葉E）。
+
+/** ジョブの transcript.json を読む。無ければ null（まだ文字起こしが終わっていない）。 */
+function readTranscript(jobId) {
+  const p = path.join(WORK_ROOT, jobId, "transcript.json");
+  if (!fs.existsSync(p)) return null;
+  return JSON.parse(fs.readFileSync(p, "utf-8"));
+}
+
+// GET /api/jobs/:id/captions — 直しを重ねた字幕の語を返す
+function handleGetCaptions(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  let transcript;
+  try {
+    transcript = readTranscript(id);
+  } catch (e) {
+    return jsonRes(res, 500, { error: `文字起こしを読めませんでした: ${e.message}` });
+  }
+  if (!transcript) return jsonRes(res, 404, { error: "Not Found" });
+  const workDir = path.join(WORK_ROOT, id);
+  let edits;
+  try {
+    edits = readEdits(workDir);
+  } catch (e) {
+    return jsonRes(res, 500, { error: e.message });
+  }
+  const words = transcript.words || [];
+  return jsonRes(res, 200, {
+    id,
+    words: applyEdits(words, edits).map((w, i) => ({
+      index: i, w: w.w, start: w.start, end: w.end,
+      original: words[i] ? words[i].w : w.w,
+      edited: Object.prototype.hasOwnProperty.call(edits.words, String(i)),
+    })),
+    pairs: editPairs(words, edits),
+  });
+}
+
+// PUT /api/jobs/:id/captions — 1語の直しを保存する
+async function handlePutCaptions(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  let body;
+  try {
+    body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
+  } catch (_) {
+    return jsonRes(res, 400, { error: "本文が JSON ではありません" });
+  }
+  let transcript;
+  try {
+    transcript = readTranscript(id);
+  } catch (e) {
+    return jsonRes(res, 500, { error: `文字起こしを読めませんでした: ${e.message}` });
+  }
+  if (!transcript) return jsonRes(res, 404, { error: "Not Found" });
+  const words = transcript.words || [];
+  const index = body.index;
+  const original = words[index] ? words[index].w : undefined;
+  let saved;
+  try {
+    saved = saveWordEdit(path.join(WORK_ROOT, id), {
+      index, text: body.text, original, wordCount: words.length,
+    });
+  } catch (e) {
+    return jsonRes(res, 500, { error: e.message });
+  }
+  if (!saved.saved) return jsonRes(res, 400, { error: saved.reason });
+  return jsonRes(res, 200, { ok: true, index, before: saved.before, after: saved.after });
+}
+
+// POST /api/jobs/:id/terms — 直した語を用語辞書へ追記する
+async function handlePostTerms(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  let body;
+  try {
+    body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
+  } catch (_) {
+    return jsonRes(res, 400, { error: "本文が JSON ではありません" });
+  }
+  let result;
+  try {
+    // 辞書の置き場所は差し替えられるようにする。テストが本物の用語辞書へ書き込むと、
+    // 以後の全案件にその語が効いてしまう（この辞書は全ジョブに単純文字列置換で効く）。
+    result = appendTerm(body.before, body.after, process.env.VS_TERM_DICT || DICT_PATH);
+  } catch (e) {
+    return jsonRes(res, 500, { error: e.message });
+  }
+  if (!result.added) return jsonRes(res, 400, { error: result.reason, ...result });
+  return jsonRes(res, 200, { ok: true, ...result });
+}
+
 // ── ルーティング ─────────────────────────────────────────────
 async function handleRequest(req, res) {
   const url = new URL(req.url, "http://x");
@@ -424,6 +524,26 @@ async function handleRequest(req, res) {
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
     if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
     return handleCandidates(req, res, id);
+  }
+
+  // GET|PUT /api/jobs/:id/captions（字幕の手直し）
+  const capMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/captions$/);
+  if (capMatch && (method === "GET" || method === "PUT")) {
+    const id = decodeId(capMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    return method === "GET"
+      ? handleGetCaptions(req, res, id)
+      : handlePutCaptions(req, res, id);
+  }
+
+  // POST /api/jobs/:id/terms（直した語を用語辞書へ）
+  const termMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/terms$/);
+  if (method === "POST" && termMatch) {
+    const id = decodeId(termMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    return handlePostTerms(req, res, id);
   }
 
   // GET /api/clips/:id/:file
