@@ -22,6 +22,7 @@ import {
   readEdits, saveWordEdit, applyEdits, editPairs,
 } from "../src/caption-store.mjs";
 import { appendTerm, DICT_PATH } from "../src/term-dictionary.mjs";
+import { recaptionStage } from "../src/recaption-stage.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
   generateStartupToken,
@@ -484,6 +485,25 @@ async function handlePostTerms(req, res, jobId) {
   return jsonRes(res, 200, { ok: true, ...result });
 }
 
+// POST /api/jobs/:id/recaption — 直した字幕で焼き直す
+async function handleRecaption(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  if (isRunning(id)) {
+    // 走っている最中に焼き直すと、同じファイルを2つの工程が書き合う。
+    return jsonRes(res, 409, { error: "このジョブはまだ処理中です。終わってから焼き直してください" });
+  }
+  try {
+    const r = await recaptionStage({
+      workDir: path.join(WORK_ROOT, id),
+      outDir: path.join(OUT_ROOT, id),
+    });
+    return jsonRes(res, 200, { ok: true, ...r });
+  } catch (e) {
+    return jsonRes(res, 500, { error: e.message });
+  }
+}
+
 // ── ルーティング ─────────────────────────────────────────────
 async function handleRequest(req, res) {
   const url = new URL(req.url, "http://x");
@@ -544,6 +564,15 @@ async function handleRequest(req, res) {
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
     if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
     return handlePostTerms(req, res, id);
+  }
+
+  // POST /api/jobs/:id/recaption（直した字幕で焼き直す）
+  const recapMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/recaption$/);
+  if (method === "POST" && recapMatch) {
+    const id = decodeId(recapMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    return handleRecaption(req, res, id);
   }
 
   // GET /api/clips/:id/:file

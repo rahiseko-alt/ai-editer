@@ -41,6 +41,13 @@ const WORDS = [
   { w: "はなしです", start: 1.0, end: 1.6 },
 ];
 
+/** 認可で拒まれたか。「400番台なら何でもよい」にしてはいけない。
+ * 関門を外しても、別の理由（材料が無い等）で 500 が返れば合格になってしまう。
+ * 実際、焼き直しの口で関門を外したときに素通りした（2026-08-08）。 */
+function rejected(r) {
+  return r.status === 401 || r.status === 403;
+}
+
 let pass = 0, fail = 0;
 function report(name, ok, detail) {
   if (ok) { pass++; console.log(`PASS ${name}`); }
@@ -127,6 +134,7 @@ try {
   const auth = `?jobToken=${JOB_TOKEN}`;
   const capPath = `/api/jobs/${JOB_ID}/captions`;
   const termPath = `/api/jobs/${JOB_ID}/terms`;
+  const recapPath = `/api/jobs/${JOB_ID}/recaption`;
   const dictBefore = readDictionary(TEST_DICT);
 
   // ── 正常系（対照）: 合言葉が正しければ通り、実際に保存される ──
@@ -161,13 +169,14 @@ try {
     { name: "字幕を読む", method: "GET", path: capPath, body: undefined },
     { name: "字幕を保存する", method: "PUT", path: capPath, body: { index: 2, text: "ノ" } },
     { name: "辞書へ追記する", method: "POST", path: termPath, body: { before: "ごへんかん", after: "誤変換" } },
+    { name: "字幕を焼き直す", method: "POST", path: recapPath, body: {} },
   ];
   for (const g of gates) {
     // (1) 合言葉を付けない
     {
       const before = JSON.stringify(editsOf(WORK_DIR));
       const r = await call(g.method, g.path, { body: g.body });
-      report(`E: ${g.name} — 合言葉なしでは成功しない`, r.status >= 400, `status=${r.status}`);
+      report(`E: ${g.name} — 合言葉なしでは認可で拒まれる`, rejected(r), `status=${r.status} ${r.body}`);
       report(`E: ${g.name} — 合言葉なしでは副作用も残らない`,
         JSON.stringify(editsOf(WORK_DIR)) === before
         && JSON.stringify(readDictionary(TEST_DICT)) === JSON.stringify(dictBefore));
@@ -178,7 +187,7 @@ try {
       const r = await call(g.method, g.path + auth, {
         body: g.body, headers: { Origin: "https://evil.example" },
       });
-      report(`E: ${g.name} — 他サイト由来では成功しない`, r.status >= 400, `status=${r.status}`);
+      report(`E: ${g.name} — 他サイト由来では認可で拒まれる`, rejected(r), `status=${r.status} ${r.body}`);
       report(`E: ${g.name} — 他サイト由来では副作用も残らない`,
         JSON.stringify(editsOf(WORK_DIR)) === before
         && JSON.stringify(readDictionary(TEST_DICT)) === JSON.stringify(dictBefore));
@@ -187,7 +196,7 @@ try {
     {
       const before = JSON.stringify(editsOf(WORK_DIR));
       const r = await call(g.method, `${g.path}?jobToken=${OTHER_TOKEN}`, { body: g.body });
-      report(`E: ${g.name} — 他人の合言葉では成功しない`, r.status >= 400, `status=${r.status}`);
+      report(`E: ${g.name} — 他人の合言葉では認可で拒まれる`, rejected(r), `status=${r.status} ${r.body}`);
       report(`E: ${g.name} — 他人の合言葉では副作用も残らない`,
         JSON.stringify(editsOf(WORK_DIR)) === before
         && JSON.stringify(readDictionary(TEST_DICT)) === JSON.stringify(dictBefore));
