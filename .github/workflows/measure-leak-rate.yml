@@ -28,7 +28,7 @@ permissions:
 jobs:
   measure:
     name: 実素材(パブリックドメイン)で素顔が残る割合を測る
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

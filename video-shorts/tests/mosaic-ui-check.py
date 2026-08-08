@@ -36,16 +36,23 @@ FRAMES = FPS * SECONDS          # 30 コマ。全数測定するので短く固�
 BG = (128, 128, 128)            # 黒以外の既知色
 FACE_RATIO = 0.30               # 顔の高さ ＝ 映像高さの30%
 
-# 「顔の周り」＝顔枠の外側にこの画素数だけ余白を取った矩形。比較から除外する。
-# 実装が隠すのは expand_box(MARGIN_RATIO=0.18) により検出枠の1.36倍（112x139。実測）だが、
-# 隠した所の境目には x264 の圧縮ノイズがそこからさらに滲む。実測(2026-08-08)では
-# 差が4を超えた画素は顔枠から最大68px（左57/右59/上63/下68）までで、+64px の外は最大5、
-# +80px の外は最大4だった。ノイズの届く距離は顔の大きさではなく符号化ブロックで決まるので、
-# 顔枠の「倍率」ではなく px の余白で定める。
-FACE_MARGIN_PX = 80
-# 許容する階調差。モザイクを掛けると符号化のビット配分が変わり、画面全体に最大4の差が薄く出る
-# （実測）。版差を見て8まで許すが、緩めすぎて壊れを見逃していないことは下の3つの対照で示す。
-PIXEL_TOLERANCE = 8
+# ── 葉Cの合格ラインは、実測した「床」ひとつから2つの規則で導く ────────────
+# 床＝モザイクを掛けると符号化のビット配分が変わるため、顔から十分離れた所にも消えずに
+# 残る階調差。ubuntu-24.04 / ffmpeg 6.1.1 での実測(2026-08-08)は 5 で、顔枠+72px より
+# 外ではどこまで離れても 5 のまま下がらなかった。
+NOISE_FLOOR = 5
+# 規則1: 除外幅 ＝ ノイズが床まで減衰する最小の8px刻み。許容とは無関係に、
+#        「モザイクの影響が及ぶ距離」だけで決める。実測: +56px→12, +64px→7, +72px→5。
+#        ノイズの届く距離は顔の大きさではなく符号化ブロックで決まるため、倍率ではなく px。
+FACE_MARGIN_PX = 72
+# 規則2: 許容 ＝ 床の2倍。2倍は ffmpeg/x264 の版差ぶんの余裕（CI は ubuntu-24.04 に固定
+#        しているが、手元の開発機は別の版を使うため）。安全側の水増しはこの1か所だけに置く。
+PIXEL_TOLERANCE = NOISE_FLOOR * 2   # = 10
+# 上の2つの数字が後から自由に緩められないよう、境界を絶対値で固定する対照に使う。
+# ここを PIXEL_TOLERANCE から導出すると、許容を変えたときに対照も一緒に動いて意味を失う。
+TOLERANCE_PASSES_AT = 10        # 階調差10ちょうどは通らなければならない
+TOLERANCE_FAILS_AT = 11         # 階調差11は落ちなければならない
+MARGIN_PROBE_PX = 73            # 顔枠+73px は除外の外＝汚しを置けば落ちなければならない
 
 fail = 0
 
@@ -58,8 +65,8 @@ def check(cond, msg):
     return cond
 
 
-def build_material_r(path):
-    """素材R を合成する。全コマ同一の絵・無音・15fps・2秒。"""
+def compose_frame():
+    """素材Rの1コマを合成する（符号化前の、数値で確定した絵）。"""
     face = cv2.imread(FIXTURE, cv2.IMREAD_COLOR)
     if face is None:
         raise RuntimeError(f"固定素材を読めません: {FIXTURE}")
@@ -69,12 +76,39 @@ def build_material_r(path):
     y = (H - face.shape[0]) // 2
     x = (W - face.shape[1]) // 2
     frame[y:y + face.shape[0], x:x + face.shape[1]] = face
-
-    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
-    for _ in range(FRAMES):
-        writer.write(frame)
-    writer.release()
     return frame
+
+
+def build_material_r(path, audio=False):
+    """素材R を合成する。全コマ同一の絵・15fps・2秒。
+
+    書き出しは libx264rgb の可逆（-qp 0 / bgr24）で行う。cv2.VideoWriter の "mp4v" は
+    非可逆で、素材そのものが符号化器の実装差で変わってしまうため使わない
+    （素材が版で変わると、下で測るノイズの床も版で変わり、合格ラインの根拠が崩れる）。
+    audio=True のときは 440Hz・48000Hz・2秒の正弦波を AAC で足す（葉G用）。
+    """
+    frame = compose_frame()
+    cmd = ["ffmpeg", "-y", "-v", "error",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-"]
+    if audio:
+        cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={SECONDS}",
+                "-c:a", "aac", "-b:a", "128k"]
+    cmd += ["-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24", path]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    for _ in range(FRAMES):
+        p.stdin.write(frame.tobytes())
+    p.stdin.close()
+    if p.wait() != 0:
+        raise RuntimeError(f"素材Rの書き出しに失敗しました: {path}")
+    return frame
+
+
+def read_audio_pcm(path):
+    """音声を 16bit・48000Hz・モノラルの生データとして取り出す。無音なら空。"""
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vn",
+                        "-f", "s16le", "-ac", "1", "-ar", "48000", "-"],
+                       capture_output=True)
+    return r.stdout if r.returncode == 0 else b""
 
 
 def read_frames(path):
@@ -114,6 +148,10 @@ def worst_diff(ref, test, mask):
 
 
 def main():
+    # 合格ラインは ubuntu-24.04 / ffmpeg 6.1.1 での実測に基づく。実際に使った版を記録に残す。
+    ver = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout
+    print(f"[INFO] {ver.splitlines()[0] if ver else 'ffmpeg 不明'}")
+
     work = tempfile.mkdtemp(prefix="vs-mosaic-ui-")
     out_dir = os.path.join(work, "output", "job1")
     stash_dir = os.path.join(work, "work", "job1", "pre-mosaic")
@@ -177,8 +215,8 @@ def main():
         # ── C: 顔以外の絵と寸法・コマ数が元のまま ─────────────
         same_size = after and after[0].shape == plain[0].shape
         check(bool(same_size), "C: 解像度が入力と一致する")
-        # 「顔の周り」（顔枠＋80px）を除いた領域を、同じエンコーダを通した基準と比べる。
-        # 除外矩形は 241x263 ＝ 画面の約6.9%。残り93%に差が出れば落ちる。
+        # 「顔の周り」（顔枠+72px）を除いた領域を、同じエンコーダを通した基準と比べる。
+        # 除外矩形は 225x247 ＝ 画面の約6.0%。残り94%に差が出れば落ちる。
         boxes = detect_faces(plain_src[0], det)
         mask = outside_face_mask(boxes)
         worst = worst_diff(plain, after, mask) if same_size else 255
@@ -186,18 +224,41 @@ def main():
               f"C: 顔の周り(顔枠+{FACE_MARGIN_PX}px)を除いた画素が基準と一致する"
               f"（最大差={worst}、許容{PIXEL_TOLERANCE}）")
 
-        # ── C の対照: この判定が「壊れ」を実際に検出できることを示す ──────
-        # 許容を8まで緩めているので、緩めすぎて素通しになっていないことを、
-        # わざと壊した3種類の絵で確かめる（どれも許容を超えなければならない）。
+        # ── C の対照 ────────────────────────────────────────────
+        # 許容を床(5)の2倍まで緩め、画面の6%を検査から外しているので、
+        # 「緩めすぎて何も検出しない検査」になっていないことを機械で押さえる。
+        # 対照の数字は PIXEL_TOLERANCE / FACE_MARGIN_PX から導出しない（絶対値で書く）。
+        # 導出すると、後から許容や除外幅を緩めたときに対照も一緒に動いて素通ししてしまう。
         black = [np.zeros_like(f) for f in plain]
         check(worst_diff(plain, black, mask) > PIXEL_TOLERANCE,
               "対照C: 出力が真っ黒なら、この判定は落ちる")
 
-        brighter = [cv2.add(f, PIXEL_TOLERANCE + 1) for f in plain]
-        check(worst_diff(plain, brighter, mask) > PIXEL_TOLERANCE,
-              f"対照C: 画面全体が{PIXEL_TOLERANCE + 1}段階明るいだけでも、この判定は落ちる")
+        # (1) 許容の境界を上下から固定する。10は通り、11は落ちる。
+        #     許容を厳しくすると前者が、緩めると後者が落ちるので、10という数字が動かせない。
+        at_line = [cv2.add(f, TOLERANCE_PASSES_AT) for f in plain]
+        check(worst_diff(plain, at_line, mask) <= PIXEL_TOLERANCE,
+              f"対照C: 画面全体が{TOLERANCE_PASSES_AT}段階ずれるところまでは通る"
+              f"（許容がこれより厳しくないことを固定する）")
+        over_line = [cv2.add(f, TOLERANCE_FAILS_AT) for f in plain]
+        check(worst_diff(plain, over_line, mask) > PIXEL_TOLERANCE,
+              f"対照C: 画面全体が{TOLERANCE_FAILS_AT}段階ずれたら落ちる"
+              f"（許容がこれより緩くないことを固定する）")
 
-        # 顔から離れた隅に別の絵が紛れ込んだ場合。除外矩形の外もちゃんと見ていることを示す。
+        # (2) 除外幅の境界を固定する。顔枠+73px の位置に置いた小さな汚しは落ちなければならない。
+        #     除外幅を72pxより広げるとこの汚しが除外の中に入り、検出できなくなって落ちる。
+        bx, by, bw, bh = (int(v) for v in boxes[0])
+        px0 = min(W - 8, bx + bw + MARGIN_PROBE_PX)
+        py0 = max(0, by + bh // 2 - 4)
+        near = []
+        for f in plain:
+            g = f.copy()
+            g[py0:py0 + 8, px0:px0 + 8] = 255
+            near.append(g)
+        check(worst_diff(plain, near, mask) > PIXEL_TOLERANCE,
+              f"対照C: 顔枠+{MARGIN_PROBE_PX}px の位置の汚しは落ちる"
+              f"（見ないことにする範囲が{FACE_MARGIN_PX}pxより広くないことを固定する）")
+
+        # (3) 顔から遠い隅も見ていることを示す。
         stained = []
         for f in plain:
             g = f.copy()
@@ -220,6 +281,28 @@ def main():
               f"F: 成果物フォルダに素顔のファイルが残っていない（実={left}）")
         check(os.path.exists(os.path.join(stash_dir, os.path.basename(clip))),
               "F: 素顔のファイルは成果物フォルダの外へ退避されている")
+
+        # ── G: モザイクを掛けても音がそのまま残る ──────────────
+        # 素材Rは無音なので、A〜F だけでは音が消える・別物になる壊れ方を一切検出できない。
+        # 音付きの素材で、入力と出力の音が同一であることを別の受入事実として押さえる。
+        g_dir = os.path.join(work, "output", "job3")
+        os.makedirs(g_dir, exist_ok=True)
+        g_clip = os.path.join(g_dir, "c.mp4")
+        build_material_r(g_clip, audio=True)
+        src_pcm = read_audio_pcm(g_clip)
+        check(len(src_pcm) > 0, f"対照G: 音付きの素材に音が入っている（実={len(src_pcm)}バイト）")
+        json.dump({"id": "job3", "digest": None,
+                   "candidates": [{"file": "c.mp4", "path": g_clip}]},
+                  open(os.path.join(g_dir, "candidates.json"), "w", encoding="utf-8"))
+        r3 = subprocess.run(["node", STAGE_MJS, g_dir, os.path.join(work, "work", "job3", "pre-mosaic")],
+                            capture_output=True, text=True)
+        if check(r3.returncode == 0, "音付きの素材でもモザイク工程が正常終了する"):
+            out_pcm = read_audio_pcm(os.path.join(g_dir, "c-mosaic.mp4"))
+            check(len(out_pcm) > 0, f"G: モザイク版に音が残っている（実={len(out_pcm)}バイト）")
+            check(out_pcm == src_pcm,
+                  f"G: モザイク版の音が入力と一致する（入力={len(src_pcm)} 出力={len(out_pcm)}バイト）")
+        else:
+            print("      " + (r3.stderr or "")[-800:])
 
         # ── 途中で失敗したときに素顔と加工済みを混在させない ──
         # 1本ずつ確定する作りだと、2本目で失敗したとき「1本目＝加工済み／2本目＝素顔」が
