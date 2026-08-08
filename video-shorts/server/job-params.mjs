@@ -13,6 +13,12 @@ export function parseJobParams(searchParams) {
   const size = SUPPORTED_SIZES.has(sizeRaw) ? sizeRaw : "9:16";
   const cutMinRaw = Number(searchParams.get("cutMin"));
   const cutMin = Number.isFinite(cutMinRaw) && cutMinRaw >= 1 && cutMinRaw <= 60 ? cutMinRaw : 3;
+  // 顔モザイク（G-EDIT-MOSAIC-UI）。既定は none＝掛けない。
+  // 既定を on にしないのは、顔を隠す必要がないお客様の使い方をこれまでどおり保つため。
+  const mosaic = searchParams.get("mosaic") === "on" ? "on" : "none";
+  // 無音・言い淀みの詰め。既定は none＝これまでどおり詰めない。
+  // 既定で詰めると、今まで通りに使っている人の成果物が黙って短くなる。
+  const trim = searchParams.get("trim") === "on" ? "on" : "none";
   const name = searchParams.get("name") ?? "upload.mp4";
-  return { sub, cut, size, cutMin, name };
+  return { sub, cut, size, cutMin, mosaic, trim, name };
 }

@@ -60,10 +60,34 @@
         <p class="group-note" id="sub-desc">字幕は付けません。</p>
       </section>
 
+      <!-- グループ2.5: 顔モザイク -->
+      <section class="settings-group" id="card-mosaic" aria-labelledby="h-mosaic">
+        <h2 class="group-label" id="h-mosaic">
+          <span class="step-n" aria-hidden="true">3</span> 顔を隠す
+        </h2>
+        <div class="chips mosaic-toggle" data-group="mosaic" role="group" aria-label="顔モザイクのあり・なし">
+          <button class="chip mosaic-chip is-on" data-val="none">なし</button>
+          <button class="chip mosaic-chip" data-val="on">あり</button>
+        </div>
+        <p class="group-note" id="mosaic-desc">写り込んだ顔はそのまま出ます。</p>
+      </section>
+
+      <!-- 無音・言い淀みを詰める（G-EDIT-TRIM） -->
+      <section class="settings-group" id="card-trim" aria-labelledby="h-trim">
+        <h2 class="group-label" id="h-trim">
+          <span class="step-n" aria-hidden="true">4</span> 間を詰める
+        </h2>
+        <div class="chips trim-toggle" data-group="trim" role="group" aria-label="間を詰めるあり・なし">
+          <button class="chip trim-chip is-on" data-val="none">なし</button>
+          <button class="chip trim-chip" data-val="on">あり</button>
+        </div>
+        <p class="group-note" id="trim-desc">黙っている時間と「えーと」はそのまま残ります。</p>
+      </section>
+
       <!-- グループ3: カット -->
       <section class="settings-group" id="card-cut" aria-labelledby="h-cut">
         <h2 class="group-label" id="h-cut">
-          <span class="step-n" aria-hidden="true">3</span> カットの目安
+          <span class="step-n" aria-hidden="true">5</span> カットの目安
         </h2>
         <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
           <button class="chip is-on" data-val="topic">話題で切る</button>
@@ -82,7 +106,7 @@
       <!-- グループ4: サイズ -->
       <section class="settings-group" id="card-size" aria-labelledby="h-size">
         <h2 class="group-label" id="h-size">
-          <span class="step-n" aria-hidden="true">4</span> サイズ
+          <span class="step-n" aria-hidden="true">6</span> サイズ
         </h2>
         <div class="size-chips" data-group="size" role="group" aria-label="動画サイズ">
           <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16">
@@ -153,6 +177,7 @@
           <li data-k="t">話し言葉を文字にしています</li>
           <li data-k="s">良い場面を選んでいます</li>
           <li data-k="r">縦長の動画に整えています</li>
+          <li data-k="m" class="hidden">顔にモザイクを掛けています</li>
         </ol>
       </div>
 
@@ -176,6 +201,22 @@
       </div>
       <div class="tab-body" id="tab-keep" role="tabpanel">
         <p class="placeholder">実行すると、ショート候補がここに並びます。</p>
+      </div>
+      <!-- 字幕の手直し（G-EDIT-CAPTION）。焼き込む前に文字を直せる導線。 -->
+      <div class="caption-editor hidden" id="caption-editor" aria-label="字幕の手直し">
+        <div class="caption-head">
+          <b id="caption-title">字幕を直す</b>
+          <button class="clip-btn" id="caption-back">← 一覧へ戻る</button>
+        </div>
+        <p class="reason" id="caption-hint">
+          聞き間違えられた文字をその場で直せます。直したら「この字幕で焼き直す」を押すと、
+          新しい文字で作り直します。よく出てくる名前は「次からも自動で直す」に登録できます。
+        </p>
+        <div class="caption-words" id="caption-words"></div>
+        <div class="caption-actions">
+          <button class="clip-btn dl" id="caption-rebake">この字幕で焼き直す</button>
+          <span class="caption-status" id="caption-status"></span>
+        </div>
       </div>
       <div class="tab-body hidden" id="tab-trash" role="tabpanel">
         <p class="placeholder">NG・準備中・雑談など、今回は使わない部分をここにまとめます。必要なら採用に戻せます。</p>
@@ -224,6 +265,7 @@
       <span class="estep" data-k="t"></span>
       <span class="estep" data-k="s"></span>
       <span class="estep" data-k="r"></span>
+      <span class="estep" data-k="m"></span>
     </div>
     <p class="editing-status" id="editing-status">動画を読み込んでいます</p>
     <p class="editing-eta"><b id="editing-elapsed">0:00</b> 経過 ・ ふつう1〜3分で終わります</p>

@@ -128,3 +128,19 @@
 }
 .result-close:hover { background: rgba(0,0,0,.08); }
 .result-head-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ── 字幕の手直し（G-EDIT-CAPTION） ───────────────────────── */
+.caption-editor { padding: 4px 0 8px; }
+.caption-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.caption-words { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.caption-word { display: inline-flex; flex-direction: column; gap: 2px; }
+.caption-word input {
+  font: inherit; padding: 4px 6px; border: 1px solid var(--line, #ccc); border-radius: 6px;
+  background: var(--surface-1, #fff); color: inherit; min-width: 3.5em; text-align: center;
+}
+.caption-word.is-edited input { border-color: #2b7; background: #eefaf3; }
+.caption-word .caption-orig { font-size: 11px; color: #777; text-align: center; }
+.caption-actions { display: flex; align-items: center; gap: 10px; }
+.caption-status { font-size: 13px; color: #555; }
+.caption-status.err { color: #c33; }
+.caption-learn { font-size: 12px; padding: 2px 6px; }

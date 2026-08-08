@@ -10,7 +10,7 @@ on:
 jobs:
   quality:
     name: typecheck / lint / test / build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +50,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg zip
-          # 版は固定していない。将来ランナー側の更新で壊れたとき原因を追えるよう記録する
-          # (固定そのものは roadmap P1-12「外部ツールのバージョン固定」で扱う)
+          # ランナーを ubuntu-24.04 に固定してあるので、apt が入れる ffmpeg も
+          # そのリリースのもの(6.1.1)に定まる。G-EDIT-MOSAIC-UI-C の合格ライン
+          # (ノイズの床＝5)はこの版で実測した値なので、実際に使われた版を記録に残す。
+          # 完全なピン留め(版番号の明示)は roadmap P1-12「外部ツールのバージョン固定」で扱う。
           ffmpeg -version | head -1
           zip --version | head -2 | tail -1
 
@@ -83,7 +85,7 @@ jobs:
 
   smoke:
     name: 起動スモーク (start → curl 200 + marker)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -131,7 +133,7 @@ jobs:
 
   hook-session-start:
     name: session-startフック (G-DELIVERY-HOOK-*) の実地検証
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +164,7 @@ jobs:
     name: ci-green
     needs: [quality, smoke]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 上流ジョブが全て success か検査（1つでも失敗/スキップなら赤）
         run: |

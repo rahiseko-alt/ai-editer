@@ -14,6 +14,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 
 import numpy as np
 
@@ -69,9 +70,15 @@ def run(input_path, output_path, target=None, strength="普通"):
     people = [register_person(target, name="target")] if target else []
     ratio_for = {"target": STRENGTH.get(strength, BLOCK_RATIO_DEFAULT)} if people else None
 
+    # 読み出し側の警告を捨てない。途中で切れた mp4 を渡すと ffmpeg は
+    # "partial file" / "Decoding error" を出しながら終了コード0を返すため、
+    # 終了コードだけを見ていると「短くなった動画」を成功として書き出してしまう
+    # （実測: 4.000秒の入力に対し出力1.867秒／28コマで、素顔は退避され短い動画が納品された）。
+    # パイプで受けると埋まって止まりうるので一時ファイルへ落とし、終了後に読む。
+    dec_err = tempfile.TemporaryFile()
     dec = subprocess.Popen(
         ["ffmpeg", "-v", "error", "-i", input_path, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
-        stdout=subprocess.PIPE, bufsize=width * height * 3 * 4,
+        stdout=subprocess.PIPE, stderr=dec_err, bufsize=width * height * 3 * 4,
     )
     enc = subprocess.Popen(
         ["ffmpeg", "-y", "-v", "error",
@@ -86,6 +93,8 @@ def run(input_path, output_path, target=None, strength="普通"):
     size = width * height * 3
     total = 0
     pending = []
+    # 追従状態は区切りをまたいで持ち越す（毎回作り直すと境目で保持が切れる）
+    tracker = None
     # 読み切ったのか、例外で抜けたのかを区別する。区別しないと、下の後始末で
     # 「正常に読み終えた ffmpeg」まで terminate してしまう（下のコメント参照）。
     reached_eof = False
@@ -100,16 +109,20 @@ def run(input_path, output_path, target=None, strength="普通"):
             if len(pending) >= CHUNK_FRAMES + LOOKAHEAD_FRAMES:
                 # 先読みぶんは次のかたまりでも使うので、焼かれる前に控えておく
                 carry = [f.copy() for f in pending[CHUNK_FRAMES : CHUNK_FRAMES + LOOKAHEAD_FRAMES]]
-                out, _tracker = mosaic_frames(
+                out, tracker = mosaic_frames(
                     pending[: CHUNK_FRAMES + LOOKAHEAD_FRAMES],
-                    people=people, ratio_for=ratio_for, copy_frames=False,
+                    people=people, ratio_for=ratio_for, copy_frames=False, tracker=tracker,
+                    # 次の呼び出しへ重ねて渡すコマ（先読み）の手前の状態を受け取る。
+                    # 最後まで進んだ状態を受け取ると、重なったコマの検出が2回取り込まれ、
+                    # 顔を見失った回数が二重に数えられて保持が境目で短くなる。
+                    carry_from=CHUNK_FRAMES,
                 )
                 for frame in out[:CHUNK_FRAMES]:
                     enc.stdin.write(frame.tobytes())
                 total += CHUNK_FRAMES
                 pending = carry + pending[CHUNK_FRAMES + LOOKAHEAD_FRAMES :]
         if pending:
-            total += _flush(pending, enc, people, ratio_for)
+            total += _flush(pending, enc, people, ratio_for, tracker)
     finally:
         try:
             enc.stdin.close()
@@ -129,8 +142,14 @@ def run(input_path, output_path, target=None, strength="普通"):
         dec.stdout.close()
         dec.wait()
 
+    dec_err.seek(0)
+    dec_msg = dec_err.read().decode("utf-8", "replace").strip()
+    dec_err.close()
     if dec.returncode != 0:
         raise RuntimeError(f"入力動画の読み出しに失敗しました（終了コード {dec.returncode}）: {input_path}")
+    if dec_msg:
+        # -v error は正常な入力では何も出さない。何か出ている＝読み切れていない。
+        raise RuntimeError(f"入力動画を最後まで読み出せませんでした: {input_path}\n{dec_msg[-800:]}")
     if enc.returncode != 0:
         raise RuntimeError(f"出力動画の書き出しに失敗しました（終了コード {enc.returncode}）: {output_path}")
     if total == 0:
@@ -138,9 +157,10 @@ def run(input_path, output_path, target=None, strength="普通"):
     return total
 
 
-def _flush(chunk, enc, people, ratio_for):
+def _flush(chunk, enc, people, ratio_for, tracker=None):
     """1かたまりぶんを焼いてエンコーダへ流す。複製は省く（渡したコマをそのまま書き換える）。"""
-    out, _tracker = mosaic_frames(chunk, people=people, ratio_for=ratio_for, copy_frames=False)
+    out, _tracker = mosaic_frames(chunk, people=people, ratio_for=ratio_for,
+                                  copy_frames=False, tracker=tracker)
     for frame in out:
         enc.stdin.write(frame.tobytes())
     return len(out)

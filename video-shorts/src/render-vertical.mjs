@@ -8,6 +8,8 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+import { buildTrimFilters } from "./trim-plan.mjs";
+
 // 向き別の出力解像度。portrait=縦型(SNSリール等)、landscape=横型(画面録画・細かい文字を残す)。
 const ORIENT = { portrait: [1080, 1920], landscape: [1920, 1080] };
 const DEFAULT_ORIENT = "portrait";
@@ -46,6 +48,9 @@ export function computeCanvas(orientation, srcW, srcH) {
  * @param {string} p.output 出力mp4
  * @param {number} [p.srcW] 素材の実横幅（拡大ガード用。省略時はガード無効）
  * @param {number} [p.srcH] 素材の実縦幅（拡大ガード用。省略時はガード無効）
+ * @param {{start:number,end:number}[]} [p.keep] 残す区間（区間先頭を0とした相対秒）。
+ *   渡すと、その区間だけを取り出してつなぐ（無音・言い淀みを詰める）。
+ *   省略すると従来どおり、切り出した区間をそのまま焼く。
  * @returns {Promise<{cmd:string, output:string}>}
  */
 export function renderClip(p) {
@@ -92,10 +97,20 @@ export function renderClip(p) {
   // 実測（lecture.mp4 の 300-312s 区間）: 出力 t=0.5s に ASS の 2.26-2.56s 行が焼かれていた。
   // setpts と ass の順序を入れ替えても解消しない（フィルタ入力 PTS が既に 0 のため setpts が no-op）。
   // 入力シーク1段にすると filtergraph の 0 = p.start となり ASS の相対時刻と一致する。
-  const vf =
-    `[0:v]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
+  // 無音・言い淀みを詰める場合は、先に残す区間だけを取り出してつなぎ、
+  // そのあとで縦化と字幕焼きを掛ける。順序が逆だと、切って捨てる部分にも
+  // 縦化と字幕焼きの費用を払うことになるうえ、字幕の時刻が詰める前のままになる。
+  // 字幕(ASS)の時刻は、呼び出し側が詰めたあとの時間軸へ写してから渡すこと
+  // （srt-builder に渡す words を trim-plan の remapWords に通す）。
+  const trim = p.keep && p.keep.length ? buildTrimFilters(p.keep) : null;
+  const videoIn = trim ? "[tvout]" : "[0:v]";
+  const scaleChain =
+    `${videoIn}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
     `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,` +
     `setpts=PTS-STARTPTS` + assFilter + `[v]`;
+  const vf = trim
+    ? `${trim.videoChain};${trim.audioChain};${scaleChain}`
+    : scaleChain;
 
   const args = [
     "-y",
@@ -104,7 +119,9 @@ export function renderClip(p) {
     "-t", String(dur),
     "-filter_complex", vf,
     "-map", "[v]",
-    "-map", "0:a?", // 音声はシークで切り出し済のためそのまま map（無音素材でも落ちないよう ?）
+    // 詰める場合は詰めた音声を、詰めない場合はシークで切り出し済みの音声をそのまま map
+    // （無音素材でも落ちないよう ?）
+    ...(trim ? ["-map", "[taout]"] : ["-map", "0:a?"]),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "20",

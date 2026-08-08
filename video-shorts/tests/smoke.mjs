@@ -368,6 +368,173 @@ t("parseJobParams: サポート内の値はそのまま通る", () => {
   assert.strictEqual(p.sub, "on");
 });
 
+// ---- G-EDIT-MOSAIC-UI: 画面のモザイク選択が設定として通る ----
+// 出来上がりの絵での判定は tests/mosaic-ui-check.py が行う。ここでは
+// 「画面で選んだ値がジョブ設定に載る／選ばなければ載らない」だけを見る。
+t("parseJobParams: モザイクは既定で none（顔を隠す必要がないお客様の使い方を変えない）", () => {
+  const p = parseJobParams(new URLSearchParams({}));
+  assert.strictEqual(p.mosaic, "none");
+});
+
+t("parseJobParams: mosaic=on はそのまま通る", () => {
+  const p = parseJobParams(new URLSearchParams({ mosaic: "on" }));
+  assert.strictEqual(p.mosaic, "on");
+});
+
+t("parseJobParams: サポート外のmosaicは none へ丸められる", () => {
+  const p = parseJobParams(new URLSearchParams({ mosaic: "yes" }));
+  assert.strictEqual(p.mosaic, "none");
+});
+
+t("UI: モザイクのチップ群に「あり」の選択肢がある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  // チップ群の中だけを切り出して見る。HTML全体に対する正規表現だと、字幕グループの
+  // data-val="on" に食いついて、モザイクの「あり」を消しても通ってしまう（実際に確認済み）。
+  const m = html.match(/data-group="mosaic"[^]*?<\/div>/);
+  assert.ok(m, "モザイクのチップ群が画面にある");
+  assert.ok(/data-val="on"/.test(m[0]), "そのチップ群の中に「あり」がある");
+  assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
+});
+
+// ── 間を詰めるの結線（G-EDIT-TRIM） ─────────────────────────
+// 顔モザイクでは、画面からサーバーへ設定が渡っておらず「あり」を選んでも一度も
+// 動いていなかった。同じ取りこぼしを繰り返さないよう、受け渡しの各段を押さえる。
+t("parseJobParams: trim の既定は none（これまでどおり詰めない）", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams()).trim, "none");
+});
+
+t("parseJobParams: trim=on は on として受け取る", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ trim: "on" })).trim, "on");
+});
+
+t("parseJobParams: サポート外の trim は none へ丸められる", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ trim: "yes" })).trim, "none");
+});
+
+t("UI: 間を詰めるのチップ群に「あり」の選択肢がある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  // チップ群の中だけを切り出して見る。HTML全体への正規表現だと、他のグループの
+  // data-val="on" に食いついて、こちらの「あり」を消しても通ってしまう。
+  const m = html.match(/data-group="trim"[^]*?<\/div>/);
+  assert.ok(m, "間を詰めるのチップ群が画面にある");
+  assert.ok(/data-val="on"/.test(m[0]), "そのチップ群の中に「あり」がある");
+  assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
+});
+
+t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");
+  assert.ok(/trim:\s*"none"/.test(app), "画面の初期値が none（既定で詰めない）");
+});
+
+t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
+  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
+  assert.ok(recv && /\btrim\b/.test(recv[1]), "parseJobParams の結果から trim を受け取っていない");
+  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
+  assert.ok(pass && /\btrim\b/.test(pass[1]), "startJob へ trim を渡していない");
+});
+
+t("サーバ: 渡された trim を state.json へ書く（ここを落とすと一度も詰まらない）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  assert.ok(/trim:\s*opts\.trim/.test(src), "state に trim を書いていない");
+});
+
+t("パイプライン: state.trim を見て詰める区間を決めている", () => {
+  const src = fs.readFileSync(path.join(ROOT, "pipeline.mjs"), "utf-8");
+  assert.ok(/state\.trim === "on"/.test(src), "state.trim を見ていない");
+  assert.ok(/planTrim\(/.test(src), "詰める区間を決めていない");
+  assert.ok(/remapWords\(/.test(src), "字幕の時刻を詰めた時間軸へ写していない");
+  assert.ok(/renderClip\([^)]*keep/.test(src), "決めた区間をレンダリングへ渡していない");
+});
+
+// ── 字幕の手直しの結線（G-EDIT-CAPTION） ────────────────────
+// ここで見ているのはソースコードの静的な読み取りで、画面から実際に届いたことの証明ではない。
+// 語が消えたら落ちるが、固定値を渡すような断線は素通りする。実際に届くことは、
+// 各葉の verify が求める independent-verifier の画面操作で確認する。
+t("UI: 候補一覧に「字幕を直す」の入口がある", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  const row = app.match(/clip-row[^`]*`/);
+  assert.ok(row, "候補の行を組み立てている箇所が見つからない");
+  assert.ok(/clip-btn cap/.test(row[0]), "候補の行に「字幕を直す」のボタンが無い");
+});
+
+t("UI: 字幕の手直しの置き場所が画面にある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  const m = html.match(/id="caption-editor"[^]*?<\/div>\s*<\/div>/);
+  assert.ok(m, "字幕の手直しの置き場所が画面に無い");
+  assert.ok(/id="caption-words"/.test(m[0]), "直す語を並べる場所が無い");
+  assert.ok(/id="caption-rebake"/.test(m[0]), "焼き直しのボタンが無い");
+});
+
+t("UI: 3つの操作口すべてを画面から呼んでいる", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  for (const [route, what] of [
+    ["/captions`", "字幕の読み書き"],
+    ["/terms`", "用語辞書への追記"],
+    ["/recaption`", "焼き直し"],
+  ]) {
+    assert.ok(app.includes(route), `${what}の口を画面から呼んでいない: ${route}`);
+  }
+  assert.ok(/method:\s*"PUT"/.test(app), "字幕の保存(PUT)を呼んでいない");
+});
+
+t("UI: 字幕の操作でもジョブの合言葉を渡している", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  // 合言葉を付けずに叩くと 403 で拒まれる（葉E）。付け忘れると画面が動かない。
+  // 渡し方は問わない（サーバはヘッダとクエリのどちらでも受け取る）。呼び出しごとに
+  // どちらかで渡っていることだけを見る。
+  const calls = app.match(/fetch\(withTokenQuery\(`\/api\/jobs\/\$\{job\.jobId\}\/(captions|terms|recaption)`[^]*?\)\)/g) || [];
+  assert.ok(calls.length >= 4, `字幕の操作の呼び出しが足りない（実=${calls.length}）`);
+  for (const c of calls) {
+    assert.ok(/job\.jobToken/.test(c), `合言葉をどちらでも渡していない呼び出しがある: ${c.slice(0, 80)}`);
+  }
+});
+
+t("UI: 候補に区間の時刻を持たせている（そのクリップの語だけを出すため）", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  const keep = app.match(/const keep = \(candidates \|\| \[\]\)\.map\(\(c\) => \(\{[^]*?\}\)\);/);
+  assert.ok(keep, "候補の組み立て箇所が見つからない");
+  assert.ok(/start:\s*c\.start/.test(keep[0]) && /end:\s*c\.end/.test(keep[0]),
+    "候補に区間の時刻を持たせていない");
+});
+
+t("UI: 選んだモザイクの値が /api/jobs のパラメータに載る", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "送信パラメータに mosaic が入る");
+});
+
+// 画面→サーバの配線。ここが抜けると「画面で選んでもモザイクが掛からない」のに
+// 工程レベルのテスト(tests/mosaic-ui-check.py)は工程を直接叩くので全緑のまま通る。
+// 実際に一度その状態を作ってしまったので、配線そのものを機械で押さえる。
+t("サーバ: 受け取った mosaic をジョブ設定として startJob へ渡す", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
+  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
+  assert.ok(recv, "parseJobParams の戻り値を受け取っている");
+  assert.ok(/\bmosaic\b/.test(recv[1]),
+    "parseJobParams から mosaic を受け取っている（受け取らないと画面の選択が捨てられる）");
+  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
+  assert.ok(pass, "startJob へ設定オブジェクトを渡している");
+  assert.ok(/\bmosaic\b/.test(pass[1]),
+    "startJob へ mosaic を渡している（渡さないとモザイク工程は永久に呼ばれない）");
+});
+
+t("サーバ: モザイク工程(stage m)を走行中として扱う（二重起動を防ぐ）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
+  assert.ok(running && /"m"/.test(running[1]), "startJob の走行中判定に m が入っている");
+  assert.ok(/includes\(j\.stage\)/.test(src) && /"init", "t", "s", "r", "m"/.test(src),
+    "isRunning の走行中判定にも m が入っている");
+});
+
+t("UI: モザイク段(m)の進捗表示の受け皿がある", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/STEP_ORDER\s*=\s*\[[^\]]*"m"/.test(app), "STEP_ORDER に m が入っている");
+  assert.ok(/^\s*m:\s*"/m.test(app), "EDITING_LABEL に m の文言がある");
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(/data-k="m"/.test(html), "進捗欄に m の行がある");
+});
+
 // ---- P0-5-B: レンダラー未実装の選択肢(1:1 / 4:5 / 本数で切る)がUIから除去されている ----
 
 t("webapp-mockup: UIに未実装の選択肢(1:1・4:5・本数で切る)が存在しない", () => {
