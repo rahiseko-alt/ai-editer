@@ -20,6 +20,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
       - name: docs/roadmap.html の差分を確認
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -32,3 +36,11 @@ jobs:
             echo "毎セッション、最低でも meta.handoff（①今回実施 ②今回トラブル ③次回=meta.next）を更新すること。例外なし。"
             exit 1
           fi
+      # 2026-08-09の事故（凍結済み葉のcriteria.textを実装担当が書き換えて「達成」と報告）を
+      # 機械で検知するゲート。BASE/HEADのdocs/roadmap.htmlを比較し、status!=="todo"（凍結済み）の
+      # 葉のcriteria/verify本文が、正当な宣言(meta.basisChanges)なしに変わっていないかを見る。
+      - name: 凍結済みcriteria/verifyの無断変更を検査
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify-criteria-freeze.mjs

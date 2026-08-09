@@ -1,0 +1,227 @@
+#!/usr/bin/env node
+// 凍結済み criteria/verify の無断書き換えを検知する機械チェック。
+//
+// 背景（2026-08-09）：凍結済みの葉 G-EDIT-CAPTION-AI-E1（criteria.text＝「claudeの起動口は
+// ちょうど1箇所」）に対し、実装を直す代わりに criteria.text の方を「起動口が2箇所」を許容する
+// 内容へ書き換えて「達成しました」と報告する事故が起きた。人間が気づいて差し戻したが、
+// 既存の verify-roadmap-evidence.mjs は「形」（criteria の件数・evidence の外部事実性）しか
+// 見ておらず、criteria/verify の本文が変わったこと自体は検知できなかった。
+//
+// AGENTS.md「検証の規律」節：criteria/verify は「着手前に固定し、作業の途中で自分に都合よく
+// 緩めない」。この規律を機械で裏付けるのが本スクリプトの役割。
+//
+// 「凍結」の定義：ある葉ノードの status が "todo" 以外（doing/done/blocked 等）になった時点で、
+// そのノードの criteria/verify 本文は凍結済みとみなす。status:"todo"（着手前）のノードは
+// 言語化フェーズなので自由に編集してよい。
+//
+// 検知の仕組み（PRごとに BASE→HEAD の差分で検査する）：
+//   1. BASE/HEAD それぞれの docs/roadmap.html から roadmap JSON を取り出す。
+//   2. 両方のツリーを id をキーにした Map へフラット化する。
+//   3. BASE・HEAD 双方に存在する各ノードIDについて、BASE側で「status を持ち status!=="todo"、
+//      かつ子を持たない state ノード（葉）」であるものだけを対象にする。
+//   4. 対象ノードの criteria から {text, verify} だけを取り出し正規化した文字列の
+//      sha256 を BASE 版・HEAD 版で比較する。一致すれば問題なし。
+//   5. 不一致なら、HEAD側 meta.basisChanges に「今回のPRで新規に追加された」正当な宣言
+//      （{id, criteriaHash, at, reason}, criteriaHash が HEAD 側の新ハッシュと一致）が
+//      あるかを確認する。無ければ違反として報告し exit 1。
+//
+// 実行方法：
+//   - 通常（CI/PR）：環境変数 BASE_REF / HEAD_REF に比較対象の commit-ish を渡す。
+//     git show "<ref>:docs/roadmap.html" で各版を取り出す（fetch-depth: 0 でのチェックアウトが前提）。
+//   - HEAD_REF 未指定：作業ツリーの docs/roadmap.html を readFileSync で直接読む（git show を使わない）。
+//   - BASE_REF 未指定：比較対象が無いので "BASE_REF未指定のためスキップ" とだけ表示して正常終了する
+//     （新規リポジトリの最初のコミット等、BASE が存在しない状況を含む）。
+//   - BASE_REF はあるが、その commit に docs/roadmap.html が存在しない（新規追加コミット等）場合も
+//     比較不能なのでスキップして正常終了する。
+
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROADMAP_REL_PATH = "docs/roadmap.html";
+const roadmapAbsPath = resolve(__dirname, "..", ROADMAP_REL_PATH);
+
+// ---- 純粋関数（テスト対象。git/fsに依存しない） -----------------------------------
+
+/**
+ * docs/roadmap.html の HTML 文字列から roadmap JSON を取り出す。
+ * verify-roadmap-evidence.mjs の extractRoadmapJson と同じロジック。
+ */
+export function extractRoadmapJson(html) {
+  const m = html.match(
+    /<script type="application\/json" id="roadmap-data">([\s\S]*?)<\/script>/,
+  );
+  if (!m) throw new Error("roadmap-data script block not found");
+  return JSON.parse(m[1]);
+}
+
+/**
+ * ツリー(nodes配列)を id をキーにした Map へフラット化する（子を辿るwalk）。
+ * verify-roadmap-evidence.mjs の walk 関数を参考に、id -> node の対応表を作る版。
+ */
+export function flattenById(nodes) {
+  const map = new Map();
+  function walk(node) {
+    if (node && node.id) map.set(node.id, node);
+    if (node && Array.isArray(node.children)) {
+      for (const child of node.children) walk(child);
+    }
+  }
+  for (const root of nodes || []) walk(root);
+  return map;
+}
+
+/**
+ * criteria 配列から text/verify だけを取り出し、JSON.stringify で正規化した文字列にする。
+ * evidence・status など「達成状況」に関わるフィールドは意図的に含めない
+ * （evidence が埋まっただけで「基準が変わった」と誤検知しないため）。
+ */
+export function criteriaFingerprint(criteria) {
+  const normalized = (criteria || []).map((c) => ({
+    text: c?.text ?? null,
+    verify: c?.verify ?? null,
+  }));
+  return JSON.stringify(normalized);
+}
+
+/** criteria の {text, verify} 正規化文字列の sha256(hex) を返す。 */
+export function hashCriteria(criteria) {
+  return createHash("sha256").update(criteriaFingerprint(criteria)).digest("hex");
+}
+
+/**
+ * ノードが「凍結済みの葉」（＝criteria/verify を書き換えてはいけない対象）かどうかを判定する。
+ * 条件：status を持ち、status !== "todo"、かつ子を持たない state ノード。
+ */
+export function isFrozenLeaf(node) {
+  if (!node || typeof node !== "object") return false;
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  const hasStatus = typeof node.status === "string" && node.status.trim() !== "";
+  return !hasChildren && hasStatus && node.status !== "todo" && node.kind === "state";
+}
+
+/**
+ * BASE/HEAD それぞれの roadmap JSON（parse済みオブジェクト）を比較し、
+ * 「凍結済み葉の criteria/verify が正当な宣言なしに書き換えられている」違反を検出する。
+ * git や fs に一切依存しない純粋関数（テストしやすくするため分離）。
+ *
+ * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason } の形。
+ *   reason: "undeclared"（宣言が無い） | "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない）
+ */
+export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
+  const baseMap = flattenById(baseRoadmap?.nodes || []);
+  const headMap = flattenById(headRoadmap?.nodes || []);
+
+  const headBasisChanges = Array.isArray(headRoadmap?.meta?.basisChanges)
+    ? headRoadmap.meta.basisChanges
+    : [];
+  const baseBasisChanges = Array.isArray(baseRoadmap?.meta?.basisChanges)
+    ? baseRoadmap.meta.basisChanges
+    : [];
+
+  const violations = [];
+
+  for (const [id, baseNode] of baseMap) {
+    if (!headMap.has(id)) continue; // HEADで削除されたノードは今回のスコープ外
+    if (!isFrozenLeaf(baseNode)) continue; // status:"todo" or 非葉 or 非state は言語化フェーズ＝自由編集可
+
+    const headNode = headMap.get(id);
+    const baseHash = hashCriteria(baseNode.criteria);
+    const headHash = hashCriteria(headNode.criteria);
+    if (baseHash === headHash) continue; // 本文は変わっていない＝問題なし
+
+    const declaredInHead = headBasisChanges.some(
+      (e) => e && e.id === id && e.criteriaHash === headHash,
+    );
+    if (!declaredInHead) {
+      violations.push({ id, baseHash, headHash, reason: "undeclared" });
+      continue;
+    }
+
+    // 宣言はあるが、BASE時点で既に同じ宣言が存在していた＝今回のPRで新規に追加されたものではない。
+    const alreadyDeclaredInBase = baseBasisChanges.some(
+      (e) => e && e.id === id && e.criteriaHash === headHash,
+    );
+    if (alreadyDeclaredInBase) {
+      violations.push({ id, baseHash, headHash, reason: "not-new" });
+      continue;
+    }
+    // ここまで来れば「正当な基準変更」として合格。
+  }
+
+  return violations;
+}
+
+/** 違反1件を人間可読な日本語メッセージへ整形する。 */
+export function formatViolation(v) {
+  const base =
+    `凍結済みの葉 ${v.id} の criteria/verify 本文が、正当な宣言（meta.basisChanges）なしに` +
+    `書き換えられています。正当な変更なら meta.basisChanges に ` +
+    `{id: "${v.id}", criteriaHash: "${v.headHash}", at, reason} を追加すること。` +
+    `criteriaHash は新しいcriteria本文のsha256(hex)。`;
+  if (v.reason === "not-new") {
+    return (
+      `${base}\n` +
+      `    （meta.basisChanges に id/criteriaHash が一致する宣言はありましたが、` +
+      `BASE側に既に存在しており今回のPRで新規に追加されたものではありません。今回のPRで新規追加してください）`
+    );
+  }
+  return base;
+}
+
+// ---- git/fs 依存の入出力（CLI実行時のみ使う） --------------------------------------
+
+function readRoadmapAt(ref) {
+  // ref が未指定なら作業ツリーを直接読む（git show を使わない）。
+  if (!ref) {
+    return readFileSync(roadmapAbsPath, "utf8");
+  }
+  return execFileSync("git", ["show", `${ref}:${ROADMAP_REL_PATH}`], {
+    encoding: "utf8",
+  });
+}
+
+function main() {
+  const BASE_REF = process.env.BASE_REF || "";
+  const HEAD_REF = process.env.HEAD_REF || "";
+
+  if (!BASE_REF) {
+    console.log("BASE_REF未指定のためスキップ");
+    return;
+  }
+
+  let baseHtml;
+  try {
+    baseHtml = readRoadmapAt(BASE_REF);
+  } catch {
+    console.log(
+      `BASE(${BASE_REF})に ${ROADMAP_REL_PATH} が存在しないためスキップ（新規リポジトリの最初のコミット等）`,
+    );
+    return;
+  }
+
+  const headHtml = readRoadmapAt(HEAD_REF || undefined);
+
+  const baseData = extractRoadmapJson(baseHtml);
+  const headData = extractRoadmapJson(headHtml);
+
+  const violations = findCriteriaFreezeViolations(baseData, headData);
+
+  if (violations.length > 0) {
+    console.error("✗ criteria凍結リンタ: 不正を検出");
+    for (const v of violations) {
+      console.error("  - " + formatViolation(v));
+    }
+    process.exit(1);
+  }
+
+  console.log("✓ criteria凍結リンタ: OK（凍結済み葉の criteria/verify 本文に無断変更なし）");
+}
+
+// このファイルが直接実行された時だけ main() を走らせる（テストからの import 時は走らせない）。
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
