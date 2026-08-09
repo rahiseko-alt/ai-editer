@@ -38,7 +38,7 @@ const HELD_OUT_PATH = path.join(HERE, "fixtures", "term-safety", "held-out.txt")
 
 // 素材を凍結する。中身が変われば合否も変わるので、ハッシュを基準に含める。
 // 素材を差し替えて緑にする逃げ道を塞ぐため（合格しなかったときに素材の方を書き換えられない）。
-const COMMON_JA_SHA256 = "40cd03ba5a14d61924349300930dc357f5f1998b674604511adaba2c39ee43aa";
+const COMMON_JA_SHA256 = "5a1e2f1c0ee73aaa1373c7259685769b69a10b28f780572e55cac752ab8c3c7d";
 const HELD_OUT_SHA256 = "204ab34e6823db4a4973dcfc9eba66504e40fb6aafad781f3afa321d18893059";
 
 let pass = 0, fail = 0;

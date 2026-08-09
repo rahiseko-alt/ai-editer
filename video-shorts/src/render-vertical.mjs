@@ -187,7 +187,9 @@ export function probeSize(file) {
     const args = [
       "-v", "error",
       "-select_streams", "v:0",
-      "-show_entries", "stream=width,height",
+      // r_frame_rate も取る。詰めるときに区間の端をコマ境界へ揃えるのに要る
+      // （揃えないと映像と音声で切れ方が違い、継ぎ目の数だけずれが積み上がる）。
+      "-show_entries", "stream=width,height,r_frame_rate",
       "-of", "csv=p=0",
       file,
     ];
@@ -197,10 +199,33 @@ export function probeSize(file) {
     proc.on("error", (e) => reject(e));
     proc.on("close", (code) => {
       if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
-      const [w, h] = out.trim().split(",").map(Number);
-      resolve({ width: w, height: h, vertical: h > w });
+      const [wRaw, hRaw, rateRaw] = out.trim().split(",");
+      const w = Number(wRaw);
+      const h = Number(hRaw);
+      resolve({ width: w, height: h, vertical: h > w, fps: parseFrameRate(rateRaw) });
     });
   });
+}
+
+/**
+ * ffprobe の r_frame_rate（"30000/1001" のような分数）を秒あたりのコマ数へ直す。
+ *
+ * r_frame_rate が "0/0" になる素材がある。そのまま割ると落ちるし、0 のまま使うと
+ * コマ境界の計算が壊れる。取れなかったときは null を返し、呼び出し側は
+ * 「コマ境界へ揃えない（従来どおりの動き）」にする。詰めないより、
+ * 揃えずに詰めるほうが害が小さいため（src/apply_mosaic_cli.py の probe と同じ考え方）。
+ */
+export function parseFrameRate(raw) {
+  if (typeof raw !== "string") return null;
+  const m = raw.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  const den = Number(m[2]);
+  if (den === 0) return null;
+  const fps = Number(m[1]) / den;
+  return Number.isFinite(fps) && fps > 0 ? fps : null;
 }
 
 /** 出力ファイル名を作る（区間番号 + 短いhook） */

@@ -232,6 +232,11 @@ async function cmdRender(workDir, opts = {}) {
   }
   const srcW = srcSize ? srcSize.width : undefined;
   const srcH = srcSize ? srcSize.height : undefined;
+  // 詰めるときに区間の端をコマの境目へ揃えるのに要る。取れなければ揃えない（従来どおりの動き）。
+  const srcFps = srcSize ? srcSize.fps : null;
+  if (state.trim === "on" && !srcFps) {
+    log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
+  }
   const canvas = computeCanvas(orientation, srcW, srcH);
 
   for (let i = 0; i < resolved.length; i++) {
@@ -244,7 +249,7 @@ async function cmdRender(workDir, opts = {}) {
     let assWords = relWordsAll;
     let clipDuration = seg.duration;
     if (state.trim === "on") {
-      const plan = planTrim(relWordsAll, { duration: seg.duration });
+      const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps });
       keep = plan.keep;
       assWords = remapWords(relWordsAll, plan.keep);
       clipDuration = plan.keptSeconds;

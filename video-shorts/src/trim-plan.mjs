@@ -113,7 +113,7 @@ export function planTrim(words, opts = {}) {
     else keep.push(r);
   }
 
-  const merged = mergeSpans(keep);
+  const merged = snapToFrames(mergeSpans(keep), opts.fps);
   const keptSeconds = merged.reduce((a, s) => a + (s.end - s.start), 0);
   return {
     keep: merged,
@@ -121,6 +121,36 @@ export function planTrim(words, opts = {}) {
     keptSeconds: round3(keptSeconds),
     cutSeconds: round3(Math.max(0, duration - keptSeconds)),
   };
+}
+
+/**
+ * 残す区間の端を、コマの境目へ揃える。
+ *
+ * 【なぜ要るか】ffmpeg の trim（映像）は指定時刻に最も近いコマ境界へ丸めるが、
+ * atrim（音声）はサンプル精度でちょうど切る。端が半端な時刻だと、区間ごとに
+ * 最大1コマぶんの差が出て、継ぎ目の数だけ積み上がる。
+ * 実測（15fps・区間長 29/30秒・開始オフセット 1/30秒）:
+ *   区間2個 -67ms / 5個 -167ms / 10個 -333ms / 20個 -673ms。
+ * 詰めた実素材で口の動きと声がずれる。
+ *
+ * 【なぜ planTrim の側で揃えるか】pipeline.mjs は同じ keep を remapWords へも渡して
+ * 字幕の時刻を写す。buildTrimFilters の側で揃えると、字幕だけ古い時間軸に残る。
+ *
+ * fps が取れなかった素材（r_frame_rate が 0/0 等）では揃えずに返す。
+ * 従来どおりの動きになるだけで、揃えないより悪くはならない。
+ */
+export function snapToFrames(spans, fps) {
+  if (!Number.isFinite(fps) || fps <= 0) return spans;
+  const out = [];
+  for (const s of spans) {
+    const start = Math.round(s.start * fps) / fps;
+    const end = Math.round(s.end * fps) / fps;
+    // 丸めた結果つぶれた区間は落とす（0 コマぶんの区間を ffmpeg へ渡さない）
+    if (end - start < 0.5 / fps) continue;
+    // ここでは round3 しない。3桁に丸めるとコマ境界を表しきれず、揃えた意味が消える。
+    out.push({ start, end });
+  }
+  return out;
 }
 
 /** 隣り合う・重なる区間をつなぐ */
@@ -241,5 +271,8 @@ export function remapWords(words, keep) {
 
 /** ffmpeg のフィルタ式へ入れる秒数（小数3桁で固定。指数表記にしない） */
 function fmt(n) {
-  return (Math.round(n * 1000) / 1000).toFixed(3);
+  // 小数6桁。3桁だとコマ境界（15fps なら 1/15=0.066667 秒）を表しきれず、
+  // せっかく揃えた端が区間ごとに 0.3ms ほどずれて積み上がる。
+  // 音声は atrim がこの値でちょうど切るので、桁を落とすとそのまま音のずれになる。
+  return (Math.round(n * 1e6) / 1e6).toFixed(6);
 }
