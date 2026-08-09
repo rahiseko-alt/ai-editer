@@ -4,23 +4,26 @@
 // 次に文字起こしを流すと transcribe.py が words[].w と segments[].text へ適用するので、
 // 同じ固有名詞を毎回手で直さなくてよくなる。
 //
-// 【なぜ「1語かつ12文字以内」に絞るか】この辞書は全ジョブに単純文字列置換で効く。
-// 文まるごとが入ると、以後の全案件でその文字列が置換され誤爆する。
-// 既存エントリはすべて固有名詞1語(「追患版」→「椎間板」等)なので、それに合わせて上限を置く。
+// 【この辞書の位置づけ（2026-08-09 マスター決定・ここが正）】
+// 辞書は「機械的に正解を出す」道具で、本気で効かせるには日本語の語彙を網羅する必要があるが、
+// それは手に負えない。一方この製品では、
+//   ・字幕は LLM が文脈で見て直せる（変換ミスの最終的な正しさはそちらが担う）
+//   ・そもそも編集機能であり、出す前に人間の確認も通る
+// ため、辞書の精度に労力を割く価値が小さい。
+// そこで **辞書は「世間にある平均的な辞書」と同じ水準（形式チェックと重複拒否だけ）** と定義し、
+// 変換ミスは AI が直す前提に置く。網羅性も「他の案件を壊さないこと」も、ここでは約束しない。
 //
-// 【なぜ一般的な日本語の素材で判定するか（2026-08-08 追加）】上の「短い1語だけ載せる」では
-// 誤爆を防げない。中心症例：字幕の「心筋高速」を「心筋梗塞」へ直すと、素直に登録されるのは
-// 「高速」→「梗塞」で、以後すべての案件で「高速道路」が「梗塞道路」になる（実測で再現済み）。
+// 【世間の水準（2026-08-08 実測した他社の用語辞書）】
+//   ・AmiVoice（日本語ASR）：1〜2文字の短い読みは誤変換を招くと公式に警告するが、拒否はしない
+//   ・Notta：1辞書あたり200語の上限
+//   ・DeepL 用語集：ソース語の重複はエラーで拒否
+//   ・Google STT / Azure：そもそも置換ではなく重み付け。上限フレーズ数を置く
+// いずれも「載せた語が他の文書を壊さないこと」は保証していない。ここも同じ水準に合わせる。
 //
-// そこで、同梱の common-japanese.txt（ふつうの日本語の文の集まり）に対して判定する。
-// 直す前の語がその素材に1回でも出てくるなら載せない。出てくる語は「ふつうの日本語の語」なので、
-// 載せれば他の案件でその語が出るたびに書き換わる。出てこない語は誤変換で生まれた文字の並び
-// （追患版・椎間盤 等）なので、そのまま載せて安全である。
-// ・既存3件（追患版・追間板・椎間盤）はいずれも素材に出ないので、挙動は変わらない
-// ・「高速」「ました」「の」等は載せられなくなる。理由を返して画面に出す
-//
-// なお、当初は「素材に当たらなくなるまで前後の文字を足す」方式を実装し push まで行ったが、
-// 実測2回で偽の安全だと分かって取り下げた。詳しい経緯は judgeAgainstCommonJapanese の説明にある。
+// 【以前あった安全機構を外した経緯（2026-08-09）】
+// 同梱の日本語素材（common-japanese.txt）に出てくる語は載せない、という判定を持っていたが、
+// 上の決定により削除した。結果として「高速」「ました」「今日」等も登録できる。
+// それで壊れた字幕は AI と人間の確認で直る、というのが今回の設計上の前提である。
 //
 // 【なぜ追記が壊れやすいか】このファイルは _comment / _limitation という運用上の説明を
 // 先頭に持つ。丸ごと書き直す実装にすると、その説明や既存の登録が黙って消える。
@@ -37,6 +40,12 @@ export const DICT_PATH = path.join(HERE, "term-corrections.json");
 export const MAX_TERM_LENGTH = 12;
 
 /**
+ * 注意書きを出す長さ。これ以下の語は誤変換を招きやすい（AmiVoice の公式ガイダンスに倣う）。
+ * 拒否はしない＝通したうえで理由を添えて知らせる。
+ */
+export const SHORT_TERM_LENGTH = 2;
+
+/**
  * 「1語」とみなせるか。空白（半角・全角・タブ・改行）を含むものは語ではなく文とみなす。
  * 空白で区切られていなくても、12文字を超えるものは文の可能性が高いので載せない。
  */
@@ -51,9 +60,25 @@ export function isSingleTerm(text) {
 }
 
 /**
+ * 短い語への注意書きを返す（無ければ null）。
+ *
+ * 短い語は他の語の一部にも当たるので誤変換を招きやすい。ただし断らない。
+ * 断ると「心筋高速→心筋梗塞」のような直したい修正まで落ちるうえ、
+ * この製品では最終的な字幕の正しさを AI と人間の確認が担うためである。
+ */
+export function shortTermNotice(term) {
+  if (typeof term !== "string") return null;
+  const t = term.trim();
+  if (t.length === 0 || t.length > SHORT_TERM_LENGTH) return null;
+  return `「${t}」は${SHORT_TERM_LENGTH}文字以下なので、他の語の一部にも当たって誤変換を招くことがあります`
+    + `（登録はしました。おかしくなったら辞書から外してください）`;
+}
+
+/**
  * 修正前→修正後の対を、辞書へ載せてよいか判定する。
+ * 見るのは語の「形」だけ（世間の用語辞書と同じ水準）。
  * 載せない理由を返すので、画面へそのまま出せる（黙って捨てない）。
- * @returns {{ok: boolean, reason?: string}}
+ * @returns {{ok: boolean, reason?: string, notice?: string}}
  */
 export function judgeTermPair(before, after) {
   if (!isSingleTerm(before) || !isSingleTerm(after)) {
@@ -64,82 +89,13 @@ export function judgeTermPair(before, after) {
   if (b === a) return { ok: false, reason: "直す前と後が同じです" };
   // _ 始まりのキーは transcribe.py が置換対象から外す運用上の予約。辞書の意味が変わるので拒む。
   if (b.startsWith("_")) return { ok: false, reason: "_ で始まる語は辞書の予約キーなので登録できません" };
-  return { ok: true };
-}
-
-/** 一般的な日本語の文の集まり。載せてよい語かどうかを、この素材に対して判定する。 */
-export const COMMON_JA_PATH = path.join(HERE, "common-japanese.txt");
-
-let commonJaCache = null;
-
-/**
- * 判定の土台を読む。行頭が # の行（説明）は落とす。
- */
-export function readCommonJapanese(p = COMMON_JA_PATH) {
-  if (p === COMMON_JA_PATH && commonJaCache !== null) return commonJaCache;
-  const raw = fs.readFileSync(p, "utf-8");
-  const body = raw.split("\n").filter((line) => !line.startsWith("#")).join("\n");
-  if (p === COMMON_JA_PATH) commonJaCache = body;
-  return body;
-}
-
-/** 出現回数を数える（部分一致。transcribe.py の置換と同じ数え方にする） */
-function countOccurrences(haystack, needle) {
-  if (!needle) return 0;
-  let n = 0;
-  let i = haystack.indexOf(needle);
-  while (i >= 0) { n++; i = haystack.indexOf(needle, i + 1); }
-  return n;
-}
-
-/**
- * 載せてよい対かを、一般的な日本語の素材に対して判定する。
- *
- * 【規則】直す前の語が、一般的な日本語の素材に1回でも出てくるなら載せない。
- * 出てくる語は「ふつうの日本語の語」なので、辞書へ載せると他の案件でその語が出るたびに
- * 書き換わる。出てこない語は誤変換で生まれた文字の並び（追患版・椎間盤 等）なので、
- * そのまま載せて安全である。
- *
- * 【なぜ「前後の文字を足して安全にする」方式をやめたか（2026-08-08、実測2回）】
- * 当初は「素材に当たらなくなるまで前後の文字を足す」方式を実装し、一度は push まで行った。
- * しかし足してできる鍵は「高速です」「うは高速」「て行き」のような、ふつうの日本語なのに
- * 素材にたまたま無い並びになる。素材を1.5倍に増やしても漏れ続けた。
- * この方式は素材の網羅度がそのまま安全性になるが、判定対象が「任意の部分文字列」なので、
- * 手で書ける規模の素材では偽の安全しか作れない。
- * 規則を「直す前の語そのものが素材に出るか」にすると、判定対象が「1つの語」へ狭まるので、
- * 手で書ける素材でも網羅できる。「高速」は載せられなくなるが、それは正しい拒否である
- * （載せれば必ず他の案件の「高速道路」を壊すため）。
- *
- * 【この方式の限界（隠さずに書く）】素材に無い実在の語は通ってしまう。
- * 素材を育てることが、そのまま安全性を上げる唯一の手段である。
- * 素材が満たすべき条件は common-japanese.txt の冒頭に書いてある。
- *
- * @param {string} before  ユーザーが直す前の語
- * @param {string} after   直したあとの語
- * @param {string} common  判定の土台。既定は同梱の一般的な日本語の素材
- * @returns {{ok:boolean, key?:string, value?:string, reason?:string}}
- */
-export function judgeAgainstCommonJapanese(before, after, common = null) {
-  const ref = common === null ? readCommonJapanese() : common;
-  if (typeof before !== "string" || before.length === 0) {
-    return { ok: false, reason: "直す前の語がありません" };
-  }
-  if (countOccurrences(ref, before) > 0) {
-    return {
-      ok: false,
-      reason: `「${before}」はふつうの日本語に出てくる語なので、辞書に載せると他の案件の字幕まで書き換わります`
-        + `（誤変換された部分だけでなく、まとまり全体を直してから覚えさせてください）`,
-    };
-  }
   // 置換後が置換前を含むと、transcribe.py の fix_words が無限ループ避けでその対を飛ばす＝字幕が直らない。
-  // 登録は成功と表示されるのに効かない、という黙った失敗になるので、ここで断る。
-  if (typeof after === "string" && after.includes(before)) {
-    return {
-      ok: false,
-      reason: "直したあとの文字列が直す前の文字列を含んでいるため、字幕には反映されません",
-    };
+  // 「登録しました」と出るのに何も起きない黙った失敗になるので、形の判定として断る。
+  if (a.includes(b)) {
+    return { ok: false, reason: "直したあとの文字列が直す前の文字列を含んでいるため、字幕には反映されません" };
   }
-  return { ok: true, key: before, value: after };
+  const notice = shortTermNotice(b);
+  return notice ? { ok: true, notice } : { ok: true };
 }
 
 /** 辞書を読む。壊れていれば例外にする（黙って {} にすると既存の登録を全部消してしまう）。 */
@@ -153,30 +109,8 @@ export function readDictionary(dictPath = DICT_PATH) {
 }
 
 /**
- * 修正前→修正後の対を辞書へ追記する（語の形だけを見る内部用）。
- *
- * 【export しない理由】この関数は「ふつうの日本語の語か」を見ないので、
- * 直接呼べば「高速」のような語を裸で登録でき、以後の全案件を壊せる。
- * 製品の出荷経路は appendSafeTerm だけにして、抜け道を残さない（2026-08-08）。
- * 既存のキーと値は1つも変えない（_comment 等の説明も含めてそのまま残す）。
- *
- * @returns {{added: boolean, reason?: string, before: string, after: string}}
- */
-function appendTerm(before, after, dictPath = DICT_PATH) {
-  const judged = judgeTermPair(before, after);
-  const b = typeof before === "string" ? before.trim() : "";
-  const a = typeof after === "string" ? after.trim() : "";
-  if (!judged.ok) return { added: false, reason: judged.reason, before: b, after: a };
-
-  return putIntoDictionary(b, a, dictPath);
-}
-
-/**
  * 判定を通った対を、実際に辞書へ書く。
  * 形の判定（長さ・空白・予約キー）は呼び出し側で済ませてある前提。
- *
- * 文脈を足した鍵は MAX_TERM_LENGTH を超えることがあるので、ここでは長さを見ない。
- * 文脈は「そこだと分かるための目印」であって、載せてよい語の長さの話ではないため。
  */
 function putIntoDictionary(key, value, dictPath) {
   const current = readDictionary(dictPath);
@@ -193,28 +127,24 @@ function putIntoDictionary(key, value, dictPath) {
 }
 
 /**
- * 他の案件を壊さないことを確かめてから辞書へ追記する。これが製品の出荷経路である。
+ * 修正前→修正後の対を辞書へ追記する。これが製品の出荷経路である。
  *
- * appendTerm との違いは、載せる前に「その語がふつうの日本語に出てくる語か」を
- * 同梱の素材（common-japanese.txt）に対して測ること。出てくる語は載せない。
+ * 見るのは語の形と重複だけ（judgeTermPair）。載せた語が他の案件で誤爆しないことは
+ * **保証しない**。字幕の最終的な正しさは、AI が文脈で見て直すことと、人間の確認が担う。
  *
  * @param {string} before    直す前の語（ユーザーが直した語そのもの）
  * @param {string} after     直したあとの語
- * @param {string} common    判定の土台。既定は同梱の素材（テストで差し替えられるようにしてある）
- * @param {string} dictPath
+ * @param {string} dictPath  辞書の置き場所（テストが本物を汚さないよう差し替えられる）
+ * @returns {{added: boolean, reason?: string, notice?: string, before: string, after: string}}
  */
-export function appendSafeTerm(before, after, common = null, dictPath = DICT_PATH) {
+export function appendSafeTerm(before, after, dictPath = DICT_PATH) {
   const b = typeof before === "string" ? before.trim() : "";
   const a = typeof after === "string" ? after.trim() : "";
-  // まず語そのものの形（長さ・空白・予約キー）を見る。ここは従来どおり。
   const judged = judgeTermPair(before, after);
   if (!judged.ok) return { added: false, reason: judged.reason, before: b, after: a };
 
-  const safe = judgeAgainstCommonJapanese(b, a, common);
-  if (!safe.ok) return { added: false, reason: safe.reason, before: b, after: a };
-
-  const result = putIntoDictionary(safe.key, safe.value, dictPath);
-  return { ...result, before: b, after: a, key: safe.key, value: safe.value };
+  const result = putIntoDictionary(b, a, dictPath);
+  return judged.notice ? { ...result, notice: judged.notice } : result;
 }
 
 /**

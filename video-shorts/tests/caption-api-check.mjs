@@ -240,11 +240,11 @@ try {
     const body = JSON.parse(r.body || "{}");
     // 既存の辞書に「追患版」→「椎間板」が既にあるので、断り方は「すでに登録済み」になる。
     // 断られること自体ではなく、その理由が「形が悪い」でも「どの語か分からない」でもないことを見る。
-    report("対照: 正しい語なら、形の判定でも一般語の判定でも断られない",
+    report("対照: 正しい語なら、語の形の判定で断られない",
       r.status === 400 && typeof body.error === "string" && body.error.includes("すでに"),
       `status=${r.status} ${r.body}`);
     report("対照: 載る鍵が、直した語そのものである",
-      body.key === "追患版", `key=${body.key}`);
+      body.before === "追患版", `before=${body.before}`);
   }
 } finally {
   await stopServer(server);

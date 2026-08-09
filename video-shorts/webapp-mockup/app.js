@@ -559,8 +559,8 @@ function saveCaptionWord(index, text) {
 }
 
 // 直した語を用語辞書へ覚えさせる導線（次の案件から自動で直る）
-// サーバは、その語がふつうの日本語に出てくる語かを同梱の素材で判定し、
-// 出てくる語（高速・ました・の 等）は断る。断られた理由はそのまま画面に出す。
+// サーバは語の形（1語・12文字以内・予約キーでない・すでに登録済みでない）だけを見る。
+// 断られた理由も、短い語への注意書きも、そのまま画面に出す。
 function offerLearnTerm(before, after) {
   if (!capCtx || !before || !after || before === after) return;
   const el = $("caption-status");
@@ -576,7 +576,7 @@ function offerLearnTerm(before, after) {
         body: JSON.stringify({ before, after }),
       }, job.jobToken))
       .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "登録に失敗しました")))))
-      .then(() => capStatus("次からも自動で直します"))
+      .then((j) => capStatus(j.notice ? `次からも自動で直します。${j.notice}` : "次からも自動で直します"))
       .catch((e) => capStatus(e.message, true));
   });
   el.appendChild(document.createTextNode(" "));

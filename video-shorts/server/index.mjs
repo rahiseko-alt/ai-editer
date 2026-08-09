@@ -477,10 +477,11 @@ async function handlePostTerms(req, res, jobId) {
   try {
     // 辞書の置き場所は差し替えられるようにする。テストが本物の用語辞書へ書き込むと、
     // 以後の全案件にその語が効いてしまう（この辞書は全ジョブに単純文字列置換で効く）。
-    // 判定は appendSafeTerm の中で、同梱の一般的な日本語の素材に対して行う。
-    // ふつうの日本語に出てくる語（高速・ました・の 等）は、載せると他の案件を壊すので断る。
+    // 判定は appendSafeTerm の中で、語の形（1語・12文字以内・予約キーでない・重複でない）
+    // だけを見る＝世間の用語辞書と同じ水準。載せた語が他の案件で誤爆しないことは保証しない。
+    // 字幕の最終的な正しさは、AI が文脈で見て直すことと、人間の確認が担う（2026-08-09 決定）。
     result = appendSafeTerm(
-      body.before, body.after, null,
+      body.before, body.after,
       process.env.VS_TERM_DICT || DICT_PATH,
     );
   } catch (e) {
