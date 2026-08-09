@@ -1,0 +1,7 @@
+{
+  "name": "scripts",
+  "private": true,
+  "scripts": {
+    "test": "node verify-criteria-freeze.test.mjs"
+  }
+}

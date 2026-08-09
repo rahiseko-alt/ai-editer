@@ -54,6 +54,45 @@ function t(name, fn) {
   }
 }
 
+/**
+ * ソースからコメント（`//` 行末まで と ブロックコメント）を取り除く。
+ *
+ * 「自前の env を組み立てていないこと」のような "無いこと" の検査は、ソース全体に
+ * 正規表現を掛けると、説明文（コメント）に書いた `env:` にも当たって落ちる。
+ * コメントは実行されないので、判定はコメントを除いた本体に対して行う。
+ * 文字列リテラルの中（"http://…" など）は消さない＝合格ラインは下げない。
+ */
+function stripComments(src) {
+  let out = "";
+  let quote = null; // 文字列/テンプレートの中にいるときの引用符
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (quote) {
+      out += c;
+      if (c === "\\") { out += next ?? ""; i += 2; continue; }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { quote = c; out += c; i++; continue; }
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 // ダミー transcript（"今日 は いい 天気 です ね"）
 const transcript = {
   language: "ja",
@@ -652,12 +691,34 @@ t("P1-1-B: claude -p の子プロセスに渡るenvはallowlistのみ", () => {
   assert.ok(/env:\s*buildSafeEnv\(\)/.test(runSrc), "claude-run.mjsがbuildSafeEnv()を使うこと");
   // 呼び出し側は env を組み立てない＝絞り込みを迂回できない（自前 env を持ち込めば allowlist は無力）。
   // 共通口を通していること(P1-1-A)と併せて、子プロセスへ渡る env は必ず buildSafeEnv() の出力になる。
+  // 判定はコメントを除いた本体に対して行う（説明文に書いた `env:` まで禁止すると、
+  // 守りの説明が書けなくなるだけで、迂回経路は1つも塞がらない）。
   for (const [name, src] of [["digest-editor.mjs", digestSrc], ["claude-select.mjs", selectSrc]]) {
-    assert.ok(!/env:\s*process\.env/.test(src), `${name}が生のprocess.envを渡していないこと`);
-    assert.ok(!/\benv\s*:/.test(src), `${name}が自前のenvを組み立てていないこと(共通口のbuildSafeEnv()に一本化)`);
+    const code = stripComments(src);
+    assert.ok(!/env:\s*process\.env/.test(code), `${name}が生のprocess.envを渡していないこと`);
+    assert.ok(!/\benv\s*:/.test(code), `${name}が自前のenvを組み立てていないこと(共通口のbuildSafeEnv()に一本化)`);
   }
   // 隔離cwdは呼び出し側が作って共通口へ渡す（共通口は受け取ったcwdをspawnへ流す＝葉Eの検査）。
   assert.ok(/createIsolatedCwd\(/.test(digestSrc), "digest-editor.mjsが隔離cwdを作って共通口へ渡すこと");
+});
+
+t("P1-1-B 対照: コメント除去は、コードの env: を消さずコメントの env: だけを消す", () => {
+  // 「有るとき有ると言える」ことの対照。ここが緩むと、自前 env を組み立てても緑になる。
+  const sample = [
+    "// 説明: ここで env: process.env と書いてはいけない",
+    "/* 説明: env: {FOO:1} も同じく禁止 */",
+    'const url = "http://example.com/a//b"; // 末尾コメント env: process.env',
+    "const child = launch(cmd, { env: buildSafeEnv() });",
+  ].join("\n");
+  const code = stripComments(sample);
+  assert.strictEqual((code.match(/\benv\s*:/g) || []).length, 1,
+    "コードの env: はちょうど1件だけ残ること（コメントの3件は消える）");
+  assert.ok(!/env:\s*process\.env/.test(code), "コメントの env: process.env は消えること");
+  assert.ok(code.includes('"http://example.com/a//b"'),
+    "文字列リテラルの中の // をコメントと見なして消さないこと");
+  // 実際の禁止判定（本番と同じ式）が、コードの env: を掛けたときに落ちること。
+  assert.throws(() => assert.ok(!/\benv\s*:/.test(code)),
+    "コードに env: があるのに合格になってしまう");
 });
 
 t("P1-1-C: 実行cwdはジョブ専用の隔離ディレクトリになる", () => {

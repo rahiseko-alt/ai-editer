@@ -237,6 +237,92 @@ await t("段落: 別の段落に同じ文字があっても、時刻で選んだ
     "別の段落の同じ文字まで巻き添えで直してはいけない");
 });
 
+// ── 段落: 同じ語が2回以上ある段落で、直した語の位置を取り違えない ──
+// 段落の中で before の「最初の1回」を置き換えると、モデルが直したのが後ろの語でも
+// 前の語が書き換わる。すると words[] と segments[].text が食い違い、区間選定が返す
+// keepText → src/reverse-match.mjs を経て焼き込まれる文言が、直したはずの語と別物になる。
+// 素材の段落「今回の検診の対称は四十歳以上の方です」には「の」が添字 80 / 82 / 87 の3回出る。
+const DUP_SEG_START = 43.5;
+const dupSegText = (segments) => segments.find((s) => s.start === DUP_SEG_START).text;
+const noFix = (i) => ({ index: i, before: "の", after: "ノ" });
+
+await t("段落: 同じ語が3回ある段落で、後ろの語を直すと後ろだけが変わる", () => {
+  const out = applyFixesToSegments(FIXTURE.segments, [noFix(87)], FIXTURE.words);
+  assert.strictEqual(dupSegText(out), "今回の検診の対称は四十歳以上ノ方です");
+});
+
+await t("段落 対照: 同じ段落で前の語を直せば、前だけが変わる（後ろに寄せる実装になっていない）", () => {
+  const out = applyFixesToSegments(FIXTURE.segments, [noFix(80)], FIXTURE.words);
+  assert.strictEqual(dupSegText(out), "今回ノ検診の対称は四十歳以上の方です");
+});
+
+await t("段落: 真ん中の語を直せば、真ん中だけが変わる", () => {
+  const out = applyFixesToSegments(FIXTURE.segments, [noFix(82)], FIXTURE.words);
+  assert.strictEqual(dupSegText(out), "今回の検診ノ対称は四十歳以上の方です");
+});
+
+await t("段落: 同じ段落へ2件当てても、字数が変わった分だけ後ろの位置がずれない", () => {
+  const out = applyFixesToSegments(
+    FIXTURE.segments,
+    [{ index: 80, before: "の", after: "ノノノ" }, noFix(87)],
+    FIXTURE.words,
+  );
+  assert.strictEqual(dupSegText(out), "今回ノノノ検診の対称は四十歳以上ノ方です");
+});
+
+await t("段落: 語と文章の対応が取れない段落は1文字も変えない（別の箇所を書き換えない）", () => {
+  // 2語目が文章のどこにも出てこない＝どの位置が3語目かを決められない素材。
+  const segments = [{ start: 0, end: 10, text: "以上のあとに以上がある文章" }];
+  const words = [
+    { w: "以上", start: 0, end: 1 },
+    { w: "みつからない語", start: 1, end: 2 },
+    { w: "以上", start: 2, end: 3 },
+  ];
+  const out = applyFixesToSegments(segments, [{ index: 2, before: "以上", after: "異常" }], words);
+  assert.strictEqual(out[0].text, segments[0].text, "位置が決められないのに書き換えている");
+});
+
+await t("段落: 工程を通しても、後ろの語を直した返答で段落の後ろだけが変わる", async () => {
+  const dir = freshWork();
+  const answer = JSON.stringify({ fixes: [noFix(87)] });
+  const r = await runStage(dir, installFakeClaude("segdup", fixed(answer)));
+  assert.strictEqual(r.fixed, 1);
+  const after = readTranscript(dir);
+  assert.strictEqual(after.words[87].w, "ノ", "前提: 語の側は直っている");
+  assert.strictEqual(after.words[80].w, "の", "前の語まで変わってはいけない");
+  assert.strictEqual(dupSegText(after.segments), "今回の検診の対称は四十歳以上ノ方です");
+});
+
+// ── かたまりに出していない語は直させない ──────────────────────
+await t("かたまり外: そのかたまりに出していない添字は、before が正しくても採用されない", async () => {
+  const dir = freshWork();
+  // 添字90（最後のかたまり）が渡ってきたときだけ、別のかたまりの語（添字13）の直しを返す。
+  // before は実際の語と一致するので、1件ずつの中身の検査では弾けない＝範囲で弾くしかない。
+  const fake = installFakeClaude("range", {
+    kind: "per-chunk",
+    line: "90\t機械",
+    answer: ANSWER_FIX13,
+    fallback: ANSWER_NO_FIX,
+  });
+  const r = await runStage(dir, fake, { chunkWords: 20 });
+  assert.ok(fake.prompts().length >= 2, "前提: 分割が起きている");
+  assert.strictEqual(r.fixed, 0, "プロンプトに出していない語を書き換えてはいけない");
+  assert.deepStrictEqual(readTranscript(dir), FIXTURE);
+});
+
+await t("かたまり外 対照: 同じ添字13でも、それを出したかたまりの返答なら採用される", async () => {
+  const dir = freshWork();
+  const fake = installFakeClaude("range0", {
+    kind: "per-chunk",
+    line: "13\t以上",
+    answer: ANSWER_FIX13,
+    fallback: ANSWER_NO_FIX,
+  });
+  const r = await runStage(dir, fake, { chunkWords: 20 });
+  assert.strictEqual(r.fixed, 1, "範囲の絞り込みが強すぎて正しい直しまで捨てている");
+  assert.strictEqual(readTranscript(dir).words[13].w, "異常");
+});
+
 // ── B: 直す前の退避 ─────────────────────────────────────────
 await t("B: 実行後 transcript.raw.json が入力と完全一致（duration/segments/words すべて）", async () => {
   const dir = freshWork();
@@ -532,6 +618,100 @@ await t("E 対照: 終了コード0以外で落ちていない失敗（打ち切
       return true;
     },
   ));
+});
+
+// ── 共通口: 多バイト文字が標準出力のかたまり境界をまたいでも壊れない ──
+// 返答は日本語の JSON。子プロセスの標準出力をかたまりごとに復号すると、3バイトの日本語が
+// 2つのかたまりに割れた所が U+FFFD（�）に化ける。JSON.parse が落ちるか、化けた文字が
+// そのまま字幕へ焼き込まれる。偽 claude は 7 バイト刻み（3で割り切れない幅）で書き出すので、
+// 境界はほぼ毎回どれかの文字の途中に来る。
+/** 実際の返答と同じ「前置きの文＋JSON」。前置きに波括弧は入れない（JSON の取り出しに影響させない）。 */
+function paddedAnswer(fixes) {
+  const preamble = "変換ミスと思われる箇所を前後の文脈から確認しました。".repeat(600);
+  return `${preamble}\n${JSON.stringify({ fixes })}`;
+}
+const MULTIBYTE_FIXES = EXPECTED.errors
+  .slice(0, 5)
+  .map(({ index, before, after }) => ({ index, before, after }));
+
+await t("E: 標準出力が小さなかたまりに割れて届いても、共通口は1文字も欠かさず復号する", async () => {
+  const answer = paddedAnswer(MULTIBYTE_FIXES);
+  assert.ok(Buffer.byteLength(answer, "utf-8") > 40_000, "前提: 境界をまたぐだけの大きさがある");
+  const fake = installFakeClaude("mb-raw", { kind: "chunked", answer, splitBytes: 7 });
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-mb-cwd-"));
+  const got = await withFakeClaude(fake, () => runClaudeJson({ stdin: "hi", cwd, timeoutMs: 20_000 }));
+  assert.strictEqual(got.length, answer.length, "受け取った本文の文字数が元と違う");
+  assert.strictEqual(got, answer, "受け取った本文が元と違う（多バイト文字が化けている）");
+});
+
+/** 本物と同じ封筒（`--output-format json`）に入れた標準出力。偽 claude が書き出すものと同じ。 */
+const envelopeOf = (answer) => JSON.stringify({ result: answer });
+/** その文字列が始まるバイト位置（UTF-8） */
+function byteIndexOf(text, needle) {
+  const at = text.indexOf(needle);
+  assert.notStrictEqual(at, -1, `目印が見つからない: ${needle}`);
+  return Buffer.byteLength(text.slice(0, at), "utf-8");
+}
+
+await t("E: 直した語そのものがデータの境界で割れて届いても、after が壊れずに採用される", async () => {
+  const dir = freshWork();
+  const answer = paddedAnswer(MULTIBYTE_FIXES);
+  // 「たまたま境界が来なかった」で通らないよう、5件の after すべての1文字目の途中で割る
+  // （3バイト文字の1バイト目と残り2バイトを別のデータにする）。
+  const envelope = envelopeOf(answer);
+  // 封筒は JSON なので、返答本文の中の `"` は `\"` になっている。その形で位置を探す。
+  const esc = (s) => JSON.stringify(s).slice(1, -1);
+  const headLen = Buffer.byteLength(esc('"after":"'), "utf-8");
+  const cuts = MULTIBYTE_FIXES
+    .map((f) => byteIndexOf(envelope, esc(`"after":"${f.after}"`)) + headLen + 1)
+    .sort((a, b) => a - b);
+  const fake = installFakeClaude("mb", { kind: "chunked", answer, cuts, gapMs: 30 });
+  const r = await runStage(dir, fake);
+  assert.strictEqual(r.fixed, MULTIBYTE_FIXES.length, "化けた文字が混ざって採用されていない");
+  const after = readTranscript(dir);
+  for (const f of MULTIBYTE_FIXES) {
+    assert.strictEqual(after.words[f.index].w, f.after, `添字 ${f.index} の直しが壊れている`);
+  }
+  assert.ok(!JSON.stringify(after).includes("�"), "文字化け(U+FFFD)が字幕へ入っている");
+});
+
+// ── 共通口: 子が stdin を読まずに終わってもプロセスごと落ちない ──
+await t("E: 子が stdin を読まずに終了しても、プロセスは落ちず例外で返る（EPIPE を握る）", async () => {
+  // 受け手が無いと stdin の EPIPE は Promise の外の「処理されない例外」になり、
+  // 1ジョブの失敗でサーバごと落ちる。壊れていればこの検査プロセス自体が途中で死ぬので、
+  // 「最後まで走り切ったこと」自体が落ちなかった証拠になる。
+  const fake = installFakeClaude("epipe", { kind: "exit-before-stdin", code: 9 });
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-epipe-cwd-"));
+  const huge = "あ".repeat(3_000_000); // パイプの受け皿（既定64KB）を大きく超える
+  await withFakeClaude(fake, () => assert.rejects(
+    () => runClaudeJson({ stdin: huge, cwd, timeoutMs: 20_000 }),
+    (e) => {
+      assert.match(e.message, /終了コード 9/, `失敗の理由が想定と違う: ${e.message}`);
+      return true;
+    },
+  ));
+  // EPIPE は reject より後に飛んでくることがある。そこで落ちないことも見る。
+  await new Promise((done) => setTimeout(done, 300));
+});
+
+await t("E 対照: 大きなプロンプトでも、子が読み切れば普通に返答が返る", async () => {
+  const fake = installFakeClaude("epipe0", fixed(ANSWER_NO_FIX));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-epipe-cwd0-"));
+  const huge = "あ".repeat(200_000);
+  const got = await withFakeClaude(fake, () => runClaudeJson({ stdin: huge, cwd, timeoutMs: 20_000 }));
+  assert.strictEqual(got, ANSWER_NO_FIX);
+  assert.strictEqual(fake.prompts()[0], huge, "大きなプロンプトが欠けずに届いている");
+});
+
+// ── 共通口: 作業場所(cwd)の渡し忘れを実行時に落とす ────────────
+await t("E: 作業場所(cwd)が不正なら例外にする（親の作業場所を継いで隔離が消えるのを防ぐ）", () => {
+  for (const bad of [undefined, null, "", "   ", 123, {}]) {
+    assert.throws(
+      () => runClaudeJson({ stdin: "hi", cwd: bad, timeoutMs: 1000 }),
+      /作業場所\(cwd\)/,
+      `不正な cwd を受け付けている: ${JSON.stringify(bad)}`,
+    );
+  }
 });
 
 // digest-editor を共通口へ移しても「--model の pin」と「model 原因のときだけ1度だけ退避」が
