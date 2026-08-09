@@ -20,9 +20,16 @@
 // 【設定 JSON の形】
 //   { "logDir": "<受け取った argv/stdin を書き出すフォルダ>", "kind": "<下の表の名前>", ...データ }
 //     {"kind":"fixed","answer":"<返答本文>"}
+//     {"kind":"chunked","answer":"...","splitBytes":7}  返答を小さなかたまりに割って書き出す
+//                                                       （多バイト文字が境界をまたぐ再現）
+//     {"kind":"chunked","answer":"...","cuts":[123,456],"gapMs":30}
+//                                                       指定バイト位置で割り、間を空けて書き出す
+//                                                       （受け取り側に別々のデータとして届く）
 //     {"kind":"per-chunk","line":"90\t機械","answer":"...","fallback":"..."}
 //     {"kind":"sleep"}                                  応答を返さず眠る（打ち切りの検査用）
 //     {"kind":"exit","code":9}                          何も返さず終了コードで落ちる
+//     {"kind":"exit-before-stdin","code":9}             stdin を1バイトも読まずに即終了する
+//                                                       （親の書き込みが EPIPE になる再現）
 //     {"kind":"fail","exit":1,"stderr":"..."}           stderr を出して終了コード非0で落ちる
 //     {"kind":"digest","critiqueNeedle":"...","critique":"...","draft":"..."}
 //     {"kind":"digest-model-gate","modelArg":"--model","exit":1,"stderr":"...",
@@ -58,6 +65,21 @@ const BEHAVIORS = {
   /** いつでも同じ本文を返す。 */
   fixed: (cfg) => reply(cfg.answer),
 
+  /**
+   * 同じ本文を、複数のかたまりに割って書き出す。
+   * 本物の claude でも、返答が大きいとパイプの都合で複数のかたまりに割れて届く。
+   * 3バイトの日本語文字を 7 バイト刻みのように割り切れない幅で割ると、文字の途中に
+   * 境界が来る（受け取り側が1かたまりずつ復号していると U+FFFD に化ける）。
+   * splitBytes は「その幅で細かく書き出す」（受け取り側が読むときに結合されうる）。
+   * cuts は「そのバイト位置で割り、間を空けて書き出す」＝受け取り側にも別々のデータとして届く。
+   */
+  chunked: (cfg) => ({
+    ...reply(cfg.answer),
+    splitBytes: cfg.splitBytes,
+    cuts: cfg.cuts,
+    gapMs: cfg.gapMs,
+  }),
+
   /** 渡ってきたかたまり（プロンプト）に目印の行があるときだけ別の本文を返す。 */
   "per-chunk": (cfg, ctx) => reply(hasLine(ctx.stdin, cfg.line) ? cfg.answer : cfg.fallback),
 
@@ -85,8 +107,44 @@ function readConfig() {
   return JSON.parse(fs.readFileSync(path.join(here, CONFIG_FILE), "utf-8"));
 }
 
+/** 本文を書き出す。splitBytes があれば、そのバイト数ずつに割って何度も書き出す。 */
+function writeStdout(text, splitBytes) {
+  if (!Number.isInteger(splitBytes) || splitBytes <= 0) {
+    process.stdout.write(text);
+    return;
+  }
+  const buf = Buffer.from(text, "utf-8");
+  for (let i = 0; i < buf.length; i += splitBytes) {
+    process.stdout.write(buf.subarray(i, i + splitBytes));
+  }
+}
+
+/**
+ * 指定バイト位置で割り、1つ書き出すごとに間を空ける。
+ * 間を空けると、受け取り側にも「別々のデータ」として届く（まとめ読みされない）。
+ */
+function writeStdoutWithGaps(text, cuts, gapMs, done) {
+  const buf = Buffer.from(text, "utf-8");
+  const bounds = [...cuts, buf.length];
+  let i = 0;
+  let prev = 0;
+  const step = () => {
+    if (i >= bounds.length) return done();
+    const end = bounds[i++];
+    if (end > prev) process.stdout.write(buf.subarray(prev, end));
+    prev = end;
+    setTimeout(step, gapMs);
+  };
+  step();
+}
+
 function main() {
   const cfg = readConfig();
+  // stdin を1バイトも読まずに即終了する（親の書き込みが EPIPE になる場面の再現）。
+  // 記録も残さない＝「読まずに死んだ」ことを、あとから記録の有無でも確かめられる。
+  if (cfg.kind === "exit-before-stdin") {
+    process.exit(cfg.code ?? 9);
+  }
   let buf = "";
   process.stdin.setEncoding("utf-8");
   process.stdin.on("data", (c) => {
@@ -118,9 +176,15 @@ function main() {
       return;
     }
     if (r.stderr) process.stderr.write(r.stderr);
-    if (r.stdout) process.stdout.write(r.stdout);
     // process.exit() は書き込みが流れ切る前にプロセスを畳んで stderr を切り落とすことがあるので、
     // 終了コードだけ立てて自然に終わらせる。
+    if (r.stdout && Array.isArray(r.cuts)) {
+      writeStdoutWithGaps(r.stdout, r.cuts, r.gapMs ?? 30, () => {
+        process.exitCode = r.exit ?? 0;
+      });
+      return;
+    }
+    if (r.stdout) writeStdout(r.stdout, r.splitBytes);
     process.exitCode = r.exit ?? 0;
   });
 }

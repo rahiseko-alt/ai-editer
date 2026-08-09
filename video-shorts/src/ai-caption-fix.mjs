@@ -98,11 +98,18 @@ ${wrapUntrustedText("TRANSCRIPT", lines)}
  * 先に来た方を採ると、モデルの並べ方しだいで結果が変わる（同じ返答でも当たり外れが出る）。
  * 直さないのは安全側（元の文字が残るだけ）なので、迷う語は触らない。
  *
+ * 【そのかたまりに出していない語は直させない】プロンプトに載せた語だけが直しの対象である。
+ * 範囲を全語で見ると、モデルが「そのかたまりに入っていない添字」を返したときに、
+ * 見せてもいない語を書き換えられる（1かたまりの返答で文字起こし全体に手が届く）。
+ * range を渡すと、採用する添字を `offset <= index < offset + length` に絞る。
+ *
  * @param {string} text モデルの返答
  * @param {{w:string}[]} words 文字起こし全体の語（かたまりではなく全部）
+ * @param {{offset:number,length:number}} [range] この返答で直してよい添字の範囲
+ *   （＝そのかたまりに出した語）。省略時は全語（純粋関数として単体で使うとき用）。
  * @returns {{index:number,before:string,after:string}[]} 添字の昇順
  */
-export function parseFixResponse(text, words) {
+export function parseFixResponse(text, words, range) {
   const body = extractJsonBody(text);
   let data;
   try {
@@ -128,12 +135,17 @@ export function parseFixResponse(text, words) {
   }
 
   const all = words || [];
+  // 直してよい添字の範囲。range 未指定なら全語（単体で使うとき）。
+  const lo = range && Number.isInteger(range.offset) ? range.offset : 0;
+  const hi = range && Number.isInteger(range.length) ? lo + range.length : all.length;
   const out = [];
   for (const f of data.fixes) {
     if (f === null || typeof f !== "object" || Array.isArray(f)) continue;
     const { index } = f;
     // 添字は整数で、実在する語を指していること（範囲外は語数を変えようとしているのと同じ）。
     if (!Number.isInteger(index) || index < 0 || index >= all.length) continue;
+    // そのかたまりで見せていない語は直させない（見せていない所に手を伸ばした返答は捨てる）。
+    if (index < lo || index >= hi) continue;
     if ((seenCount.get(index) ?? 0) > 1) continue; // 同じ語に2件以上＝どちらも採らない
     const src = all[index];
     if (!src || typeof src.w !== "string") continue;
@@ -174,28 +186,82 @@ export function applyFixes(words, fixes) {
  * src/reverse-match.mjs が語の側（直した文字）と突き合わせても一致しない。
  *
  * 【どの段落に当てるか】その語の開始時刻を含む段落。時刻で選ぶので、同じ文字が別の段落に
- * あっても取り違えない。段落の中では before の最初の1回だけを置き換える
- * （その段落に同じ文字が複数あるとき、まとめて置き換えると直すべきでない所まで変わる）。
- * 見つからなければその段落は変えない（黙って別の所を書き換えない）。
+ * あっても取り違えない。
+ *
+ * 【段落の中のどこに当てるか＝その語自身の位置】段落に同じ文字が2回以上あるとき、
+ * 「before の最初の1回」を置き換えると、モデルが直したのが後ろの語でも前の語が書き換わる。
+ * そうなると words[] と segments[].text が食い違い、区間選定→keepText→src/reverse-match.mjs
+ * を経て焼き込みへ出る文言が、直したはずの語と別物になる。
+ * だから段落に属する語を順に走査して1語ずつの文字位置（オフセット）を求め、
+ * その語自身の位置で置き換える。置き換えは**オフセットの降順**に当てる
+ * （前から当てると、長さが変わったぶん後ろの位置がずれる）。
+ *
+ * 【対応が取れない段落は触らない】語をつないだものが段落の文章と辿れない素材
+ * （文字起こしの取りこぼし等）では、どの位置がその語かを決められない。
+ * その段落は1文字も変えない＝黙って別の箇所を書き換えない。
  *
  * @param {{start:number,end:number,text:string}[]} segments
  * @param {{index:number,before:string,after:string}[]} fixes
- * @param {{start:number}[]} words 文字起こし全体の語（直す前）
+ * @param {{start:number,w:string}[]} words 文字起こし全体の語（直す前）
  */
 export function applyFixesToSegments(segments, fixes, words) {
   const list = (segments || []).map((s) => ({ ...s }));
+  const all = words || [];
+
+  // 段落ごとに、その段落へ当てる直しを集める（1件ずつ当てると位置がずれるため）。
+  const bySegment = new Map();
   for (const f of fixes || []) {
-    const w = (words || [])[f.index];
+    const w = all[f.index];
     if (!w || typeof w.start !== "number") continue;
-    const seg = list.find(
+    const si = list.findIndex(
       (s) => typeof s.text === "string" && w.start >= s.start && w.start <= s.end
     );
-    if (!seg) continue;
-    const at = seg.text.indexOf(f.before);
-    if (at === -1) continue;
-    seg.text = seg.text.slice(0, at) + f.after + seg.text.slice(at + f.before.length);
+    if (si === -1) continue;
+    if (!bySegment.has(si)) bySegment.set(si, []);
+    bySegment.get(si).push(f);
+  }
+
+  for (const [si, segFixes] of bySegment) {
+    const seg = list[si];
+    const offsets = wordOffsetsInSegment(seg, all);
+    if (!offsets) continue; // 語と文章の対応が取れない＝どこを直すか決められないので触らない
+    const targets = [];
+    for (const f of segFixes) {
+      const at = offsets.get(f.index);
+      if (at === undefined) continue;
+      // 求めた位置に本当にその語があるかを最後に確かめる（ずれた置き換えを当てない）。
+      if (seg.text.slice(at, at + f.before.length) !== f.before) continue;
+      targets.push({ at, f });
+    }
+    targets.sort((a, b) => b.at - a.at); // 後ろから当てる＝前の位置がずれない
+    for (const { at, f } of targets) {
+      seg.text = seg.text.slice(0, at) + f.after + seg.text.slice(at + f.before.length);
+    }
   }
   return list;
+}
+
+/**
+ * その段落に属する語（開始時刻が段落の中にある語）の、段落の文章での文字位置を返す。
+ * 語は文章の中に出てくる順に並ぶ前提で、前の語の直後から次の語を探す
+ * （同じ文字が複数あっても、その語自身の出現に当たる）。
+ * 1語でも辿れなければ null（＝その段落は触らない）。
+ *
+ * @returns {Map<number,number>|null} 語の添字 → 段落の文章での開始位置
+ */
+function wordOffsetsInSegment(seg, words) {
+  const offsets = new Map();
+  let cursor = 0;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (!w || typeof w.start !== "number" || typeof w.w !== "string") continue;
+    if (w.start < seg.start || w.start > seg.end) continue;
+    const at = seg.text.indexOf(w.w, cursor);
+    if (at === -1) return null;
+    offsets.set(i, at);
+    cursor = at + w.w.length;
+  }
+  return offsets;
 }
 
 /**
@@ -233,7 +299,8 @@ export async function aiCaptionFixStage({ workDir, runModel, chunkWords = CHUNK_
     // runModel / parseFixResponse の例外はそのまま上へ投げる＝工程は失敗して終わる。
     // ここで握りつぶすと「AI が一度も答えていないのに直す所は無かった」ことになる。
     const answer = await runModel(buildFixPrompt(c.words, c.offset));
-    const got = parseFixResponse(answer, words);
+    // 採用するのは、このかたまりに出した語だけ（見せていない語への直しは捨てる）。
+    const got = parseFixResponse(answer, words, { offset: c.offset, length: c.words.length });
     collected.push(...got);
     if (onLog) {
       const last = c.offset + c.words.length - 1;

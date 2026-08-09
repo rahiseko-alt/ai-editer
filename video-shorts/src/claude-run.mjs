@@ -20,6 +20,9 @@ import { buildSafeEnv, NO_TOOLS_ARGS } from "./claude-safety.mjs";
 /** 1 回の claude -p 呼び出しに許す時間の既定（server/claude-select.mjs の従来値と同じ）。 */
 export const DEFAULT_CLAUDE_TIMEOUT_MS = 300_000;
 
+/** 打ち切り(SIGTERM)のあと、まだ生きている子を強制終了(SIGKILL)するまでの猶予。 */
+export const SIGKILL_GRACE_MS = 5_000;
+
 /**
  * claude -p を1回起動し、返答の本文（文字列）を返す。
  *
@@ -55,6 +58,12 @@ export function runClaudeJson({
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`claude -p の打ち切り時間(timeoutMs)が不正です: ${timeoutMs}`);
   }
+  // 作業場所も必ず要る。省略すると spawn は親の作業場所を継ぐので、隔離 cwd（P1-1-C）が
+  // 黙って消え、子が上方探索でリポジトリのファイルへ手が届く状態になる。
+  // 打ち切り時間と同じく、渡し忘れを実行時に落として気づけるようにする。
+  if (typeof cwd !== "string" || cwd.trim() === "") {
+    throw new Error(`claude -p の作業場所(cwd)が不正です: ${cwd}`);
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(
       "claude",
@@ -69,20 +78,36 @@ export function runClaudeJson({
     let stdoutBuf = "";
     let stderrBuf = "";
 
-    child.stdout.on("data", (c) => (stdoutBuf += c.toString()));
+    // 受け取りは必ず文字列で行う（リスナを付ける前に決める）。データごとに toString() すると、
+    // 日本語のような多バイト文字が2つのデータに割れたとき、それぞれが単独で復号されて
+    // U+FFFD（�）に化ける。返答は日本語の JSON なので、JSON.parse が落ちるか、
+    // 化けた文字がそのまま字幕へ焼き込まれる。setEncoding なら割れても繋いで復号する。
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+
+    child.stdout.on("data", (c) => (stdoutBuf += c));
     child.stderr.on("data", (c) => {
-      const line = c.toString();
-      stderrBuf += line;
-      onLog(`[claude stderr] ${line.trim()}`);
+      stderrBuf += c;
+      onLog(`[claude stderr] ${String(c).trim()}`);
     });
 
+    // 打ち切ったのに SIGTERM を無視する子は、そのまま残って CPU とメモリを持ち続ける。
+    // 猶予のあと SIGKILL で確実に落とす。unref() してあるので、この保険が
+    // Node の終了を引き延ばすことはない（正常終了時は close で解除する）。
+    let killTimer = null;
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), SIGKILL_GRACE_MS);
+      killTimer.unref();
       reject(new Error(`claude -p タイムアウト (${timeoutMs / 1000}s)`));
     }, timeoutMs);
+    const clearTimers = () => {
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+    };
 
     child.on("close", (code) => {
-      clearTimeout(timer);
+      clearTimers();
       if (code !== 0) {
         const err = new Error(`claude 終了コード ${code}。stderr: ${stderrBuf.slice(0, 400)}`);
         err.stderr = stderrBuf; // 呼び出し側が失敗の中身で分岐できるよう、切り詰めない全文も渡す
@@ -100,8 +125,17 @@ export function runClaudeJson({
     });
 
     child.on("error", (err) => {
-      clearTimeout(timer);
+      clearTimers();
       reject(new Error(`claude spawn エラー: ${err.message}`));
+    });
+
+    // 子がプロンプトを読み切る前に終了すると、この書き込みは EPIPE で失敗する。
+    // 受け手が居ないと Promise の外の「処理されない例外」になり、サーバごと落ちる
+    // （1ジョブの失敗で全ジョブが道連れになる）。ここで受けてログに残すだけに留め、
+    // 呼び出し側へ返す成否は終了コード側の判定（close ハンドラ）に任せる。
+    // ＝書き込みに失敗しても、失敗の理由は子の終了コード/stderr として1本で報告される。
+    child.stdin.on("error", (err) => {
+      onLog(`[claude stdin] 書き込みに失敗しました（子が先に終了した可能性）: ${err.message}`);
     });
 
     child.stdin.write(stdin, "utf-8");
