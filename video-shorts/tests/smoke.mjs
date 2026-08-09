@@ -523,8 +523,42 @@ t("サーバ: モザイク工程(stage m)を走行中として扱う（二重起
   const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
   const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
   assert.ok(running && /"m"/.test(running[1]), "startJob の走行中判定に m が入っている");
-  assert.ok(/includes\(j\.stage\)/.test(src) && /"init", "t", "s", "r", "m"/.test(src),
+  assert.ok(/includes\(j\.stage\)/.test(src) && /"init", "t", "c", "s", "r", "m"/.test(src),
     "isRunning の走行中判定にも m が入っている");
+});
+
+// ── AIが字幕の間違いを直す工程の結線（stage c） ────────────────
+// 工程そのものの検証は tests/ai-caption-fix-check.mjs が行う。ここは
+// 「文字起こしの直後・区間選定の前に挟まっているか」「画面に受け皿があるか」だけを見る。
+t("字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  assert.ok(/aiCaptionFixStage\(/.test(src), "AIが字幕を直す工程を呼んでいない");
+  const posT = src.indexOf('broadcast(jobId, { stage: "t", status: "done" })');
+  const posC = src.indexOf("aiCaptionFixStage(");
+  const posS = src.indexOf('job.stage = "s"');
+  assert.ok(posT > 0 && posC > posT, "工程が文字起こしより前にある（直す前の文字を読んでしまう）");
+  assert.ok(posS > posC, "工程が区間選定より後にある（選定が誤変換のままの文章を読む）");
+  assert.ok(/state\.stage = "captionfixed"/.test(src), "state.stage に captionfixed を記録していない");
+});
+
+t("字幕直し: 走行中判定(stage c)に入っている（二重起動を防ぐ）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
+  assert.ok(running && /"c"/.test(running[1]), "startJob の走行中判定に c が入っている");
+});
+
+t("字幕直し: CLI にも同じ工程がある（画面経路だけの機能にしない）", () => {
+  const src = fs.readFileSync(path.join(ROOT, "pipeline.mjs"), "utf-8");
+  assert.ok(/case "captionfix":/.test(src), "captionfix サブコマンドが無い");
+  assert.ok(/aiCaptionFixStage\(/.test(src), "CLI が工程を呼んでいない");
+});
+
+t("UI: 字幕直し段(c)の進捗表示の受け皿がある", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/STEP_ORDER\s*=\s*\[[^\]]*"c"/.test(app), "STEP_ORDER に c が入っている");
+  assert.ok(/^\s*c:\s*"/m.test(app), "EDITING_LABEL に c の文言がある");
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  assert.ok(/data-k="c"/.test(html), "進捗欄に c の行がある");
 });
 
 t("UI: モザイク段(m)の進捗表示の受け皿がある", () => {
@@ -576,10 +610,25 @@ t("webapp-mockup: SSEのd.labelを表示に反映する経路がある(EDITING_L
 
 t("P1-1-A: claude -p 呼び出しはツールを無効化する(--tools \"\")", () => {
   assert.deepStrictEqual(NO_TOOLS_ARGS, ["--tools", ""]);
+  // 選定(claude-select)もダイジェスト(digest-editor)も、起動は src/claude-run.mjs（守りを掛けた
+  // 共通の起動口）へ移した。ハードニングの実体はそちらにあるので、そちらを見る。移した先を見ないまま
+  // 呼び出し側だけを見ると、共通口の守りを外しても緑のままになる。
+  // 逆に、呼び出し側に自前の起動が生えると共通口の守りを迂回できるので、「自前で起動していないこと」
+  // も両方について見る（起動口が1つであること自体は tests/ai-caption-fix-check.mjs の葉Eが走査する）。
+  const runSrc = fs.readFileSync(path.join(ROOT, "src", "claude-run.mjs"), "utf-8");
   const selectSrc = fs.readFileSync(path.join(ROOT, "server", "claude-select.mjs"), "utf-8");
   const digestSrc = fs.readFileSync(path.join(ROOT, "src", "digest-editor.mjs"), "utf-8");
-  assert.ok(/\.\.\.NO_TOOLS_ARGS/.test(selectSrc), "claude-select.mjsのspawn引数にNO_TOOLS_ARGSが展開されていること");
-  assert.ok(/\.\.\.NO_TOOLS_ARGS/.test(digestSrc), "digest-editor.mjsのspawn引数にNO_TOOLS_ARGSが展開されていること");
+  assert.ok(/\.\.\.NO_TOOLS_ARGS/.test(runSrc), "claude-run.mjsのspawn引数にNO_TOOLS_ARGSが展開されていること");
+  assert.ok(!/spawn\(\s*["']claude["']/.test(selectSrc), "claude-select.mjsが自前でclaudeを起動していないこと(共通口へ委譲)");
+  assert.ok(/runClaudeJson\(/.test(selectSrc), "claude-select.mjsが共通口runClaudeJsonを使うこと");
+  assert.ok(!/spawn\(\s*["']claude["']/.test(digestSrc), "digest-editor.mjsが自前でclaudeを起動していないこと(共通口へ委譲)");
+  assert.ok(!/from\s+["']node:child_process["']/.test(digestSrc),
+    "digest-editor.mjsがchild_processを直接使っていないこと(自前起動の余地を残さない)");
+  assert.ok(/runClaudeJson\(/.test(digestSrc), "digest-editor.mjsが共通口runClaudeJsonを使うこと");
+  // 共通口が足せるのは引数だけ＝呼び出し側から守りを外せないこと（--model pin はここを通る）。
+  assert.ok(/\.\.\.NO_TOOLS_ARGS,\s*\.\.\.extraArgs/.test(runSrc),
+    "extraArgsが守りの引数の後ろに並んでいること(呼び出し側がNO_TOOLS_ARGSを上書きできない)");
+  assert.ok(/extraArgs\s*=\s*\[\]/.test(runSrc), "extraArgsの既定が空配列であること(既存の呼び出しの引数が変わらない)");
 });
 
 t("P1-1-B: claude -p の子プロセスに渡るenvはallowlistのみ", () => {
@@ -595,11 +644,20 @@ t("P1-1-B: claude -p の子プロセスに渡るenvはallowlistのみ", () => {
   assert.strictEqual(safe.ANTHROPIC_API_KEY, undefined, "APIキーはallowlist外(意図せぬ課金/漏洩防止)");
   assert.ok(Object.keys(safe).every((k) => ALLOWED_ENV_VARS.includes(k)));
 
-  const selectSrc = fs.readFileSync(path.join(ROOT, "server", "claude-select.mjs"), "utf-8");
+  // 選定もダイジェストも起動口は src/claude-run.mjs へ移したので、env の絞り込みはそちらで見る。
+  const runSrc = fs.readFileSync(path.join(ROOT, "src", "claude-run.mjs"), "utf-8");
   const digestSrc = fs.readFileSync(path.join(ROOT, "src", "digest-editor.mjs"), "utf-8");
-  assert.ok(!/env:\s*process\.env/.test(selectSrc), "claude-select.mjsが生のprocess.envをそのまま渡していないこと");
-  assert.ok(/env:\s*buildSafeEnv\(\)/.test(selectSrc), "claude-select.mjsがbuildSafeEnv()を使うこと");
-  assert.ok(/env:\s*buildSafeEnv\(\)/.test(digestSrc), "digest-editor.mjsがbuildSafeEnv()を使うこと");
+  const selectSrc = fs.readFileSync(path.join(ROOT, "server", "claude-select.mjs"), "utf-8");
+  assert.ok(!/env:\s*process\.env/.test(runSrc), "claude-run.mjsが生のprocess.envをそのまま渡していないこと");
+  assert.ok(/env:\s*buildSafeEnv\(\)/.test(runSrc), "claude-run.mjsがbuildSafeEnv()を使うこと");
+  // 呼び出し側は env を組み立てない＝絞り込みを迂回できない（自前 env を持ち込めば allowlist は無力）。
+  // 共通口を通していること(P1-1-A)と併せて、子プロセスへ渡る env は必ず buildSafeEnv() の出力になる。
+  for (const [name, src] of [["digest-editor.mjs", digestSrc], ["claude-select.mjs", selectSrc]]) {
+    assert.ok(!/env:\s*process\.env/.test(src), `${name}が生のprocess.envを渡していないこと`);
+    assert.ok(!/\benv\s*:/.test(src), `${name}が自前のenvを組み立てていないこと(共通口のbuildSafeEnv()に一本化)`);
+  }
+  // 隔離cwdは呼び出し側が作って共通口へ渡す（共通口は受け取ったcwdをspawnへ流す＝葉Eの検査）。
+  assert.ok(/createIsolatedCwd\(/.test(digestSrc), "digest-editor.mjsが隔離cwdを作って共通口へ渡すこと");
 });
 
 t("P1-1-C: 実行cwdはジョブ専用の隔離ディレクトリになる", () => {

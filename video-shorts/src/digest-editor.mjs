@@ -7,64 +7,50 @@
 //  - 順序は時系列でなくてよい（並べ替え・取捨選択のみ）。
 //  - ループは台本テキストで回し、レンダは最終1回だけ（本ファイルはレンダしない）。
 //
-// LLM は claude -p を spawn（サブスクログイン継承＝コスト0）。MCP ブート回避に
-// --strict-mcp-config を付ける（server/claude-select.mjs と同方針）。センスが要る工程なので
-// 上位モデル(Opus)を --model で pin（モデル階層原則）。npm 依存ゼロ・Node 標準のみ。
+// LLM は claude -p（サブスクログイン継承＝コスト0）。起動そのものは src/claude-run.mjs の
+// 共通口 runClaudeJson に任せる（ツール無効化 / env allowlist / 隔離 cwd / 打ち切り /
+// --strict-mcp-config が一箇所に集まっており、ここへ書き写さない）。
+// センスが要る工程なので上位モデル(Opus)を --model で pin（モデル階層原則）＝共通口の
+// extraArgs で足す。npm 依存ゼロ・Node 標準のみ。
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { resolveSegments } from "./reverse-match.mjs";
-import {
-  buildSafeEnv,
-  createIsolatedCwd,
-  NO_TOOLS_ARGS,
-  wrapUntrustedText,
-} from "./claude-safety.mjs";
+import { createIsolatedCwd, wrapUntrustedText } from "./claude-safety.mjs";
+import { runClaudeJson } from "./claude-run.mjs";
 
 const TIMEOUT_MS = Number(process.env.DIGEST_TIMEOUT_MS ?? 300_000);
 const MODEL = process.env.DIGEST_MODEL ?? "claude-opus-4-8";
 const MAX_ITER = Number(process.env.DIGEST_MAX_ITER ?? 3);
 const PASS_SCORE = Number(process.env.DIGEST_PASS_SCORE ?? 80);
 
+/** --model 指定が原因の失敗だけを見分ける絞り込み（ここを緩めると真因が隠れる）。
+ *  旧 /model|unknown|invalid/i は "invalid JSON" 等の一般 stderr にも誤マッチし、
+ *  モデル無関係の失敗まで再試行して真因を隠していた。model と無効語の連語のみに絞る。 */
+const MODEL_ERROR_RE =
+  /(unknown|invalid|unrecognized|no such|not a valid)\s+model|model[\s\S]{0,20}?(not found|not recognized|not supported|is invalid)/i;
+
 /** claude -p を1回叩き stdout(JSON envelope)の result テキストを返す。--model 無効環境はCLI既定へ退避。
- *  cwd はジョブ専用の隔離ディレクトリ（createIsolatedCwd の出力）を呼び出し元から渡す。 */
+ *  cwd はジョブ専用の隔離ディレクトリ（createIsolatedCwd の出力）を呼び出し元から渡す。
+ *
+ *  起動の作法（ツール無効化 / env allowlist / 隔離 cwd での実行 / 打ち切り / 終了コード検査）は
+ *  共通口 runClaudeJson が持つ。ここが持つのは「上位モデルを pin する」ことと、
+ *  「その pin が原因で落ちたときだけ1度 CLI 既定モデルへ退避する」ことだけ。
+ *  退避の判定は共通口が Error に付ける stderr 全文（切り詰めない）に対して行う。 */
 function callClaude(prompt, onLog, useModel = true, cwd) {
-  const args = ["-p", "--strict-mcp-config", "--output-format", "json", ...NO_TOOLS_ARGS];
-  if (useModel) args.push("--model", MODEL);
-  return new Promise((resolve, reject) => {
-    // cwd を中立な隔離ディレクトリにして vibe-base/製品の CLAUDE.md（司令塔憲法）を読ませない。
-    // これを付けないと sub-claude が司令塔ペルソナ化し「JSONを返せ」を乗っ取りとみなして拒否する。
-    // env は allowlist のみ（ANTHROPIC_API_KEY 等の秘密情報は渡さない＝意図せぬ課金防止・販売安全）。
-    // 既定はサブスク継承（OAuthログイン・コスト0）で動かす。ツールは全無効化（P1-1-A）。
-    const child = spawn("claude", args, { windowsHide: true, env: buildSafeEnv(), cwd });
-    let out = "", err = "";
-    child.stdout.on("data", (c) => (out += c.toString()));
-    child.stderr.on("data", (c) => (err += c.toString()));
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`claude -p タイムアウト (${TIMEOUT_MS / 1000}s)`));
-    }, TIMEOUT_MS);
-    child.on("error", (e) => { clearTimeout(timer); reject(new Error(`claude spawn エラー: ${e.message}`)); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        // --model 指定が原因の失敗なら1度だけ既定モデルで再試行（サイレントフェイル禁止）。
-        // 旧 /model|unknown|invalid/i は "invalid JSON" 等の一般 stderr にも誤マッチし、
-        // モデル無関係の失敗まで再試行して真因を隠していた。model と無効語の連語のみに絞る。
-        if (useModel && /(unknown|invalid|unrecognized|no such|not a valid)\s+model|model[\s\S]{0,20}?(not found|not recognized|not supported|is invalid)/i.test(err)) {
-          onLog(`[digest] --model ${MODEL} 失敗→CLI既定モデルで再試行`);
-          return callClaude(prompt, onLog, false, cwd).then(resolve, reject);
-        }
-        return reject(new Error(`claude 終了コード ${code}: ${err.slice(0, 300)}`));
-      }
-      let envelope;
-      try { envelope = JSON.parse(out.trim()); }
-      catch (e) { return reject(new Error(`claude stdout JSON parse 失敗: ${e.message}: ${out.slice(0, 200)}`)); }
-      resolve(envelope.result ?? envelope.content ?? out);
-    });
-    child.stdin.write(prompt, "utf-8");
-    child.stdin.end();
+  return runClaudeJson({
+    stdin: prompt,
+    cwd,
+    timeoutMs: TIMEOUT_MS,
+    extraArgs: useModel ? ["--model", MODEL] : [],
+  }).catch((e) => {
+    // 終了コードが 0 でない失敗にだけ stderr が付く（打ち切り・spawn 失敗・JSON 崩れには付かない）。
+    // ＝再試行するのは「--model 指定が原因で終了コードが非0になった」場合だけ、という従来の絞り込みのまま。
+    if (useModel && MODEL_ERROR_RE.test(e?.stderr ?? "")) {
+      onLog(`[digest] --model ${MODEL} 失敗→CLI既定モデルで再試行`);
+      return callClaude(prompt, onLog, false, cwd);
+    }
+    throw e;
   });
 }
 
