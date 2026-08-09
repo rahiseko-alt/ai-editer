@@ -282,6 +282,26 @@ await t("段落: 語と文章の対応が取れない段落は1文字も変え�
   assert.strictEqual(out[0].text, segments[0].text, "位置が決められないのに書き換えている");
 });
 
+await t("段落: 壊れた語エントリの後ろに同じ文字列の語があっても別の箇所を書き換えない", () => {
+  // 素材「のXののY」（の が位置0/2/3の3回出る）。
+  // 添字2の語エントリを壊す（start が数値でない）と、そのぶんカーソルを進めずに
+  // continue するだけの実装では、添字3の「の」が本来の位置3ではなく、
+  // 壊れた添字2が本来占めるはずだった位置2に誤って一致してしまう
+  // （どちらも文字が「の」なので before の一致チェックをすり抜ける）。
+  // wordOffsetsInSegment は「対応が取れなければ即 return null」に直したので、
+  // この段落は1文字も変えずに終わるはずである。
+  const segments = [{ start: 0, end: 10, text: "のXののY" }];
+  const words = [
+    { w: "の", start: 0, end: 0.5 },
+    { w: "X", start: 0.5, end: 1 },
+    { w: "の", start: "壊れている" }, // 壊れたエントリ: start が数値でない(想定=位置2の「の」)
+    { w: "の", start: 1.5, end: 2 }, // 位置3の「の」のはずが、壊れた語の位置(2)に誤爆しうる
+    { w: "Y", start: 2, end: 2.5 },
+  ];
+  const out = applyFixesToSegments(segments, [{ index: 3, before: "の", after: "ノ" }], words);
+  assert.strictEqual(out[0].text, segments[0].text, "壊れた語の後ろで、位置がずれた誤った書き換えをしている");
+});
+
 await t("段落: 工程を通しても、後ろの語を直した返答で段落の後ろだけが変わる", async () => {
   const dir = freshWork();
   const answer = JSON.stringify({ fixes: [noFix(87)] });

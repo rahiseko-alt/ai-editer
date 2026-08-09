@@ -14,7 +14,9 @@ import {
   findCriteriaFreezeViolations,
   flattenById,
   hashCriteria,
+  isCompleteDeclaration,
   isFrozenLeaf,
+  isMissingPathError,
 } from "./verify-criteria-freeze.mjs";
 
 let pass = 0;
@@ -194,6 +196,131 @@ t("HEADで削除されたノードは今回のスコープ外(比較不能なの
   const head = { meta: {}, nodes: [{ id: "ROOT", kind: "state", children: [] }] };
   const violations = findCriteriaFreezeViolations(base, head);
   assert.deepStrictEqual(violations, []);
+});
+
+// ---- basisChangesの必須フィールド(at/reason)検証（CodeRabbit指摘対応） ----
+// id/criteriaHashが一致するだけでは宣言として認めない。理由の明示(at/reason)が
+// 欠けている宣言は「無い」ものとして扱い、違反(undeclared)になるべき。
+
+t("isCompleteDeclaration: id/criteriaHash/at/reasonが全て揃っていれば完全な宣言", () => {
+  const entry = { id: "G-1", criteriaHash: "abc", at: "2026-08-09", reason: "仕様変更" };
+  assert.strictEqual(isCompleteDeclaration(entry, "G-1", "abc"), true);
+});
+
+t("isCompleteDeclaration: atが欠落していれば不完全", () => {
+  const entry = { id: "G-1", criteriaHash: "abc", reason: "仕様変更" };
+  assert.strictEqual(isCompleteDeclaration(entry, "G-1", "abc"), false);
+});
+
+t("isCompleteDeclaration: atが空文字なら不完全", () => {
+  const entry = { id: "G-1", criteriaHash: "abc", at: "", reason: "仕様変更" };
+  assert.strictEqual(isCompleteDeclaration(entry, "G-1", "abc"), false);
+});
+
+t("isCompleteDeclaration: reasonが欠落していれば不完全", () => {
+  const entry = { id: "G-1", criteriaHash: "abc", at: "2026-08-09" };
+  assert.strictEqual(isCompleteDeclaration(entry, "G-1", "abc"), false);
+});
+
+t("isCompleteDeclaration: reasonが空文字なら不完全", () => {
+  const entry = { id: "G-1", criteriaHash: "abc", at: "2026-08-09", reason: "" };
+  assert.strictEqual(isCompleteDeclaration(entry, "G-1", "abc"), false);
+});
+
+t("境界: basisChangesにid+criteriaHashは一致するがatが空文字 → 違反になる", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [] });
+  const newHash = hashCriteria(CRIT_B_TAMPERED);
+  const head = roadmap({
+    status: "done",
+    criteria: CRIT_B_TAMPERED,
+    basisChanges: [{ id: "G-1", criteriaHash: newHash, at: "", reason: "仕様変更の正当な理由" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1, "atが空文字の宣言は「無い」ものとして扱われるべき");
+  assert.strictEqual(violations[0].reason, "undeclared");
+});
+
+t("境界: basisChangesにid+criteriaHashは一致するがatが欠落 → 違反になる", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [] });
+  const newHash = hashCriteria(CRIT_B_TAMPERED);
+  const head = roadmap({
+    status: "done",
+    criteria: CRIT_B_TAMPERED,
+    basisChanges: [{ id: "G-1", criteriaHash: newHash, reason: "仕様変更の正当な理由" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1, "atが欠落した宣言は「無い」ものとして扱われるべき");
+  assert.strictEqual(violations[0].reason, "undeclared");
+});
+
+t("境界: basisChangesにid+criteriaHashは一致するがreasonが空文字 → 違反になる", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [] });
+  const newHash = hashCriteria(CRIT_B_TAMPERED);
+  const head = roadmap({
+    status: "done",
+    criteria: CRIT_B_TAMPERED,
+    basisChanges: [{ id: "G-1", criteriaHash: newHash, at: "2026-08-09", reason: "" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1, "reasonが空文字の宣言は「無い」ものとして扱われるべき");
+  assert.strictEqual(violations[0].reason, "undeclared");
+});
+
+t("境界: basisChangesにid+criteriaHashは一致するがreasonが欠落 → 違反になる", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [] });
+  const newHash = hashCriteria(CRIT_B_TAMPERED);
+  const head = roadmap({
+    status: "done",
+    criteria: CRIT_B_TAMPERED,
+    basisChanges: [{ id: "G-1", criteriaHash: newHash, at: "2026-08-09" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1, "reasonが欠落した宣言は「無い」ものとして扱われるべき");
+  assert.strictEqual(violations[0].reason, "undeclared");
+});
+
+t("境界 対照: id+criteriaHash+at+reasonが全て揃っていれば引き続き合格する", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [] });
+  const newHash = hashCriteria(CRIT_B_TAMPERED);
+  const head = roadmap({
+    status: "done",
+    criteria: CRIT_B_TAMPERED,
+    basisChanges: [{ id: "G-1", criteriaHash: newHash, at: "2026-08-09", reason: "仕様変更の正当な理由" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.deepStrictEqual(violations, [], "at/reasonが揃った正当な宣言は引き続き合格すべき");
+});
+
+// ---- isMissingPathError（CodeRabbit指摘対応：BASE読み取りエラーの握りつぶし防止） ----
+// git show が「そのcommitにパスが存在しない」ことを示すエラーだけをスキップ対象とし、
+// refが無効・gitコマンド自体の失敗等は再スローされるべき、という判定の純粋関数部分のテスト。
+
+t("isMissingPathError: 'does not exist in' を含むstderrはtrue（refは有効だがそのcommitに無い）", () => {
+  const error = { stderr: "fatal: path 'docs/roadmap.html' does not exist in 'HEAD'\n", message: "Command failed" };
+  assert.strictEqual(isMissingPathError(error), true);
+});
+
+t("isMissingPathError: 'exists on disk, but not in' を含むstderrはtrue（ワークツリーにはあるがcommitに無い）", () => {
+  const error = {
+    stderr: "fatal: path 'docs/roadmap.html' exists on disk, but not in '4b825dc'\n",
+    message: "Command failed",
+  };
+  assert.strictEqual(isMissingPathError(error), true);
+});
+
+t("isMissingPathError: 'invalid object name'（refが無効）はfalse＝再スロー対象", () => {
+  const error = { stderr: "fatal: invalid object name 'nonexistent-ref-xyz'.\n", message: "Command failed" };
+  assert.strictEqual(isMissingPathError(error), false);
+});
+
+t("isMissingPathError: stderrが無くmessageだけの場合もmessageを見る", () => {
+  const error = { message: "fatal: path 'docs/roadmap.html' does not exist in 'abc123'" };
+  assert.strictEqual(isMissingPathError(error), true);
+});
+
+t("isMissingPathError: stderr/messageどちらも無関係な内容ならfalse", () => {
+  const error = { stderr: "git: command not found", message: "spawnSync git ENOENT" };
+  assert.strictEqual(isMissingPathError(error), false);
 });
 
 t("meta.basisChanges未設定(undefined)でも例外にならず、単に宣言0件として扱う", () => {

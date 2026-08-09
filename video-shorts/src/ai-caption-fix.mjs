@@ -254,7 +254,7 @@ function wordOffsetsInSegment(seg, words) {
   let cursor = 0;
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
-    if (!w || typeof w.start !== "number" || typeof w.w !== "string") continue;
+    if (!w || typeof w.start !== "number" || typeof w.w !== "string") return null;
     if (w.start < seg.start || w.start > seg.end) continue;
     const at = seg.text.indexOf(w.w, cursor);
     if (at === -1) return null;

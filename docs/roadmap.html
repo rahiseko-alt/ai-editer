@@ -119,10 +119,10 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "■ 今回(2026-08-09)のツリー見直しセッションの結果\n・分解の網羅性担保の方法論（機能軸/経路軸/故障モード軸/アクター軸、境界値分析によるfixture選定、トレーサビリティ表）をAGENTS.mdとdocs/roadmap.html READMEへ追加した。\n・GOAL配下の全ノード(173件)を5系統に分けて独立サブエージェントにレビューさせ、新methodologyで抜けている葉・粒度不揃い・fixture不備を洗い出した。\n・高確信度の『抜けている葉』25件を新規todo葉として追加した（各detailに『2026-08-09 ツリー見直しで検出』と記載）。\n  主な追加：P0-5-C/D(sub=none/mosaic=on未検証)、P1-2-F〜I(実サーバー統合テスト不足)、P1-9-D/E(境界値未検証)、\n  G-DELIVERY-CIGATE/FAILCLEAR、M-1-E/F、M-4-H、S-5/S-6、G-EDIT-MOSAIC-UI-S1/S2、\n  G-EDIT-CAPTION-AI-A3/D2/M1/M2/L2、G-EDIT-TRIM-H/I、G-EDIT-QUALITY-E。\n・凍結済み(status!=todo)葉15件には、basis-reviewer/マスター判断が必要な『粒度不揃い』『fixture不備』の指摘をdetailへ記録した\n  （criteria/verify本文は変更していない）：M-4-C、G-EDIT-MOSAIC-UI-D/F/E、G-EDIT-CAPTION-AI-D/K1/A、\n  G-EDIT-TRIM-A/B/C、G-EDIT-REFRAME-A/B/D/E、G-EDIT-QUALITY-B。\n・G-EDIT-TRIM-D(todo)とG-EDIT-TRIM-E(doing、meta.basisChanges宣言つき)のverify文言を、実物の既定(trim:\"none\")に合わせて是正した。\n・追加ミッション：凍結済みcriteria/verifyの無断書き換えを検知するCI(scripts/verify-criteria-freeze.mjs)を実装し、\n  roadmap-required.ymlへ組み込んだ。実際の事故(G-EDIT-CAPTION-AI-E1)を再現するテストを含め19件全PASS。\n\n■ 次回やること（優先順）\n1. 今回追加した新規backlog葉（25件、いずれもstatus:todo）から優先度の高いものを選んで着手する。\n   特に高確信度：P1-2-F〜I(セキュリティの実サーバー検証が薄い)、G-DELIVERY-CIGATE(必須チェックの穴)、\n   M-1-E/F(モザイクの異常系耐性)、G-EDIT-MOSAIC-UI-S1/S2(処理中の素顔露出)。\n2. G-EDIT-CAPTION-AI-A3/D2、G-EDIT-TRIM-Iは既存テストが実装・合格済みなので、このPRのCI run URLが確定次第、\n   status:doneにしてevidenceを埋める（機械判定可能な事実のため本人が直接行ってよい）。\n3. 凍結済み葉のdetailに記録した『粒度不揃い』『fixture不備』15件は、criteria/verifyの変更を伴うため、\n   着手前にbasis-reviewerへ掛けてからmeta.basisChanges宣言つきで直すこと\n   （本文だけ書き換えると新設のCIゲートで検知される）。優先度が高いもの：G-EDIT-TRIM-C(fixtureの重複語)、\n   G-EDIT-REFRAME-A/B/D/E(実装着手前にfixture自体を作り直す必要がある)、G-EDIT-MOSAIC-UI-D/F(粒度分割)。\n4. G-EDIT-CAPTION-AIの残り3葉（F2/K1/K2）の受入に戻る。ただしK1は相互作用の問題\n   （claude-selectとの衝突）をverify文言へ反映してから着手すること。\n5. 前セッションから持ち越しのC-2/C-5〜C-14、D-2〜D-5/D-7、E-2〜E-6、TRIM-F/G/Aのdone判定（未着手のまま）。\n",
+    "next": "■ 今回(2026-08-09)の続き：PR #50マージ後にCodeRabbitの指摘5件が届いたため、mainから枝を作り直し\n修正コミットを積んで新PRとして出し直した。新PRのCI/CodeRabbitの状況を確認し、緑になれば\nマージまで完了させること。\n\n■ その後のテーマ（前回までの積み残し・優先順）\n1. 今回追加した新規backlog葉（25件＋G-TESTINFRA-SCRIPTSLINT、いずれもstatus:todo）から\n   優先度の高いものを選んで着手する。\n2. G-EDIT-CAPTION-AI-A3/D2、G-EDIT-TRIM-Iは既存テストが実装・合格済みなので、CI run URLが\n   確定次第status:doneにしてevidenceを埋める。\n3. 凍結済み葉のdetailに記録した『粒度不揃い』『fixture不備』15件は、criteria/verifyの変更を伴うため、\n   着手前にbasis-reviewerへ掛けてからmeta.basisChanges宣言つきで直すこと。\n4. G-EDIT-CAPTION-AIの残り3葉（F2/K1/K2）の受入に戻る。\n5. 前セッションから持ち越しのC-2/C-5〜C-14、D-2〜D-5/D-7、E-2〜E-6、TRIM-F/G/Aのdone判定。\n",
     "handoff": {
-      "done": "(1)分解の網羅性担保の方法論(WBS100%ルール/FMEA・FTA/境界値分析/トレーサビリティ表)を調査し、AGENTS.mdとdocs/roadmap.html READMEへ翻訳して追加した。(2)GOAL配下の全ノード(173件)を、基盤/セキュリティ系・モザイク/軽量配布系・モザイクUI系・字幕編集系・無音詰め/縦型切抜き系の5系統に分けて独立サブエージェントにレビューさせ、新methodologyで抜けている葉・粒度不揃い・fixture不備を洗い出した。(3)高確信度の『抜けている葉』25件を新規todo葉としてツリーへ追加し、frozen(status!=todo)な葉15件の粒度・fixture不備はdetailへ記録した(criteria/verify本文は変更せず)。(4)G-EDIT-TRIM-D/Eのverify文言をTRIM-Aと揃うよう是正(Eはmeta.basisChanges宣言つき)。(5)追加ミッション：凍結済みcriteria/verifyの無断書き換えを検知するCI機構(scripts/verify-criteria-freeze.mjs)を実装しroadmap-required.ymlへ組み込んだ(19件のテストで事故再現ケースを含め検証)。",
-      "trouble": "5並列のレビューサブエージェントが想定以上に詳細な指摘を多数返し(合計約50件)、全てを新規葉として即時凍結するのは基準凍結の規律(着手前にbasis-reviewerを通す)に反するため、確信度が高くリスクの低い『新規追加』のみ即時反映し、既存の凍結済み葉に触れる『粒度分割』『fixture修正』はdetail記録に留めて次セッション送りにした。ハッシュ固定機構の実装エージェントが2回とも『バックグラウンドのテスト完了待ち』という不完全な報告で一度停止したため、続行を指示して完了させた(最終的には正しく完了・全テストPASS)。"
+      "done": "(1)分解の網羅性担保の方法論(WBS100%ルール/FMEA・FTA/境界値分析/トレーサビリティ表)を調査し、AGENTS.mdとdocs/roadmap.html READMEへ翻訳して追加した。(2)GOAL配下の全ノード(173件)を、基盤/セキュリティ系・モザイク/軽量配布系・モザイクUI系・字幕編集系・無音詰め/縦型切抜き系の5系統に分けて独立サブエージェントにレビューさせ、新methodologyで抜けている葉・粒度不揃い・fixture不備を洗い出した。(3)高確信度の『抜けている葉』25件を新規todo葉としてツリーへ追加し、frozen(status!=todo)な葉15件の粒度・fixture不備はdetailへ記録した(criteria/verify本文は変更せず)。(4)G-EDIT-TRIM-D/Eのverify文言をTRIM-Aと揃うよう是正(Eはmeta.basisChanges宣言つき)。(5)追加ミッション：凍結済みcriteria/verifyの無断書き換えを検知するCI機構(scripts/verify-criteria-freeze.mjs)を実装しroadmap-required.ymlへ組み込んだ(19件のテストで事故再現ケースを含め検証)。 【追記】PR #50はci-green/roadmap-required緑の直後にauto-mergeで即マージされ、CodeRabbitの実質的な指摘5件(うち2件は今回追加したscripts/verify-criteria-freeze.mjs自身の欠陥)がマージ後に届いた。2026-07-25の教訓どおりmainから枝を作り直し、指摘を修正して新PRとして出し直した（basisChanges宣言のat/reason必須化、BASE読み取りエラーの誤スキップ修正、smoke.mjsのstripComments適用漏れ修正、ai-caption-fix.mjsのfail-closed化）。docs/failures.mdに記録済み。scripts/パッケージのtypecheck/lint未導入はG-TESTINFRA-SCRIPTSLINTとしてbacklog化した。",
+      "trouble": "5並列のレビューサブエージェントが想定以上に詳細な指摘を多数返し(合計約50件)、全てを新規葉として即時凍結するのは基準凍結の規律(着手前にbasis-reviewerを通す)に反するため、確信度が高くリスクの低い『新規追加』のみ即時反映し、既存の凍結済み葉に触れる『粒度分割』『fixture修正』はdetail記録に留めて次セッション送りにした。ハッシュ固定機構の実装エージェントが2回とも『バックグラウンドのテスト完了待ち』という不完全な報告で一度停止したため、続行を指示して完了させた(最終的には正しく完了・全テストPASS)。 【追記】auto-mergeワークフローの存在により、CIが緑になった瞬間に人/CodeRabbitのレビューを待たずマージされる構成だった。基準凍結の仕組み自体を作るPRほど、着手前にbasis-reviewer相当の検査を挟むべきだったという教訓をfailures.mdに残した。"
     },
     "updated": "2026-08-09",
     "basisChanges": [
@@ -1019,6 +1019,21 @@
                           "evidence": ""
                         }
                       ]
+                    }
+                  ]
+                },
+                {
+                  "id": "G-TESTINFRA-SCRIPTSLINT",
+                  "kind": "state",
+                  "theme": "scripts/パッケージ(ロードマップの機械チェック群)にtypecheck/lintが導入されている",
+                  "meaning": "ロードマップを守る仕組み自体のコードも、型やLintで機械チェックされている",
+                  "status": "todo",
+                  "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。",
+                  "criteria": [
+                    {
+                      "text": "scripts/パッケージにtypecheck(またはJSDoc+tsc --checkJs)かLintの少なくとも一方が導入され、pnpm -r --if-presentから実行される",
+                      "verify": "scripts/package.jsonにtypecheckまたはlintスクリプトが追加され、実際に型/構文上の誤りを1件意図的に混入させたときに当該コマンドが非0で終了することを確認する",
+                      "evidence": ""
                     }
                   ]
                 }
