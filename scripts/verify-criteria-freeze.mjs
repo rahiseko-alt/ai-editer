@@ -32,7 +32,10 @@
 //   - BASE_REF 未指定：比較対象が無いので "BASE_REF未指定のためスキップ" とだけ表示して正常終了する
 //     （新規リポジトリの最初のコミット等、BASE が存在しない状況を含む）。
 //   - BASE_REF はあるが、その commit に docs/roadmap.html が存在しない（新規追加コミット等）場合も
-//     比較不能なのでスキップして正常終了する。
+//     比較不能なのでスキップして正常終了する（isMissingPathError で判定。git show の
+//     "does not exist in" / "exists on disk, but not in" エラーだけをこの扱いにする）。
+//   - BASE_REF が無効な ref（typo・存在しない commit）だったり、git コマンド自体が別の理由で
+//     失敗した場合は「比較不能」ではなく「壊れている」ので、握りつぶさず再スローして異常終了する。
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -104,12 +107,33 @@ export function isFrozenLeaf(node) {
 }
 
 /**
+ * meta.basisChanges の1エントリが、id と criteriaHash に加えて、宣言として必須の
+ * at（日付。空でない文字列）・reason（理由。空でない文字列）も揃っているかを判定する。
+ * どちらか欠けている宣言は「理由を明示していない」ので、宣言として認めない
+ * （id/criteriaHashだけ一致すれば通ってしまうと、基準変更の理由を明示する目的が骨抜きになる）。
+ */
+export function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim() !== "";
+}
+
+export function isCompleteDeclaration(entry, id, criteriaHash) {
+  return (
+    !!entry &&
+    entry.id === id &&
+    entry.criteriaHash === criteriaHash &&
+    isNonEmptyString(entry.at) &&
+    isNonEmptyString(entry.reason)
+  );
+}
+
+/**
  * BASE/HEAD それぞれの roadmap JSON（parse済みオブジェクト）を比較し、
  * 「凍結済み葉の criteria/verify が正当な宣言なしに書き換えられている」違反を検出する。
  * git や fs に一切依存しない純粋関数（テストしやすくするため分離）。
  *
  * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason } の形。
- *   reason: "undeclared"（宣言が無い） | "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない）
+ *   reason: "undeclared"（宣言が無い、またはat/reasonが欠けていて宣言として不完全） |
+ *           "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない）
  */
 export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
   const baseMap = flattenById(baseRoadmap?.nodes || []);
@@ -133,17 +157,15 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
     const headHash = hashCriteria(headNode.criteria);
     if (baseHash === headHash) continue; // 本文は変わっていない＝問題なし
 
-    const declaredInHead = headBasisChanges.some(
-      (e) => e && e.id === id && e.criteriaHash === headHash,
-    );
+    const declaredInHead = headBasisChanges.some((e) => isCompleteDeclaration(e, id, headHash));
     if (!declaredInHead) {
       violations.push({ id, baseHash, headHash, reason: "undeclared" });
       continue;
     }
 
     // 宣言はあるが、BASE時点で既に同じ宣言が存在していた＝今回のPRで新規に追加されたものではない。
-    const alreadyDeclaredInBase = baseBasisChanges.some(
-      (e) => e && e.id === id && e.criteriaHash === headHash,
+    const alreadyDeclaredInBase = baseBasisChanges.some((e) =>
+      isCompleteDeclaration(e, id, headHash),
     );
     if (alreadyDeclaredInBase) {
       violations.push({ id, baseHash, headHash, reason: "not-new" });
@@ -174,6 +196,22 @@ export function formatViolation(v) {
 
 // ---- git/fs 依存の入出力（CLI実行時のみ使う） --------------------------------------
 
+/**
+ * git show の失敗が「そのcommitに docs/roadmap.html というパスが存在しない」ことを
+ * 示すエラーかどうかを判定する（純粋関数。error オブジェクトの stderr/message文字列だけを見る）。
+ *
+ * git show は、パスがそのref上に存在しない場合、典型的に次のいずれかを stderr に出す
+ * （実際にこのリポジトリで存在しないref/存在しないパスを指定して確認済み）：
+ *   - "fatal: path '<path>' does not exist in '<ref>'"        …refは有効だがそのcommitに無い
+ *   - "fatal: path '<path>' exists on disk, but not in '<ref>'" …ワークツリーにはあるがcommitに無い
+ * これに該当しないエラー（refが無効＝invalid object name、gitコマンド自体が無い 等）は
+ * 「比較不能」ではなく「壊れている」ので、呼び出し側で再スローして異常終了させる。
+ */
+export function isMissingPathError(error) {
+  const text = `${error?.stderr ?? ""}\n${error?.message ?? ""}`;
+  return text.includes("does not exist in") || text.includes("exists on disk, but not in");
+}
+
 function readRoadmapAt(ref) {
   // ref が未指定なら作業ツリーを直接読む（git show を使わない）。
   if (!ref) {
@@ -196,7 +234,12 @@ function main() {
   let baseHtml;
   try {
     baseHtml = readRoadmapAt(BASE_REF);
-  } catch {
+  } catch (e) {
+    if (!isMissingPathError(e)) {
+      // refが無効・gitコマンド自体の失敗等、「比較不能」ではなく「壊れている」ケース。
+      // ここを握りつぶすとCIゲートの意味が無くなるので、握りつぶさず再スローして異常終了させる。
+      throw e;
+    }
     console.log(
       `BASE(${BASE_REF})に ${ROADMAP_REL_PATH} が存在しないためスキップ（新規リポジトリの最初のコミット等）`,
     );

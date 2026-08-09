@@ -61,6 +61,10 @@ function t(name, fn) {
  * 正規表現を掛けると、説明文（コメント）に書いた `env:` にも当たって落ちる。
  * コメントは実行されないので、判定はコメントを除いた本体に対して行う。
  * 文字列リテラルの中（"http://…" など）は消さない＝合格ラインは下げない。
+ *
+ * 制限：文字列・テンプレートリテラルは追跡するが、正規表現リテラル（例: /[/][*]/）は
+ * 追跡しない。そのため正規表現リテラルの中に `//` や `/*` のような区切りが含まれると、
+ * それをコメントの開始と誤認する可能性がある。
  */
 function stripComments(src) {
   let out = "";
@@ -699,7 +703,9 @@ t("P1-1-B: claude -p の子プロセスに渡るenvはallowlistのみ", () => {
     assert.ok(!/\benv\s*:/.test(code), `${name}が自前のenvを組み立てていないこと(共通口のbuildSafeEnv()に一本化)`);
   }
   // 隔離cwdは呼び出し側が作って共通口へ渡す（共通口は受け取ったcwdをspawnへ流す＝葉Eの検査）。
-  assert.ok(/createIsolatedCwd\(/.test(digestSrc), "digest-editor.mjsが隔離cwdを作って共通口へ渡すこと");
+  // 「有ること」検査もコメントを除いた本体に対して行う（コメントアウトされた呼び出しで
+  // 誤って合格しないようにする＝「無いこと」検査(698-699行目)と同じ扱いに揃える）。
+  assert.ok(/createIsolatedCwd\(/.test(stripComments(digestSrc)), "digest-editor.mjsが隔離cwdを作って共通口へ渡すこと");
 });
 
 t("P1-1-B 対照: コメント除去は、コードの env: を消さずコメントの env: だけを消す", () => {
@@ -716,9 +722,20 @@ t("P1-1-B 対照: コメント除去は、コードの env: を消さずコメ�
   assert.ok(!/env:\s*process\.env/.test(code), "コメントの env: process.env は消えること");
   assert.ok(code.includes('"http://example.com/a//b"'),
     "文字列リテラルの中の // をコメントと見なして消さないこと");
-  // 実際の禁止判定（本番と同じ式）が、コードの env: を掛けたときに落ちること。
+  // 実際の禁止判定(本番と同じ式)が、コードの env: を掛けたときに落ちること。
   assert.throws(() => assert.ok(!/\benv\s*:/.test(code)),
     "コードに env: があるのに合格になってしまう");
+});
+
+t("stripComments 対照: コメントらしき区切りを含む正規表現リテラルは壊れずに残る(単純なケース)", () => {
+  // stripCommentsは文字列/テンプレートリテラルは追跡するが正規表現リテラルは追跡しない、
+  // という上記docコメントの制限についての最小限の確認。
+  // ここでの `/[/][*]/` は "/" の直後が "/" や "*" に連続しない配置なので、
+  // 単純なケースとしては壊れず素通りする。
+  const sample = "const re = /[/][*]/; const env = 1;";
+  const code = stripComments(sample);
+  assert.ok(code.includes("/[/][*]/"), "正規表現リテラルがそのまま残ること");
+  assert.ok(code.includes("const env = 1;"), "正規表現の後続コードが誤って消されないこと");
 });
 
 t("P1-1-C: 実行cwdはジョブ専用の隔離ディレクトリになる", () => {
