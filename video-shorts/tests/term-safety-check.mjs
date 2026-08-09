@@ -38,7 +38,7 @@ const HELD_OUT_PATH = path.join(HERE, "fixtures", "term-safety", "held-out.txt")
 
 // 素材を凍結する。中身が変われば合否も変わるので、ハッシュを基準に含める。
 // 素材を差し替えて緑にする逃げ道を塞ぐため（合格しなかったときに素材の方を書き換えられない）。
-const COMMON_JA_SHA256 = "5a1e2f1c0ee73aaa1373c7259685769b69a10b28f780572e55cac752ab8c3c7d";
+const COMMON_JA_SHA256 = "46662ad95949f33de340c80ae9e2be1dab91519438db60351ec3ee535c14d3cc";
 const HELD_OUT_SHA256 = "204ab34e6823db4a4973dcfc9eba66504e40fb6aafad781f3afa321d18893059";
 
 let pass = 0, fail = 0;
@@ -110,27 +110,43 @@ t("素材: 判定用と検証用が別物である（同じなら何も測って
   assert.strictEqual(shared.length, 0, `同じ文を共有している: ${shared.slice(0, 3).join(" / ")}`);
 });
 
-// ── 本体: 登録できた語は、別案件の文を1文字も変えない ──────────
-// これが受入事実そのもの。判定に使っていない文で測るので、実装の内部を見ていない。
-t("覚えさせられる語をすべて登録しても、別案件の文が1文字も変わらない", () => {
-  const held = heldOut();
-  // 誤変換で生まれうる語をひととおり試し、登録できたものだけを辞書に集める
-  const tried = [
-    ["追患版", "椎間板"], ["追間板", "椎間板"], ["椎間盤", "椎間板"],
-    ["心筋高速", "心筋梗塞"], ["高速", "梗塞"], ["ました", "ましだ"],
-    ["という", "と言う"], ["ですね", "ですネ"], ["の", "ノ"], ["は", "ハ"],
-    ["が", "ガ"], ["を", "ヲ"], ["に", "ニ"], ["から", "カラ"], ["て", "テ"],
-    ["です", "デス"], ["病院", "美容院"], ["検査", "県査"], ["今日", "京"],
-  ];
-  const dict = {};
-  for (const [b, a] of tried) {
-    const r = judgeAgainstCommonJapanese(b, a);
-    if (r.ok) dict[r.key] = r.value;
+// ── 本体: 素材に出てくる語は、1語も登録できない ────────────────
+// 試す語を手で選ばない。素材から機械的に全部抜いて回す。
+// 手で選ぶと「安全な語だけを選んでしまう」＝測る対象から測る土台を作ることになる
+// （2026-08-08、この検査の初版がまさにそれで、15語のベタ書き拒否リストでも全緑だった）。
+
+/** 文字列から、辞書の鍵になりうる語を機械的に抜く（漢字・カタカナ・ひらがなの連なり） */
+function extractTerms(text) {
+  const out = new Set();
+  for (const re of [/[一-鿿]{1,6}/g, /[゠-ヿ]{2,6}/g, /[ぁ-ゟ]{1,4}/g]) {
+    for (const w of text.match(re) || []) out.add(w);
   }
-  assert.ok(Object.keys(dict).length > 0, "1件も登録できないなら、この検査は何も測っていない");
-  const got = applyDict(dict, held);
-  assert.strictEqual(got, held,
-    `別案件の文が変わった。登録できた辞書=${JSON.stringify(dict)}`);
+  return [...out];
+}
+
+t("素材に出てくる語は、1語も登録できない", () => {
+  const terms = extractTerms(readCommonJapanese());
+  assert.ok(terms.length > 500, `抜けた語が少なすぎる（${terms.length}件）。この検査は何も測っていない`);
+  const leaked = terms.filter((w) => judgeAgainstCommonJapanese(w, "◆").ok);
+  assert.strictEqual(leaked.length, 0,
+    `${terms.length}件中 ${leaked.length}件が登録できてしまう: ${leaked.slice(0, 10).join(" ")}`);
+});
+
+t("素材が、決めた中身の条件を満たしている", () => {
+  // 素材の網羅度がそのまま安全性になるので、中身の条件を機械で確かめる。
+  // common-japanese.txt の冒頭に書いた条件と同じもの。
+  const ref = readCommonJapanese();
+  const must = {
+    助詞: ["は", "が", "を", "に", "へ", "と", "で", "から", "より", "まで", "の", "や", "か", "ね", "よ"],
+    語尾: ["です", "ます", "ました", "ません", "でした", "ですね", "でしょう"],
+    活用: ["する", "した", "している", "される", "できる"],
+    形式名詞: ["こと", "もの", "ところ", "という", "そして", "しかし", "なので", "だけど", "ため"],
+    複合語: ["高速道路", "新幹線", "携帯電話", "会社員", "今日", "明日"],
+  };
+  for (const [group, list] of Object.entries(must)) {
+    const missing = list.filter((w) => !ref.includes(w));
+    assert.strictEqual(missing.length, 0, `${group}が素材に無い: ${missing.join(" ")}`);
+  }
 });
 
 t("覚えさせられる語をすべて登録しても、別案件の語の数と時刻が変わらない", () => {
@@ -143,9 +159,8 @@ t("覚えさせられる語をすべて登録しても、別案件の語の数�
     { w: "あり", start: 0.0, end: 0.3 }, { w: "ま", start: 0.3, end: 0.5 },
     { w: "した", start: 0.5, end: 0.9 }, { w: "ね", start: 0.9, end: 1.0 },
   ];
-  const got = applyDictToWords(dict, src);
-  assert.deepStrictEqual(got, src,
-    `語の並びか時刻（秒）が変わった: ${JSON.stringify(got)}`);
+  assert.deepStrictEqual(applyDictToWords(dict, src), src,
+    "語の並びか時刻（秒）が変わった");
 });
 
 // ── 対で置く: 直したいところは直る ─────────────────────────────
