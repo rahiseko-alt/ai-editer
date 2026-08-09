@@ -20,7 +20,7 @@ import {
 import { resolveSegments } from "./src/reverse-match.mjs";
 import { mergeShortSegments, snapToSilence } from "./src/snap-boundaries.mjs";
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
-import { planTrim, remapWords } from "./src/trim-plan.mjs";
+import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, clipName, computeCanvas } from "./src/render-vertical.mjs";
 import { concatClips } from "./src/concat.mjs";
@@ -250,7 +250,7 @@ async function cmdRender(workDir, opts = {}) {
     // trim（最寄りコマへ丸める）と atrim（サンプル精度で切る）がまた食い違う。
     // 実測: -ss 0.010/0.020/0.030 で 149コマ中149コマが1コマずれた（2026-08-08）。
     // 開始を揃えておけば、以降の格子は 0, 1/fps, 2/fps ... になり、区間の端と一致する。
-    const segStart = srcFps ? Math.round(seg.start * srcFps) / srcFps : seg.start;
+    const segStart = snapStart(seg.start, srcFps);
     const relWordsAll = wordsInRange(transcript.words || [], segStart, seg.end);
     let keep = null;
     let assWords = relWordsAll;

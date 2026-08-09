@@ -152,6 +152,23 @@ export function planTrim(words, opts = {}) {
  */
 export const MIN_KEEP_FRAMES = 2;
 
+/**
+ * 切り出しの開始をコマの境目へ揃える。
+ *
+ * renderClip は -ss で入力シークするので、開始が半端な時刻だとシーク後のコマ格子が
+ * そのぶんずれる。すると残す区間の端をコマ周期の整数倍にしても、trim（最寄りコマへ丸める）と
+ * atrim（サンプル精度で切る）がまた食い違う。
+ * 実測: 揃えないと seg.start=0.02 で103コマ中103コマ、0.10 で102コマ中52コマが1コマずれた。
+ *
+ * 【なぜ関数として出すか】pipeline.mjs と検査が同じ式を別々に書いていると、
+ * pipeline 側から式を消しても検査が自前の写しで揃えてしまい、緑のままになる
+ * （2026-08-08、independent-verifier の指摘で実際に起きていた）。
+ */
+export function snapStart(start, fps) {
+  if (!Number.isFinite(fps) || fps <= 0) return start;
+  return Math.round(start * fps) / fps;
+}
+
 export function snapToFrames(spans, fps) {
   if (!Number.isFinite(fps) || fps <= 0) return spans;
   const out = [];

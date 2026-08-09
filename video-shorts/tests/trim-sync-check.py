@@ -169,8 +169,8 @@ def render_product(src, start, end, out):
 import('%s/src/trim-plan.mjs').then(async (tp) => {
   const rv = await import('%s/src/render-vertical.mjs');
   const size = await rv.probeSize('%s');
-  // 製品と同じ: 切り出しの開始をコマの境目へ揃える（pipeline.mjs と同じ式）
-  const segStart = size.fps ? Math.round(%s * size.fps) / size.fps : %s;
+  // 製品と同じ実体を呼ぶ。式を写すと、製品側から式を消しても検査が自前で揃えてしまう
+  const segStart = tp.snapStart(%s, size.fps);
   // 区間の中の語（ここでは「1秒ごとに0.7秒しゃべる」を模す）
   const words = [];
   for (let k = 0; k * 1.0 + 0.7 <= %s - segStart; k++) {
@@ -183,7 +183,7 @@ import('%s/src/trim-plan.mjs').then(async (tp) => {
   });
   console.log(JSON.stringify({ fps: size.fps, spans: plan.keep.length, segStart, cutSeconds: plan.cutSeconds }));
 });
-""" % (ROOT, ROOT, src, start, start, end, end, src, end, out)
+""" % (ROOT, ROOT, src, start, end, end, src, end, out)
     got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
                          encoding="utf-8").stdout
     return json.loads(got)
@@ -279,16 +279,27 @@ def main():
     # planTrim が区間を決め、renderClip が -ss で切り出して 9:16 へ焼く。出力設定も製品のまま。
     # 開始秒はわざとコマの境目でない 0.02 秒にする（製品の seg.start は LLM が選ぶ任意の秒）。
     prod = os.path.join(tmp, "product.mp4")
-    info = render_product(src, 0.02, 9.0, prod)
+    info = render_product(src, 1.02, 9.0, prod)
     check(info["fps"] is not None, f"製品経路が素材のコマ数/秒を取れている（実 {info['fps']}）")
     check(info["spans"] >= 5, f"製品経路が複数の区間に詰めている（実 {info['spans']} 区間）")
     # 「一切詰めない」実装でも通ってしまわないよう、実際に短くなったことを確かめる。
     # 却下された旧基準は、まさに詰めない偽物が合格していた。
-    check(info["cutSeconds"] > 0.5,
-          f"製品経路が実際に尺を詰めている（詰めた秒数 {info['cutSeconds']}）")
+    # ここは「計画」ではなく「出来上がった動画」を測る。
+    # 以前は plan.cutSeconds を見ていたため、renderClip が keep を丸ごと無視しても
+    # 「詰めている」と表示されて全緑だった（2026-08-08、independent-verifier の指摘）。
 
     pf = read_frames(prod)
     check(len(pf) > 0, "製品経路の出力にコマがある")
+
+    # 【成果物を測る】出来上がった動画のコマ数が、詰めていない場合より確かに少ないこと。
+    # 詰めていない場合のコマ数 = (切り出しの長さ) × fps。
+    untrimmed = round((9.0 - info["segStart"]) * FPS)
+    check(len(pf) <= untrimmed - FPS,
+          f"出来上がった動画が実際に短くなっている"
+          f"（詰めない場合 {untrimmed} コマ / 実際 {len(pf)} コマ / 1秒ぶん以上短いこと）")
+    check(info["segStart"] > 0,
+          f"切り出し開始が 0 でない（0 だと入力シークのずれを作れず、揃える意味を測れない）"
+          f"（実 {info['segStart']}）")
     # 縦化で上下に黒帯が付くので、目印の位置が下がる。素材の高さから帯の高さを出す。
     y_off = (pf[0].shape[0] - H) // 2 if pf and pf[0].shape[0] > H else 0
     ppairs = measure(prod, y_offset=y_off)
@@ -312,10 +323,18 @@ def main():
     tiny = os.path.join(tmp, "tiny.mkv")
     render(src, got["spans"], tiny)
     n = len(read_frames(tiny))
-    check(n == got["frames"],
-          f"1コマになる区間があっても、映像のコマが落ちない（期待 {got['frames']} コマ / 実 {n} コマ）")
-    check(all(round((sp["end"] - sp["start"]) * FPS) >= 2 for sp in got["spans"]),
-          "残す区間が1コマちょうどにならない（最短2コマへ広げている）")
+    # 期待値は実装から計算せず、ここに数字で書く。
+    # 実装の MIN_KEEP_FRAMES から導くと、その値を変えても基準が一緒に動いて落ちなくなる
+    # （2026-08-08、independent-verifier の指摘。6 に変えても全緑だった）。
+    # 1コマ区間10個 × 最短2コマ = 20コマ。
+    EXPECT_SPANS = 10
+    EXPECT_FRAMES_PER_SPAN = 2
+    EXPECT_TOTAL = EXPECT_SPANS * EXPECT_FRAMES_PER_SPAN
+    check(n == EXPECT_TOTAL,
+          f"1コマになる区間があっても、映像のコマが落ちない（期待 {EXPECT_TOTAL} コマ / 実 {n} コマ）")
+    per = [round((sp["end"] - sp["start"]) * FPS) for sp in got["spans"]]
+    check(per == [EXPECT_FRAMES_PER_SPAN] * EXPECT_SPANS,
+          f"残す区間がちょうど2コマへ広げられている（実 {per}）")
 
     # ── 対照: 揃えないと落ちること ──────────────────────────────
     out2 = os.path.join(tmp, "unsnapped.mkv")
