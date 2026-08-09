@@ -187,9 +187,10 @@ export function probeSize(file) {
     const args = [
       "-v", "error",
       "-select_streams", "v:0",
-      // r_frame_rate も取る。詰めるときに区間の端をコマ境界へ揃えるのに要る
+      // コマ数/秒も取る。詰めるときに区間の端をコマ境界へ揃えるのに要る
       // （揃えないと映像と音声で切れ方が違い、継ぎ目の数だけずれが積み上がる）。
-      "-show_entries", "stream=width,height,r_frame_rate",
+      // r_frame_rate が 0/0 になる素材があるので avg_frame_rate も併せて取り、二段構えにする。
+      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate",
       "-of", "csv=p=0",
       file,
     ];
@@ -199,10 +200,12 @@ export function probeSize(file) {
     proc.on("error", (e) => reject(e));
     proc.on("close", (code) => {
       if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
-      const [wRaw, hRaw, rateRaw] = out.trim().split(",");
+      const [wRaw, hRaw, rateRaw, avgRaw] = out.trim().split(",");
       const w = Number(wRaw);
       const h = Number(hRaw);
-      resolve({ width: w, height: h, vertical: h > w, fps: parseFrameRate(rateRaw) });
+      // r_frame_rate が取れなければ avg_frame_rate を使う。どちらも駄目なら null。
+      const fps = parseFrameRate(rateRaw) ?? parseFrameRate(avgRaw);
+      resolve({ width: w, height: h, vertical: h > w, fps });
     });
   });
 }
