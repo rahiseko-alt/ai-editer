@@ -301,23 +301,27 @@ def spans_literal():
 
 # ── 出荷される式で焼く / 対照用に手で式を組んで焼く ────────────────
 
-def product_chains(spans, fps_rational):
+def product_chain(spans, fps_rational):
     """出荷経路の buildTrimFilters が組む式を、そのまま受け取る（検査は式を写さない）"""
-    opts = json.dumps({"fpsRational": fps_rational} if fps_rational else {})
+    opts = {"sampleRate": SAMPLE_RATE}
+    if fps_rational:
+        opts["fpsRational"] = fps_rational
     js = ('import("%s/src/trim-plan.mjs").then(m=>{'
           'const f=m.buildTrimFilters(%s,%s);'
-          'console.log(JSON.stringify({v:f.videoChain,a:f.audioChain}));});'
-          ) % (ROOT, json.dumps(spans), opts)
+          'console.log(JSON.stringify({c:f.chain}));});'
+          ) % (ROOT, json.dumps(spans), json.dumps(opts))
     got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
                          encoding="utf-8").stdout
-    return json.loads(got)
+    return json.loads(got)["c"]
 
 
-def encode(src, chains, out, shortest=False):
+def encode(src, chain, out, shortest=False):
     args = [
         "ffmpeg", "-y", "-v", "error", "-i", src,
-        "-filter_complex", chains["v"] + ";" + chains["a"],
+        "-filter_complex", chain,
         "-map", "[tvout]", "-map", "[taout]",
+        # 出荷経路（renderClip）と同じ
+        "-fps_mode", "cfr",
         "-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24",
         "-c:a", "pcm_s16le",
     ]
@@ -327,28 +331,29 @@ def encode(src, chains, out, shortest=False):
     subprocess.run(args, check=True)
 
 
-def control_chains(spans, head):
+def control_chain(spans, head):
     """【対照専用】映像側の前置だけを差し替えた式を、検査が手で組む。
 
     製品の式を写しているのではなく、「製品がこうしていたら落ちる」を示すための偽物。
-    判定に使う式（product_chains）とは別物であることに注意。
+    判定に使う式（product_chain）とは別物であることに注意。
+    切る位置は製品と同じ「コマ番号・標本番号」にし、**揃える前置だけ**を変える。
+    こうしないと「秒で切ったから落ちた」のか「前置が誤りだから落ちた」のか分からない。
     """
     n = len(spans)
-    if head:
-        srcs = [f"[sv{i}]" for i in range(n)]
-        pre = f"[0:v]{head},split={n}" + "".join(srcs) + ";"
-    else:
-        srcs = ["[0:v]"] * n
-        pre = ""
+    cuts = [{"a": int(round(s["start"] * FPS)), "b": int(round(s["end"] * FPS))} for s in spans]
+    pre = (f"[0:v]{head},split={n}" if head else f"[0:v]split={n}") \
+        + "".join(f"[sv{i}]" for i in range(n)) + ";"
     v = pre + ";".join(
-        f"{srcs[i]}trim=start={s['start']:.6f}:end={s['end']:.6f},setpts=PTS-STARTPTS[tv{i}]"
-        for i, s in enumerate(spans))
-    v += ";" + "".join(f"[tv{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[tvout]"
-    a = ";".join(
-        f"[0:a]atrim=start={s['start']:.6f}:end={s['end']:.6f},asetpts=PTS-STARTPTS[ta{i}]"
-        for i, s in enumerate(spans))
-    a += ";" + "".join(f"[ta{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[taout]"
-    return {"v": v, "a": a}
+        f"[sv{i}]trim=start_frame={c['a']}:end_frame={c['b']},setpts=PTS-STARTPTS[tv{i}]"
+        for i, c in enumerate(cuts))
+    a = f"[0:a]aresample={SAMPLE_RATE},asplit={n}" \
+        + "".join(f"[sa{i}]" for i in range(n)) + ";"
+    a += ";".join(
+        f"[sa{i}]atrim=start_sample={c['a'] * SAMPLE_RATE // FPS}:"
+        f"end_sample={c['b'] * SAMPLE_RATE // FPS},asetpts=PTS-STARTPTS[ta{i}]"
+        for i, c in enumerate(cuts))
+    tail = "".join(f"[tv{i}][ta{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[tvout][taout]"
+    return v + ";" + a + ";" + tail
 
 
 def render_product_path(src, start, end, out):
@@ -479,7 +484,7 @@ def main():
 
     # ── 中心の判定: 出荷される式で、間引いた素材を詰める ──────────────
     out = os.path.join(tmp, "vfr-trimmed.mkv")
-    encode(vfr, product_chains(spans, FPS_RATIONAL), out)
+    encode(vfr, product_chain(spans, FPS_RATIONAL), out)
     r = judge(out, plan, last, label="vfr")
     check(r["n_video"] == EXPECT_OUT_FRAMES,
           f"詰めた出力の映像が {EXPECT_OUT_FRAMES} コマ（実 {r['n_video']} コマ）"
@@ -506,8 +511,8 @@ def main():
     # ── 退行なし: コマ数/秒が一定の素材では、前置しても結果が変わらない ────
     cfr_plain = os.path.join(tmp, "cfr-plain.mkv")
     cfr_fixed = os.path.join(tmp, "cfr-fixed.mkv")
-    encode(cfr, product_chains(spans, None), cfr_plain)
-    encode(cfr, product_chains(spans, FPS_RATIONAL), cfr_fixed)
+    encode(cfr, product_chain(spans, None), cfr_plain)
+    encode(cfr, product_chain(spans, FPS_RATIONAL), cfr_fixed)
     cfr_last = make_last_survivor(survivors(cfr))
     rp = judge(cfr_plain, plan, cfr_last, label="cfr-plain")
     rf = judge(cfr_fixed, plan, cfr_last, label="cfr-fixed")
@@ -557,7 +562,7 @@ def main():
     # ── 対照（変異）: 直しを外した／間違えた実装が、この判定で落ちること ────
     # ここが1件でも通ると、上の全PASSは「何も直っていなくても出る緑」になる。
     bad_none = os.path.join(tmp, "mut-none.mkv")
-    encode(vfr, product_chains(spans, None), bad_none)
+    encode(vfr, product_chain(spans, None), bad_none)
     rn = judge(bad_none, plan, last, label="mut-none")
     check(not rn["ok"],
           f"対照: 前置を外すと落ちる"
@@ -565,14 +570,14 @@ def main():
           f"絵の食い違い {len(rn['mark_bad'])} 件・絵と音の食い違い {len(rn['sync_bad'])} 件）")
 
     bad_short = os.path.join(tmp, "mut-shortest.mkv")
-    encode(vfr, product_chains(spans, None), bad_short, shortest=True)
+    encode(vfr, product_chain(spans, None), bad_short, shortest=True)
     rs = judge(bad_short, plan, last, label="mut-shortest")
     check(not rs["ok"],
           f"対照: 前置の代わりに -shortest を足しただけでも落ちる"
           f"（映像 {rs['n_video']} コマ / 絵と音の食い違い {len(rs['sync_bad'])} 件）")
 
     bad_avg = os.path.join(tmp, "mut-avg.mkv")
-    encode(vfr, control_chains(spans, f"fps=fps={a_rate}"), bad_avg)
+    encode(vfr, control_chain(spans, f"fps=fps={a_rate}"), bad_avg)
     ra_ = judge(bad_avg, plan, last, label="mut-avg")
     check(not ra_["ok"],
           f"対照: 揃える目標を avg_frame_rate（{a_rate}）にすると落ちる"
@@ -580,7 +585,7 @@ def main():
           f"絵の食い違い {len(ra_['mark_bad'])} 件）")
 
     bad_round = os.path.join(tmp, "mut-round.mkv")
-    encode(vfr, control_chains(spans, f"fps=fps={FPS_RATIONAL}:round=down"), bad_round)
+    encode(vfr, control_chain(spans, f"fps=fps={FPS_RATIONAL}:round=down"), bad_round)
     rr = judge(bad_round, plan, last, label="mut-round")
     check(not rr["ok"],
           f"対照: 揃えるときの丸めを round=down にすると落ちる"
@@ -588,7 +593,7 @@ def main():
           "＝コマ数だけ数えていると見えない誤り")
 
     bad_round_cfr = os.path.join(tmp, "mut-round-cfr.mkv")
-    encode(cfr, control_chains(spans, f"fps=fps={FPS_RATIONAL}:round=down"), bad_round_cfr)
+    encode(cfr, control_chain(spans, f"fps=fps={FPS_RATIONAL}:round=down"), bad_round_cfr)
     rrc = judge(bad_round_cfr, plan, cfr_last, label="mut-round-cfr")
     check(not rrc["ok"],
           f"対照: round=down は一定の素材まで壊す"
@@ -598,16 +603,28 @@ def main():
     # ── 分数のまま渡ること ────────────────────────────────────────
     # 30000/1001 を 29.97 へ丸めると約1万秒に1コマずれるが、CI に載る長さでは測れない。
     # そこで「式へ何が入ったか」で押さえる。期待値は実装から取らずリテラルで書く。
-    ntsc = product_chains(spans, "30000/1001")["v"]
+    ntsc = product_chain(spans, "30000/1001")
     check("fps=fps=30000/1001," in ntsc,
           f"コマ数/秒が分数のまま式へ入る（実の先頭60字={ntsc[:60]}）")
     check("29.97" not in ntsc,
           f"小数へ丸めた値が式へ入らない（29.97 が式に現れない）")
-    check(ntsc.count("fps=fps=") == 1 and ntsc.count("split=") == 1,
-          f"前置は split で1回だけ（fps の出現 {ntsc.count('fps=fps=')} 回 / "
-          f"split の出現 {ntsc.count('split=')} 回）＝区間の数だけ重複しない")
+    check(ntsc.count("fps=fps=") == 1 and ntsc.count(",split=") == 1
+          and ntsc.count("aresample=") == 1 and ntsc.count("asplit=") == 1,
+          f"前置は split / asplit で1回だけ（fps の出現 {ntsc.count('fps=fps=')} 回 / "
+          f"split の出現 {ntsc.count(',split=')} 回 / aresample の出現 {ntsc.count('aresample=')} 回 / "
+          f"asplit の出現 {ntsc.count('asplit=')} 回）＝区間の数だけ重複しない")
+    # 映像と音声を1本の concat で繋いでいること。2本に分けると、区間ごとの端数が
+    # 継ぎ目で清算されず、区間の数だけ積み上がる（tests/trim-sync-check.py が実測で押さえる）。
+    check(ntsc.count("concat=") == 1 and "concat=n=10:v=1:a=1[tvout][taout]" in ntsc,
+          f"映像と音声を1本の concat で繋ぐ（concat の出現 {ntsc.count('concat=')} 回 / "
+          f"末尾={ntsc[-60:]}）")
+    # 秒がフィルタ式に現れないこと（＝コマ番号・標本番号で切っている）。
+    check("trim=start_frame=" in ntsc and "trim=start=" not in ntsc
+          and "atrim=start_sample=" in ntsc and "atrim=start=" not in ntsc,
+          f"切る位置がコマ番号・標本番号で書かれている（秒で書かれていない）"
+          f"（実の一部={ntsc[ntsc.index('[sv0]'):ntsc.index('[sv0]') + 70]}）")
     # 分数の形をしていない値は前置しない（式が壊れるのを防ぐ）
-    plainv = product_chains(spans, "29.97")["v"]
+    plainv = product_chain(spans, "29.97")
     check("fps=fps=" not in plainv,
           "分数の形でない値は前置に使わない（従来どおりの動きへ落ちる）")
 

@@ -200,20 +200,26 @@ import('%s/pipeline.mjs').then(async (pl) => {
     return json.loads(got)
 
 
-def render(src, keep, out, shortest=False):
-    """【対照専用】keep 区間だけを残して詰める。揃えない場合と -shortest の比較に使う。"""
+def product_chain(keep, opts=None):
+    """出荷経路の buildTrimFilters が組む式を、そのまま受け取る（検査は式を写さない）"""
     js = (
         'import("%s/src/trim-plan.mjs").then(m=>{'
-        'const f=m.buildTrimFilters(%s);'
-        'console.log(JSON.stringify({v:f.videoChain,a:f.audioChain}));});'
-    ) % (ROOT, json.dumps(keep))
+        'const f=m.buildTrimFilters(%s,%s);'
+        'console.log(JSON.stringify({c:f.chain}));});'
+    ) % (ROOT, json.dumps(keep), json.dumps(opts or {}))
     got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
                          encoding="utf-8").stdout
-    f = json.loads(got)
+    return json.loads(got)["c"]
+
+
+def encode(src, chain, out, shortest=False):
     args = [
         "ffmpeg", "-y", "-v", "error", "-i", src,
-        "-filter_complex", f["v"] + ";" + f["a"],
+        "-filter_complex", chain,
         "-map", "[tvout]", "-map", "[taout]",
+        # 出荷経路（renderClip）と同じ。区間ごとの端数を継ぎ目で清算した結果、
+        # 1コマ未満の穴が空いたときに複製で埋める。
+        "-fps_mode", "cfr",
         "-c:v", "libx264rgb", "-qp", "0", "-pix_fmt", "bgr24",
         "-c:a", "pcm_s16le",
     ]
@@ -221,6 +227,32 @@ def render(src, keep, out, shortest=False):
         args.append("-shortest")
     args.append(out)
     subprocess.run(args, check=True)
+
+
+def render(src, keep, out, shortest=False, opts=None):
+    """【対照専用】keep 区間だけを残して詰める。揃えない場合と -shortest の比較に使う。"""
+    encode(src, product_chain(keep, opts), out, shortest)
+
+
+def old_style_chain(spans, fps_rational, sample_rate):
+    """【対照専用】この直しの前の形（秒で切る＋concat を映像用と音声用の2本に分ける）を手で組む。
+
+    製品の式を写しているのではない。「製品がこうしていたら落ちる」を示すための偽物。
+    2本に分けると、区間ごとの端数が継ぎ目で清算されずに積み上がる
+    （libavfilter/avf_concat.c の find_next_delta_ts は、セグメント内の全ストリームの
+      終端 pts の**最大**を取って共有する。ストリームが片方しか無ければ共有する相手がいない）。
+    さらに秒で切ると、映像は「pts が [s,e) に入るコマ」の選択・音声は標本ちょうどの切り出しに
+    なるため、区間ごとに最大1コマぶん長さが食い違う。その差が継ぎ目の数だけ積み上がる。
+    """
+    n = len(spans)
+    v = f"[0:v]fps=fps={fps_rational},split={n}" + "".join(f"[sv{i}]" for i in range(n)) + ";"
+    v += ";".join(f"[sv{i}]trim=start={sp['start']:.6f}:end={sp['end']:.6f},"
+                  f"setpts=PTS-STARTPTS[tv{i}]" for i, sp in enumerate(spans))
+    v += ";" + "".join(f"[tv{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[tvout]"
+    a = ";".join(f"[0:a]atrim=start={sp['start']:.6f}:end={sp['end']:.6f},"
+                 f"asetpts=PTS-STARTPTS[ta{i}]" for i, sp in enumerate(spans))
+    a += ";" + "".join(f"[ta{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[taout]"
+    return v + ";" + a
 
 
 def measure(out, y_offset=0):
@@ -293,7 +325,7 @@ def main():
         raw.append({"start": round(s, 6), "end": round(s + 29 / 30, 6)})
 
     js = ('import("%s/src/trim-plan.mjs").then(m=>'
-          'console.log(JSON.stringify(m.snapToFrames(%s, %d))));') % (ROOT, json.dumps(raw), FPS)
+          'console.log(JSON.stringify(m.toFrameSpans(%s, %d))));') % (ROOT, json.dumps(raw), FPS)
     snapped = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
                                         check=True, encoding="utf-8").stdout)
 
@@ -395,28 +427,27 @@ def main():
     check(len(set(snapped_starts[0])) == len(SNAP_STARTS),
           f"開始が値ごとに違う結果になる（定数を返す実装を落とす）（実 {snapped_starts[0]}）")
 
-    # 残す区間の端を揃える snapToFrames も、素材が15fpsしか無いので
+    # 残す区間をコマ番号へ写す toFrameSpans も、素材が15fpsしか無いので
     # 「15 で決め打ちして丸める」実装が素通りする（snapStart と同じ穴）。
     # ここも コマ数/秒 を3種振って、リテラルの期待値と突き合わせる。
-    # 入力の区間: [0.02,0.44] は端が半端 / [1.00,1.03] は丸めると1コマ未満（後ろへ広げる規則が効く）
+    # 入力の区間: [0.02,0.44] は端が半端 / [1.00,1.03] は写すと 0 コマ（1コマへ広げる規則が効く）
     #             / [2.44,3.71] は両端とも半端。
     SNAP_SPANS = [{"start": 0.02, "end": 0.44},
                   {"start": 1.00, "end": 1.03},
                   {"start": 2.44, "end": 3.71}]
+    # 期待値はコマ番号で書く（秒は startFrame/fps なので、コマ番号が正しければ秒も決まる）。
+    # 実装から導かず、ここにリテラルで置く。
+    #   15fps: 0.02*15=0.3→0 / 0.44*15=6.6→7 ｜ 1.00*15=15 / 1.03*15=15.45→15→0コマなので16
+    #          ｜ 2.44*15=36.6→37 / 3.71*15=55.65→56
+    #   24fps: 0.48→0 / 10.56→11 ｜ 24 / 24.72→25 ｜ 58.56→59 / 89.04→89
+    #   29.97fps(=30000/1001): 0.5994→1 / 13.19→13 ｜ 29.97→30 / 30.87→31 ｜ 73.13→73 / 111.19→111
     SNAP_SPANS_EXPECT = [
-        # 15fps: 端を最寄りのコマへ→ [0/15,7/15] [15/15,15/15]→1コマ未満なので[15/15,17/15] [37/15,56/15]
-        [[0.0, 0.4666666666666667], [1.0, 1.1333333333333333],
-         [2.466666666666667, 3.7333333333333334]],
-        # 24fps: [0/24,11/24] [24/24,25/24]→1コマなので[24/24,26/24] [59/24,89/24]
-        [[0.0, 0.4583333333333333], [1.0, 1.0833333333333333],
-         [2.4583333333333335, 3.7083333333333335]],
-        # 29.97fps(=30000/1001): [1,13]*1001/30000 / [30,31]→1コマなので[30,32]*1001/30000 /
-        #                        [73,111]*1001/30000
-        [[0.03336666666666667, 0.4337666666666667], [1.001, 1.0677333333333334],
-         [2.435766666666667, 3.7037]],
+        [[0, 7], [15, 16], [37, 56]],
+        [[0, 11], [24, 25], [59, 89]],
+        [[1, 13], [30, 31], [73, 111]],
     ]
     js = ('import("%s/src/trim-plan.mjs").then(m=>'
-          'console.log(JSON.stringify(%s.map(f=>m.snapToFrames(%s, f)))));'
+          'console.log(JSON.stringify(%s.map(f=>m.toFrameSpans(%s, f)))));'
           ) % (ROOT, json.dumps(SNAP_FPS), json.dumps(SNAP_SPANS))
     snapped_spans = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
                                               check=True, encoding="utf-8").stdout)
@@ -427,11 +458,22 @@ def main():
             span_off.append((SNAP_FPS[i], "区間数", len(got_rows), len(want_rows)))
             continue
         for g, w in zip(got_rows, want_rows):
-            if abs(g["start"] - w[0]) >= 1e-9 or abs(g["end"] - w[1]) >= 1e-9:
-                span_off.append((SNAP_FPS[i], [g["start"], g["end"]], w))
+            if [g.get("startFrame"), g.get("endFrame")] != w:
+                span_off.append((SNAP_FPS[i], [g.get("startFrame"), g.get("endFrame")], w))
+            # 秒の側も、コマ番号 / コマ数/秒 と一致していること（両方を持つので食い違いうる）
+            elif (abs(g["start"] - w[0] / SNAP_FPS[i]) >= 1e-9
+                  or abs(g["end"] - w[1] / SNAP_FPS[i]) >= 1e-9):
+                span_off.append((SNAP_FPS[i], "秒とコマ番号が食い違う", [g["start"], g["end"]], w))
     check(not span_off,
-          f"残す区間の端も、どのコマ数/秒でもそのコマ数/秒のコマの境目へ写る"
+          f"残す区間が、どのコマ数/秒でもそのコマ数/秒のコマ番号へ写る"
           f"（コマ数/秒 を無視する実装を落とす）（9区間中 外れ {len(span_off)} 件 / 先頭3件={span_off[:3]}）")
+    # 0コマになる区間を落としてしまう実装（＝言い淀みの合間の短い発話が消える）を落とす。
+    # 期待値は上のリテラル（[15,16] など）に含まれているが、「消えないこと」を独立に言う。
+    tiny_rows = [rows[1] for rows in snapped_spans]
+    check(all(r.get("endFrame") - r.get("startFrame") == 1 for r in tiny_rows),
+          f"写すと0コマになる区間は、落とさずちょうど1コマへ広げる"
+          f"（実 {[[r.get('startFrame'), r.get('endFrame')] for r in tiny_rows]}）")
+
     ppairs = measure(prod, y_offset=y_off)
     pbad = [(i, v, a) for i, (v, a) in enumerate(ppairs) if v != a]
     # 「測れたコマ数」の歯止めを固定値（旧: > 30）にすると、出力のコマ数と無関係なので
@@ -452,32 +494,34 @@ def main():
           f"製品と同じ経路・同じ出力設定でも、全コマで絵と音が同じコマ番号を指す"
           f"（最大ずれ {worst_gap(ppairs)} コマ / 食い違い {len(pbad)} 件 先頭3件={pbad[:3]}）")
 
-    # ── 1コマ区間で映像が落ちないこと ──────────────────────────
-    # 揃えた結果ちょうど1コマになる区間を ffmpeg へ渡すと、映像のコマが落ちる。
-    # 実測(15fps・1コマ区間10個): 映像は10コマ出るはずが2コマしか出ず、音だけ残ってずれた。
-    # 言い淀みの合間に挟まった短い発話がこの形になるので、実素材で起きる。
+    # ── 1コマの区間がちょうど1コマ出ること ──────────────────────
+    # 言い淀みの合間に挟まった短い発話は、写すと1コマの区間になる。
+    # trim=start_frame=a:end_frame=a+1 は到着したコマを数えるだけなので、構成上かならず1コマ出る。
+    # （旧実装は秒で切っていたため、1コマの区間で映像が落ち、音だけ残ってずれた。
+    #   その対策の「最短2コマへ広げる」は、短い発話を引き伸ばす副作用があった。）
     js = ('import("%s/src/trim-plan.mjs").then(m=>{'
           'const raw=[];for(let k=0;k<10;k++)raw.push({start:k*0.2,end:k*0.2+1/%d});'
-          'const sn=m.snapToFrames(raw,%d);'
-          'console.log(JSON.stringify({spans:sn,frames:sn.reduce((a,s)=>a+Math.round((s.end-s.start)*%d),0)}));});'
-          ) % (ROOT, FPS, FPS, FPS)
+          'const sn=m.toFrameSpans(raw,%d);'
+          'console.log(JSON.stringify({spans:sn}));});'
+          ) % (ROOT, FPS, FPS)
     got = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
                                     check=True, encoding="utf-8").stdout)
     tiny = os.path.join(tmp, "tiny.mkv")
-    render(src, got["spans"], tiny)
+    render(src, got["spans"], tiny, opts={"fpsRational": "%d/1" % FPS,
+                                          "sampleRate": SAMPLE_RATE})
     n = len(read_frames(tiny))
-    # 期待値は実装から計算せず、ここに数字で書く。
-    # 実装の MIN_KEEP_FRAMES から導くと、その値を変えても基準が一緒に動いて落ちなくなる
-    # （2026-08-08、independent-verifier の指摘。6 に変えても全緑だった）。
-    # 1コマ区間10個 × 最短2コマ = 20コマ。
+    # 期待値は実装から計算せず、ここに数字で書く。1コマ区間10個 → 10コマ。
     EXPECT_SPANS = 10
-    EXPECT_FRAMES_PER_SPAN = 2
+    EXPECT_FRAMES_PER_SPAN = 1
     EXPECT_TOTAL = EXPECT_SPANS * EXPECT_FRAMES_PER_SPAN
     check(n == EXPECT_TOTAL,
-          f"1コマになる区間があっても、映像のコマが落ちない（期待 {EXPECT_TOTAL} コマ / 実 {n} コマ）")
-    per = [round((sp["end"] - sp["start"]) * FPS) for sp in got["spans"]]
+          f"1コマの区間が10個なら、出力もちょうど10コマ（期待 {EXPECT_TOTAL} コマ / 実 {n} コマ）")
+    per = [sp["endFrame"] - sp["startFrame"] for sp in got["spans"]]
     check(per == [EXPECT_FRAMES_PER_SPAN] * EXPECT_SPANS,
-          f"残す区間がちょうど2コマへ広げられている（実 {per}）")
+          f"1コマの区間が、水増しされずちょうど1コマのままである（実 {per}）")
+    tiny_marks = [read_marker(fr) for fr in read_frames(tiny)]
+    check(tiny_marks == [k * 3 for k in range(EXPECT_SPANS)],
+          f"その10コマが、素材の 0,3,6,… コマ目そのものである（実 {tiny_marks}）")
 
     # ── 対照: 揃えないと落ちること ──────────────────────────────
     out2 = os.path.join(tmp, "unsnapped.mkv")
@@ -495,6 +539,64 @@ def main():
     gap3 = worst_gap(pairs3)
     check(gap3 > 0,
           f"対照: -shortest を足しただけの実装でも、この判定は落ちる（最大ずれ {gap3} コマ）")
+
+    # ── 区間の数を増やしても、ずれが積み上がらないこと ──────────────
+    # 【なぜこれが要るか】この直しの前は、継ぎ目1つにつき一定量ずつずれが足し算されていた。
+    # 区間が少ないうちは1コマ未満なので、上の判定（最大ずれ0コマ）を通ってしまう。
+    # 積み上がるかどうかは「区間の数を振って、ずれが数に比例するか」を見ないと分からない。
+    # 実測（旧実装・15fps・区間長 29/30秒・開始オフセット 1/30秒・区間ピッチ 1.0 秒）:
+    #   2個 -66.7ms / 5個 -166.7ms / 10個 -333.3ms / 20個 -666.7ms / 50個 -1666.7ms /
+    #   100個 -3333.3ms（＝1区間あたり 33.3ms＝半コマ。完全に比例）。
+    #
+    # ここでは 10秒の素材に区間を詰め込んで N を振る。
+    # 区間: 開始 k*0.2 + 半コマ / 長さ 1.5 コマ（＝端がコマの格子に載らない・長さも半端）。
+    # 素材は 150 コマなので N=40 まで置ける。
+    DRIFT_PITCH = 0.2
+    DRIFT_LEN = 1.5 / FPS
+    DRIFT_OFFSET = 0.5 / FPS
+
+    def drift_spans(n):
+        return [{"start": round(k * DRIFT_PITCH + DRIFT_OFFSET, 6),
+                 "end": round(k * DRIFT_PITCH + DRIFT_OFFSET + DRIFT_LEN, 6)}
+                for k in range(n)]
+
+    drift_rows = []
+    for n_spans in (10, 20, 40):
+        o = os.path.join(tmp, f"drift-{n_spans}.mkv")
+        # 秒の区間をそのまま出荷経路の式へ渡す（コマ番号への写しは製品の中で起きる）。
+        render(src, drift_spans(n_spans), o,
+               opts={"fpsRational": "%d/1" % FPS, "sampleRate": SAMPLE_RATE})
+        prs = measure(o)
+        bad_n = sum(1 for v, a in prs if a is None or v != a)
+        a_span = audio_span_frames(o)
+        drift_rows.append((n_spans, len(prs), a_span, bad_n))
+        check(bad_n == 0 and abs(a_span - len(prs)) <= 1.0,
+              f"区間 {n_spans} 個でも、全コマで絵と音が一致する"
+              f"（映像 {len(prs)} コマ / 音 {a_span:.2f} コマぶん / 食い違い {bad_n} コマ）")
+    # 「N に比例して増える」ことが無いのを、数の並びとしても押さえる。
+    check(all(r[3] == 0 for r in drift_rows),
+          f"区間の数を 10→20→40 と増やしても食い違いが増えない"
+          f"（実 {[(r[0], r[3]) for r in drift_rows]}）")
+
+    # 対照: この直しの前の形（秒で切る＋concat を2本に分ける）だと、同じ区間で落ちること。
+    # これが落ちなければ、上の全PASSは「何も直っていなくても出る緑」になる。
+    old_out = os.path.join(tmp, "drift-oldstyle-40.mkv")
+    encode(src, old_style_chain(drift_spans(40), "%d/1" % FPS, SAMPLE_RATE), old_out)
+    old_pairs = measure(old_out)
+    old_bad = sum(1 for v, a in old_pairs if a is None or v != a)
+    old_gap = worst_gap(old_pairs)
+    check(old_bad > 0,
+          f"対照: 秒で切って concat を2本に分けた式なら、同じ区間40個で落ちる"
+          f"（映像 {len(old_pairs)} コマ / 音 {audio_span_frames(old_out):.2f} コマぶん / "
+          f"食い違い {old_bad} コマ / 最大ずれ {old_gap} コマ）")
+    # 「ずれが区間の数に比例して積み上がる」ことも、対照の側で示す（1コマ未満で止まらない）。
+    old_out10 = os.path.join(tmp, "drift-oldstyle-10.mkv")
+    encode(src, old_style_chain(drift_spans(10), "%d/1" % FPS, SAMPLE_RATE), old_out10)
+    d10 = len(read_frames(old_out10)) - audio_span_frames(old_out10)
+    d40 = len(read_frames(old_out)) - audio_span_frames(old_out)
+    check(d40 > d10 + 1.0,
+          f"対照: 旧い形では、区間を増やすほど映像と音の長さの差が広がる"
+          f"（10個で {d10:.2f} コマ / 40個で {d40:.2f} コマ）")
 
     print(f"\n--- {PASS} PASS / {FAIL} FAIL ---")
     sys.exit(0 if FAIL == 0 else 1)

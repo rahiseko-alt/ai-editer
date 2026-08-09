@@ -51,12 +51,14 @@ export function computeCanvas(orientation, srcW, srcH) {
  * @param {{start:number,end:number}[]} [p.keep] 残す区間（区間先頭を0とした相対秒）。
  *   渡すと、その区間だけを取り出してつなぐ（無音・言い淀みを詰める）。
  *   省略すると従来どおり、切り出した区間をそのまま焼く。
+ * @param {number} [p.sampleRate] 素材の音声の標本化周波数。詰めるときに atrim を標本の番号で
+ *   切るのに使う。省略するとここで実測する（取れなければ式の中で 48000 へ揃える）。
  * @param {string} [p.fpsRational] 素材のコマ数/秒（probeSize が返す r_frame_rate の分数文字列）。
  *   詰めるときに、コマ数/秒が一定でない素材（画面録画で出る）で絵が先に進むのを防ぐのに要る。
  *   省略すると従来どおり（コマ数/秒が一定の素材では結果は変わらない）。
  * @returns {Promise<{cmd:string, output:string}>}
  */
-export function renderClip(p) {
+export async function renderClip(p) {
   const dur = Math.max(0.1, p.end - p.start);
   const canvas = computeCanvas(p.orientation, p.srcW, p.srcH);
   const TARGET_W = canvas.w;
@@ -105,17 +107,26 @@ export function renderClip(p) {
   // 縦化と字幕焼きの費用を払うことになるうえ、字幕の時刻が詰める前のままになる。
   // 字幕(ASS)の時刻は、呼び出し側が詰めたあとの時間軸へ写してから渡すこと
   // （srt-builder に渡す words を trim-plan の remapWords に通す）。
+  // 音声の標本化周波数は、詰めるときだけ要る（atrim を標本の番号で切るため）。
+  // 呼び出し側が渡さなければここで実測する。取れなければ buildTrimFilters が
+  // 既定値へ落ちるが、式の中で aresample を掛けてその周波数へ揃えるので、
+  // 切る位置の秒はどちらでも狙いどおりになる。
+  const sampleRate = p.keep && p.keep.length
+    ? (Number.isFinite(p.sampleRate) && p.sampleRate > 0
+      ? p.sampleRate
+      : await probeSampleRate(p.input).catch(() => null))
+    : null;
   const trim = p.keep && p.keep.length
-    ? buildTrimFilters(p.keep, { fpsRational: p.fpsRational })
+    ? buildTrimFilters(p.keep, { fpsRational: p.fpsRational, sampleRate })
     : null;
   const videoIn = trim ? "[tvout]" : "[0:v]";
   const scaleChain =
     `${videoIn}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
     `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,` +
     `setpts=PTS-STARTPTS` + assFilter + `[v]`;
-  const vf = trim
-    ? `${trim.videoChain};${trim.audioChain};${scaleChain}`
-    : scaleChain;
+  // 詰める式は映像と音声を1本の concat で繋ぐ（区間ごとの端数を継ぎ目で清算させるため）。
+  // 映像用・音声用に2本へ分けると、差が継ぎ目の数だけ積み上がる（src/trim-plan.mjs の注を参照）。
+  const vf = trim ? `${trim.chain};${scaleChain}` : scaleChain;
 
   const args = [
     "-y",
@@ -130,6 +141,10 @@ export function renderClip(p) {
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "20",
+    // 出力を等間隔のコマ列で書く。concat は区間ごとに「一番長いストリームの長さ」で次へ進むので、
+    // 音声が映像より 1 標本だけ長い区間があると、次の区間の映像がコマ格子から 1 標本ぶん外れる。
+    // cfr にしておくと、その 1 コマ未満の穴が複製で埋まり、絵と音の対応がずれない。
+    "-fps_mode", "cfr",
     "-bf", "0", // B フレーム無効化＝reorder 遅延の edit-list 先頭オフセットを排除し映像 start_time を 0 に
     "-c:a", "aac",
     "-b:a", "192k",
@@ -217,6 +232,31 @@ export function probeSize(file) {
         ? normalizeFpsRational(rateRaw)
         : normalizeFpsRational(avgRaw);
       resolve({ width: w, height: h, vertical: h > w, fps, fpsRational });
+    });
+  });
+}
+
+/**
+ * ffprobe で音声の標本化周波数を取る（詰めるときに atrim を標本の番号で切るのに要る）。
+ *
+ * 音声が無い素材・読めない素材では null を返す。呼び出し側は既定値へ落ちるが、
+ * フィルタ式の側で aresample を掛けて実際にその周波数へ揃えるので、
+ * 切る位置の秒は取れても取れなくても狙いどおりになる（音が入り直すだけ）。
+ */
+export function probeSampleRate(file) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-v", "error", "-select_streams", "a:0",
+      "-show_entries", "stream=sample_rate", "-of", "csv=p=0", file,
+    ];
+    const proc = spawn("ffprobe", args, { windowsHide: true });
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.on("error", (e) => reject(e));
+    proc.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
+      const sr = Number(out.trim().split(/[\s,]+/)[0]);
+      resolve(Number.isFinite(sr) && sr > 0 ? sr : null);
     });
   });
 }
