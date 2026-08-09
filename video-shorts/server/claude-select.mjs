@@ -6,17 +6,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import {
   chunkSegments,
   buildPrompt,
   parseResponse,
 } from "../src/select-segments.mjs";
-import {
-  buildSafeEnv,
-  createIsolatedCwd,
-  NO_TOOLS_ARGS,
-} from "../src/claude-safety.mjs";
+import { createIsolatedCwd } from "../src/claude-safety.mjs";
+import { runClaudeJson } from "../src/claude-run.mjs";
 
 const CLAUDE_TIMEOUT_MS = 300_000; // 1 chunk あたり 5 分（10 分尺 chunk・--bare 起動で十分余裕）
 const POOL = Number(process.env.CLAUDE_SELECT_POOL ?? 3); // 同時実行 chunk 数
@@ -28,78 +24,26 @@ const POOL = Number(process.env.CLAUDE_SELECT_POOL ?? 3); // 同時実行 chunk 
  * @param {string} cwd - ジョブ専用の隔離ディレクトリ（createIsolatedCwd の出力）
  * @returns {Promise<object[]>} keepText を持つ segments
  */
-function runOneChunk(promptDoc, onLog, cwd) {
+async function runOneChunk(promptDoc, onLog, cwd) {
   const stdinPayload =
     promptDoc +
     "\n\n---\n" +
     '必ず {"segments":[{"keepText":"...","hook":"...","reason":"..."}]} の JSON のみを返せ。' +
     "コードフェンスで囲んでも構わない。説明文・前置き・後置きは一切不要。";
 
-  return new Promise((resolve, reject) => {
-    // --strict-mcp-config（--mcp-config 未指定）で MCP サーバーをゼロにする。
-    //   真因: 毎チャンクの claude -p 起動で serena 等 MCP ブート（150s+）が走り、入力が小さくても
-    //   300s タイムアウトを食い潰していた。MCP を切ると 300s→5.5s（実測）。モデルは変えない＝選定品質不変。
-    // ※ --bare は MCP/hook を全スキップして更に軽いが OAuth ログインまで剥がし "Not logged in" になる
-    //   （サブスク無料運用が壊れる）ため使用不可。MCP だけ切る本フラグが正解。
-    // 非信頼な文字起こしを渡す呼び出しなので P1-1 ハードニング（ツール無効化/env allowlist/隔離cwd）を適用する。
-    const child = spawn(
-      "claude",
-      ["-p", "--strict-mcp-config", "--output-format", "json", ...NO_TOOLS_ARGS],
-      {
-        windowsHide: true,
-        env: buildSafeEnv(),
-        cwd,
-      }
-    );
-
-    let stdoutBuf = "";
-    let stderrBuf = "";
-
-    child.stdout.on("data", (c) => (stdoutBuf += c.toString()));
-    child.stderr.on("data", (c) => {
-      const line = c.toString();
-      stderrBuf += line;
-      onLog(`[claude stderr] ${line.trim()}`);
-    });
-
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`claude -p タイムアウト (${CLAUDE_TIMEOUT_MS / 1000}s)`));
-    }, CLAUDE_TIMEOUT_MS);
-
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        return reject(
-          new Error(`claude 終了コード ${code}。stderr: ${stderrBuf.slice(0, 400)}`)
-        );
-      }
-      let envelope;
-      try {
-        envelope = JSON.parse(stdoutBuf.trim());
-      } catch (e) {
-        return reject(
-          new Error(`claude stdout JSON parse 失敗: ${e.message}\nraw: ${stdoutBuf.slice(0, 400)}`)
-        );
-      }
-      const resultText = envelope.result ?? envelope.content ?? stdoutBuf;
-      let segs;
-      try {
-        segs = parseResponse(resultText);
-      } catch (e) {
-        return reject(new Error(`parseResponse 失敗: ${e.message}`));
-      }
-      resolve(segs); // 0 件もここでは許容（chunk 単位なので空 chunk はありうる）
-    });
-
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(new Error(`claude spawn エラー: ${err.message}`));
-    });
-
-    child.stdin.write(stdinPayload, "utf-8");
-    child.stdin.end();
+  // 起動そのもの（ツール無効化/env allowlist/隔離cwd/タイムアウト/終了コード検査）は
+  // src/claude-run.mjs の共通口が持つ。ここは「何を渡し、返答をどう読むか」だけを持つ。
+  const resultText = await runClaudeJson({
+    stdin: stdinPayload,
+    cwd,
+    timeoutMs: CLAUDE_TIMEOUT_MS,
+    onLog,
   });
+  try {
+    return parseResponse(resultText); // 0 件もここでは許容（chunk 単位なので空 chunk はありうる）
+  } catch (e) {
+    throw new Error(`parseResponse 失敗: ${e.message}`);
+  }
 }
 
 /**

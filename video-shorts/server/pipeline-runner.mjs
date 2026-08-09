@@ -1,5 +1,6 @@
 // server/pipeline-runner.mjs — ジョブごとの段階実行管理
-// transcribe → select(llm-request) → claude-select → render →（選ばれたときだけ）顔モザイク の流れを制御する。
+// transcribe → AIが字幕の間違いを直す → select(llm-request) → claude-select → render
+// →（選ばれたときだけ）顔モザイク の流れを制御する。
 // 各 spawn の stderr を行単位で取得し SSE 購読者へ push する。
 // npm 依存ゼロ: Node 標準モジュールのみ。
 
@@ -9,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
+import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -45,10 +47,10 @@ function broadcast(jobId, payload, event = null) {
   }
 }
 
-/** ジョブが実行中（init/t/s/r）かを返す。POST 受理前の二重起動チェック用。 */
+/** ジョブが実行中（init/t/c/s/r/m）かを返す。POST 受理前の二重起動チェック用。 */
 export function isRunning(jobId) {
   const j = jobs.get(jobId);
-  return !!j && ["init", "t", "s", "r", "m"].includes(j.stage);
+  return !!j && ["init", "t", "c", "s", "r", "m"].includes(j.stage);
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
@@ -203,10 +205,10 @@ function drainLocalQueue() {
  * @param {{ sub: "on"|"none", cut: "topic"|"minutes", size: "9:16"|"16:9", cutMin?: number }} opts
  */
 export function startJob(jobId, inputAbsPath, opts) {
-  // 走行中ガード: 同一 jobId が実行中（init/t/s/r）なら二重起動を拒否。
+  // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
   // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
-  const RUNNING = ["init", "t", "s", "r", "m"];
+  const RUNNING = ["init", "t", "c", "s", "r", "m"];
   if (existing && RUNNING.includes(existing.stage)) {
     return false;
   }
@@ -316,6 +318,25 @@ async function runJob(jobId, inputAbsPath, opts) {
   }
 
   broadcast(jobId, { stage: "t", status: "done" });
+
+  // ── Stage c: AIが字幕の間違いを直す ──────────────────────────
+  // 文字起こしの直後・区間選定の前に置く。ここで直しておくと、後段の区間選定も
+  // 直った文字を読む（「公開」と「後悔」を取り違えた文で場面を選ばれずに済む）し、
+  // 焼く字幕も直った文字になる。失敗したら例外のままジョブを失敗させる
+  // （黙って元の文字起こしで進めると、直したつもりで直っていない動画が出る）。
+  job.stage = "c";
+  broadcast(jobId, { stage: "c", status: "active", label: "AIが字幕の間違いを直しています" });
+
+  const fixed = await aiCaptionFixStage({
+    workDir,
+    runModel: createDefaultRunModel(workDir),
+    onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
+  });
+
+  state.stage = "captionfixed";
+  writeState(workDir, state);
+  broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
+  broadcast(jobId, { stage: "c", status: "done" });
 
   // ── Stage s: 区間選定（llm-request 生成 → claude 呼び出し） ──────
   job.stage = "s";

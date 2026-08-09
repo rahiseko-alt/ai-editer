@@ -245,13 +245,14 @@ function setStage(key, cls) {
 // 編集中オーバーレイの段階ラベル（#progress li と同じ文言）
 const EDITING_LABEL = {
   t: "話し言葉を文字にしています",
+  c: "AIが字幕の間違いを直しています",
   s: "良い場面を選んでいます",
   r: "縦長の動画に整えています",
   m: "顔にモザイクを掛けています",
 };
-// 進捗ステップ（t→s→r→m）を編集中窓に反映。m は顔モザイクを選んだときだけサーバから来る。
-// 受け皿が無いと、モザイクに数分かかっている間ずっと画面が止まって見える。
-const STEP_ORDER = ["t", "s", "r", "m"];
+// 進捗ステップ（t→c→s→r→m）を編集中窓に反映。m は顔モザイクを選んだときだけサーバから来る。
+// 受け皿が無いと、その工程に数分かかっている間ずっと画面が止まって見える。
+const STEP_ORDER = ["t", "c", "s", "r", "m"];
 function setEditingStep(stage, status) {
   const idx = STEP_ORDER.indexOf(stage);
   if (idx < 0) return;

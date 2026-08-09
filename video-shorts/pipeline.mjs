@@ -3,10 +3,11 @@
 // engine/ と同じファイルベース受け渡し流儀（キーレス・サイレントフェイル禁止）。
 //
 // サブコマンド:
-//   node pipeline.mjs init   <input.mp4>        新規ジョブ作成(work/<id>/)
-//   node pipeline.mjs select <workDir> [--api]  transcript→LLMリクエスト生成 or API選定
-//   node pipeline.mjs render <workDir>          llm-response→逆マッチ→FFmpegレンダリング
-//   node pipeline.mjs status <workDir>          進捗表示
+//   node pipeline.mjs init       <input.mp4>        新規ジョブ作成(work/<id>/)
+//   node pipeline.mjs captionfix <workDir>          transcript の変換ミスをAIが直す
+//   node pipeline.mjs select     <workDir> [--api]  transcript→LLMリクエスト生成 or API選定
+//   node pipeline.mjs render     <workDir>          llm-response→逆マッチ→FFmpegレンダリング
+//   node pipeline.mjs status     <workDir>          進捗表示
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,6 +29,7 @@ import { DEFAULT_MODE, getMode, isValidMode } from "./src/select-modes.mjs";
 import { runDigestEditor } from "./src/digest-editor.mjs";
 import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./src/timing.mjs";
 import { makeUniqueJobId } from "./src/job-id.mjs";
+import { aiCaptionFixStage, createDefaultRunModel } from "./src/ai-caption-fix.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -101,6 +103,30 @@ function cmdInit(input, mode, sub, orientArg) {
   log(`[OK] job 作成: ${workDir}（mode=${getMode(mode).label} / 字幕=${sub} / 向き=${orient}）`);
   log(`  次: python src/transcribe.py "${input}" "${path.join(workDir, "transcript.json")}"`);
   console.log(workDir);
+}
+
+/**
+ * 文字起こしの変換ミスを AI に直させる（select の前に置く工程）。
+ * 直す前の transcript.json は transcript.raw.json に残るので、後から見比べられる。
+ */
+async function cmdCaptionFix(workDir) {
+  if (!workDir) die("workDir を指定してください: node pipeline.mjs captionfix <workDir>");
+  const state = loadState(workDir);
+  const tPath = path.join(workDir, "transcript.json");
+  if (!fs.existsSync(tPath)) die(`transcript.json がありません。先に transcribe.py を実行: ${tPath}`);
+
+  stageStart(workDir, "captionfix");
+  const r = await aiCaptionFixStage({
+    workDir,
+    runModel: createDefaultRunModel(workDir),
+    onLog: (m) => log(m),
+  });
+  state.stage = "captionfixed";
+  saveState(workDir, state);
+  stageEnd(workDir, "captionfix");
+  log(`[OK] AIが字幕の間違いを直しました: ${r.total} 語のうち ${r.fixed} 語（${r.chunks} かたまり）`);
+  log(`  直す前: ${path.join(workDir, "transcript.raw.json")} / 直した一覧: ${path.join(workDir, "ai-caption-fixes.json")}`);
+  log(`  次: node pipeline.mjs select ${workDir}`);
 }
 
 async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
@@ -433,6 +459,7 @@ async function main() {
     case "init":
       return cmdInit(arg, modeArg, flagValue(rest, "--sub", undefined),
         flagValue(rest, "--orient", undefined));
+    case "captionfix": return cmdCaptionFix(arg);
     case "select": return cmdSelect(arg, useApi, modeArg, targetMinutes);
     case "render":
       return cmdRender(arg, {
@@ -445,10 +472,11 @@ async function main() {
       listStyles().forEach((s) => log(`  ${s.key}\t${s.label} — ${s.description}`));
       return;
     default:
-      log("usage: node pipeline.mjs <init|select|render|status|styles> ...");
-      log("  init   <input.mp4> --mode <topic|digest> --sub <on|off> --orient <縦|横>");
-      log("  select <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
-      log("  render <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
+      log("usage: node pipeline.mjs <init|captionfix|select|render|status|styles> ...");
+      log("  init       <input.mp4> --mode <topic|digest> --sub <on|off> --orient <縦|横>");
+      log("  captionfix <workDir>（文字起こしの変換ミスをAIが直す。select の前）");
+      log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
+      log("  render     <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
       process.exit(1);
   }
 }
