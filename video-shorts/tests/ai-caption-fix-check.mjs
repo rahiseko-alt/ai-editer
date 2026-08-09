@@ -10,6 +10,10 @@
 // 偽 claude は受け取ったプロンプトをファイルへ書き出すので、「どの添字が渡ったか」
 // 「非信頼テキストの囲いが付いているか」を検査側から読んで判定できる。
 //
+// 【偽 claude の中身は組み立てない】PATH に置く `claude` は tests/helpers/fake-claude-main.mjs を
+// そのまま写しただけの実行ファイルで、内容はどのテストでも同じ。テストごとに変わる振る舞いは
+// 隣に置く設定 JSON（データだけ）で選ぶ。＝JavaScript のソースを文字列から組み立てない。
+//
 // 【固定素材は書き換えない】tests/fixtures/ai-caption-fix/ の中身は正解表なので、
 // 毎回 os.tmpdir() へ写してから測る。写しであること（＝元が変わっていないこと）自体も毎回確かめる。
 //
@@ -36,9 +40,12 @@ import {
 import { MAX_WORD_LENGTH, applyEdits, readEdits, saveWordEdit } from "../src/caption-store.mjs";
 import { runClaudeJson } from "../src/claude-run.mjs";
 import { runDigestEditor } from "../src/digest-editor.mjs";
+import { CONFIG_FILE as FAKE_CLAUDE_CONFIG_FILE } from "./helpers/fake-claude-main.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
+/** PATH に置く偽 claude の中身（固定・コミット済み。ここから写すだけで生成はしない） */
+const FAKE_CLAUDE_MAIN = path.join(HERE, "helpers", "fake-claude-main.mjs");
 const FIXTURE_DIR = path.join(HERE, "fixtures", "ai-caption-fix");
 const FIXTURE_TRANSCRIPT = path.join(FIXTURE_DIR, "transcript-miswritten.json");
 const FIXTURE_EXPECTED = path.join(FIXTURE_DIR, "expected.json");
@@ -74,41 +81,41 @@ function readTranscript(dir) {
 
 /**
  * PATH に置く偽 claude を作る。
- * responderSrc は「(プロンプト, 何回目か) => 返答本文」の JavaScript ソース。
- *  - 文字列を返す → {"result": その文字列} の封筒 JSON を stdout に出す（本物と同じ形）
- *  - null を返す  → 応答を返さず眠り続ける（打ち切りの検査用）
- *  - undefined    → 終了コード 9 で落ちる（起動失敗の検査用）
+ *
+ * 実行ファイル `claude` は tests/helpers/fake-claude-main.mjs を **写しただけ** で、内容は
+ * どのテストでも同一（JavaScript のソースを文字列から組み立てない）。テストごとに変わる
+ * 振る舞いは、隣に置く設定 JSON（データだけ）の `kind` で本体側の名前付き実装から選ぶ。
+ *
+ * 設定を環境変数ではなく実行ファイルの隣のファイルで渡すのは、製品の共通口が
+ * claude-safety.mjs の ALLOWED_ENV_VARS で子プロセスの環境変数を絞っており、
+ * 任意の環境変数が偽 claude まで届かないため（本体側の冒頭コメントに同じ説明がある）。
+ *
+ * @param {string} label 一時フォルダ名に付ける目印
+ * @param {object} behavior 設定 JSON の中身（{kind, ...データ}）
  */
-function installFakeClaude(label, responderSrc) {
+function installFakeClaude(label, behavior) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-claude-${label}-`));
   const binDir = path.join(home, "bin");
-  const logDir = path.join(home, "prompts");
+  const logDir = path.join(home, "log");
   fs.mkdirSync(binDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
-  const script = `#!/usr/bin/env node
-"use strict";
-const fs = require("node:fs");
-const path = require("node:path");
-const LOG = ${JSON.stringify(logDir)};
-let buf = "";
-process.stdin.setEncoding("utf-8");
-process.stdin.on("data", (c) => { buf += c; });
-process.stdin.on("end", () => {
-  const n = fs.readdirSync(LOG).length;
-  fs.writeFileSync(path.join(LOG, String(n).padStart(3, "0") + ".txt"), buf, "utf-8");
-  const respond = ${responderSrc};
-  const r = respond(buf, n);
-  if (r === null) { setInterval(() => {}, 1000); return; }
-  if (r === undefined) { process.exit(9); }
-  process.stdout.write(JSON.stringify({ result: r }));
-});
-`;
-  fs.writeFileSync(path.join(binDir, "claude"), script, { encoding: "utf-8", mode: 0o755 });
+  const exe = path.join(binDir, "claude");
+  fs.copyFileSync(FAKE_CLAUDE_MAIN, exe);
+  fs.chmodSync(exe, 0o755);
+  // 拡張子の無い `claude` を ESM として読ませる（Node の版に依らず決まるようにする）。
+  fs.writeFileSync(path.join(binDir, "package.json"), '{"type":"module"}\n', "utf-8");
+  fs.writeFileSync(
+    path.join(binDir, FAKE_CLAUDE_CONFIG_FILE),
+    JSON.stringify({ ...behavior, logDir }),
+    "utf-8",
+  );
+  const calls = () =>
+    fs.readdirSync(logDir).sort()
+      .map((f) => JSON.parse(fs.readFileSync(path.join(logDir, f), "utf-8")));
   return {
     binDir,
-    prompts() {
-      return fs.readdirSync(logDir).sort().map((f) => fs.readFileSync(path.join(logDir, f), "utf-8"));
-    },
+    calls,
+    prompts: () => calls().map((c) => c.stdin),
   };
 }
 
@@ -145,10 +152,12 @@ async function runStage(workDir, fake, opts = {}) {
   }
 }
 
-/** 返答の本文をそのまま返す偽モデルのソース */
-function fixed(answer) {
-  return `(() => ${JSON.stringify(answer)})`;
-}
+/** いつでも同じ本文を返す偽モデルの設定 */
+const fixed = (answer) => ({ kind: "fixed", answer });
+/** 応答を返さず眠る（打ち切りの検査用） */
+const SLEEP = { kind: "sleep" };
+/** 何も返さず終了コード9で落ちる（起動失敗の検査用） */
+const EXIT_9 = { kind: "exit", code: 9 };
 const ANSWER_FIX13 = JSON.stringify({ fixes: [{ index: 13, before: "以上", after: "異常" }] });
 const ANSWER_NO_FIX = JSON.stringify({ fixes: [] });
 
@@ -484,46 +493,6 @@ await t("E: 共通口は ツール無効化 / env allowlist / 隔離cwd を必�
   assert.ok(/function runClaudeJson\(\{[^}]*\bcwd\b/.test(src), "cwd を引数で受け取っていない");
 });
 
-/**
- * PATH に置く偽 claude その2 — 受け取った引数も記録し、終了コードと stderr も選べる。
- * behaviorSrc は「(argv, stdin, 何回目か) => {exit, out, err} | null(眠る)」の JavaScript ソース。
- */
-function installFakeClaudeCmd(label, behaviorSrc) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-cmd-${label}-`));
-  const binDir = path.join(home, "bin");
-  const logDir = path.join(home, "log");
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  fs.writeFileSync(path.join(binDir, "claude"), `#!/usr/bin/env node
-"use strict";
-const fs = require("node:fs");
-const path = require("node:path");
-const LOG = ${JSON.stringify(logDir)};
-let buf = "";
-process.stdin.setEncoding("utf-8");
-process.stdin.on("data", (c) => { buf += c; });
-process.stdin.on("end", () => {
-  const n = fs.readdirSync(LOG).length;
-  const argv = process.argv.slice(2);
-  fs.writeFileSync(path.join(LOG, String(n).padStart(3, "0") + ".json"),
-    JSON.stringify({ argv, stdin: buf }), "utf-8");
-  const behave = ${behaviorSrc};
-  const r = behave(argv, buf, n);
-  if (r === null) { setInterval(() => {}, 1000); return; }
-  if (r.err) process.stderr.write(r.err);
-  if (r.out) process.stdout.write(r.out);
-  process.exit(r.exit || 0);
-});
-`, { encoding: "utf-8", mode: 0o755 });
-  return {
-    binDir,
-    calls() {
-      return fs.readdirSync(logDir).sort()
-        .map((f) => JSON.parse(fs.readFileSync(path.join(logDir, f), "utf-8")));
-    },
-  };
-}
-
 /** 偽 claude を PATH の先頭に置いて fn を実行する。 */
 async function withFakeClaude(fake, fn) {
   const orig = process.env.PATH;
@@ -539,7 +508,7 @@ await t("E: 共通口は終了コード非0のとき stderr 全文を Error.stde
   // 呼び出し側（digest-editor）は「--model が原因の失敗か」を stderr の中身で判定する。
   // message へ埋めた抜粋だけを渡すと、長い stderr の末尾に出る理由を見落として再試行しなくなる。
   const long = `${"x".repeat(1200)}\nError: unknown model claude-opus-4-8\n`;
-  const fake = installFakeClaudeCmd("gate", `(() => ({ exit: 1, err: ${JSON.stringify(long)} }))`);
+  const fake = installFakeClaude("gate", { kind: "fail", exit: 1, stderr: long });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-gate-cwd-"));
   await withFakeClaude(fake, () => assert.rejects(
     () => runClaudeJson({ stdin: "hi", cwd, timeoutMs: 20_000 }),
@@ -553,7 +522,7 @@ await t("E: 共通口は終了コード非0のとき stderr 全文を Error.stde
 
 await t("E 対照: 終了コード0以外で落ちていない失敗（打ち切り）には stderr を付けない", async () => {
   // 付けてしまうと「終了コード非0のときだけ再試行する」という絞り込みが崩れる。
-  const fake = installFakeClaudeCmd("gate0", "(() => null)");
+  const fake = installFakeClaude("gate0", SLEEP);
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-gate-cwd0-"));
   await withFakeClaude(fake, () => assert.rejects(
     () => runClaudeJson({ stdin: "hi", cwd, timeoutMs: 2000 }),
@@ -575,14 +544,16 @@ const DIGEST_TRANSCRIPT = JSON.stringify({
   ],
 });
 const DIGEST_DRAFT = JSON.stringify({
-  result: JSON.stringify({ script: [{ keepText: "これはとても面白い話の始まりです", hook: "つかみ", reason: "面白い" }] }),
+  script: [{ keepText: "これはとても面白い話の始まりです", hook: "つかみ", reason: "面白い" }],
 });
-const DIGEST_CRITIQUE = JSON.stringify({
-  result: JSON.stringify({ score: 95, pass: true, scores: {}, issues: [], fixes: [] }),
-});
-const DIGEST_ANSWER =
-  `((argv, stdin) => (/辛口の編集レビュアー/.test(stdin) ? { out: ${JSON.stringify(DIGEST_CRITIQUE)} }` +
-  ` : { out: ${JSON.stringify(DIGEST_DRAFT)} }))`;
+const DIGEST_CRITIQUE = JSON.stringify({ score: 95, pass: true, scores: {}, issues: [], fixes: [] });
+/** 講評のプロンプト（この文言を含む）には講評を、それ以外には台本ドラフトを返す設定 */
+const DIGEST_ANSWER = {
+  kind: "digest",
+  critiqueNeedle: "辛口の編集レビュアー",
+  critique: DIGEST_CRITIQUE,
+  draft: DIGEST_DRAFT,
+};
 
 function digestWork() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vs-digest-"));
@@ -592,7 +563,7 @@ function digestWork() {
 const modelOf = (call) => (call.argv.includes("--model") ? call.argv[call.argv.indexOf("--model") + 1] : null);
 
 await t("E: digest-editor は上位モデルを --model で pin する（共通口の extraArgs 経由でも消えない）", async () => {
-  const fake = installFakeClaudeCmd("dg-ok", DIGEST_ANSWER);
+  const fake = installFakeClaude("dg-ok", DIGEST_ANSWER);
   const logs = [];
   const r = await withFakeClaude(fake, () => runDigestEditor(digestWork(), (m) => logs.push(m)));
   assert.strictEqual(r.segments.length, 1);
@@ -607,9 +578,13 @@ await t("E: digest-editor は上位モデルを --model で pin する（共通�
 });
 
 await t("E: --model が原因の失敗のときだけ1度だけ既定モデルへ退避する", async () => {
-  const fake = installFakeClaudeCmd("dg-model", `((argv, stdin, n) => argv.includes("--model")
-    ? { exit: 1, err: "y".repeat(1200) + "\\nError: unknown model claude-opus-4-8\\n" }
-    : (${DIGEST_ANSWER})(argv, stdin, n))`);
+  const fake = installFakeClaude("dg-model", {
+    ...DIGEST_ANSWER,
+    kind: "digest-model-gate",
+    modelArg: "--model",
+    exit: 1,
+    stderr: `${"y".repeat(1200)}\nError: unknown model claude-opus-4-8\n`,
+  });
   const logs = [];
   const r = await withFakeClaude(fake, () => runDigestEditor(digestWork(), (m) => logs.push(m)));
   assert.strictEqual(r.segments.length, 1, "退避して完走していない");
@@ -625,7 +600,7 @@ await t("E: --model が原因の失敗のときだけ1度だけ既定モデル�
 
 await t("E 対照: model と無関係の失敗では退避しない（絞り込みを緩めると真因が隠れる）", async () => {
   for (const err of ["Error: invalid JSON in response\n", "the model returned invalid JSON while streaming\n"]) {
-    const fake = installFakeClaudeCmd("dg-other", `(() => ({ exit: 1, err: ${JSON.stringify(err)} }))`);
+    const fake = installFakeClaude("dg-other", { kind: "fail", exit: 1, stderr: err });
     const logs = [];
     await assert.rejects(
       () => withFakeClaude(fake, () => runDigestEditor(digestWork(), (m) => logs.push(m))),
@@ -650,11 +625,11 @@ await t("E: --model のような呼び出し側固有の引数は共通口の ex
 // 何で失敗したかまで見る。ただ reject すればよいことにすると、たとえば打ち切りが効かなくても
 // 検査側の保険が発火して「reject した」で通ってしまう（＝偽の緑）。
 const FAILURES = [
-  ["起動に失敗する（終了コード非0）", "(() => undefined)", {}, /終了コード/],
+  ["起動に失敗する（終了コード非0）", EXIT_9, {}, /終了コード/],
   ["空文字を返す", fixed(""), {}, /JSONとして読めませんでした/],
   ["JSON でない文字列を返す", fixed("すみません、直せませんでした。"), {}, /JSONとして読めませんでした/],
   ["fixes を持たない JSON を返す", fixed('{"ok":true,"message":"done"}'), {}, /fixes/],
-  ["応答を返さず眠る（打ち切り）", "(() => null)", { timeoutMs: 3000, deadlineMs: 15_000 }, /タイムアウト/],
+  ["応答を返さず眠る（打ち切り）", SLEEP, { timeoutMs: 3000, deadlineMs: 15_000 }, /タイムアウト/],
 ];
 
 for (const [label, responder, opts, expected] of FAILURES) {
@@ -687,13 +662,16 @@ await t("F 対照: 正しい返答なら例外にならない", async () => {
 // ── H: 分割して渡す ─────────────────────────────────────────
 await t("H: chunkWords=20 で全98語が漏れなく渡り、最後のかたまりの返答も反映される", async () => {
   const dir = freshWork();
-  // 添字90（最後のかたまりに入る「機械」）を見つけたときだけ直す偽モデル。
+  // 添字90（最後のかたまりに入る「機械」）が渡ってきたかたまりでだけ直す偽モデル。
+  // 「90<タブ>機械」という行がまるごと一致したときだけ直すので、添字がずれていれば当たらない。
   // 2つ目以降のかたまりの返答を捨てる実装や、かたまり内の番号を全体の添字へ
   // 戻し損ねた実装は、ここで落ちる。
-  const responder = `((prompt) => JSON.stringify({
-    fixes: /^90\\t機械$/m.test(prompt) ? [{ index: 90, before: "機械", after: "機会" }] : [],
-  }))`;
-  const fake = installFakeClaude("h", responder);
+  const fake = installFakeClaude("h", {
+    kind: "per-chunk",
+    line: "90\t機械",
+    answer: JSON.stringify({ fixes: [{ index: 90, before: "機械", after: "機会" }] }),
+    fallback: ANSWER_NO_FIX,
+  });
   const r = await runStage(dir, fake, { chunkWords: 20 });
 
   const prompts = fake.prompts();

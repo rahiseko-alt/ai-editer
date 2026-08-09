@@ -1,6 +1,9 @@
 // video-shorts AI による字幕の直し（文字起こしの変換ミスを文脈から直す工程）
 //
-// 【何のためか】音声認識は音は合っていても字を間違える（「以上」と「異常」、「保健」と「保険」）。
+// 【何のためか】音声認識は音は合っていても字を間違える（「公開」と「後悔」、「回答」と「解答」）。
+// ※ ここに書く例は、受入判定に使う固定素材の正解表（tests/fixtures/ai-caption-fix/expected.json）に
+//    出てくる語と重ねないこと。重ねると「答えを教え込んだ状態で実力を測る」ことになる
+//    （2026-08-09 の independent-verifier の指摘で是正。葉 G-EDIT-CAPTION-AI-I の条件(5)）。
 // 字幕は焼き込み式なので、間違ったまま焼くと作り直しになる。人が1語ずつ直す前に、
 // 文脈が読める AI に「明らかな変換ミス」だけを直させて、人の手直しを減らす。
 //
@@ -75,7 +78,7 @@ ${wrapUntrustedText("TRANSCRIPT", lines)}
 
 # 返し方
 次の JSON のみを返す（説明文・前置き・後置きは不要。コードフェンスで囲んでも構わない）。
-{"fixes":[{"index":13,"before":"以上","after":"異常"}]}
+{"fixes":[{"index":5,"before":"公開","after":"後悔"}]}
 - index は上に並んだ添字をそのまま使う。同じ添字を2回以上返してはいけない
   （どちらが正しいか決められないので、その添字の直しは全部捨てる）。
 - before は、その添字の語を一字一句そのまま書き写す（違っていればその1件は捨てられる）。
@@ -137,7 +140,7 @@ export function parseFixResponse(text, words) {
     // before が実際の語と違う＝モデルが別の語を見ている。位置がずれた直しは当てない。
     if (typeof f.before !== "string" || f.before.trim() !== src.w.trim()) continue;
     if (typeof f.after !== "string") continue;
-    // 改行は trim 前の生の文字で見る。trim だけだと「異常\n」は通ってしまい、
+    // 改行は trim 前の生の文字で見る。trim だけだと「後悔\n」は通ってしまい、
     // 字幕(ASS)の1行に改行が混ざる。
     if (/[\r\n]/.test(f.after)) continue;
     const after = f.after.trim();
