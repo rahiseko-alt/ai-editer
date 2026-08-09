@@ -181,7 +181,7 @@ import('%s/src/trim-plan.mjs').then(async (tp) => {
     input: '%s', start: segStart, end: %s, output: '%s',
     orientation: 'portrait', srcW: size.width, srcH: size.height, keep: plan.keep,
   });
-  console.log(JSON.stringify({ fps: size.fps, spans: plan.keep.length, segStart, cutSeconds: plan.cutSeconds }));
+  console.log(JSON.stringify({ fps: size.fps, spans: plan.keep.length, segStart, cutSeconds: plan.cutSeconds, keep: plan.keep }));
 });
 """ % (ROOT, ROOT, src, start, end, end, src, end, out)
     got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
@@ -291,17 +291,43 @@ def main():
     pf = read_frames(prod)
     check(len(pf) > 0, "製品経路の出力にコマがある")
 
-    # 【成果物を測る】出来上がった動画のコマ数が、詰めていない場合より確かに少ないこと。
-    # 詰めていない場合のコマ数 = (切り出しの長さ) × fps。
-    untrimmed = round((9.0 - info["segStart"]) * FPS)
-    check(len(pf) <= untrimmed - FPS,
-          f"出来上がった動画が実際に短くなっている"
-          f"（詰めない場合 {untrimmed} コマ / 実際 {len(pf)} コマ / 1秒ぶん以上短いこと）")
-    check(info["segStart"] > 0,
-          f"切り出し開始が 0 でない（0 だと入力シークのずれを作れず、揃える意味を測れない）"
-          f"（実 {info['segStart']}）")
+    # 【成果物を、計画した区間と突き合わせる】
+    # 総尺の比較では足りない。「全コマで絵と音が一致」は、継ぎ目が1つも無い動画では
+    # 自動的に成立してしまう（空虚に真）。実際、一切詰めずに -t を縮めるだけの偽物が
+    # 全件 PASS した（2026-08-08、independent-verifier の指摘）。
+    # そこで、出力の目印列が「計画した区間のコマ番号を順につないだもの」と
+    # 完全に一致することを見る。これ1つで、尺・継ぎ目の有無・継ぎ目の位置・同期が同時に決まる。
     # 縦化で上下に黒帯が付くので、目印の位置が下がる。素材の高さから帯の高さを出す。
     y_off = (pf[0].shape[0] - H) // 2 if pf and pf[0].shape[0] > H else 0
+    base = round(info["segStart"] * FPS)
+    expected = []
+    for sp in info["keep"]:
+        a = base + round(sp["start"] * FPS)
+        b = base + round(sp["end"] * FPS)
+        expected.extend(range(a, b))
+    got_marks = [read_marker(fr[y_off:, :]) for fr in pf]
+    check(len(info["keep"]) >= 5,
+          f"計画が複数の区間に分かれている（実 {len(info['keep'])} 区間）")
+    check(got_marks == expected,
+          f"出力の各コマが、計画した区間のコマそのものである"
+          f"（期待 {len(expected)} コマ / 実 {len(got_marks)} コマ / "
+          f"先頭の食い違い {next((i for i,(a,b) in enumerate(zip(got_marks,expected)) if a!=b), None)}）")
+    # 継ぎ目（コマ番号の飛び）が実際に存在すること。無ければ何も詰めていない。
+    seams = sum(1 for i in range(1, len(got_marks)) if got_marks[i] != got_marks[i-1] + 1)
+    check(seams >= 4, f"出力に継ぎ目が実在する（実 {seams} 箇所）")
+
+    # snapStart を1点だけで通すと、「その1点を格子上へ写す」だけの実装（定数を返す等）が通る
+    # （2026-08-08、independent-verifier の指摘。return 1 でも全緑だった）。
+    # 整数秒へ丸める実装と見分けがつく値を含めて、複数の開始で確かめる。
+    js = ('import("%s/src/trim-plan.mjs").then(m=>'
+          'console.log(JSON.stringify([0.02,1.02,2.44,3.71].map(v=>m.snapStart(v,%d)))));') % (ROOT, FPS)
+    snapped_starts = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
+                                               check=True, encoding="utf-8").stdout)
+    want = [round(v * FPS) / FPS for v in (0.02, 1.02, 2.44, 3.71)]
+    check(all(abs(a - b) < 1e-9 for a, b in zip(snapped_starts, want)),
+          f"切り出し開始が、どの値でもコマの境目へ写る（期待 {want} / 実 {snapped_starts}）")
+    check(len(set(snapped_starts)) == 4,
+          f"開始が値ごとに違う結果になる（定数を返す実装を落とす）（実 {snapped_starts}）")
     ppairs = measure(prod, y_offset=y_off)
     pbad = [(i, v, a) for i, (v, a) in enumerate(ppairs) if v != a]
     check(len(ppairs) > 30, f"製品経路の出力から十分な数のコマを測れた（実 {len(ppairs)} コマ）")
