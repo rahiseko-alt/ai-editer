@@ -220,16 +220,14 @@ try {
     report("A: 受け付けなかったときは保存も起きない", JSON.stringify(editsOf(WORK_DIR)) === before);
   }
   {
-    // index を付けるのは、付けないと「どの語を直したか分からない」の側で 400 になり、
-    // この検査が測りたい「文まるごとは形の判定で断る」を通らなくなるため（2026-08-08）。
     const r = await call("POST", termPath + auth,
-      { body: { before: "これは 文です", after: "これは文です", index: 1 } });
+      { body: { before: "これは 文です", after: "これは文です" } });
     const body = JSON.parse(r.body || "{}");
     report("C: 文まるごとは 400 で理由が返る",
       r.status === 400 && typeof body.error === "string" && body.error.length > 0,
       `status=${r.status} ${r.body}`);
-    report("C: 断る理由が『どの語か分からない』ではなく、語の形の話である",
-      typeof body.error === "string" && !body.error.includes("index"),
+    report("C: 断る理由が語の形の話である（黙って捨てない）",
+      typeof body.error === "string" && body.error.includes("1語"),
       `理由=${body.error}`);
     report("C: 辞書は変わっていない",
       JSON.stringify(readDictionary(TEST_DICT)) === JSON.stringify(dictBefore));
@@ -238,14 +236,14 @@ try {
     // 正常系（対照）: 正しく直せば実際に登録される。
     // これが無いと「何を出しても断る」実装でも上の検査が全部通ってしまう。
     const r = await call("POST", termPath + auth,
-      { body: { before: "追患版", after: "椎間板", index: 1 } });
+      { body: { before: "追患版", after: "椎間板" } });
     const body = JSON.parse(r.body || "{}");
     // 既存の辞書に「追患版」→「椎間板」が既にあるので、断り方は「すでに登録済み」になる。
     // 断られること自体ではなく、その理由が「形が悪い」でも「どの語か分からない」でもないことを見る。
-    report("対照: 正しい語なら、形の判定でも位置の判定でも断られない",
+    report("対照: 正しい語なら、形の判定でも一般語の判定でも断られない",
       r.status === 400 && typeof body.error === "string" && body.error.includes("すでに"),
       `status=${r.status} ${r.body}`);
-    report("対照: 載る鍵が、直した語そのものになっている（この語は文脈が要らない）",
+    report("対照: 載る鍵が、直した語そのものである",
       body.key === "追患版", `key=${body.key}`);
   }
 } finally {

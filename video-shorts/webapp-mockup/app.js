@@ -553,16 +553,15 @@ function saveCaptionWord(index, text) {
       if (w) { w.w = j.after; w.edited = j.after !== w.original; }
       renderCaptionWords();
       capStatus("保存しました");
-      offerLearnTerm(j.before, j.after, index);
+      offerLearnTerm(j.before, j.after);
     })
     .catch((e) => capStatus(e.message, true));
 }
 
 // 直した語を用語辞書へ覚えさせる導線（次の案件から自動で直る）
-// index も送るのは、サーバが「その語が書き起こしのどこにあるか」を見て、
-// 誤爆しない鍵（必要なら前後の文字を足したもの）に直してから載せるため。
-// 「高速」だけを載せると、以後の全案件で「高速道路」が「梗塞道路」になる。
-function offerLearnTerm(before, after, index) {
+// サーバは、その語がふつうの日本語に出てくる語かを同梱の素材で判定し、
+// 出てくる語（高速・ました・の 等）は断る。断られた理由はそのまま画面に出す。
+function offerLearnTerm(before, after) {
   if (!capCtx || !before || !after || before === after) return;
   const el = $("caption-status");
   const btn = document.createElement("button");
@@ -574,7 +573,7 @@ function offerLearnTerm(before, after, index) {
       withTokenHeader({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ before, after, index }),
+        body: JSON.stringify({ before, after }),
       }, job.jobToken))
       .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "登録に失敗しました")))))
       .then(() => capStatus("次からも自動で直します"))

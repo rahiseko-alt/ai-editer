@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  DICT_PATH, MAX_TERM_LENGTH, appendTerm, isSingleTerm, judgeTermPair, readDictionary,
+  DICT_PATH, MAX_TERM_LENGTH, appendSafeTerm, isSingleTerm, judgeTermPair, readDictionary,
 } from "../src/term-dictionary.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -78,19 +78,19 @@ t("C: 載せない理由が文章で返る（黙って捨てない）", () => {
 
 t("C: 実際に追記される／されないが、判定どおりになる", () => {
   const p = freshDict();
-  const ok = appendTerm("誤変換語", "正しい語", p);
+  const ok = appendSafeTerm("誤変換語", "正しい語", null, p);
   assert.strictEqual(ok.added, true, "1語12文字以内は追記されるはず");
   assert.strictEqual(readDictionary(p)["誤変換語"], "正しい語");
 
   const p2 = freshDict();
-  const ng = appendTerm("これは 文まるごとの書き換えです", "これは文まるごとの書き換えです", p2);
+  const ng = appendSafeTerm("これは 文まるごとの書き換えです", "これは文まるごとの書き換えです", null, p2);
   assert.strictEqual(ng.added, false, "文まるごとは追記されないはず");
   assert.deepStrictEqual(readDictionary(p2), readDictionary(DICT_PATH), "追記されないなら中身は変わらないはず");
 });
 
 t("C: すでにある語は上書きしない（前に直した内容が黙って変わらない）", () => {
   const p = freshDict();
-  const r = appendTerm("追患版", "別の語", p);
+  const r = appendSafeTerm("追患版", "別の語", null, p);
   assert.strictEqual(r.added, false);
   assert.strictEqual(readDictionary(p)["追患版"], "椎間板", "既存の値が変わっている");
 });
@@ -99,7 +99,7 @@ t("C: すでにある語は上書きしない（前に直した内容が黙っ�
 t("F: 追記後も、追記前の全エントリが同じキー・同じ値で残る", () => {
   const p = freshDict();
   const before = readDictionary(p);
-  const r = appendTerm("あたらしい語", "新しい語", p);
+  const r = appendSafeTerm("あたらしい語", "新しい語", null, p);
   assert.strictEqual(r.added, true);
   const after = readDictionary(p);
   for (const [k, v] of Object.entries(before)) {
@@ -110,7 +110,7 @@ t("F: 追記後も、追記前の全エントリが同じキー・同じ値で�
 
 t("F: 追記後のファイルが JSON として読める", () => {
   const p = freshDict();
-  appendTerm("あたらしい語", "新しい語", p);
+  appendSafeTerm("あたらしい語", "新しい語", null, p);
   const raw = fs.readFileSync(p, "utf-8");
   JSON.parse(raw);   // 例外なら不合格
   assert.ok(raw.endsWith("\n"), "末尾の改行が無い");
@@ -118,7 +118,7 @@ t("F: 追記後のファイルが JSON として読める", () => {
 
 t("F: 運用の説明（_comment / _limitation）が残る", () => {
   const p = freshDict();
-  appendTerm("あたらしい語", "新しい語", p);
+  appendSafeTerm("あたらしい語", "新しい語", null, p);
   const after = readDictionary(p);
   assert.ok(typeof after._comment === "string" && after._comment.length > 0, "_comment が消えた");
   assert.ok(typeof after._limitation === "string" && after._limitation.length > 0, "_limitation が消えた");
@@ -126,20 +126,22 @@ t("F: 運用の説明（_comment / _limitation）が残る", () => {
 
 t("F: 何度追記しても、先に入れた語が残る", () => {
   const p = freshDict();
-  appendTerm("語い", "語1", p);
-  appendTerm("語ろ", "語2", p);
-  appendTerm("語は", "語3", p);
+  appendSafeTerm("語い", "語1", null, p);
+  appendSafeTerm("語ろ", "語2", null, p);
+  appendSafeTerm("語ぬ", "語3", null, p);
   const after = readDictionary(p);
   assert.strictEqual(after["語い"], "語1");
   assert.strictEqual(after["語ろ"], "語2");
-  assert.strictEqual(after["語は"], "語3");
+  assert.strictEqual(after["語ぬ"], "語3");
 });
 
 t("F: 壊れた辞書は黙って空にせず、例外にする", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vs-term-broken-"));
   const p = path.join(dir, "term-corrections.json");
   fs.writeFileSync(p, "{ こわれている", "utf-8");
-  assert.throws(() => appendTerm("語", "ご", p), /.*/);
+  // 判定を通る語を使う。判定で断られると辞書を読む前に返ってしまい、
+  // 「壊れた辞書で例外になるか」を測れなくなる（2026-08-08）。
+  assert.throws(() => appendSafeTerm("誤変換語", "正しい語", null, p), /.*/);
   // 壊れたまま残っていること＝黙って上書きして中身を捨てていない
   assert.strictEqual(fs.readFileSync(p, "utf-8"), "{ こわれている");
 });
