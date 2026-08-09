@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-import { buildTrimFilters } from "./trim-plan.mjs";
+import { buildTrimFilters, normalizeFpsRational } from "./trim-plan.mjs";
 
 // 向き別の出力解像度。portrait=縦型(SNSリール等)、landscape=横型(画面録画・細かい文字を残す)。
 const ORIENT = { portrait: [1080, 1920], landscape: [1920, 1080] };
@@ -51,6 +51,9 @@ export function computeCanvas(orientation, srcW, srcH) {
  * @param {{start:number,end:number}[]} [p.keep] 残す区間（区間先頭を0とした相対秒）。
  *   渡すと、その区間だけを取り出してつなぐ（無音・言い淀みを詰める）。
  *   省略すると従来どおり、切り出した区間をそのまま焼く。
+ * @param {string} [p.fpsRational] 素材のコマ数/秒（probeSize が返す r_frame_rate の分数文字列）。
+ *   詰めるときに、コマ数/秒が一定でない素材（画面録画で出る）で絵が先に進むのを防ぐのに要る。
+ *   省略すると従来どおり（コマ数/秒が一定の素材では結果は変わらない）。
  * @returns {Promise<{cmd:string, output:string}>}
  */
 export function renderClip(p) {
@@ -102,7 +105,9 @@ export function renderClip(p) {
   // 縦化と字幕焼きの費用を払うことになるうえ、字幕の時刻が詰める前のままになる。
   // 字幕(ASS)の時刻は、呼び出し側が詰めたあとの時間軸へ写してから渡すこと
   // （srt-builder に渡す words を trim-plan の remapWords に通す）。
-  const trim = p.keep && p.keep.length ? buildTrimFilters(p.keep) : null;
+  const trim = p.keep && p.keep.length
+    ? buildTrimFilters(p.keep, { fpsRational: p.fpsRational })
+    : null;
   const videoIn = trim ? "[tvout]" : "[0:v]";
   const scaleChain =
     `${videoIn}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
@@ -205,7 +210,13 @@ export function probeSize(file) {
       const h = Number(hRaw);
       // r_frame_rate が取れなければ avg_frame_rate を使う。どちらも駄目なら null。
       const fps = parseFrameRate(rateRaw) ?? parseFrameRate(avgRaw);
-      resolve({ width: w, height: h, vertical: h > w, fps });
+      // 分数のままの姿も返す。詰めるときに ffmpeg の fps フィルタへ渡すのに要る。
+      // Number 化した fps を渡すと 30000/1001 が 29.97 に丸まり、約1万秒に1コマずれる。
+      // fps と同じ側（r_frame_rate 優先）から取り、食い違わないようにする。
+      const fpsRational = parseFrameRate(rateRaw) !== null
+        ? normalizeFpsRational(rateRaw)
+        : normalizeFpsRational(avgRaw);
+      resolve({ width: w, height: h, vertical: h > w, fps, fpsRational });
     });
   });
 }

@@ -229,10 +229,16 @@ function round3(n) {
  * この2つを揃えて掛けないと、切ったぶんの時間が空白として残り、尺が縮まない。
  *
  * @param {{start:number,end:number}[]} keep 残す区間（時刻の順・重なり無し）
+ * @param {object} [opts]
+ * @param {boolean} [opts.seamFade] 継ぎ目にフェードを掛けるか（既定 true）
+ * @param {string} [opts.fpsRational] 素材の r_frame_rate（"30000/1001" のような分数の文字列）。
+ *   渡すと、切る前に映像をこのコマ数/秒の等間隔へ揃える（下の【コマ数/秒が一定でない素材】参照）。
+ *   渡さなければ従来どおり（何も前置しない）。
  * @returns {{videoSelect:string, audioSelect:string}|null} 全部残すなら null（フィルタ不要）
  */
 export function buildTrimFilters(keep, opts = {}) {
   const withFade = opts.seamFade !== false;
+  const fpsRational = normalizeFpsRational(opts.fpsRational);
   const spans = (keep || []).filter((s) => s && s.end > s.start);
   if (spans.length === 0) return null;
 
@@ -241,8 +247,43 @@ export function buildTrimFilters(keep, opts = {}) {
   // 来ると、そのコマが丸ごと通って尺が余る（実測: 1.000秒×2区間で2.043秒）。
   // 区間の数だけ余りが積み上がるので、尺を測る受入条件では致命的になる。
   // trim/atrim は指定した時刻ちょうどで切るため、この余りが出ない。
+  //
+  // 【コマ数/秒が一定でない素材（可変フレームレート＝VFR）】
+  // trim=start=s:end=e は「pts が [s,e) に入るコマを通す」だけで、その区間の中に何コマ
+  // 在るかは素材次第。画面録画は動きの無い間コマを間引くので、同じ (e-s) 秒でもコマ数が減る。
+  // setpts=PTS-STARTPTS が区間の頭の欠けを畳み、concat が前の区間の実長の直後に繋ぐため、
+  // 映像だけが短くなる。一方 atrim は (e-s) 秒ちょうど切るので、差が継ぎ目の数だけ積み上がる。
+  // 実測（10区間×29/30秒・30fps から不規則に間引いた素材・平均18.8fps）:
+  //   映像 180 コマ（正解 290 コマ）／音声 463 パケット。110 コマ＝3.67 秒ぶん絵が先に進む。
+  // 端をコマの境目へ揃える snapToFrames はこの差に原理的に効かない（コマの「在る場所」が
+  // 格子に乗っていないため）。
+  //
+  // 直し方: 切る前に fps フィルタで等間隔のコマ列へ揃える。間引かれた所は直前のコマが
+  // 複製されるので、(e-s) 秒には必ず (e-s)*fps コマ在る状態になる。
+  // 実測: 上の素材で 180 → 290 コマ（コマ数/秒が一定の素材での正解と完全一致）。
+  //
+  // ・区間ごとに書かず split で1回だけ掛ける（区間の数だけデコード後の処理が重複するため）。
+  // ・fps の目標は r_frame_rate の**分数のまま**渡す。29.97 のように小数へ丸めると
+  //   30000/1001 との差で約1万秒に1コマずれる（probeSize の Number 化した fps は使わない）。
+  // ・コマ数/秒が一定の素材では恒等。だから「VFR かどうか」を判定する必要が無い。
+  //
+  // 【round は既定（near）のまま。down にしてはいけない】
+  // fps フィルタの round は「入力のコマを、出力のどの枠へ入れるか」の丸め方。
+  // 容器の時刻の刻みは細かくないので（Matroska は1ミリ秒）、素材のコマは k/30 秒ちょうどでは
+  // なく 0.033 / 0.067 / 0.100 … のように 1ms 弱手前に載っている。down（切り捨て）にすると
+  // 0.033×30=0.99 が枠0へ落ちて、出力の1コマ目に素材の2コマ目が入る。
+  // 実測（この素材・10区間×29/30秒）: コマ数はどの round でも 290 で同じなのに、中身は
+  //   near（既定）: コマ数が一定の素材で食い違い0 / 一定でない素材でも0
+  //   down        : 一定の素材で 290 コマ中 100 コマ、一定でない素材で 63 コマが別のコマ
+  //   up / inf    : 90 コマ / 55 コマ、zero: 100 コマ / 63 コマ
+  // コマ数だけを見ていると down でも直ったように見えるので、中身で確かめること。
+  const vSrc = (i) => (fpsRational ? `[sv${i}]` : "[0:v]");
+  const fpsHead = fpsRational
+    ? `[0:v]fps=fps=${fpsRational},split=${spans.length}`
+      + `${spans.map((_, i) => `[sv${i}]`).join("")};`
+    : "";
   const v = spans.map((s, i) =>
-    `[0:v]trim=start=${fmt(s.start)}:end=${fmt(s.end)},setpts=PTS-STARTPTS[tv${i}]`);
+    `${vSrc(i)}trim=start=${fmt(s.start)}:end=${fmt(s.end)},setpts=PTS-STARTPTS[tv${i}]`);
   // 継ぎ目の前後にごく短いフェードを掛ける。掛けないと、波形が途中で急に切り替わって
   // 「プツッ」という音が入る（葉D が防ぎたい状態）。
   // 長さは SEAM_FADE_SEC。耳に「消えた」と分からない範囲で、跳ねだけを均す。
@@ -258,7 +299,7 @@ export function buildTrimFilters(keep, opts = {}) {
   const aLabels = spans.map((_, i) => `[ta${i}]`).join("");
   return {
     // 映像だけ／音声だけを詰める式（呼び出し側が必要なほうを使う）
-    videoChain: `${v.join(";")};${vLabels}concat=n=${spans.length}:v=1:a=0[tvout]`,
+    videoChain: `${fpsHead}${v.join(";")};${vLabels}concat=n=${spans.length}:v=1:a=0[tvout]`,
     audioChain: `${a.join(";")};${aLabels}concat=n=${spans.length}:v=0:a=1[taout]`,
     count: spans.length,
   };
@@ -303,6 +344,25 @@ export function remapWords(words, keep) {
     });
   }
   return out;
+}
+
+/**
+ * fps フィルタへ渡すコマ数/秒を「分数の文字列」として受け取り、そのまま返す。
+ *
+ * 分数のまま持ち回るのが要点。小数へ直すと 30000/1001 と 29.97 の差
+ * （約1万秒に1コマ）がそのまま音とのずれになる。
+ * 分数の形をしていない値は null にして何も前置しない（従来どおりの動きに戻るだけ）。
+ * ついでに、ここを通さない文字列がフィルタ式へ入り込むのを防ぐ
+ * （フィルタ式は文字列連結で組むので、区切り文字が混ざると式ごと壊れる）。
+ */
+export function normalizeFpsRational(raw) {
+  if (typeof raw !== "string") return null;
+  const m = raw.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return null;
+  const num = Number(m[1]);
+  const den = Number(m[2]);
+  if (!(num > 0) || !(den > 0)) return null;
+  return `${num}/${den}`;
 }
 
 /** ffmpeg のフィルタ式へ入れる秒数（小数3桁で固定。指数表記にしない） */

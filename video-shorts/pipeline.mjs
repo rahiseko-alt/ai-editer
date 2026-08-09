@@ -173,6 +173,9 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
  * @param {{start:number,end:number,duration:number,hook?:string}} p.seg 切り出す区間
  * @param {{w:string,start:number,end:number}[]} p.words 素材全体の語（時刻つき）
  * @param {number|null} p.srcFps 素材のコマ数/秒（取れなければ null＝揃えない）
+ * @param {string|null} [p.srcFpsRational] 素材のコマ数/秒を分数のまま書いたもの（"30000/1001" 等）。
+ *   詰めるときに、コマ数/秒が一定でない素材（画面録画で出る）で絵だけが先に進むのを防ぐのに要る。
+ *   取れなければ null＝従来どおり（コマ数/秒が一定の素材では結果は変わらない）。
  * @param {boolean} p.trim 無音・言い淀みを詰めるか
  * @param {{path:string,style:string,width:number,height:number}|null} p.subtitle 字幕（不要なら null）
  * @param {string} p.output 出力先
@@ -180,7 +183,7 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
  *                    assWords:object[], clipDuration:number, cutSeconds:number}>}
  */
 export async function renderSegment({
-  input, seg, words, srcFps, srcW, srcH, orientation,
+  input, seg, words, srcFps, srcFpsRational = null, srcW, srcH, orientation,
   trim, subtitle, output, label = "", onLog = log,
 }) {
   const segStart = snapStart(seg.start, srcFps);
@@ -205,7 +208,8 @@ export async function renderSegment({
     assPath = subtitle.path;
     fs.writeFileSync(assPath, ass, "utf-8");
   }
-  await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation, srcW, srcH, keep });
+  await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation,
+    srcW, srcH, keep, fpsRational: srcFpsRational });
   return { segStart, keep, assWords, clipDuration, cutSeconds };
 }
 
@@ -291,6 +295,9 @@ async function cmdRender(workDir, opts = {}) {
   const srcH = srcSize ? srcSize.height : undefined;
   // 詰めるときに区間の端をコマの境目へ揃えるのに要る。取れなければ揃えない（従来どおりの動き）。
   const srcFps = srcSize ? srcSize.fps : null;
+  // 分数のままの姿。コマ数/秒が一定でない素材（画面録画）で、切る前に等間隔のコマ列へ
+  // 揃えるのに要る。小数へ丸めると 30000/1001 との差が音とのずれになるので分数で持ち回る。
+  const srcFpsRational = srcSize ? (srcSize.fpsRational ?? null) : null;
   if (state.trim === "on" && !srcFps) {
     log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
   }
@@ -305,7 +312,7 @@ async function cmdRender(workDir, opts = {}) {
         input: state.input,
         seg,
         words: transcript.words || [],
-        srcFps, srcW, srcH, orientation,
+        srcFps, srcFpsRational, srcW, srcH, orientation,
         trim: state.trim === "on",
         subtitle: noSub ? null : {
           path: path.join(workDir, `clip-${i + 1}.ass`),
