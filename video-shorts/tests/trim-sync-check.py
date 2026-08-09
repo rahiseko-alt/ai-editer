@@ -158,32 +158,43 @@ def hz_to_frame(hz):
 
 
 def render_product(src, start, end, out):
-    """製品と同じ経路で作る。planTrim が区間を決め、renderClip が -ss で切り出して焼く。
+    """出荷経路そのもの（pipeline.mjs の renderSegment）を呼んで作る。
 
-    ここを通さないと、製品が揃えているかを一度も見ないまま緑になる
-    （実測: planTrim から snapToFrames の呼び出しを外しても全件 PASS だった。2026-08-08）。
+    【この検査は式を1つも写さない】開始をコマの境目へ揃えるのも、詰める区間を決めるのも、
+    字幕の時刻を写すのも、焼くのも、すべて renderSegment の中で起きる。検査が渡すのは
+    「素材・切り出す秒・語」だけで、揃え方は一切知らない。
+    以前は検査が自分で `tp.snapStart(...)` を呼んで renderClip へ渡していたため、
+    出荷経路（pipeline.mjs）の揃えを消しても検査が自前の写しで揃えてしまい、緑のままだった。
+    実測（2026-08-08、independent-verifier）: pipeline.mjs の
+    `const segStart = snapStart(seg.start, srcFps);` を `const segStart = seg.start;` に
+    しても 19 PASS / 0 FAIL だった。
+
     start はわざとコマの境目でない時刻を渡す。製品は -ss で入力シークするので、
     そこが揃っていないとコマ格子ごとずれる。
     """
     js = """
-import('%s/src/trim-plan.mjs').then(async (tp) => {
+import('%s/pipeline.mjs').then(async (pl) => {
   const rv = await import('%s/src/render-vertical.mjs');
   const size = await rv.probeSize('%s');
-  // 製品と同じ実体を呼ぶ。式を写すと、製品側から式を消しても検査が自前で揃えてしまう
-  const segStart = tp.snapStart(%s, size.fps);
-  // 区間の中の語（ここでは「1秒ごとに0.7秒しゃべる」を模す）
+  const start = %s, end = %s;
+  // 区間の中の語（ここでは「1秒ごとに0.7秒しゃべる」を模す）。時刻は素材の上の絶対秒で、
+  // 製品と同じく renderSegment の中で区間の頭からの相対秒へ写される。
   const words = [];
-  for (let k = 0; k * 1.0 + 0.7 <= %s - segStart; k++) {
-    words.push({ w: 'あ', start: k * 1.0, end: k * 1.0 + 0.7 });
+  for (let k = 0; start + k * 1.0 + 0.7 <= end; k++) {
+    words.push({ w: 'あ', start: start + k * 1.0, end: start + k * 1.0 + 0.7 });
   }
-  const plan = tp.planTrim(words, { duration: %s - segStart, fps: size.fps });
-  await rv.renderClip({
-    input: '%s', start: segStart, end: %s, output: '%s',
-    orientation: 'portrait', srcW: size.width, srcH: size.height, keep: plan.keep,
+  const r = await pl.renderSegment({
+    input: '%s',
+    seg: { start, end, duration: end - start, hook: 'x' },
+    words,
+    srcFps: size.fps, srcW: size.width, srcH: size.height,
+    orientation: 'portrait', trim: true, subtitle: null,
+    output: '%s', onLog: () => {},
   });
-  console.log(JSON.stringify({ fps: size.fps, spans: plan.keep.length, segStart, cutSeconds: plan.cutSeconds, keep: plan.keep }));
+  console.log(JSON.stringify({ fps: size.fps, spans: r.keep.length, segStart: r.segStart,
+    cutSeconds: r.cutSeconds, keep: r.keep }));
 });
-""" % (ROOT, ROOT, src, start, end, end, src, end, out)
+""" % (ROOT, ROOT, src, start, end, src, out)
     got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
                          encoding="utf-8").stdout
     return json.loads(got)
@@ -213,7 +224,15 @@ def render(src, keep, out, shortest=False):
 
 
 def measure(out, y_offset=0):
-    """出力の各コマについて (絵から読んだ番号, 音から読んだ番号) を返す
+    """出力の映像のコマ1つにつき1件、(絵から読んだ番号, 音から読んだ番号) を返す
+
+    音が読めなかったコマは (絵の番号, None) を返す。**読み飛ばさない。**
+    以前はここで `continue` していたため、「全コマで一致」の"全コマ"が
+    「出力の映像のコマ全部」ではなく「音がまだ残っていたコマだけ」に縮んでいた。
+    実測（2026-08-08、independent-verifier）: buildTrimFilters の音声側を先頭3区間しか
+    concat しない実装にすると、映像 6.133秒/92コマ に対し音が 2.197秒しか無い動画になるのに
+    19 PASS / 0 FAIL だった。歯止めは `len(pairs) > 30` という、出力のコマ数と無関係な固定値だけで、
+    実装が音の範囲を縮めてもこの閾値の下へ落ちなかった。
 
     y_offset: 縦化で上に足された黒帯の高さ。製品経路の出力は 9:16 へ pad されるので、
     目印の位置がそのぶん下がる。
@@ -227,13 +246,25 @@ def measure(out, y_offset=0):
         t0 = i / FPS + 0.25 / FPS
         t1 = i / FPS + 0.75 / FPS
         hz = hz_at(pcm, t0, t1)
-        if hz is None:
-            continue
-        pairs.append((v, hz_to_frame(hz)))
+        pairs.append((v, None if hz is None else hz_to_frame(hz)))
     return pairs
 
 
+def silent_frames(pairs):
+    """音が読めなかったコマの位置。1つでもあれば「絵と音が一致」を問う前提が欠けている。"""
+    return [i for i, (_, a) in enumerate(pairs) if a is None]
+
+
+def audio_span_frames(path):
+    """その動画の音の長さを「コマ何個ぶんか」で返す（映像のコマ数と突き合わせるため）"""
+    return len(read_pcm(path)) / (SAMPLE_RATE / FPS)
+
+
 def worst_gap(pairs):
+    """絵と音のコマ番号の最大の食い違い。音が読めなかったコマは無限大として扱う
+    （読み飛ばすと、音が消えた区間が「一致した」ことになってしまう）。"""
+    if any(a is None for _, a in pairs):
+        return float("inf")
     return max((abs(v - a) for v, a in pairs), default=0)
 
 
@@ -269,7 +300,17 @@ def main():
     out = os.path.join(tmp, "trimmed.mkv")
     render(src, snapped, out)
     pairs = measure(out)
-    check(len(pairs) > 50, f"詰めた出力から十分な数のコマを測れた（実 {len(pairs)} コマ）")
+    # 「測れたコマ数」を固定値と比べない。固定値だと、実装が音の範囲を縮めても
+    # その閾値の下へ落ちないので素通りする（旧: len(pairs) > 50）。
+    # 測る対象は「出力の映像のコマ全部」なので、映像のコマ数と等号で結ぶ。
+    quiet = silent_frames(pairs)
+    check(not quiet,
+          f"詰めた出力の映像 {len(pairs)} コマ全部について音を測れた"
+          f"（音が無いコマ {len(quiet)} 個 / 先頭={quiet[:3]}）")
+    a_span = audio_span_frames(out)
+    check(abs(a_span - len(pairs)) <= 1.0,
+          f"詰めた出力の音の長さが映像の長さと合っている"
+          f"（映像 {len(pairs)} コマ / 音 {a_span:.2f} コマぶん / 許容 1 コマ）")
     bad = [(i, v, a) for i, (v, a) in enumerate(pairs) if v != a]
     check(worst_gap(pairs) == 0,
           f"揃えた区間で詰めれば、全コマで絵と音が同じコマ番号を指す"
@@ -318,19 +359,95 @@ def main():
 
     # snapStart を1点だけで通すと、「その1点を格子上へ写す」だけの実装（定数を返す等）が通る
     # （2026-08-08、independent-verifier の指摘。return 1 でも全緑だった）。
-    # 整数秒へ丸める実装と見分けがつく値を含めて、複数の開始で確かめる。
+    # さらに、素材が 15fps しか無いので **コマ数/秒 を振らないと** 「15 で決め打ちして丸める」
+    # 実装まで通る（実測: `return Math.round(start * 15) / 15;` でも 19 PASS だった）。
+    # そこで 開始4値 × コマ数/秒3種（15 / 24 / 30000/1001 = 29.97）の 12 点で確かめる。
+    # 期待値は実装から導かず、下にリテラルで書く（実装の定数を import すると、
+    # 定数を変えれば基準も一緒に動く自己参照になる）。
+    # どの積も x.5 から離れているので、丸めの向き（半分を上げるか下げるか）に依存しない。
+    SNAP_STARTS = [0.02, 1.02, 2.44, 3.71]
+    SNAP_FPS = [15.0, 24.0, 30000.0 / 1001.0]
+    SNAP_EXPECT = [
+        # 15fps: 0/15, 15/15, 37/15, 56/15
+        [0.0, 1.0, 2.466666666666667, 3.7333333333333334],
+        # 24fps: 0/24, 24/24, 59/24, 89/24
+        [0.0, 1.0, 2.4583333333333335, 3.7083333333333335],
+        # 29.97fps(=30000/1001): 1*1001/30000, 31*1001/30000, 73*1001/30000, 111*1001/30000
+        [0.03336666666666667, 1.0343666666666667, 2.435766666666667, 3.7037],
+    ]
     js = ('import("%s/src/trim-plan.mjs").then(m=>'
-          'console.log(JSON.stringify([0.02,1.02,2.44,3.71].map(v=>m.snapStart(v,%d)))));') % (ROOT, FPS)
+          'console.log(JSON.stringify(%s.map(f=>%s.map(v=>m.snapStart(v,f))))));'
+          ) % (ROOT, json.dumps(SNAP_FPS), json.dumps(SNAP_STARTS))
     snapped_starts = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
                                                check=True, encoding="utf-8").stdout)
-    want = [round(v * FPS) / FPS for v in (0.02, 1.02, 2.44, 3.71)]
-    check(all(abs(a - b) < 1e-9 for a, b in zip(snapped_starts, want)),
-          f"切り出し開始が、どの値でもコマの境目へ写る（期待 {want} / 実 {snapped_starts}）")
-    check(len(set(snapped_starts)) == 4,
-          f"開始が値ごとに違う結果になる（定数を返す実装を落とす）（実 {snapped_starts}）")
+    off = [(SNAP_FPS[i], SNAP_STARTS[j], snapped_starts[i][j], SNAP_EXPECT[i][j])
+           for i in range(len(SNAP_FPS)) for j in range(len(SNAP_STARTS))
+           if abs(snapped_starts[i][j] - SNAP_EXPECT[i][j]) >= 1e-9]
+    check(not off,
+          f"切り出し開始が、どの開始秒でも・どのコマ数/秒でもコマの境目へ写る"
+          f"（12点中 外れ {len(off)} 点 / 先頭3件={off[:3]}）")
+    # 対照: コマ数/秒 を無視する実装（15 決め打ち等）を落とす。
+    # 同じ開始秒でもコマ数/秒 が違えば写り先は違う値になるはず。
+    col = [snapped_starts[i][2] for i in range(len(SNAP_FPS))]   # start=2.44 の3通り
+    check(len(set(col)) == len(SNAP_FPS),
+          f"対照: 同じ開始秒でも、コマ数/秒 が違えば写り先が違う"
+          f"（コマ数/秒 を無視する実装を落とす）（start=2.44 → 実 {col}）")
+    check(len(set(snapped_starts[0])) == len(SNAP_STARTS),
+          f"開始が値ごとに違う結果になる（定数を返す実装を落とす）（実 {snapped_starts[0]}）")
+
+    # 残す区間の端を揃える snapToFrames も、素材が15fpsしか無いので
+    # 「15 で決め打ちして丸める」実装が素通りする（snapStart と同じ穴）。
+    # ここも コマ数/秒 を3種振って、リテラルの期待値と突き合わせる。
+    # 入力の区間: [0.02,0.44] は端が半端 / [1.00,1.03] は丸めると1コマ未満（後ろへ広げる規則が効く）
+    #             / [2.44,3.71] は両端とも半端。
+    SNAP_SPANS = [{"start": 0.02, "end": 0.44},
+                  {"start": 1.00, "end": 1.03},
+                  {"start": 2.44, "end": 3.71}]
+    SNAP_SPANS_EXPECT = [
+        # 15fps: 端を最寄りのコマへ→ [0/15,7/15] [15/15,15/15]→1コマ未満なので[15/15,17/15] [37/15,56/15]
+        [[0.0, 0.4666666666666667], [1.0, 1.1333333333333333],
+         [2.466666666666667, 3.7333333333333334]],
+        # 24fps: [0/24,11/24] [24/24,25/24]→1コマなので[24/24,26/24] [59/24,89/24]
+        [[0.0, 0.4583333333333333], [1.0, 1.0833333333333333],
+         [2.4583333333333335, 3.7083333333333335]],
+        # 29.97fps(=30000/1001): [1,13]*1001/30000 / [30,31]→1コマなので[30,32]*1001/30000 /
+        #                        [73,111]*1001/30000
+        [[0.03336666666666667, 0.4337666666666667], [1.001, 1.0677333333333334],
+         [2.435766666666667, 3.7037]],
+    ]
+    js = ('import("%s/src/trim-plan.mjs").then(m=>'
+          'console.log(JSON.stringify(%s.map(f=>m.snapToFrames(%s, f)))));'
+          ) % (ROOT, json.dumps(SNAP_FPS), json.dumps(SNAP_SPANS))
+    snapped_spans = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
+                                              check=True, encoding="utf-8").stdout)
+    span_off = []
+    for i, want_rows in enumerate(SNAP_SPANS_EXPECT):
+        got_rows = snapped_spans[i]
+        if len(got_rows) != len(want_rows):
+            span_off.append((SNAP_FPS[i], "区間数", len(got_rows), len(want_rows)))
+            continue
+        for g, w in zip(got_rows, want_rows):
+            if abs(g["start"] - w[0]) >= 1e-9 or abs(g["end"] - w[1]) >= 1e-9:
+                span_off.append((SNAP_FPS[i], [g["start"], g["end"]], w))
+    check(not span_off,
+          f"残す区間の端も、どのコマ数/秒でもそのコマ数/秒のコマの境目へ写る"
+          f"（コマ数/秒 を無視する実装を落とす）（9区間中 外れ {len(span_off)} 件 / 先頭3件={span_off[:3]}）")
     ppairs = measure(prod, y_offset=y_off)
     pbad = [(i, v, a) for i, (v, a) in enumerate(ppairs) if v != a]
-    check(len(ppairs) > 30, f"製品経路の出力から十分な数のコマを測れた（実 {len(ppairs)} コマ）")
+    # 「測れたコマ数」の歯止めを固定値（旧: > 30）にすると、出力のコマ数と無関係なので
+    # 実装が音の範囲を縮めても素通りする。実測: 音を先頭3区間しか concat しない実装で、
+    # 映像 92 コマに対し音 33 コマぶんしか無いのに 19 PASS だった（2026-08-08）。
+    pquiet = silent_frames(ppairs)
+    check(len(ppairs) == len(pf),
+          f"測ったコマ数が、出力の映像のコマ数と一致する"
+          f"（映像 {len(pf)} コマ / 測った {len(ppairs)} コマ）")
+    check(not pquiet,
+          f"製品経路の出力の映像 {len(ppairs)} コマ全部について音を測れた"
+          f"（音が無いコマ {len(pquiet)} 個 / 先頭={pquiet[:3]}）")
+    pa_span = audio_span_frames(prod)
+    check(abs(pa_span - len(ppairs)) <= 1.0,
+          f"製品経路の出力の音の長さが映像の長さと合っている"
+          f"（映像 {len(ppairs)} コマ / 音 {pa_span:.2f} コマぶん / 許容 1 コマ）")
     check(worst_gap(ppairs) == 0,
           f"製品と同じ経路・同じ出力設定でも、全コマで絵と音が同じコマ番号を指す"
           f"（最大ずれ {worst_gap(ppairs)} コマ / 食い違い {len(pbad)} 件 先頭3件={pbad[:3]}）")

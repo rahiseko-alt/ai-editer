@@ -10,7 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   chunkSegments,
   buildRequestDoc,
@@ -152,6 +152,63 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
   }
 }
 
+/**
+ * 1区間を切り出して縦動画へ焼く（出荷経路の本体）。
+ *
+ * 【なぜ関数として出すか】ここは「切り出しの開始をコマの境目へ揃える → 詰める区間を決める →
+ * 字幕をその時間軸へ写す → 焼く」が1本につながっている所で、途中の1つでも抜けると
+ * 口の動きと声がずれる。検査（tests/trim-sync-check.py）が同じ手順を自前で書き写すと、
+ * 出荷経路の側から手順を消しても検査が自分の写しで揃えてしまい、緑のまま壊れる。
+ * 実測: `const segStart = seg.start;` にしても検査は 19 PASS のままだった（2026-08-08）。
+ * 検査はこの関数を呼ぶので、ここから何を消しても検査が落ちる。
+ *
+ * 【なぜ開始を揃えるか】renderClip は -ss で入力シークするので、開始が半端な時刻だと
+ * シーク後のコマ格子がその半端さのぶんずれる。すると残す区間の端をコマ周期の整数倍にしても、
+ * trim（最寄りコマへ丸める）と atrim（サンプル精度で切る）がまた食い違う。
+ * 実測: -ss 0.010/0.020/0.030 で 149コマ中149コマが1コマずれた（2026-08-08）。
+ * 揃えておけば以降の格子は 0, 1/fps, 2/fps ... になり、区間の端と一致する。
+ *
+ * @param {object} p
+ * @param {string} p.input 素材のパス
+ * @param {{start:number,end:number,duration:number,hook?:string}} p.seg 切り出す区間
+ * @param {{w:string,start:number,end:number}[]} p.words 素材全体の語（時刻つき）
+ * @param {number|null} p.srcFps 素材のコマ数/秒（取れなければ null＝揃えない）
+ * @param {boolean} p.trim 無音・言い淀みを詰めるか
+ * @param {{path:string,style:string,width:number,height:number}|null} p.subtitle 字幕（不要なら null）
+ * @param {string} p.output 出力先
+ * @returns {Promise<{segStart:number, keep:{start:number,end:number}[]|null,
+ *                    assWords:object[], clipDuration:number, cutSeconds:number}>}
+ */
+export async function renderSegment({
+  input, seg, words, srcFps, srcW, srcH, orientation,
+  trim, subtitle, output, label = "", onLog = log,
+}) {
+  const segStart = snapStart(seg.start, srcFps);
+  const relWordsAll = wordsInRange(words || [], segStart, seg.end);
+  let keep = null;
+  let assWords = relWordsAll;
+  let clipDuration = seg.duration;
+  let cutSeconds = 0;
+  if (trim) {
+    // 無音・言い淀みを詰める。字幕は詰めたあとの時間軸で書かないと、詰めたぶんだけ遅れて出る。
+    const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps });
+    keep = plan.keep;
+    assWords = remapWords(relWordsAll, plan.keep);
+    clipDuration = plan.keptSeconds;
+    cutSeconds = plan.cutSeconds;
+    onLog(`  [TRIM] ${label} ${seg.duration.toFixed(1)}s → ${plan.keptSeconds.toFixed(1)}s（${plan.cutSeconds.toFixed(1)}s 詰めた）`);
+  }
+  let assPath = null;
+  if (subtitle) {
+    const ass = buildAss(assWords, seg.hook, clipDuration,
+      { style: subtitle.style, width: subtitle.width, height: subtitle.height });
+    assPath = subtitle.path;
+    fs.writeFileSync(assPath, ass, "utf-8");
+  }
+  await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation, srcW, srcH, keep });
+  return { segStart, keep, assWords, clipDuration, cutSeconds };
+}
+
 async function cmdRender(workDir, opts = {}) {
   const { flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride } = opts;
   const state = loadState(workDir);
@@ -241,37 +298,22 @@ async function cmdRender(workDir, opts = {}) {
 
   for (let i = 0; i < resolved.length; i++) {
     const seg = resolved[i];
-    // 字幕(ASS)生成（--no-sub 指定時はスキップ）
-    // 無音・言い淀みを詰める設定なら、この区間の中で残す部分を先に決める。
-    // 字幕は詰めたあとの時間軸で書かないと、詰めたぶんだけ遅れて出る。
-    // 切り出しの開始をコマの境目へ揃える。
-    // renderClip は -ss で入力シークするので、開始が半端な時刻だと、シーク後のコマ格子が
-    // その半端さのぶんずれる。すると残す区間の端をコマ周期の整数倍にしても、
-    // trim（最寄りコマへ丸める）と atrim（サンプル精度で切る）がまた食い違う。
-    // 実測: -ss 0.010/0.020/0.030 で 149コマ中149コマが1コマずれた（2026-08-08）。
-    // 開始を揃えておけば、以降の格子は 0, 1/fps, 2/fps ... になり、区間の端と一致する。
-    const segStart = snapStart(seg.start, srcFps);
-    const relWordsAll = wordsInRange(transcript.words || [], segStart, seg.end);
-    let keep = null;
-    let assWords = relWordsAll;
-    let clipDuration = seg.duration;
-    if (state.trim === "on") {
-      const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps });
-      keep = plan.keep;
-      assWords = remapWords(relWordsAll, plan.keep);
-      clipDuration = plan.keptSeconds;
-      log(`  [TRIM] #${i + 1} ${seg.duration.toFixed(1)}s → ${plan.keptSeconds.toFixed(1)}s（${plan.cutSeconds.toFixed(1)}s 詰めた）`);
-    }
-    let assPath = null;
-    if (!noSub) {
-      const ass = buildAss(assWords, seg.hook, clipDuration, { style: subStyle, width: canvas.w, height: canvas.h });
-      assPath = path.join(workDir, `clip-${i + 1}.ass`);
-      fs.writeFileSync(assPath, ass, "utf-8");
-    }
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderClip({ input: state.input, start: segStart, end: seg.end, assPath, output: outFile, orientation, srcW, srcH, keep });
+      await renderSegment({
+        input: state.input,
+        seg,
+        words: transcript.words || [],
+        srcFps, srcW, srcH, orientation,
+        trim: state.trim === "on",
+        subtitle: noSub ? null : {
+          path: path.join(workDir, `clip-${i + 1}.ass`),
+          style: subStyle, width: canvas.w, height: canvas.h,
+        },
+        output: outFile,
+        label: `#${i + 1}`,
+      });
       const size = await probeSize(outFile);
       manifest.push({
         index: i + 1,
@@ -392,4 +434,10 @@ async function main() {
   }
 }
 
-main().catch((e) => die(e.stack || e.message));
+// コマンドとして起動されたときだけ走らせる。
+// import されたときにも走ると、renderSegment を呼びたいだけの検査が
+// usage を出して exit(1) してしまう（＝出荷経路を検査から呼べなくなる）。
+const invokedAs = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (invokedAs === import.meta.url) {
+  main().catch((e) => die(e.stack || e.message));
+}

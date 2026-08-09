@@ -1,8 +1,14 @@
 // 無音と言い淀みの詰め方の検証 — G-EDIT-TRIM-A / B / C（決め方の部分）
 //
-// A の合格条件は「素材TVを通常設定で処理した出力の音声の尺が 5.203秒 ±0.1秒」。
-// ここで測るのは、その尺を決める「どこを切るか」の計算。実際に切った出力の尺は、
-// レンダリングを繋いだあとに測る。
+// ここで測るのは「どこを切るか」の計算だけ。出来上がった動画の尺と、その中で声が鳴っている
+// 位置は tests/trim-duration-check.mjs が製品経路（planTrim → renderClip）で測る。
+// A の合格条件（4.733秒＝71コマ ほか）はそちらに書いてある。
+//
+// 【素材の全長について】凍結素材 calibration.flac の実測長は 11.402812秒 で、区間表の
+// 最終区間の終わり 11.403秒 と一致する。区間表の説明値 audio.duration_sec（11.903）は
+// 実ファイルと 0.500秒 食い違う人手の値なので、判定には使わない
+// （2026-08-08 の失敗記録「凍結した合格ラインの数値が、凍結素材では誰も満たせない値だった」）。
+// 末尾の無音は存在しないので、「末尾の余韻を残す」性質は素材の長さを仮に伸ばして確かめる。
 //
 // 素材は凍結済みの tests/fixtures/trim-calibration/calibration.json だけを使う。
 // 別の区間を持ち込まない（分離しやすい区間を後から選べると、合否を自分に有利にできるため）。
@@ -36,16 +42,23 @@ t("素材: 区間表が凍結どおり（SHA-256 が一致する）", () => {
 });
 
 const cal = JSON.parse(calRaw.toString("utf-8"));
-const DURATION = cal.audio.duration_sec;      // 11.903
 const segs = cal.segments;
+// 素材の全長は、説明値ではなく区間表の最終区間の終わりを正とする（上のコメント参照）。
+const DURATION = segs[segs.length - 1].end;   // 11.403
 
 // 文字起こしが返す形（words[]）へ写す。区間表は設計値なので、これが正。
 const words = segs.map((s) => ({ w: s.text, start: s.start, end: s.end }));
 
-t("素材: 区間表の中身が凍結どおり（8区間・フィラー4件・全長11.903秒）", () => {
+t("素材: 区間表の中身が凍結どおり（8区間・フィラー4件・最終区間の終わり11.403秒）", () => {
   assert.strictEqual(segs.length, 8);
   assert.strictEqual(segs.filter((s) => s.kind === "filler").length, 4);
-  assert.strictEqual(DURATION, 11.903);
+  assert.strictEqual(DURATION, 11.403);
+});
+
+t("素材: 説明値 duration_sec(11.903) は実素材と 0.500秒 違う（判定には使わない）", () => {
+  // 凍結しておくと、黙って直されたり別の値に化けたときに気づける。
+  assert.strictEqual(cal.audio.duration_sec, 11.903);
+  assert.ok(Math.abs(cal.audio.duration_sec - DURATION - 0.5) < 1e-9);
 });
 
 // ── 言い淀みの見分け ────────────────────────────────────────
@@ -74,35 +87,40 @@ t("C: 似ているが別の語は切らない", () => {
   }
 });
 
-// ── A: 尺の計算 ────────────────────────────────────────────
-const EXPECTED = 5.203;   // 11.903 − 無音3.5 − 言い淀み3.200
-t(`A: 通常設定での残り時間が ${EXPECTED} 秒になる`, () => {
+// ── A: 尺の計算（コマ境界へ揃える前の、決め方だけの値）──────
+// 4.703 = 11.403 − 無音3.500 − 言い淀み3.200。素材のコマ数/秒を渡していないので
+// コマ境界への丸めは掛からない。丸めを含んだ出荷経路の値（15fps で 4.733秒）は
+// tests/trim-duration-check.mjs が実物で測る。
+const EXPECTED = 4.703;
+t(`A: 通常設定での残り時間が ${EXPECTED} 秒になる（丸め前）`, () => {
   const plan = planTrim(words, { duration: DURATION });
-  assert.ok(Math.abs(plan.keptSeconds - EXPECTED) <= 0.1,
-    `残り=${plan.keptSeconds} 秒（期待 ${EXPECTED} ±0.1）`);
+  assert.ok(Math.abs(plan.keptSeconds - EXPECTED) <= 0.01,
+    `残り=${plan.keptSeconds} 秒（期待 ${EXPECTED} ±0.01）`);
 });
 
-t("A: 末尾の余韻(0.5秒)は詰めない", () => {
-  const plan = planTrim(words, { duration: DURATION });
+t("A: 末尾の余韻は詰めない（凍結素材には末尾の無音が無いので、0.5秒あるものとして確かめる）", () => {
+  // 凍結素材は最終区間の終わりでちょうど終わっている（末尾の無音は存在しない）。
+  // 「末尾の余韻を残す」は planTrim の性質なので、素材の長さだけを仮に 0.5秒 伸ばして測る。
+  const withTail = DURATION + 0.5;
+  const plan = planTrim(words, { duration: withTail });
   const last = plan.keep[plan.keep.length - 1];
-  assert.ok(Math.abs(last.end - DURATION) < 1e-6, `末尾が ${last.end} で素材の終わり(${DURATION})と違う`);
-  const lastWordEnd = segs[segs.length - 1].end;
-  assert.ok(Math.abs(last.end - lastWordEnd - 0.5) <= 0.01,
-    `末尾の余韻が0.5秒でない（実=${(last.end - lastWordEnd).toFixed(3)}秒）`);
+  assert.ok(Math.abs(last.end - withTail) < 1e-6, `末尾が ${last.end} で素材の終わり(${withTail})と違う`);
+  assert.ok(Math.abs(plan.keptSeconds - (EXPECTED + 0.5)) <= 0.01,
+    `末尾の余韻0.5秒が残っていない（残り=${plan.keptSeconds} 秒）`);
 });
 
 // ── 対照: 無音カットと言い淀みカットの寄与を分けて測る ────────
-// A の verify が求めている「両者の短縮量の差が無音カットの寄与」を、決め方の側で確かめる。
-t("対照A: 言い淀みだけを切ると 8.403 秒（無音3.5秒は残る）", () => {
+// 「両者の短縮量の差が無音カットの寄与」を、決め方の側で確かめる。
+t(`対照A: 言い淀みだけを切ると ${(DURATION - 3.2).toFixed(3)} 秒（無音3.500秒は残る）`, () => {
   const plan = planTrim(words, { duration: DURATION, cutSilence: false });
-  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.2)) <= 0.1,
-    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.2).toFixed(3)} ±0.1）`);
+  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.2)) <= 0.01,
+    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.2).toFixed(3)} ±0.01）`);
 });
 
-t("対照A: 無音だけを切ると 8.403 秒（言い淀み3.200秒は残る）", () => {
+t(`対照A: 無音だけを切ると ${(DURATION - 3.5).toFixed(3)} 秒（言い淀み3.200秒は残る）`, () => {
   const plan = planTrim(words, { duration: DURATION, cutFillers: false });
-  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.5)) <= 0.1,
-    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.5).toFixed(3)} ±0.1）`);
+  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.5)) <= 0.01,
+    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.5).toFixed(3)} ±0.01）`);
 });
 
 t("対照A: 何も切らない設定なら全長のまま（＝単に削る実装ではない）", () => {
@@ -166,7 +184,7 @@ t("時刻が壊れた語は無視する（落ちない）", () => {
 // ── 対照: この検査が「詰めていない実装」を見つけられること ────
 t("対照: 何も切らない実装なら A の検査は落ちる", () => {
   const kept = DURATION;   // 何も切らなかった場合
-  assert.ok(!(Math.abs(kept - EXPECTED) <= 0.1),
+  assert.ok(!(Math.abs(kept - EXPECTED) <= 0.01),
     "何も切っていないのに期待の尺と一致すると判定された");
 });
 
