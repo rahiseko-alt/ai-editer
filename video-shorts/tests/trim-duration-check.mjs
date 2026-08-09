@@ -1,13 +1,44 @@
-// 詰めたあとの尺の実測 — G-EDIT-TRIM-A（尺の部分）
+// 詰めたあとの尺の実測 — G-EDIT-TRIM-A
 //
-// A の合格条件は「素材TVを出荷される通常設定で処理した出力の音声の尺が 5.203秒 ±0.1秒」。
-// 決め方（どこを切るか）は tests/trim-plan-check.mjs で測る。ここでは実際に ffmpeg で切って、
-// 出来上がった音声の尺を ffprobe で測る。
+// ── 対応ノード ────────────────────────────────────────────────
+// docs/roadmap.html の G-EDIT-TRIM-A（区間の中の長い無音が、詰めたぶんだけ尺に反映される）。
 //
-// 素材は凍結済みの calibration.flac / calibration.json だけを使い、SHA-256 の一致を毎回確かめる。
-// 別の素材や別の区間は持ち込まない（分離しやすい区間を後から選べると、合否を自分に有利にできる）。
+// ── 合格条件（criteria の引用）──────────────────────────────
+// 「『間を詰める』を選んだ経路で処理した出力が、素材から《0.20秒以上の無音》と《言い淀み》
+//   だけを取り除いてつないだものになっている。素材TA（凍結素材そのまま・長い間隙）では
+//   音声(a:0)の尺が 4.733秒（71コマ＝71/15秒）、素材TA-S（同じ語・同じ言い淀みを 0.10秒＝
+//   しきい値未満の間隙で並べ直したもの）では 5.400秒（81コマ）になり、どちらも出力の中で
+//   声が鳴っている区間の位置が、凍結した位置と一致する。両者の『詰めた量』の差 3.467秒 が、
+//   長い無音を詰めた寄与にあたる。」
 //
-// 実行: node tests/trim-duration-check.mjs   (全PASSで exit 0)
+// ── なぜこの測り方か ──────────────────────────────────────────
+// (1) なぜ尺だけで判定しないか
+//     「尺が期待どおり」は、末尾を切り落としただけの実装でも成立する（空虚に真）。
+//     実際、この検査の変異実験 M2（一切詰めずに -t を 4.733秒 にするだけ）は尺の判定を通る。
+//     そこで、出力の中で「声が鳴っている区間」の開始・終了時刻の列も測り、凍結した位置と
+//     突き合わせる。尺・継ぎ目の位置・詰めた場所が同時に決まり、部分的に満たす偽物が作れない。
+//     （同じ型の穴を6回掘った記録が docs/failures.md 2026-08-08 にある。）
+// (2) なぜ素材を2つ使うか
+//     出力の尺は、間隙の長さを変えても「語だけが残る」実装では変わらない。長い間隙の素材
+//     だけでは「0.20秒以上の無音を詰めた」ことを一度も検証できない。しきい値未満（0.10秒）の
+//     間隙に置き換えた素材TA-S を同じ設定で通し、間隙が残ることまで見て初めて、
+//     「長い無音を詰めた量」が独立に決まる。
+//     これは製品の設定を切り替える対照ではない（cutSilence:false のようなテスト専用の
+//     切り替えは使わない）。設定は同じままで、入力だけを差し替える。
+// (3) なぜ fps を凍結するか
+//     planTrim は残す区間の端をコマの境目へ揃える（G-EDIT-TRIM-F）。素材のコマ数/秒が
+//     変わると期待値も変わり、fps が取れない素材では揃えが素通りして別の数字になる。
+//     素材TA/TA-S は 15fps で合成し、コマ数/秒は製品の probeSize（＝pipeline.mjs が使うのと
+//     同じ実体）から取る。期待値は実装から導かず、下に数字で書く。
+// (4) なぜ文字起こしを通さないか
+//     製品の words は音声認識の出力で、実行ごとに変わりうる。ここで受け入れるのは
+//     「詰め方と切り方」であって「認識器が言い淀みをその表記で出すこと」ではない。
+//     語の時刻は凍結済みの calibration.json（設計値）を使い、認識器は通さない。
+//     認識器を通す経路の受入は、この葉の対象外（別葉・未着手）。
+//
+// ── 実行方法 ─────────────────────────────────────────────────
+//   cd video-shorts && node tests/trim-duration-check.mjs   (全PASSで exit 0)
+//   ffmpeg / ffprobe が要る。素材は毎回この検査が合成する（コミットしない）。
 
 import assert from "node:assert";
 import crypto from "node:crypto";
@@ -17,7 +48,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { buildTrimFilters, planTrim } from "../src/trim-plan.mjs";
+import { planTrim, snapStart } from "../src/trim-plan.mjs";
+import { probeSize, renderClip } from "../src/render-vertical.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(HERE, "fixtures", "trim-calibration");
@@ -26,8 +58,101 @@ const CAL_JSON = path.join(FIXTURE_DIR, "calibration.json");
 const FLAC_SHA = "edb077722b770d109d2568e0f0332ae5af42efa5625dd4ffc39ad51513fec800";
 const CAL_SHA = "6f29d6e6222cfd74ace2a62608ba1e8ed54c0852cc841a8506ac51ad69470058";
 
-const EXPECTED = 5.203;      // 11.903 − 無音3.5 − 言い淀み3.200
-const TOLERANCE = 0.1;
+// ── 素材の作り（数値で確定させる）──────────────────────────────
+const SR = 22050;              // 凍結素材の標本化周波数
+const FPS = 15;                // 合成する映像のコマ数/秒。コマ周期 = 1/15 秒
+const VIDEO_W = 320, VIDEO_H = 180;   // 絵の中身は判定に使わない（測るのは a:0）。安く作るための寸法
+const TAS_GAP = 0.10;          // 素材TA-S の間隙（秒）。DEFAULT_MIN_SILENCE=0.20 より短い＝詰まらない
+
+// 素材TA の全長。凍結素材の最終区間の終わりと一致する（末尾の無音は存在しない）。
+// calibration.json の audio.duration_sec（11.903）は実ファイルと 0.500秒 食い違う説明値なので使わない。
+const TA_DUR = 11.403;
+// 素材TA-S の全長。8区間を 0.10秒 の間隙で並べた設計値（下の TAS_SEGMENTS の末尾と一致する）。
+const TAS_DUR = 8.603;
+
+// 素材TA-S の設計時刻（区間の長さは calibration.json のまま、間隙だけ 0.10秒 にした）。
+// 実装から計算せず、ここに数字で書く。
+const TAS_SEGMENTS = [
+  [0.000, 0.813], [0.913, 2.171], [2.271, 3.058], [3.158, 4.215],
+  [4.315, 5.128], [5.228, 6.358], [6.458, 7.245], [7.345, 8.603],
+];
+
+// ── 声を読む道具（数値で確定させる）────────────────────────────
+// 10ms ごとに窓の中の最大振幅を見て、フルスケールの 2% を超えていれば「鳴っている」。
+// 凍結素材は語と語の間が完全な無音（振幅0）なので、この単純な読み方で発話の位置が確定する。
+// 手順は「0.10秒 未満の塊を捨てる → 残った塊のうち間隔 0.10秒 未満のものをつなぐ」。
+// 先に切れ端を捨てるのは、区間の端をコマ境界へ丸めたときに継ぎ目へ数十ミリ秒だけ残る
+// 隣の語の出だしを拾わないため（実測の切れ端は 0.012〜0.023秒、本物の発話の最小の塊は 0.190秒。
+// 0.10秒 はその中間にあり、どちらへも 4倍以上の余裕がある）。
+const RMS_WIN = 0.010, RMS_THR = 0.02, MERGE_GAP = 0.100, MIN_RUN = 0.100;
+
+// ── 凍結した期待値（すべて手計算。実装から導かない）──────────────
+//
+// 【残すべき区間】calibration.json の kind==="word" の4区間。言い淀み(kind==="filler")と、
+// 語と語の間の 0.5秒 の無音（0.20秒以上なので詰める対象）を取り除くと、これだけが残る。
+// 【コマ境界への丸め】端を「秒×15 を四捨五入して 15 で割る」規則で丸める（G-EDIT-TRIM-F）。
+//   1.313×15=19.695→20 / 2.571×15=38.565→39   → 19コマ
+//   4.358×15=65.370→65 / 5.415×15=81.225→81   → 16コマ
+//   7.228×15=108.42→108 / 8.358×15=125.37→125 → 17コマ
+//  10.145×15=152.175→152 /11.403×15=171.045→171→ 19コマ
+//   合計 71コマ = 71/15 = 4.733333 秒
+const TA_KEEP_FRAMES = [[20, 39], [65, 81], [108, 125], [152, 171]];
+const TA_EXPECT_SEC = 71 / 15;
+
+// 素材TA-S は間隙 0.10秒 が詰まらないので、間隙ごと1つにつながった4区間が残る。
+//   0.813×15=12.195→12 / 2.271×15=34.065→34   → 22コマ
+//   3.058×15=45.870→46 / 4.315×15=64.725→65   → 19コマ
+//   5.128×15=76.920→77 / 6.458×15=96.870→97   → 20コマ
+//   7.245×15=108.675→109 / 8.603×15=129.045→129 → 20コマ
+//   合計 81コマ = 81/15 = 5.400000 秒
+const TAS_KEEP_FRAMES = [[12, 34], [46, 65], [77, 97], [109, 129]];
+const TAS_EXPECT_SEC = 81 / 15;
+
+// 【素材の中で声が鳴っている位置】上の道具で凍結素材を読んだ値。素材が凍結どおりであることの
+// 対照でもあり、「無音が有るときに有ると言える」ことの証明でもある（8個読めなければ、
+// 出力に無音が無いという判定は何も見ていないことになる）。
+const TA_SRC_GROUPS = [
+  [0.000, 0.431], [1.353, 2.185], [3.067, 3.478], [4.350, 5.031],
+  [5.913, 6.344], [7.226, 7.978], [8.850, 9.261], [10.183, 11.015],
+];
+// 素材TA-S は同じ区間を並べ直したものなので、各区間の頭出し時刻ぶんだけ前へ寄る。
+//   区間1: 1.313→0.913（-0.400）/ 区間3: 4.358→3.158（-1.200）
+//   区間5: 7.228→5.228（-2.000）/ 区間7: 10.145→7.345（-2.800）
+//   区間0: 0.000→0.000（ 0.000）/ 区間2: 3.071→2.271（-0.800）
+//   区間4: 5.915→4.315（-1.600）/ 区間6: 8.858→6.458（-2.400）
+const TAS_SRC_GROUPS = [
+  [0.000, 0.431], [0.953, 1.785], [2.267, 2.678], [3.150, 3.831],
+  [4.313, 4.744], [5.226, 5.978], [6.450, 6.861], [7.383, 8.215],
+];
+
+// 【出力の中で声が鳴っている位置】残す区間へ落として、前へ詰めた位置。
+//  素材TA: 区間の頭 1.333333 / 4.333333 / 7.200000 / 10.133333、詰めたあとの頭 0 / 1.266667 / 2.333333 / 3.466667
+//   語1 [1.353,2.185] → [0.020,0.852]   語3 [4.350,5.031] → [1.283,1.964]
+//   語5 [7.226,7.978] → [2.359,3.111]   語7 [10.183,11.015] → [3.516,4.348]
+const TA_EXPECT_GROUPS = [
+  [0.020, 0.852], [1.283, 1.964], [2.359, 3.111], [3.516, 4.348],
+];
+//  素材TA-S: 区間の頭 0.800000 / 3.066667 / 5.133333 / 7.266667、詰めたあとの頭 0 / 1.466667 / 2.733333 / 4.066667
+//   語1 [0.953,1.785] → [0.153,0.985]   語3 [3.150,3.831] → [1.550,2.231]
+//   語5 [5.226,5.978] → [2.826,3.578]   語7 [7.383,8.215] → [4.183,5.015]
+const TAS_EXPECT_GROUPS = [
+  [0.153, 0.985], [1.550, 2.231], [2.826, 3.578], [4.183, 5.015],
+];
+
+// 【長い無音を詰めた寄与】(11.403−4.733333) − (8.603−5.400) = 6.669667 − 3.203 = 3.466667 秒。
+// 設計上の無音は 0.5秒×7＝3.500秒 で、差 0.033333秒（＝半コマ）はコマ境界へ丸めたぶん。
+const SILENCE_CONTRIB = 3.466667;
+
+// 【許容幅】
+// ・尺 TOL_SEC=0.025秒。出力は 22050Hz・aac で、a:0 の duration は標本の数でほぼそのまま出る
+//   （実測 duration_ts=104363 に対し期待 104370。食い違いは 7標本＝0.0003秒）。
+//   0.025秒 はその約80倍の余裕を取りつつ、コマ周期 1/15=0.067秒 の半分（0.033秒）より小さいので、
+//   コマが1つ増減した実装は必ず落ちる。
+// ・位置 TOL_POS=0.030秒。読み取りの刻みが 0.010秒 で、実測の食い違いは最大 0.006秒。
+//   その5倍を取った。半コマ（0.033秒）より小さいので、区間を1コマずらした実装は落ちる。
+const TOL_SEC = 0.025;
+const TOL_POS = 0.030;
+const TOL_CONTRIB = 0.050;
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -39,27 +164,89 @@ function sha256(p) {
   return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 }
 
-function audioDuration(p) {
-  const out = execFileSync("ffprobe", [
-    "-v", "error", "-select_streams", "a:0",
-    "-show_entries", "stream=duration", "-of", "default=nw=1:nk=1", p,
-  ], { encoding: "utf-8" });
-  return Number(out.trim());
+function ffmpeg(args) {
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...args], { stdio: ["ignore", "ignore", "pipe"] });
 }
 
-/** 残す区間だけを取り出してつないだ音声を作る */
-function renderTrimmed(input, keep, output) {
-  const f = buildTrimFilters(keep);
-  assert.ok(f, "残す区間が空");
-  execFileSync("ffmpeg", [
-    "-y", "-v", "error", "-i", input,
-    "-filter_complex", f.audioChain, "-map", "[taout]",
-    "-c:a", "aac", "-b:a", "192k", output,
-  ]);
-  return output;
+function probeEntry(file, stream, entry) {
+  return execFileSync("ffprobe", [
+    "-v", "error", "-select_streams", stream,
+    "-show_entries", `stream=${entry}`, "-of", "default=nw=1:nk=1", file,
+  ], { encoding: "utf-8" }).trim();
 }
 
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "vs-trim-"));
+const audioDuration = (p) => Number(probeEntry(p, "a:0", "duration"));
+const videoFrames = (p) => Number(probeEntry(p, "v:0", "nb_frames"));
+
+/** 音声を 22050Hz モノラルの生の標本として読む */
+function readPcm(file) {
+  const buf = execFileSync("ffmpeg", [
+    "-v", "error", "-i", file, "-map", "a:0",
+    "-f", "s16le", "-ac", "1", "-ar", String(SR), "-",
+  ], { maxBuffer: 1 << 28 });
+  const n = buf.length >> 1;
+  const a = new Int16Array(n);
+  for (let i = 0; i < n; i++) a[i] = buf.readInt16LE(i * 2);
+  return a;
+}
+
+/** 声が鳴っている区間（秒）の一覧。上の RMS_* の数値だけで決まる */
+function voiceGroups(samples) {
+  const win = Math.round(SR * RMS_WIN);
+  const loud = [];
+  for (let i = 0; i + win <= samples.length; i += win) {
+    let m = 0;
+    for (let j = i; j < i + win; j++) { const v = Math.abs(samples[j]) / 32768; if (v > m) m = v; }
+    loud.push(m > RMS_THR);
+  }
+  const raw = [];
+  let st = null;
+  for (let k = 0; k < loud.length; k++) {
+    if (loud[k] && st === null) st = k;
+    if (!loud[k] && st !== null) { raw.push([st * win / SR, k * win / SR]); st = null; }
+  }
+  if (st !== null) raw.push([st * win / SR, loud.length * win / SR]);
+  const kept = raw.filter((r) => r[1] - r[0] >= MIN_RUN);
+  const merged = [];
+  for (const r of kept) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] - last[1] < MERGE_GAP) last[1] = r[1];
+    else merged.push([r[0], r[1]]);
+  }
+  return merged;
+}
+
+const fmtGroups = (g) => JSON.stringify(g.map((r) => r.map((v) => +v.toFixed(3))));
+
+/**
+ * 合格条件そのもの。満たさない点を文章で返す（空なら合格）。
+ * 変異実験は、壊した成果物をこの同じ関数へ通して「空でない」ことを見る。
+ */
+function judge(out, expectSec, expectFrames, expectGroups) {
+  const bad = [];
+  const d = audioDuration(out);
+  if (!(Math.abs(d - expectSec) <= TOL_SEC)) {
+    bad.push(`尺 ${d.toFixed(3)}秒（期待 ${expectSec.toFixed(3)} ±${TOL_SEC}）`);
+  }
+  const nf = videoFrames(out);
+  if (nf !== expectFrames) bad.push(`コマ数 ${nf}（期待 ${expectFrames}）`);
+  const got = voiceGroups(readPcm(out));
+  if (got.length !== expectGroups.length) {
+    bad.push(`声の区間が ${got.length} 個（期待 ${expectGroups.length}）: ${fmtGroups(got)}`);
+  } else {
+    for (let i = 0; i < got.length; i++) {
+      for (const k of [0, 1]) {
+        if (!(Math.abs(got[i][k] - expectGroups[i][k]) <= TOL_POS)) {
+          bad.push(`声の区間${i + 1}の${k === 0 ? "頭" : "尻"} ${got[i][k].toFixed(3)}秒`
+            + `（期待 ${expectGroups[i][k].toFixed(3)} ±${TOL_POS}）`);
+        }
+      }
+    }
+  }
+  return bad;
+}
+
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "vs-trimdur-"));
 
 try {
   // ── 素材が凍結どおりであること ────────────────────────────
@@ -71,71 +258,192 @@ try {
   });
 
   const cal = JSON.parse(fs.readFileSync(CAL_JSON, "utf-8"));
-  const DURATION = cal.audio.duration_sec;
-  const words = cal.segments.map((s) => ({ w: s.text, start: s.start, end: s.end }));
+  const segs = cal.segments;
 
-  t(`対照: 詰める前の音声が ${DURATION} 秒である`, () => {
+  // 説明書きの数値を、素材そのもので検算する（2026-08-08 の失敗の再発防止）。
+  t(`検算: 凍結素材の実測長が ${TA_DUR} 秒（＝最終区間の終わり。末尾の無音は存在しない）`, () => {
     const d = audioDuration(FLAC);
-    assert.ok(Math.abs(d - DURATION) <= 0.02, `実=${d} 秒`);
+    assert.ok(Math.abs(d - TA_DUR) <= 0.002, `実=${d} 秒`);
+    assert.strictEqual(segs[segs.length - 1].end, TA_DUR);
+  });
+  t("既知の食い違い: calibration.json の duration_sec は実ファイルと 0.500秒 違う（判定には使わない）", () => {
+    // 11.903 は人が書いた説明値で、実ファイルは 11.402812秒。
+    // ここで凍結しておくと、黙って直されたり別の値に化けたときに気づける。
+    assert.strictEqual(cal.audio.duration_sec, 11.903);
+    assert.ok(Math.abs(cal.audio.duration_sec - TA_DUR - 0.5) < 1e-9);
   });
 
-  // ── A: 通常設定で詰めた尺 ────────────────────────────────
-  const plan = planTrim(words, { duration: DURATION });
-  const outNormal = renderTrimmed(FLAC, plan.keep, path.join(work, "normal.m4a"));
-  t(`A: 通常設定で詰めた音声の尺が ${EXPECTED} 秒（±${TOLERANCE}）`, () => {
-    const d = audioDuration(outNormal);
-    assert.ok(Math.abs(d - EXPECTED) <= TOLERANCE,
-      `実=${d.toFixed(3)} 秒（期待 ${EXPECTED} ±${TOLERANCE}）`);
+  // ── 素材を作る ────────────────────────────────────────────
+  // 素材TA: 凍結素材の音声そのまま + 15fps の映像（絵の中身は判定に使わない）。
+  // 映像を音声より長くするのは、映像側で音声が切れないようにするため。
+  const TA = path.join(work, "ta.mkv");
+  ffmpeg(["-f", "lavfi", "-i", `color=c=black:s=${VIDEO_W}x${VIDEO_H}:r=${FPS}`,
+    "-i", FLAC, "-t", "12.0",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "flac", TA]);
+
+  // 素材TA-S: 同じ8区間を、間隙 0.10秒 で並べ直したもの。
+  // 区間の切り出しは calibration.json の start_sample/end_sample（整数標本）を使う。
+  const segFiles = segs.map((s) => {
+    const o = path.join(work, `seg${s.index}.wav`);
+    ffmpeg(["-i", FLAC,
+      "-af", `atrim=start_sample=${s.start_sample}:end_sample=${s.end_sample},asetpts=PTS-STARTPTS`,
+      "-c:a", "pcm_s16le", o]);
+    return o;
+  });
+  const gapFile = path.join(work, "gap.wav");
+  ffmpeg(["-f", "lavfi", "-i", `anullsrc=r=${SR}:cl=mono`, "-t", String(TAS_GAP), "-c:a", "pcm_s16le", gapFile]);
+  const parts = [];
+  segFiles.forEach((f, i) => { if (i) parts.push(gapFile); parts.push(f); });
+  const listFile = path.join(work, "list.txt");
+  fs.writeFileSync(listFile, parts.map((p) => `file '${p}'`).join("\n"));
+  const tasAudio = path.join(work, "tas.wav");
+  ffmpeg(["-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "pcm_s16le", tasAudio]);
+  const TAS = path.join(work, "tas.mkv");
+  ffmpeg(["-f", "lavfi", "-i", `color=c=black:s=${VIDEO_W}x${VIDEO_H}:r=${FPS}`,
+    "-i", tasAudio, "-t", "9.0",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "flac", TAS]);
+
+  t(`素材TA-S: 合成した全長が ${TAS_DUR} 秒（8区間 + 0.10秒×7）`, () => {
+    const d = audioDuration(tasAudio);
+    assert.ok(Math.abs(d - TAS_DUR) <= 0.002, `実=${d} 秒`);
   });
 
-  // ── 対照: 無音カットと言い淀みカットの寄与を分けて測る ────
-  // これが無いと、単に音声を削る実装でも A が合格してしまう。
-  const planFillerOnly = planTrim(words, { duration: DURATION, cutSilence: false });
-  const outFillerOnly = renderTrimmed(FLAC, planFillerOnly.keep, path.join(work, "filler.m4a"));
-  const EXPECT_FILLER_ONLY = DURATION - 3.2;   // 8.703
-  t(`対照A: 言い淀みだけ詰めると ${EXPECT_FILLER_ONLY.toFixed(3)} 秒（±${TOLERANCE}）`, () => {
-    const d = audioDuration(outFillerOnly);
-    assert.ok(Math.abs(d - EXPECT_FILLER_ONLY) <= TOLERANCE, `実=${d.toFixed(3)} 秒`);
+  // ── 対照: 声を読む道具が、有るものを有ると言えること ────────
+  // 「出力に長い無音が残っていない」を合格条件にする以上、無音／発話を読み分けられることを
+  // 先に示す必要がある（AGENTS.md「有るとき有ると言える対照」）。
+  t(`対照: 素材TA から声の区間が凍結どおり ${TA_SRC_GROUPS.length} 個読める`, () => {
+    const got = voiceGroups(readPcm(TA));
+    assert.strictEqual(got.length, TA_SRC_GROUPS.length, `実=${fmtGroups(got)}`);
+    for (let i = 0; i < got.length; i++) {
+      for (const k of [0, 1]) {
+        assert.ok(Math.abs(got[i][k] - TA_SRC_GROUPS[i][k]) <= TOL_POS,
+          `区間${i + 1} が ${fmtGroups([got[i]])}（凍結 ${fmtGroups([TA_SRC_GROUPS[i]])}）`);
+      }
+    }
+  });
+  t(`対照: 素材TA-S から声の区間が凍結どおり ${TAS_SRC_GROUPS.length} 個読める`, () => {
+    const got = voiceGroups(readPcm(TAS));
+    assert.strictEqual(got.length, TAS_SRC_GROUPS.length, `実=${fmtGroups(got)}`);
+    for (let i = 0; i < got.length; i++) {
+      for (const k of [0, 1]) {
+        assert.ok(Math.abs(got[i][k] - TAS_SRC_GROUPS[i][k]) <= TOL_POS,
+          `区間${i + 1} が ${fmtGroups([got[i]])}（凍結 ${fmtGroups([TAS_SRC_GROUPS[i]])}）`);
+      }
+    }
   });
 
-  const planSilenceOnly = planTrim(words, { duration: DURATION, cutFillers: false });
-  const outSilenceOnly = renderTrimmed(FLAC, planSilenceOnly.keep, path.join(work, "silence.m4a"));
-  const EXPECT_SILENCE_ONLY = DURATION - 3.5;  // 8.403
-  t(`対照A: 無音だけ詰めると ${EXPECT_SILENCE_ONLY.toFixed(3)} 秒（±${TOLERANCE}）`, () => {
-    const d = audioDuration(outSilenceOnly);
-    assert.ok(Math.abs(d - EXPECT_SILENCE_ONLY) <= TOLERANCE, `実=${d.toFixed(3)} 秒`);
+  // ── 製品経路で詰める ──────────────────────────────────────
+  // pipeline.mjs と同じ順で呼ぶ: probeSize でコマ数/秒 → snapStart で切り出し開始を揃える
+  // → planTrim で残す区間を決める → renderClip が出荷どおりの設定で焼く。
+  const wordsTA = segs.map((s) => ({ w: s.text, start: s.start, end: s.end }));
+  const wordsTAS = segs.map((s, i) => ({ w: s.text, start: TAS_SEGMENTS[i][0], end: TAS_SEGMENTS[i][1] }));
+
+  const sizeTA = await probeSize(TA);
+  const sizeTAS = await probeSize(TAS);
+  t(`製品経路が素材のコマ数/秒を ${FPS} と読む（読めないと揃えが素通りして別の数字になる）`, () => {
+    assert.strictEqual(sizeTA.fps, FPS, `素材TA=${sizeTA.fps}`);
+    assert.strictEqual(sizeTAS.fps, FPS, `素材TA-S=${sizeTAS.fps}`);
   });
 
-  t("対照A: 無音カットの寄与が 3.500 秒（±0.15）", () => {
-    // 両者の短縮量の差が、無音カットの寄与にあたる（A の verify が求めている確認）。
-    const dFiller = audioDuration(outFillerOnly);
-    const dNormal = audioDuration(outNormal);
-    const contribution = dFiller - dNormal;
-    assert.ok(Math.abs(contribution - 3.5) <= 0.15,
-      `実=${contribution.toFixed(3)} 秒（期待 3.500 ±0.15）`);
+  async function runProduct(input, size, words, duration, out, opts = {}) {
+    const plan = planTrim(words, { duration, fps: opts.noFps ? undefined : size.fps, ...opts.planOpts });
+    const start = snapStart(0, size.fps);
+    await renderClip({
+      input, start, end: duration, output: out, orientation: "portrait",
+      srcW: size.width, srcH: size.height,
+      keep: opts.keep === null ? null : (opts.keep || plan.keep),
+    });
+    return plan;
+  }
+
+  const outTA = path.join(work, "ta-trimmed.mp4");
+  const planTA = await runProduct(TA, sizeTA, wordsTA, TA_DUR, outTA);
+  const outTAS = path.join(work, "tas-trimmed.mp4");
+  const planTAS = await runProduct(TAS, sizeTAS, wordsTAS, TAS_DUR, outTAS);
+
+  const framesOf = (plan) => plan.keep.map((s) => [Math.round(s.start * FPS), Math.round(s.end * FPS)]);
+
+  t("素材TA: 残す区間が、凍結したコマ番号のとおりである", () => {
+    assert.deepStrictEqual(framesOf(planTA), TA_KEEP_FRAMES);
+  });
+  t("素材TA-S: 残す区間が、凍結したコマ番号のとおりである（0.10秒の間隙は詰まらない）", () => {
+    assert.deepStrictEqual(framesOf(planTAS), TAS_KEEP_FRAMES);
   });
 
-  // ── 対照: 何も詰めない設定なら縮まない ────────────────────
-  const planNone = planTrim(words, { duration: DURATION, cutSilence: false, cutFillers: false });
-  const outNone = renderTrimmed(FLAC, planNone.keep, path.join(work, "none.m4a"));
-  t(`対照A: 何も詰めない設定なら ${DURATION} 秒のまま（±${TOLERANCE}）`, () => {
-    const d = audioDuration(outNone);
-    assert.ok(Math.abs(d - DURATION) <= TOLERANCE, `実=${d.toFixed(3)} 秒`);
+  t(`A: 素材TA の出力が、長い無音と言い淀みだけを取り除いたものになっている（${TA_EXPECT_SEC.toFixed(3)}秒・71コマ）`, () => {
+    const bad = judge(outTA, TA_EXPECT_SEC, 71, TA_EXPECT_GROUPS);
+    assert.strictEqual(bad.length, 0, bad.join(" / "));
+  });
+  t(`A: 素材TA-S の出力が、言い淀みだけを取り除いたものになっている（${TAS_EXPECT_SEC.toFixed(3)}秒・81コマ）`, () => {
+    const bad = judge(outTAS, TAS_EXPECT_SEC, 81, TAS_EXPECT_GROUPS);
+    assert.strictEqual(bad.length, 0, bad.join(" / "));
   });
 
-  // ── 対照: 区間の数だけ尺が余る組み方でないこと ────────────
-  // select で組むと音声1コマ(約46ms)の端数が区間の数だけ積み上がる（実測で確認済み）。
-  // 区間を細かく割っても合計が変わらないことで、その組み方でないことを示す。
-  t("対照A: 残す区間を細かく割っても、合計の尺は変わらない", () => {
-    const coarse = [{ start: 1.0, end: 3.0 }];
-    const fine = [
-      { start: 1.0, end: 1.5 }, { start: 1.5, end: 2.0 },
-      { start: 2.0, end: 2.5 }, { start: 2.5, end: 3.0 },
-    ];
-    const a = audioDuration(renderTrimmed(FLAC, coarse, path.join(work, "coarse.m4a")));
-    const b = audioDuration(renderTrimmed(FLAC, fine, path.join(work, "fine.m4a")));
-    assert.ok(Math.abs(a - b) <= 0.03,
-      `1区間=${a.toFixed(3)}秒 と 4区間=${b.toFixed(3)}秒 が違う（端数が積み上がっている）`);
+  t(`A: 長い無音を詰めた寄与が ${SILENCE_CONTRIB} 秒として現れる`, () => {
+    const cutTA = TA_DUR - audioDuration(outTA);
+    const cutTAS = TAS_DUR - audioDuration(outTAS);
+    const contrib = cutTA - cutTAS;
+    assert.ok(Math.abs(contrib - SILENCE_CONTRIB) <= TOL_CONTRIB,
+      `実=${contrib.toFixed(3)} 秒（TA は ${cutTA.toFixed(3)} 秒 / TA-S は ${cutTAS.toFixed(3)} 秒 詰めた）`);
+  });
+
+  // ── 変異実験 ──────────────────────────────────────────────
+  // 心臓部を壊した実装で、上と同じ judge() が落ちることを、この検査自身に示させる。
+  // 「緑になった理由が測り方の中に埋め込まれている」状態でないことの確認（docs/failures.md 参照）。
+
+  const mutTA = {};
+  // M1: 一切詰めない（keep を渡さない）
+  mutTA.none = path.join(work, "m1-none.mp4");
+  await runProduct(TA, sizeTA, wordsTA, TA_DUR, mutTA.none, { keep: null });
+  // M2: 一切詰めず、-t を期待の尺にするだけ（＝末尾を切るだけ）。尺は合ってしまう。
+  mutTA.tail = path.join(work, "m2-tail.mp4");
+  await renderClip({
+    input: TA, start: 0, end: TA_EXPECT_SEC, output: mutTA.tail, orientation: "portrait",
+    srcW: sizeTA.width, srcH: sizeTA.height, keep: null,
+  });
+  // M3: 尺もコマ数も合うが、残す場所が違う（言い淀みのほうを残した実装）。
+  //     コマ番号で [0,9] [39,54] [81,108] [126,146] ＝ 9+15+27+20 ＝ 71コマ ＝ 4.733秒。
+  //     中身は言い淀み4区間になる。尺だけを見る判定はこれを通してしまう。
+  mutTA.wrongPlace = path.join(work, "m3-wrongplace.mp4");
+  await runProduct(TA, sizeTA, wordsTA, TA_DUR, mutTA.wrongPlace, {
+    keep: [[0, 9], [39, 54], [81, 108], [126, 146]].map(([a, b]) => ({ start: a / FPS, end: b / FPS })),
+  });
+  // M4: コマ境界へ揃えない（fps が取れなかったのと同じ状態）
+  mutTA.nofps = path.join(work, "m4-nofps.mp4");
+  await runProduct(TA, sizeTA, wordsTA, TA_DUR, mutTA.nofps, { noFps: true });
+  // M5: しきい値を無視して、どんなに短い無音も詰める（素材TA-S で効く）
+  const mutTAS_all = path.join(work, "m5-allsilence.mp4");
+  await runProduct(TAS, sizeTAS, wordsTAS, TAS_DUR, mutTAS_all, { planOpts: { minSilence: 0 } });
+
+  t("変異: 一切詰めない実装は落ちる（尺も声の位置も合わない）", () => {
+    const bad = judge(mutTA.none, TA_EXPECT_SEC, 71, TA_EXPECT_GROUPS);
+    assert.ok(bad.length > 0, "一切詰めていないのに合格した");
+  });
+  t("変異: 末尾を切るだけの実装は落ちる（尺は合うが、声の位置が合わない）", () => {
+    // これが「尺だけでは判定できない」ことの実証。尺の判定だけなら通ってしまう。
+    const d = audioDuration(mutTA.tail);
+    assert.ok(Math.abs(d - TA_EXPECT_SEC) <= TOL_SEC,
+      `この変異は尺が合っている前提の実験だが、実=${d.toFixed(3)}秒だった`);
+    const bad = judge(mutTA.tail, TA_EXPECT_SEC, 71, TA_EXPECT_GROUPS);
+    assert.ok(bad.length > 0, "末尾を切っただけなのに合格した");
+  });
+  t("変異: 尺もコマ数も合うが残す場所が違う実装は落ちる（言い淀みのほうを残した実装）", () => {
+    const d = audioDuration(mutTA.wrongPlace);
+    assert.ok(Math.abs(d - TA_EXPECT_SEC) <= TOL_SEC,
+      `この変異は尺が合っている前提の実験だが、実=${d.toFixed(3)}秒だった`);
+    assert.strictEqual(videoFrames(mutTA.wrongPlace), 71, "この変異はコマ数も合っている前提");
+    const bad = judge(mutTA.wrongPlace, TA_EXPECT_SEC, 71, TA_EXPECT_GROUPS);
+    assert.ok(bad.length > 0, "残す場所が違うのに合格した");
+  });
+  t("変異: コマ境界へ揃えない実装は落ちる（＝fps を凍結する必要があることの実証）", () => {
+    const bad = judge(mutTA.nofps, TA_EXPECT_SEC, 71, TA_EXPECT_GROUPS);
+    assert.ok(bad.length > 0, "揃えなくても合格した＝fps を凍結する意味が無い");
+  });
+  t("変異: しきい値未満の無音まで詰める実装は落ちる（素材TA-S で効く）", () => {
+    const bad = judge(mutTAS_all, TAS_EXPECT_SEC, 81, TAS_EXPECT_GROUPS);
+    assert.ok(bad.length > 0, "0.10秒の間隙まで詰めたのに合格した");
   });
 } finally {
   fs.rmSync(work, { recursive: true, force: true });

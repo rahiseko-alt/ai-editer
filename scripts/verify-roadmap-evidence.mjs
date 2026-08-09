@@ -19,6 +19,8 @@
 // これはAIの裁量やレビュー時の見落としに委ねず、どこまで割るかの基準をCIで機械的に閉じる。
 // 例外：meta.template:true（白紙テンプレ・コピー直後）は、criteria 0件の ROOT プレースホルダを
 //   意図的に許容する（下の nodes 空チェック／nav 必須チェックが代わりに効く）。
+// 例外：status:"frozen"（凍結した未来枝）は criteria 0件を許容する。着手条件が揃うまで言語化分解しない
+//   枝を、ツリーの形として残すため。凍結を解く＝status から frozen を外した瞬間に criteria 必須が復活する。
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -81,7 +83,13 @@ function main() {
           `${node.id}: 子を持つ状態ノードに criteria が付いています（受入条件は葉にのみ許可。分解済みなら判定は子に委譲すること）`,
         );
       }
-      if (!isTemplate && !hasChildren && node.kind === "state" && critCount === 0) {
+      // status:"frozen"（凍結した未来枝）は除外する。2026-08-09 マスター指示により、ゴール直下の
+      // ②（PWA）③（SaaS）は「①が納品できる状態になるまで着手しない」＝初めから凍結で、言語化分解
+      // （criteria/verify）もしない枝として置く。着手条件が揃っていない枝に criteria を書かせると、
+      // 実装より先に基準を凍結できず「後から自分に都合よく緩める」余地を作るため、書かせない方が正しい。
+      // 凍結を解くとき status から frozen を外す＝その瞬間に criteria 必須が自動で復活する。
+      const isFrozen = node.status === "frozen";
+      if (!isTemplate && !isFrozen && !hasChildren && node.kind === "state" && critCount === 0) {
         violations.push(
           `${node.id}: 子を持たない状態ノードなのに criteria がありません（原子まで割って verify を置くこと。まだ分解途中なら children を追加すること）`,
         );

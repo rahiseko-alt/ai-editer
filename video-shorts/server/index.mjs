@@ -21,7 +21,7 @@ import { parseJobParams } from "./job-params.mjs";
 import {
   readEdits, saveWordEdit, applyEdits, editPairs,
 } from "../src/caption-store.mjs";
-import { appendTerm, DICT_PATH } from "../src/term-dictionary.mjs";
+import { appendSafeTerm, DICT_PATH } from "../src/term-dictionary.mjs";
 import { recaptionStage } from "../src/recaption-stage.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
@@ -477,7 +477,13 @@ async function handlePostTerms(req, res, jobId) {
   try {
     // 辞書の置き場所は差し替えられるようにする。テストが本物の用語辞書へ書き込むと、
     // 以後の全案件にその語が効いてしまう（この辞書は全ジョブに単純文字列置換で効く）。
-    result = appendTerm(body.before, body.after, process.env.VS_TERM_DICT || DICT_PATH);
+    // 判定は appendSafeTerm の中で、語の形（1語・12文字以内・予約キーでない・重複でない）
+    // だけを見る＝世間の用語辞書と同じ水準。載せた語が他の案件で誤爆しないことは保証しない。
+    // 字幕の最終的な正しさは、AI が文脈で見て直すことと、人間の確認が担う（2026-08-09 決定）。
+    result = appendSafeTerm(
+      body.before, body.after,
+      process.env.VS_TERM_DICT || DICT_PATH,
+    );
   } catch (e) {
     return jsonRes(res, 500, { error: e.message });
   }
