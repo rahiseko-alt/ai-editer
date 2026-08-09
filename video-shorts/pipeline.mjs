@@ -244,7 +244,14 @@ async function cmdRender(workDir, opts = {}) {
     // 字幕(ASS)生成（--no-sub 指定時はスキップ）
     // 無音・言い淀みを詰める設定なら、この区間の中で残す部分を先に決める。
     // 字幕は詰めたあとの時間軸で書かないと、詰めたぶんだけ遅れて出る。
-    const relWordsAll = wordsInRange(transcript.words || [], seg.start, seg.end);
+    // 切り出しの開始をコマの境目へ揃える。
+    // renderClip は -ss で入力シークするので、開始が半端な時刻だと、シーク後のコマ格子が
+    // その半端さのぶんずれる。すると残す区間の端をコマ周期の整数倍にしても、
+    // trim（最寄りコマへ丸める）と atrim（サンプル精度で切る）がまた食い違う。
+    // 実測: -ss 0.010/0.020/0.030 で 149コマ中149コマが1コマずれた（2026-08-08）。
+    // 開始を揃えておけば、以降の格子は 0, 1/fps, 2/fps ... になり、区間の端と一致する。
+    const segStart = srcFps ? Math.round(seg.start * srcFps) / srcFps : seg.start;
+    const relWordsAll = wordsInRange(transcript.words || [], segStart, seg.end);
     let keep = null;
     let assWords = relWordsAll;
     let clipDuration = seg.duration;
@@ -264,7 +271,7 @@ async function cmdRender(workDir, opts = {}) {
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderClip({ input: state.input, start: seg.start, end: seg.end, assPath, output: outFile, orientation, srcW, srcH, keep });
+      await renderClip({ input: state.input, start: segStart, end: seg.end, assPath, output: outFile, orientation, srcW, srcH, keep });
       const size = await probeSize(outFile);
       manifest.push({
         index: i + 1,

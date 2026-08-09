@@ -157,8 +157,40 @@ def hz_to_frame(hz):
     return int(round((hz - BASE_HZ) / STEP_HZ))
 
 
+def render_product(src, start, end, out):
+    """製品と同じ経路で作る。planTrim が区間を決め、renderClip が -ss で切り出して焼く。
+
+    ここを通さないと、製品が揃えているかを一度も見ないまま緑になる
+    （実測: planTrim から snapToFrames の呼び出しを外しても全件 PASS だった。2026-08-08）。
+    start はわざとコマの境目でない時刻を渡す。製品は -ss で入力シークするので、
+    そこが揃っていないとコマ格子ごとずれる。
+    """
+    js = """
+import('%s/src/trim-plan.mjs').then(async (tp) => {
+  const rv = await import('%s/src/render-vertical.mjs');
+  const size = await rv.probeSize('%s');
+  // 製品と同じ: 切り出しの開始をコマの境目へ揃える（pipeline.mjs と同じ式）
+  const segStart = size.fps ? Math.round(%s * size.fps) / size.fps : %s;
+  // 区間の中の語（ここでは「1秒ごとに0.7秒しゃべる」を模す）
+  const words = [];
+  for (let k = 0; k * 1.0 + 0.7 <= %s - segStart; k++) {
+    words.push({ w: 'あ', start: k * 1.0, end: k * 1.0 + 0.7 });
+  }
+  const plan = tp.planTrim(words, { duration: %s - segStart, fps: size.fps });
+  await rv.renderClip({
+    input: '%s', start: segStart, end: %s, output: '%s',
+    orientation: 'portrait', srcW: size.width, srcH: size.height, keep: plan.keep,
+  });
+  console.log(JSON.stringify({ fps: size.fps, spans: plan.keep.length, segStart, cutSeconds: plan.cutSeconds }));
+});
+""" % (ROOT, ROOT, src, start, start, end, end, src, end, out)
+    got = subprocess.run(["node", "-e", js], stdout=subprocess.PIPE, check=True,
+                         encoding="utf-8").stdout
+    return json.loads(got)
+
+
 def render(src, keep, out, shortest=False):
-    """keep 区間だけを残して詰める。製品と同じ buildTrimFilters を使う。"""
+    """【対照専用】keep 区間だけを残して詰める。揃えない場合と -shortest の比較に使う。"""
     js = (
         'import("%s/src/trim-plan.mjs").then(m=>{'
         'const f=m.buildTrimFilters(%s);'
@@ -180,13 +212,17 @@ def render(src, keep, out, shortest=False):
     subprocess.run(args, check=True)
 
 
-def measure(out):
-    """出力の各コマについて (絵から読んだ番号, 音から読んだ番号) を返す"""
+def measure(out, y_offset=0):
+    """出力の各コマについて (絵から読んだ番号, 音から読んだ番号) を返す
+
+    y_offset: 縦化で上に足された黒帯の高さ。製品経路の出力は 9:16 へ pad されるので、
+    目印の位置がそのぶん下がる。
+    """
     frames = read_frames(out)
     pcm = read_pcm(out)
     pairs = []
     for i, fr in enumerate(frames):
-        v = read_marker(fr)
+        v = read_marker(fr[y_offset:, :])
         # そのコマが映っている時間の真ん中あたりで音を測る（端は継ぎ目のフェードが掛かる）
         t0 = i / FPS + 0.25 / FPS
         t1 = i / FPS + 0.75 / FPS
@@ -234,13 +270,52 @@ def main():
     render(src, snapped, out)
     pairs = measure(out)
     check(len(pairs) > 50, f"詰めた出力から十分な数のコマを測れた（実 {len(pairs)} コマ）")
-    gap = worst_gap(pairs)
-    # 合格ライン: 全コマで、絵から読んだ番号と音から読んだ番号の差が 0 コマ。
-    # 1コマ（1/15秒＝66.7ms）ずれた時点で口の動きと声のずれとして見える。
     bad = [(i, v, a) for i, (v, a) in enumerate(pairs) if v != a]
-    check(gap == 0,
-          f"詰めたあとも、全コマで絵と音が同じコマ番号を指す（最大ずれ {gap} コマ / "
-          f"食い違い {len(bad)} 件 先頭3件={bad[:3]}）")
+    check(worst_gap(pairs) == 0,
+          f"揃えた区間で詰めれば、全コマで絵と音が同じコマ番号を指す"
+          f"（最大ずれ {worst_gap(pairs)} コマ / 食い違い {len(bad)} 件）")
+
+    # ── 本体: 製品と同じ経路で作った出力を測る ────────────────────
+    # planTrim が区間を決め、renderClip が -ss で切り出して 9:16 へ焼く。出力設定も製品のまま。
+    # 開始秒はわざとコマの境目でない 0.02 秒にする（製品の seg.start は LLM が選ぶ任意の秒）。
+    prod = os.path.join(tmp, "product.mp4")
+    info = render_product(src, 0.02, 9.0, prod)
+    check(info["fps"] is not None, f"製品経路が素材のコマ数/秒を取れている（実 {info['fps']}）")
+    check(info["spans"] >= 5, f"製品経路が複数の区間に詰めている（実 {info['spans']} 区間）")
+    # 「一切詰めない」実装でも通ってしまわないよう、実際に短くなったことを確かめる。
+    # 却下された旧基準は、まさに詰めない偽物が合格していた。
+    check(info["cutSeconds"] > 0.5,
+          f"製品経路が実際に尺を詰めている（詰めた秒数 {info['cutSeconds']}）")
+
+    pf = read_frames(prod)
+    check(len(pf) > 0, "製品経路の出力にコマがある")
+    # 縦化で上下に黒帯が付くので、目印の位置が下がる。素材の高さから帯の高さを出す。
+    y_off = (pf[0].shape[0] - H) // 2 if pf and pf[0].shape[0] > H else 0
+    ppairs = measure(prod, y_offset=y_off)
+    pbad = [(i, v, a) for i, (v, a) in enumerate(ppairs) if v != a]
+    check(len(ppairs) > 30, f"製品経路の出力から十分な数のコマを測れた（実 {len(ppairs)} コマ）")
+    check(worst_gap(ppairs) == 0,
+          f"製品と同じ経路・同じ出力設定でも、全コマで絵と音が同じコマ番号を指す"
+          f"（最大ずれ {worst_gap(ppairs)} コマ / 食い違い {len(pbad)} 件 先頭3件={pbad[:3]}）")
+
+    # ── 1コマ区間で映像が落ちないこと ──────────────────────────
+    # 揃えた結果ちょうど1コマになる区間を ffmpeg へ渡すと、映像のコマが落ちる。
+    # 実測(15fps・1コマ区間10個): 映像は10コマ出るはずが2コマしか出ず、音だけ残ってずれた。
+    # 言い淀みの合間に挟まった短い発話がこの形になるので、実素材で起きる。
+    js = ('import("%s/src/trim-plan.mjs").then(m=>{'
+          'const raw=[];for(let k=0;k<10;k++)raw.push({start:k*0.2,end:k*0.2+1/%d});'
+          'const sn=m.snapToFrames(raw,%d);'
+          'console.log(JSON.stringify({spans:sn,frames:sn.reduce((a,s)=>a+Math.round((s.end-s.start)*%d),0)}));});'
+          ) % (ROOT, FPS, FPS, FPS)
+    got = json.loads(subprocess.run(["node", "-e", js], stdout=subprocess.PIPE,
+                                    check=True, encoding="utf-8").stdout)
+    tiny = os.path.join(tmp, "tiny.mkv")
+    render(src, got["spans"], tiny)
+    n = len(read_frames(tiny))
+    check(n == got["frames"],
+          f"1コマになる区間があっても、映像のコマが落ちない（期待 {got['frames']} コマ / 実 {n} コマ）")
+    check(all(round((sp["end"] - sp["start"]) * FPS) >= 2 for sp in got["spans"]),
+          "残す区間が1コマちょうどにならない（最短2コマへ広げている）")
 
     # ── 対照: 揃えないと落ちること ──────────────────────────────
     out2 = os.path.join(tmp, "unsnapped.mkv")

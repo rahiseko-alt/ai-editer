@@ -139,18 +139,37 @@ export function planTrim(words, opts = {}) {
  * fps が取れなかった素材（r_frame_rate が 0/0 等）では揃えずに返す。
  * 従来どおりの動きになるだけで、揃えないより悪くはならない。
  */
+/**
+ * 残す区間の最短の長さ（コマ数）。
+ *
+ * 1コマちょうどの区間を ffmpeg へ渡すと、映像のコマが落ちる。
+ * 実測（15fps・1コマ区間を10個）: 映像は10コマ出るはずが2コマしか出ず、
+ * 音だけ10コマぶん残って絵と音がずれる（2026-08-08、independent-verifier の指摘）。
+ * 2コマ以上なら正常に出る（2コマ区間10個で20コマ、3コマ区間10個で30コマを実測）。
+ *
+ * 短くなった区間は落とさずに広げる。落とすと、言い淀みの合間に挟まった短い発話が
+ * 消えてしまう（AGENTS.md「必要な話を消すほうが害が大きい」）。
+ */
+export const MIN_KEEP_FRAMES = 2;
+
 export function snapToFrames(spans, fps) {
   if (!Number.isFinite(fps) || fps <= 0) return spans;
   const out = [];
   for (const s of spans) {
     const start = Math.round(s.start * fps) / fps;
-    const end = Math.round(s.end * fps) / fps;
-    // 丸めた結果つぶれた区間は落とす（0 コマぶんの区間を ffmpeg へ渡さない）
-    if (end - start < 0.5 / fps) continue;
+    let end = Math.round(s.end * fps) / fps;
+    let frames = Math.round((end - start) * fps);
+    if (frames < MIN_KEEP_FRAMES) {
+      // 短すぎる区間は、後ろへ広げて最短の長さにする（落とさない）
+      frames = MIN_KEEP_FRAMES;
+      end = start + frames / fps;
+    }
     // ここでは round3 しない。3桁に丸めるとコマ境界を表しきれず、揃えた意味が消える。
     out.push({ start, end });
   }
-  return out;
+  // 広げた結果、隣とくっついたり重なったりすることがあるのでつなぎ直す。
+  // つないだ区間もコマ境界のままなので、揃えた性質は保たれる。
+  return mergeSpans(out);
 }
 
 /** 隣り合う・重なる区間をつなぐ */
