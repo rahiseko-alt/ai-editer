@@ -553,13 +553,16 @@ function saveCaptionWord(index, text) {
       if (w) { w.w = j.after; w.edited = j.after !== w.original; }
       renderCaptionWords();
       capStatus("保存しました");
-      offerLearnTerm(j.before, j.after);
+      offerLearnTerm(j.before, j.after, index);
     })
     .catch((e) => capStatus(e.message, true));
 }
 
 // 直した語を用語辞書へ覚えさせる導線（次の案件から自動で直る）
-function offerLearnTerm(before, after) {
+// index も送るのは、サーバが「その語が書き起こしのどこにあるか」を見て、
+// 誤爆しない鍵（必要なら前後の文字を足したもの）に直してから載せるため。
+// 「高速」だけを載せると、以後の全案件で「高速道路」が「梗塞道路」になる。
+function offerLearnTerm(before, after, index) {
   if (!capCtx || !before || !after || before === after) return;
   const el = $("caption-status");
   const btn = document.createElement("button");
@@ -571,7 +574,7 @@ function offerLearnTerm(before, after) {
       withTokenHeader({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ before, after }),
+        body: JSON.stringify({ before, after, index }),
       }, job.jobToken))
       .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "登録に失敗しました")))))
       .then(() => capStatus("次からも自動で直します"))

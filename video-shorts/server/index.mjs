@@ -21,7 +21,7 @@ import { parseJobParams } from "./job-params.mjs";
 import {
   readEdits, saveWordEdit, applyEdits, editPairs,
 } from "../src/caption-store.mjs";
-import { appendTerm, DICT_PATH } from "../src/term-dictionary.mjs";
+import { appendAnchoredTerm, DICT_PATH } from "../src/term-dictionary.mjs";
 import { recaptionStage } from "../src/recaption-stage.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
@@ -473,11 +473,36 @@ async function handlePostTerms(req, res, jobId) {
   } catch (_) {
     return jsonRes(res, 400, { error: "本文が JSON ではありません" });
   }
+  // 誤爆しない鍵にするため、直した語が書き起こしのどこにあるかを見る。
+  // 「高速」だけを載せると、以後の全案件で「高速道路」が「梗塞道路」になる（実測）。
+  // 書き起こしの中で当たる箇所がちょうど1つになるまで前後の文字を足してから載せる。
+  let transcript;
+  try {
+    transcript = readTranscript(id);
+  } catch (e) {
+    return jsonRes(res, 500, { error: `文字起こしを読めませんでした: ${e.message}` });
+  }
+  if (!transcript) return jsonRes(res, 404, { error: "Not Found" });
+
+  const words = transcript.words || [];
+  const idx = Number(body.index);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= words.length) {
+    return jsonRes(res, 400, { error: "どの語を直したかが分かりません（index が範囲外です）" });
+  }
+  // 語を隙間なくつないだものを、誤爆の有無を測る土台にする。
+  // transcribe.py の置換も同じ「つないだ文字列」の上で効くので、測る対象と効く対象が一致する。
+  const texts = words.map((w) => (typeof w.w === "string" ? w.w : ""));
+  const corpus = texts.join("");
+  const at = texts.slice(0, idx).reduce((n, s) => n + s.length, 0);
+
   let result;
   try {
     // 辞書の置き場所は差し替えられるようにする。テストが本物の用語辞書へ書き込むと、
     // 以後の全案件にその語が効いてしまう（この辞書は全ジョブに単純文字列置換で効く）。
-    result = appendTerm(body.before, body.after, process.env.VS_TERM_DICT || DICT_PATH);
+    result = appendAnchoredTerm(
+      body.before, body.after, corpus, at,
+      process.env.VS_TERM_DICT || DICT_PATH,
+    );
   } catch (e) {
     return jsonRes(res, 500, { error: e.message });
   }
