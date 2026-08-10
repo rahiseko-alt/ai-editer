@@ -119,14 +119,14 @@
   "meta": {
     "title": "AI-Editer video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #57(feature/rebrand-ai-editer)をorigin/mainへマージする（PR#65・PR#76・PR#71・PR#72マージ後の状態との競合を解消済み）。続けてPR #68(feature/testinfra-lint)・#59(dist-hygiene)をマージし、残りのレビュー済みPR(#58,#56,#61,#66)もマージする。\n\nG-EDIT-REFRAME（PR #54でマージ済み）の実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超の指摘）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。",
+    "next": "PR #57(feature/rebrand-ai-editer)をorigin/mainへマージする（PR#65・PR#76・PR#71・PR#72・PR#68(feature/testinfra-lint、video-shortsへのESLint導入)マージ後の状態との競合を解消済み）。続けて#59(dist-hygiene)をマージし、残りのレビュー済みPR(#58,#56,#61,#66)もマージする。\n\nG-EDIT-REFRAME（PR #54でマージ済み）の実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超の指摘）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。",
     "handoff": {
       "done": [
         "マスター指示により、ブランド名をkosespark(KOSEspark)からAI-Editerへ変更した(PR #57)。UI表示・HTTPヘッダー名(X-Kosespark-Token→X-AI-Editer-Token等)・JSトークン変数名(__KOSESPARK_TOKEN__→__AI_EDITOR_TOKEN__)・CI検査マーカー・配布フォルダ名・関連ドキュメントまで一貫して置換した。独立レビューでroadmap.html内の表記漏れ2箇所を発見・修正済み。",
-        "PR #57をorigin/main(PR#76の checkDeclaration category修正・PR#65のscripts/typecheck導入・PR#71のP0-5-C/P0-5-D実機配線検証・PR#72のM-1モザイク失敗state.json修正等、直近複数PRが反映済み)へマージするための競合解消を繰り返し行った。docs/roadmap.htmlのmeta.next/handoffのみが競合。"
+        "PR #57をorigin/main(PR#76の checkDeclaration category修正・PR#65のscripts/typecheck導入・PR#71のP0-5-C/P0-5-D実機配線検証・PR#72のM-1モザイク失敗state.json修正・PR#68(feature/testinfra-lint、video-shortsへのESLint flat config導入)等、直近複数PRが反映済み)へマージするための競合解消を繰り返し行った。docs/roadmap.htmlのmeta.next/handoffのみが競合。"
       ],
       "trouble": [
-        "PR #57のブランチが分岐してからorigin/mainが複数PR分（#60/#64/#67/#71/#72/#75/#76等）先へ進んでおり、マージのたびにroadmap.html競合が繰り返し発生した。中身を精査し履歴を欠落させない形で統合した。"
+        "PR #57のブランチが分岐してからorigin/mainが複数PR分（#60/#64/#67/#68/#71/#72/#75/#76等）先へ進んでおり、マージのたびにroadmap.html競合が繰り返し発生した。中身を精査し履歴を欠落させない形で統合した。"
       ]
     },
     "updated": "2026-08-10",
@@ -964,8 +964,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
