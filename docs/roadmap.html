@@ -1246,7 +1246,7 @@
                       "kind": "state",
                       "theme": "壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない",
                       "meaning": "動画ファイルが壊れていたら、気づかず短い動画を渡してしまわない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
@@ -1254,14 +1254,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。"
+                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
                     },
                     {
                       "id": "M-1-F",
                       "kind": "state",
                       "theme": "モデルファイルが無い/壊れていても、分かるメッセージで止まる",
                       "meaning": "内部の部品が欠けていても、意味の分からないエラー画面を客に見せない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
@@ -1269,7 +1269,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。"
+                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
                     }
                   ]
                 },
