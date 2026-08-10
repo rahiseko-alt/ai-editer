@@ -119,18 +119,20 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "PR #55・#57・#59・#73・#74 のコンフリクトを解消してCI完走を確認し、緑ならマージする（#68マージ後の状態を取り込み済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
+    "next": "PR #57・#59・#73・#74 のCI完走を確認し、緑ならマージする（コンフリクト解消済み・全ゲート緑でプッシュ済み。#55はマージ済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
     "handoff": {
       "done": [
-        "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を完走させた。#56,#58,#61,#62,#65,#66,#68,#69,#70,#71,#72,#76の計12本をマージ済み。",
+        "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を進め、#55,#56,#58,#61,#62,#65,#66,#68,#69,#70,#71,#72,#76の計13本をマージ済み。残り#57,#59,#73,#74はコンフリクト解消・全ゲート緑でプッシュ済み、CI待ち（#63は判断待ちで意図的に保留）。",
         "マージ中、全並列PRがdocs/roadmap.htmlのmeta.next/meta.handoffという単一フィールドを書き換える設計だったため、1本マージされるたびに残り全PRが再衝突する構造的な問題が発覚した（マスター指摘により診断）。",
         "対策として、AGENTS.md「PR instructions」とcheckin-checkoutスキルの②チェックアウトに「並列バッチ作業中の個々の葉PRはmeta.next/meta.handoffを触らない」という例外規定を追記した。docs/failures.mdにも根因と対策を記録した。",
         "マスターと運用フローについて議論し、業界標準（trunk-based development、stacked PRs、merge queue、CodeRabbitのincremental review）を調査したうえで、今回の設計の何が業界的に外れていたか（merge queue不在、meta欄の共有設計）を切り分けた。",
         "マスター指示により、AGENTS.md冒頭の「CodeRabbit は無視する」最優先ルールを削除した。今後CodeRabbitのレビューはPRごとにデフォルトで読んで判断する（無視しない）。",
-        "GitHub純正merge queueの有効化手順を案内したが、個人アカウント所有リポジトリでは提供対象外と判明（Organization所有publicリポジトリまたはEnterprise Cloudのみ）。誤った案内を訂正し、Organization移管・サードパーティ導入・現状維持の3択を提示した。"
+        "GitHub純正merge queueの有効化手順を案内したが、個人アカウント所有リポジトリでは提供対象外と判明（Organization所有publicリポジトリまたはEnterprise Cloudのみ）。誤った案内を訂正し、Organization移管・サードパーティ導入・現状維持の3択を提示した。",
+        "PR #55マージ後にCodeRabbitの指摘3件が届いた（マージ済みブランチへは追いpushせず、mainから枝を作り直して新PRで対応：docs/failures.md 2026-07-25の教訓どおり）。有効な指摘2件を修正：①AGENTS.md「全PRは...必ず更新する（例外なし）」とcheckin-checkoutスキルの「その同じ瞬間にhandoffも更新する」「diff 0はあり得ない（例外なし）」が、直後に追記した並列バッチ例外と自己矛盾していたため、例外を明示的に優先する文言へ修正。②docs/roadmap.htmlの「マージ作業を完走させた」が実際は12(13)本のみマージ済みで#57/#59/#73/#74が未マージという事実と矛盾していたため、「進め、13本をマージ済み」に是正。指摘1件は誤検知と判断し見送った：docs/failures.mdの2026-08-10エントリが既存履歴より前に挿入されているという指摘は、実際のファイル最終状態を確認したところ日付どおりの時系列順（2033→2051→2073→2090行）になっており、CodeRabbitのdiff表示が古いコミット範囲を見ていたことによる誤検知と判断した。"
       ],
       "trouble": [
-        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限＋Organization所有が必要で、現状は運用ルール修正のみで対応している。"
+        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限＋Organization所有が必要で、現状は運用ルール修正のみで対応している。",
+        "PR #55がCodeRabbitのレビュー結果が届く前に自動マージされてしまい、指摘への追いpushができなかった（マージ済みブランチへの追いpush禁止というこのリポジトリ自身のルールのため）。新PR(fix/coderabbit-pr55-followup)を切って対応した。"
       ]
     },
     "updated": "2026-08-10",
