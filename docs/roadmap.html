@@ -126,14 +126,15 @@
         "AI字幕修正・分解精度の見直し・凍結基準ハッシュ固定機構までを、PR #49/#50/#51 として main へマージ済み。",
         "GitHubの記録に基づき①の完成形（G-P0/P1/P2・G-TESTINFRA・G-DELIVERY・G-MOSAIC・G-SLIM・G-EDITORの全doneが完成）と、外部OSS流用の状況（4候補すべて却下・1件のみ構造参考）を回答した。",
         "縦型切り抜き（G-EDIT-REFRAME）とUI（G-P2）の依存関係を確認し、両者は独立・凍結なしのため並行着手可能と判定した。",
-        "マスター指示により、次セッションのテーマを「①REFRAME着手 ②UI並行開発」の2本に確定し、meta.nextへ着手前手順（反証11件処理・凍結前探り3本・fixture不備の是正手順・D-7待ち）とともに固定した。"
+        "マスター指示により、次セッションのテーマを「①REFRAME着手 ②UI並行開発」の2本に確定し、meta.nextへ着手前手順（反証11件処理・凍結前探り3本・fixture不備の是正手順・D-7待ち）とともに固定した。",
+        "UI(G-P2、13葉)をPR #53としてmainへマージ準備完了。CodeRabbit指摘14件（偽の緑・進行中ジョブ誤削除・アップロード競合・タイムアウト欠如等）も全て修正しCI緑を確認。全13葉をdoneにしevidence(CI run URL)を記録した。"
       ],
       "trouble": [
         "会話の要約(compaction)により、チェックアウト指示後に次セッション分の作業（ツリー見直し・ハッシュ固定機構）まで実行してしまう逸脱があった。以後、明示の指示範囲を超えないよう注意する。",
         "PR #50・#51 とも、CIが緑になった直後にauto-mergeでCodeRabbitのレビューを待たずマージされた。マスターの判断でauto-mergeは維持するが、マージ後の指摘には都度対応が必要（2026-07-25の教訓どおりmainから枝を作り直す運用を継続）。"
       ]
     },
-    "updated": "2026-08-09",
+    "updated": "2026-08-10",
     "basisChanges": [
       {
         "id": "G-EDIT-TRIM-E",
@@ -737,7 +738,7 @@
                     {
                       "text": "状態JSON書込みがsibling temp+fsync+atomic renameで行われ、書込み中の破損読み出しがない",
                       "verify": "書込み処理中に強制終了するテスト(または fault injection)で、既存の状態JSONが壊れずに残ることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -752,7 +753,7 @@
                     {
                       "text": "A/V検証が音声/映像streamの欠落を「長さ0秒」ではなく検証失敗として扱う",
                       "verify": "音声または映像streamが欠落した動画をav-verify.mjsへ入力し、FAILとして検出されることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -767,7 +768,7 @@
                     {
                       "text": "字幕(ASS)タイムスタンプのcentisecond→時分秒変換で繰り上げが正しく行われる",
                       "verify": "99センチ秒台をまたぐ境界値でbuildAssを実行し、時分秒への繰り上げが正しいことを確認するテストを実行する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -788,7 +789,7 @@
                         {
                           "text": "ジョブ/成果物にTTLがあり、期限切れ分が自動削除される",
                           "verify": "TTLを短く設定した状態でジョブを作成し、TTL経過後にファイルが自動削除されることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -803,7 +804,7 @@
                         {
                           "text": "保存容量にクォータ上限があり、超過時に新規保存が拒否/警告される",
                           "verify": "クォータ上限に達するまでジョブを作成し、超過時の挙動(拒否/警告)を確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -818,7 +819,7 @@
                         {
                           "text": "同時ジョブ数に上限があり、超過リクエストが拒否/キューイングされる",
                           "verify": "上限を超える数のジョブを同時に投入し、超過分が拒否またはキューイングされることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     }
@@ -836,7 +837,7 @@
                     {
                       "text": "モバイル幅(375px)で1カラムレイアウトになり、プレビューが後段に移動している",
                       "verify": "375px幅でwebapp-mockupを表示し、レイアウトが1カラムになり要素が重ならないことを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -851,7 +852,7 @@
                     {
                       "text": "全テキストの最小フォントサイズが13px以上(主要説明は14px以上)である",
                       "verify": "node webapp-mockup/measure.mjsを実行し、最小フォントサイズが13px以上であることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -866,7 +867,7 @@
                     {
                       "text": "選択chipのARIA状態(aria-pressed等)が選択状態と同期している",
                       "verify": "選択chipをクリックし、aria-pressed(またはradio semantics)が選択状態と一致して変化することをDOM検査で確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -887,7 +888,7 @@
                         {
                           "text": "モーダル表示時に初期フォーカスが移動する",
                           "verify": "モーダルを開き、開いた直後にfocusがモーダル内要素にあることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -902,7 +903,7 @@
                         {
                           "text": "モーダル内でfocus trapが効いている(モーダル外にTabで抜けない)",
                           "verify": "モーダルを開いた状態でTabキーを連打し、フォーカスがモーダル内要素間のみを巡回することを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -917,7 +918,7 @@
                         {
                           "text": "Escapeキーでモーダルが閉じる",
                           "verify": "モーダルを開いた状態でEscapeキーを押し、モーダルが閉じることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -932,7 +933,7 @@
                         {
                           "text": "モーダルを閉じた後、元の要素へフォーカスが復帰する",
                           "verify": "モーダルを開く前にfocusしていた要素を記録し、モーダルを閉じた後に同じ要素へfocusが戻ることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     }
