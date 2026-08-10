@@ -2478,7 +2478,7 @@
                           "kind": "state",
                           "theme": "同じ語が同じ段落に複数回出ても、直した語自身の位置だけが変わる",
                           "meaning": "同じ言葉が2回出てきても、直すべき方だけが直る",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "段落の文章に同じ語が2回以上出るとき、モデルが指した1語だけが書き換わり、同じ段落内の他の同じ文字列は変わらない",
@@ -2486,14 +2486,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのapplyFixesToSegmentsは段落内の語オフセットを1語ずつ走査して求め、置換をオフセット降順で当てるため、同じ語が複数回出ても対象語の位置だけが変わる実装になっている。verifyが指す「後ろ/前/真ん中/2件同時/工程通し」の5ケースはtests/ai-caption-fix-check.mjsに既存（実装追加なし）。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#（後述）のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-D2",
                           "kind": "state",
                           "theme": "そのかたまりに出していない添字は、beforeが正しくても書き換わらない",
                           "meaning": "AIが今回見ていない場所を、勝手に書き換えない",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "あるかたまりの返答が、そのかたまりに含まれない添字を指しているとき、beforeが実際の語と一致していても採用されない",
@@ -2501,7 +2501,7 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのparseFixResponseはrange(offset/length)を受け取り、採用する添字をoffset<=index<offset+lengthに絞っているため、そのかたまりに出していない添字はbeforeが実際の語と一致していても採用されない実装になっている。verifyが指す「かたまり外」およびその対照のテストケースはtests/ai-caption-fix-check.mjsに既存(実装追加なし)。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#(後述)のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M1",
