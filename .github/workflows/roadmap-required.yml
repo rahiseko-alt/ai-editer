@@ -15,7 +15,9 @@ permissions:
 jobs:
   require-roadmap:
     name: roadmap-required
-    runs-on: ubuntu-latest
+    # ubuntu-24.04固定（ubuntu-latestは浮動ラベル。verify-done-gate.mjsがffmpeg実機を使う
+    # verifyCmdを実行しうるため、qualityジョブと同じ固定イメージにして測定条件を揃える）。
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,9 +40,41 @@ jobs:
           fi
       # 2026-08-09の事故（凍結済み葉のcriteria.textを実装担当が書き換えて「達成」と報告）を
       # 機械で検知するゲート。BASE/HEADのdocs/roadmap.htmlを比較し、status!=="todo"（凍結済み）の
-      # 葉のcriteria/verify本文が、正当な宣言(meta.basisChanges)なしに変わっていないかを見る。
-      - name: 凍結済みcriteria/verifyの無断変更を検査
+      # 葉のcriteria/verify/verifyCmd本文が、正当な宣言(meta.basisChanges)なしに変わっていないか、
+      # 本文を書き換えずに削除・凍結解除で基準を骨抜きにしていないかを見る。
+      - name: 凍結済みcriteria/verify/verifyCmdの無断変更・削除・凍結解除を検査
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.sha }}
         run: node scripts/verify-criteria-freeze.mjs
+
+      # 2026-08-10 マスター指示「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」を
+      # 裏付けるゲート。CI緑・criteria凍結だけでは「実装者が自分で書いたテストに自分の実装が
+      # 通った」という自己申告の域を出ないため、今回のPRで新規に done へ遷移した葉については、
+      # 凍結済みの verifyCmd を今この場で実際に実行し、exit code 0 になることを機械で要求する。
+      #
+      # verifyCmd の実行には（video-shorts配下のテストを想定する場合）pnpm install / ffmpeg /
+      # opencv 等が要ることがあるため、quality ジョブの環境構築を最小限ここでも用意する。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ffmpeg (verifyCmdが実機ffmpegを使う場合に備える。版はquality同様ubuntu-24.04固定)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Install opencv (verifyCmdが顔検出系テストを使う場合に備える)
+        run: |
+          spec=$(grep -E '^opencv-python-headless' video-shorts/requirements.txt)
+          python -m pip install "$spec"
+      - name: done化する葉のverifyCmdを実際に実行して合否を判定
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify-done-gate.mjs

@@ -120,16 +120,31 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】今回追加した3段の機械ゲート（criteria-freeze拡張／done-gate新設／evidence拡張）をPRとして出し、CIで実地確認する\n  ・特にverify-done-gate.mjsをroadmap-requiredワークフローに追加したことで実行時間が伸びる（pnpm install/ffmpeg/opencv\n    のセットアップが増えるため）。実際のCI所要時間を確認し、長すぎるようなら環境構築の要否を見直す。\n\n【2】現在doingのまま止まっている24葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, M-1-E/F, M-4-H, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmd（今回新設したフィールド。CIが実際に実行するコマンド）を追記すること。\n  無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。\n\n【3】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認は未着手のまま。前回セッションのbasis-reviewer 2エージェントが\n  出したobjection（20件超の指摘）が反映されているか、引き続き確認が必要。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "マスター指摘「CI緑だけではAIがハードルを下げているだけでは？機械ブロックされているのか」を受け、",
+        "基準の凍結を機械で強制する3段のゲートを実装した。",
+        "①scripts/verify-criteria-freeze.mjs を拡張：凍結済み葉のtext/verifyだけでなくverifyCmd（新設）も凍結対象にし、",
+        "  本文を書き換えずに「葉を削除する」「statusをtodoへ戻して直してから再凍結する」という迂回路も、",
+        "  正当な宣言(meta.basisChanges)なしには機械が違反として検知するようにした（reason: deleted / unfrozen を追加）。",
+        "②scripts/verify-done-gate.mjs を新設：今回のPRで新規にdoneへ遷移した葉について、全criteriaにverifyCmdが",
+        "  設定されていることを必須化し、CIがそのコマンドを実際に実行してexit 0になることを要求する。",
+        "  過去に受理済み(BASEで既にdoneだった)葉には遡及しない移行措置とした。",
+        "③scripts/verify-roadmap-evidence.mjs を拡張：status:doneなのにevidenceが空のままの葉を違反として検知するようにした",
+        "  （自己申告だけで完了扱いにできる穴を閉じる）。同スクリプトをfindRoadmapViolations()として純粋関数へ分離しテスト可能にした。",
+        ".github/workflows/roadmap-required.yml に verify-done-gate.mjs の実行ステップを追加し、ランナーをubuntu-24.04に固定した",
+        "（verifyCmdがffmpeg実機を使う場合に測定条件をqualityジョブと揃えるため）。",
+        "docs/roadmap.html のREADMEシートに「基準を機械で下げさせない仕組み」節を追加し、3段の仕組みと正直な限界",
+        "（verifyCmdの中身が厳密に検証しているかまでは機械では判定できず、そこは引き続きbasis-reviewer/independent-verifierの役目）を明記した。",
+        "合計3新規/拡張テストファイル・64件のテストを追加し全PASSを確認、既存の206ノードに対して3ゲートとも偽陽性ゼロを確認した。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "既存の「HEADで削除されたノードは今回のスコープ外」という旧テストケースは、今回閉じた抜け穴そのものだったため、",
+        "挙動を反転させて書き直した（意図的な仕様変更であり後退ではない）。",
+        "新設のverifyCmdフィールドは、今回の24葉（G-EDIT-CAPTION-AI-*/G-EDIT-MOSAIC-UI-*等、doingのまま）には",
+        "遡及的に付与していない。次にこれらをdoneへ進める際、verify-done-gate.mjsにより",
+        "verifyCmd未設定では機械的にブロックされる（想定どおりの強制だが、次回作業者は驚かないよう申し送る）。"
       ]
     },
     "updated": "2026-08-10",
@@ -3059,9 +3074,17 @@
       <h3>受入条件（criteria）の書き方</h3>
       <p class="rule">条件は「動くこと」で書く。「ドキュメントがある／レビューした」で書かない。</p>
       <ul>
-        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝実行可能な手順）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
-        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。</li>
+        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝人が読む手順の説明文）＋ <code>verifyCmd</code>（<code>verify</code> を機械が実行できる形にした具体的な1コマンド。任意だが、<code>done</code>化のゲートに必須）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
+        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。<code>status:"done"</code> なのに <code>evidence</code> が空のままだと <code>scripts/verify-roadmap-evidence.mjs</code> がCIで落とす（自己申告だけで完了扱いにできる穴を機械で塞ぐ）。</li>
         <li>証拠は「◯◯レビュー.md が存在する」を認めない。実物が動いた記録を指す。</li>
+      </ul>
+      <h3>基準を機械で下げさせない仕組み（2026-08-10 追加）</h3>
+      <p class="rule">CIが緑・criteriaが凍結済みでも、それは「実装者が自分で書いたテストに自分の実装が通った」という自己申告の域を出ない。以下の3段で機械が閉じる。</p>
+      <ul>
+        <li><b>①凍結（<code>scripts/verify-criteria-freeze.mjs</code>）</b>：着手前に固定した <code>text</code>/<code>verify</code>/<code>verifyCmd</code> は、その葉が <code>status:"todo"</code> 以外になった瞬間から無断で書き換え禁止。BASE/HEADの<code>docs/roadmap.html</code>を比較し、正当な理由（<code>meta.basisChanges</code>に<code>{id, criteriaHash, at, reason}</code>を新規追加）が無い変更をCIで落とす。<b>本文を書き換えず「葉ごと削除する」「一旦 <code>todo</code> に戻して直してからまた凍結し直す」という迂回路も同じ扱いで塞ぐ</b>（reason: <code>deleted</code> / <code>unfrozen</code>）。</li>
+        <li><b>②実行（<code>scripts/verify-done-gate.mjs</code>）</b>：ある葉が今回のPRで新規に <code>doing</code>/<code>todo</code> → <code>done</code> へ遷移するとき、全 <code>criteria</code> に <code>verifyCmd</code> が設定されていることを必須化し、CIがそのコマンドを<b>今この場で実際に実行</b>して exit code 0 になることを要求する。「テストを書いた」という申告ではなく「このコミットで今まさに実行して合格した」という事実そのものをdoneの条件にする。過去に受理済み（BASEで既に<code>done</code>だった）葉には遡及しない＝既存ツリーは壊さず、新規のdone化から適用が始まる。</li>
+        <li><b>③evidence（<code>scripts/verify-roadmap-evidence.mjs</code>）</b>：①②を通過しても、最終的に<code>evidence</code>へ外部事実（CI run URL等）を記入しない限り<code>done</code>は成立しない。</li>
+        <li><b>正直な限界</b>：①②③は「自己採点そのもの（テストを書かない／書いたが実行しない／実行したら実は落ちる）」を機械で閉じるが、「<code>verifyCmd</code>の中身が<code>criteria.text</code>の要求を本当に厳密に検証しているか（境界値・対照実験の有無等）」までは exit code だけからは判定できない。ここは引き続き人間・独立サブエージェント（<code>basis-reviewer</code>／<code>independent-verifier</code>）の役目。</li>
       </ul>
 
       <h2>分解の規則（不変・自己相似）</h2>
