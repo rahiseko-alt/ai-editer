@@ -119,13 +119,13 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-TESTINFRA-LINT",
-    "next": "PR #68(feature/testinfra-lint)をorigin/mainへマージする（PR#65・PR#76マージ後の状態との競合をpnpm-lock.yaml再生成込みで解消済み）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、残りのレビュー済みPR(#71,#58,#59,#56,#61,#66,#57)をマージする。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。",
+    "next": "PR #68(feature/testinfra-lint)をorigin/mainへマージする（PR#65・PR#76・PR#71マージ後の状態との競合をpnpm-lock.yaml再生成込みで解消済み。origin/main側でP0-5-C/P0-5-Dの実機配線テスト(tests/sub-none-render-check.mjs・tests/mosaic-job-wiring-check.mjs)がマージ済みだったため、video-shorts/package.jsonのtestチェーンにこの2テストを合流させlintスクリプトも維持した）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、残りのレビュー済みPR(#58,#59,#56,#61,#66,#57)をマージする。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。",
     "handoff": {
       "done": [
         "G-TESTINFRA-LINT: video-shortsパッケージにESLint 9系(flat config)を導入した。devDependenciesへeslint/@eslint/js/globalsを追加し、video-shorts/eslint.config.mjsを新設(対象: **/*.mjsはNode/ESM。一部Playwrightのpage.evaluate()コールバックがブラウザグローバルも使うためnode+browserのglobalsを両方許容。ui/app.js・webapp-mockup/app.js・install/consent.jsはブラウザ非モジュールスクリプトとして別扱い)。ルールはeslint:recommended相当+no-unused-vars(catch束縛含む)+no-use-before-define+no-empty(allowEmptyCatch)+no-irregular-whitespace(文字列/コメント/正規表現中の全角スペースは日本語処理で意図的なため除外)。package.jsonへ`\"lint\": \"eslint .\"`を追加。",
         "既存コードの実Lintエラー(未使用import/変数・呼ばれていない死んだ関数)を最小修正で解消(server/pipeline-runner.mjs・ui/app.js・webapp-mockup/app.js・webapp-mockup/measure.mjs・tests/caption-api-check.mjs・tests/job-quota-race-check.mjs・tests/render-escape-check.mjs・tests/term-dictionary-check.mjs)。大規模リファクタは行っていない。",
         "`pnpm --filter video-shorts lint`がexit 0で通ることを確認。偽の緑でないことの自己確認として、一時的に構文エラーとuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元した。",
-        "origin/main(criteria-freeze強化3段ゲート・scripts/typecheck導入)とのマージ競合をscripts/package.json・video-shorts/package.jsonで解消(test scriptにdelivery-face-scan-check.pyを追加しつつlint scriptも維持)。",
+        "origin/main(criteria-freeze強化3段ゲート・scripts/typecheck導入・PR#71のP0-5-C/P0-5-D実機配線テスト追加)とのマージ競合をdocs/roadmap.html・video-shorts/package.jsonで解消(test scriptはorigin/main側のtests/sub-none-render-check.mjs・tests/mosaic-job-wiring-check.mjsを合流させた和集合とし、lint scriptも維持)。",
         "リポジトリ全体`pnpm -r --if-present lint`緑・`pnpm audit --audit-level moderate`脆弱性0件・`node scripts/verify-roadmap-evidence.mjs`緑・`pnpm --filter scripts test`を確認した。`pnpm --filter video-shorts test`は74 PASS/1 FAILで、FAILはM-5-B(モザイク処理時間の性能しきい値、CIのubuntu-24.04ランナー基準で計測する設計。今回のサンドボックス環境のCPUが遅く発生した既存の性能テストで、今回のLint変更とは無関係。src/apply-mosaic-stage.mjs等の対象ファイルは一切変更していない)。"
       ],
       "trouble": [
@@ -203,7 +203,7 @@
                       "kind": "state",
                       "theme": "字幕なしを選んだら、実際に字幕が焼き込まれない",
                       "meaning": "「字幕オフ」を選んだのに字幕が出てしまう、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "sub=noneを選んだジョブの出力動画に字幕が焼き込まれていない",
@@ -211,21 +211,22 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。"
+                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     },
                     {
                       "id": "P0-5-D",
                       "kind": "state",
                       "theme": "モザイクを選んだときだけ、実際に顔にモザイクが掛かる",
                       "meaning": "「モザイクあり」を選んだのに素顔のまま出る、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "mosaic=onを選んだジョブの成果物に、選んだときだけモザイク処理が適用される",
                           "verify": "実際にmosaic:\"on\"を指定したジョブを流し、applyMosaicStageが呼ばれcandidates.jsonが更新されることを確認する（既存のface-mosaic-check.py等との重複が無いかを確認した上で追加する）",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     }
                   ],
                   "detail": "根拠: server/pipeline-runner.mjs:241-247 が作るstateにmode/sub/orientが無い。opts.cut/opts.sizeも後段で未使用。1:1/4:5はレンダラー未実装。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P0-5）"
@@ -408,7 +409,7 @@
                       "kind": "state",
                       "theme": "起動時トークンなしのAPI呼び出しが実サーバーで拒否される",
                       "meaning": "トークンを持たない人が動画データにアクセスできない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、POST /api/jobs にトークン無し/誤トークンでリクエストすると401/403が返る",
@@ -416,14 +417,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。"
+                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-G",
                       "kind": "state",
                       "theme": "許可外Originからの呼び出しが実サーバーで拒否される",
                       "meaning": "他所のサイトから裏でアクセスされない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、許可外Originヘッダを付けたリクエストが拒否される",
@@ -431,14 +432,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。"
+                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-H",
                       "kind": "state",
                       "theme": "宣言Content-Lengthが上限超のアップロードが実サーバーで413を返す",
                       "meaning": "大きすぎるファイルは早い段階で断られる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "宣言Content-Lengthが上限を超えるリクエストへ、実サーバーが413相当で早期拒否する",
@@ -446,14 +447,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-I",
                       "kind": "state",
                       "theme": "短時間に閾値超のリクエストで実サーバーが429を返す",
                       "meaning": "短時間に押し寄せても実際にブロックされる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "短時間に閾値を超えるリクエストを送ると、実サーバーが429を返す",
@@ -461,7 +462,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     }
                   ],
                   "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
@@ -621,7 +622,7 @@
                       "kind": "state",
                       "theme": "クリップ結合の間隔判定が境界値でも正しく動く",
                       "meaning": "「ぎりぎり」の間隔でも結合するかどうかが仕様通り",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "頭尾の間隔がちょうどMAX_MATCH_GAP_SECのときは結合され、僅かに超えるときは結合されない",
@@ -629,14 +630,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。"
+                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-D用の2テスト（gap=ちょうどMAX_MATCH_GAP_SEC→結合／gap=+0.001秒→非結合）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
                     },
                     {
                       "id": "P1-9-E",
                       "kind": "state",
                       "theme": "発話カバー率が境界値でも採否が仕様通り",
                       "meaning": "「ぎりぎり」のカバー率でも採用するかどうかが仕様通り",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "カバー率がちょうどMIN_MATCH_COVERAGEのときは採用され、僅かに下回るときは採用されない",
@@ -644,7 +645,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。"
+                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-E用の2テスト（coverage=ちょうどMIN_MATCH_COVERAGE→採用／coverage=0.49→非採用）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
                     }
                   ],
                   "detail": "根拠: reverse matchが前方語と100秒後の後方語を1クリップにできる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-9）"
@@ -669,8 +670,8 @@
                   "kind": "state",
                   "theme": "依存ライブラリに既知の重大な脆弱性が無い",
                   "meaning": "使っている部品(ライブラリ)に、既に知られている危険な穴が無い",
-                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）",
-                  "status": "todo",
+                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）。pnpm audit --audit-level moderateが既にCI(quality→gate)に組み込まれ、脆弱性0件であることを確認済み。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
@@ -690,8 +691,8 @@
                       "kind": "state",
                       "theme": "外部ツールのバージョンを固定する",
                       "meaning": "実行するたびに違うバージョンが動く事故を防ぐ",
-                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。",
-                      "status": "todo",
+                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。実施: video-shorts/requirements.txt の faster-whisper/groq/opencv-python-headlessを`>=`(上限無し)から`==`固定に変更。.github/workflows/ci.yml と measure-leak-rate.yml の apt-get install ffmpeg/zip を ubuntu-24.04 実測版(ffmpeg=7:6.1.1-3ubuntu5, zip=3.0-13ubuntu0.2)へ固定。.claude/hooks/session-start.sh のリモート自動導入も同じ ffmpeg 版へ固定(取得不能時は警告を出した上で無指定版へフォールバック＝ユーザーが使えなくなる事故を避けつつ、ドリフトを隠さない)。CI 内の opencv 導入はrequirements.txtの固定値を参照するため自動追従。リポジトリ内grep(uvx/npx/pip install/apt-get install)で他に無指定呼び出しが無いことを確認済み(video-shorts配下)。docs/setup-runbook.mdの`uv tool install`/`npx marp`はvideo-shorts以外の別製品(kosespark Writer、本ロードマップのGOAL=動画編集の対象外)のため今回は対象外(別途起票が必要)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
@@ -705,8 +706,8 @@
                       "kind": "state",
                       "theme": "初回実行時に同意を得る",
                       "meaning": "何が実行されるか知らないまま外部ツールが動かない",
-                      "detail": "バージョン固定前の初回実行に同意フローを設ける。",
-                      "status": "todo",
+                      "detail": "バージョン固定前の初回実行に同意フローを設ける。実施: video-shorts/start-here.mdを確認したところ、ローカルPC想定のフロー(⓪はじめの説明と同意 → ①必要なソフトの導入=Node/Python/ffmpeg/pip installの前に毎回「何がなぜ必要かを説明→入手方法提示→承認を得てから導入」)には既に✋ゲートがあり満たしていた。一方、PCを持たないユーザー向けのクラウドリモートセッション経路は`.claude/hooks/session-start.sh`がSessionStart時に無音でffmpeg/pipライブラリを自動導入しており、技術的にフック実行前にユーザーと対話して同意を得ることはできない(セッション開始前に走るため)。この経路の同意欠落を埋めるため、start-here.mdの冒頭注記を改訂し、⓪の説明時に「ffmpeg/文字起こしライブラリはこの環境へ承認前に自動導入済みで、入れたのはこの2つだけ」と開示してからユーザーの同意を得るよう明記した(事後開示+同意でリスクを可視化。無言のまま先へ進めることを禁止)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
@@ -2476,7 +2477,7 @@
                           "kind": "state",
                           "theme": "同じ語が同じ段落に複数回出ても、直した語自身の位置だけが変わる",
                           "meaning": "同じ言葉が2回出てきても、直すべき方だけが直る",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "段落の文章に同じ語が2回以上出るとき、モデルが指した1語だけが書き換わり、同じ段落内の他の同じ文字列は変わらない",
@@ -2484,14 +2485,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのapplyFixesToSegmentsは段落内の語オフセットを1語ずつ走査して求め、置換をオフセット降順で当てるため、同じ語が複数回出ても対象語の位置だけが変わる実装になっている。verifyが指す「後ろ/前/真ん中/2件同時/工程通し」の5ケースはtests/ai-caption-fix-check.mjsに既存（実装追加なし）。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#（後述）のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-D2",
                           "kind": "state",
                           "theme": "そのかたまりに出していない添字は、beforeが正しくても書き換わらない",
                           "meaning": "AIが今回見ていない場所を、勝手に書き換えない",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "あるかたまりの返答が、そのかたまりに含まれない添字を指しているとき、beforeが実際の語と一致していても採用されない",
@@ -2499,14 +2500,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのparseFixResponseはrange(offset/length)を受け取り、採用する添字をoffset<=index<offset+lengthに絞っているため、そのかたまりに出していない添字はbeforeが実際の語と一致していても採用されない実装になっている。verifyが指す「かたまり外」およびその対照のテストケースはtests/ai-caption-fix-check.mjsに既存(実装追加なし)。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#(後述)のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M1",
                           "kind": "state",
                           "theme": "claudeの標準出力そのものがJSONとして壊れていても、工程は例外で安全に終わる",
                           "meaning": "AIの応答そのものが壊れていても、変な動画にならず止まる",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "--output-format jsonの封筒自体(claude-run.mjsが直接JSON.parseする最外層)が壊れているとき、runClaudeJsonは例外を投げ、ai-caption-fixステージはそれをそのまま工程の失敗として伝播する",
@@ -2514,14 +2515,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。"
+                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にclose(code:0)後にJSON.parse(stdoutBuf.trim())を試み、失敗時は`claude stdout JSON parse 失敗`で例外を投げる実装になっており、ai-caption-fix.mjsのaiCaptionFixStageもtranscript.jsonへの書き込みをchunkループ完了後に置いているため、実装変更は不要だった。tests/helpers/fake-claude-main.mjsへ封筒を被せない生テキスト応答を返す`kind:\"raw\"`を追加し、tests/ai-caption-fix-check.mjsにM1の3件（runClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗として伝播すること／失敗後transcript.jsonが入力と完全一致すること）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M2",
                           "kind": "state",
                           "theme": "claude実行ファイル自体が起動できないときも、工程は同じように失敗として終わる",
                           "meaning": "AIを呼び出す仕組み自体が無いときも、静かに失敗する",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "PATH上にclaudeという実行ファイルが存在しない（spawnエラーになる）とき、runClaudeJsonは例外を投げ、ai-caption-fixステージは失敗としてtranscript.jsonを一切書き換えない",
@@ -2529,7 +2530,7 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。"
+                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にspawnの'error'イベントで`claude spawn エラー: ...`を投げる実装になっており、ai-caption-fix.mjsも書き込みをchunkループ完了後に行うため、実装変更は不要だった。tests/ai-caption-fix-check.mjsにM2の2件（PATHをclaude不在の空ディレクトリへ差し替えてrunClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗しtranscript.json・ai-caption-fixes.json・transcript.raw.jsonのいずれも作られないこと）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-L2",
@@ -2909,14 +2910,15 @@
                       "kind": "state",
                       "theme": "これまでのテストが通ったままである",
                       "meaning": "新しい機能のせいで前の機能が壊れていない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "ワークスペース全体の型/Lint/テスト/ビルドがCIで緑になる",
                           "verify": "CI(ci-green)のrunが success であることを確認する",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: .github/workflows/ci.yml の quality ジョブは `pnpm -r --if-present typecheck` / `pnpm -r --if-present lint` / `pnpm -r test`（--if-presentなし=全パッケージ必須） / `pnpm -r --if-present build` を実行しており、pnpm-workspace.yaml の packages(video-shorts, scripts)を pnpm -r が両方カバーしている（root package.jsonにパッケージは無い）。ci-green(gate)ジョブは quality/smoke 両方が success であることを集約している。抜けは見つからず、CI設定の変更は不要だった。ローカルでも `pnpm install --frozen-lockfile` 後に typecheck/lint（両パッケージとも未導入でスキップ、偽装ではなく該当パッケージが無いだけ）・`pnpm -r test`・buildを実行して確認した。同一コンテナ内で他セッションの並列テスト実行によるCPU競合があった状態での1回のローカル実行では、M-5-B(モザイク処理時間、G-MOSAIC所属・本PRのスコープ外)が実測差35.0秒(上限30秒)で一時的にFAILしたが、これは本PRが一切触れていないモザイク処理の負荷計測テストであり、docs/roadmap.htmlのみの変更に起因するものではない。本criteriaはCI(ci-green)のrun成否そのものを見るため、実際の合否は隔離されたCIランナーでの run で判定する。本PR(#66, commit 57da3d5)のCIが実際に走り、ci-green(gate)を含む全チェックがsuccessで完了した: https://github.com/rahiseko-alt/ai-editer/actions/runs/31367454971 （隔離されたCIランナー上ではM-5-Bを含め全テストがPASS。ローカルで見えたFAILは前述のとおりローカル環境固有のCPU競合によるもので、CI上では再現しなかった）。evidenceへの転記・statusのdoneへの更新は、本PRのマージ判断とあわせて人間/次セッションが行う。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-B",
@@ -2938,14 +2940,15 @@
                       "kind": "state",
                       "theme": "軽い配布物が、メールに添付できる大きさのままである",
                       "meaning": "顔を隠す必要がないお客様への渡し方が壊れない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "本ゴールの機能を追加したあとも、軽い版の配布物(zip)が30MB以内に収まる",
                           "verify": "軽い版をビルドしてzipを作り、その大きさが30MB以内であることをテストで確認する(S-1と同じ上限・同じ測り方)",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: video-shorts/tests/dist-slim-check.mjs に既に S-1 相当のテスト（`node build-dist.mjs --slim` で軽い版を実ビルドし、実際に zip を作って実測サイズを30MB上限と比較）があり、本criteriaの verify(「S-1と同じ上限・同じ測り方」)と同一の測定方法。このテストは video-shorts/package.json の test スクリプトに組み込まれ pnpm -r test（=CI quality ジョブ）で毎回実行される。ローカル実行で `PASS S-1: 軽い版の配布物(zip)が30MB以内に収まる` を確認済み（実測値はテスト実行時のログ参照。G-EDIT-REFRAME/TRIM機能は軽い版のビルド対象に含まれないためzipサイズへの影響はなく、現時点では新規テスト追加は不要と判断）。新規テストの追加は行わなかった（既存のS-1テストがそのまま本criteriaを満たすため）。本PR(#66, commit 57da3d5)のCIが実際に走り、`pnpm -r test`を含むqualityジョブがsuccessで完了した(=dist-slim-check.mjsのS-1テストもCI上でPASS): https://github.com/rahiseko-alt/ai-editer/actions/runs/31367454971 。evidenceへの転記・statusのdoneへの更新は、本PRのマージ判断とあわせて人間/次セッションが行う。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-D",
