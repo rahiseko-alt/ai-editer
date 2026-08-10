@@ -8,7 +8,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { resolveSegments, normalize, dedupeOverlap } from "../src/reverse-match.mjs";
+import {
+  resolveSegments,
+  normalize,
+  dedupeOverlap,
+  MAX_MATCH_GAP_SEC,
+  MIN_MATCH_COVERAGE,
+} from "../src/reverse-match.mjs";
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
@@ -367,6 +373,85 @@ t("P1-9-C: keepTextのカバー率が閾値未満の区間は採用しない", (
     distantTranscript,
   );
   assert.strictEqual(out.length, 0, "ごく一部しか当たっていない区間は捨てるべき");
+});
+
+// ---- P1-9-D: クリップ結合の間隔判定が境界値でも正しく動く ----
+// 頭「あいうえお」と尻「かきくけこ」の間に無関係な語「べつのことば」を挟み、完全一致経路を
+// 避けて部分一致（頭/尻を別々に探す）経路を通す。gapは headEndWord.end と tailStartWord.start
+// の差だけで決まる（reverse-match.mjs: `if (tailStartWord.start - headEndWord.end > maxGapSec)`）
+// ので、比較演算子が `>` （`>=` ではない）＝ちょうど閾値は結合される側であることをfixtureで突く。
+function gapBoundaryTranscript(tailStart) {
+  return {
+    language: "ja",
+    duration: tailStart + 2.0,
+    words: [
+      { w: "あいうえお", start: 0.0, end: 2.0 },
+      { w: "べつのことば", start: 5.0, end: 7.0 },
+      { w: "かきくけこ", start: tailStart, end: tailStart + 2.0 },
+    ],
+    segments: [],
+  };
+}
+
+t("P1-9-D: gapがちょうどMAX_MATCH_GAP_SEC(10秒)のとき結合される", () => {
+  const tailStart = 2.0 + MAX_MATCH_GAP_SEC; // headEndWord.end(2.0)からのgapがちょうど閾値
+  const out = resolveSegments(
+    [{ keepText: "あいうえおかきくけこ", hook: "h" }],
+    gapBoundaryTranscript(tailStart),
+  );
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].start, 0.0);
+  assert.strictEqual(
+    out[0].end,
+    tailStart + 2.0,
+    "gap=ちょうどMAX_MATCH_GAP_SECは結合され、尻の語まで区間が伸びるべき",
+  );
+});
+
+t("P1-9-D: gapがMAX_MATCH_GAP_SECを僅かに超える(+0.001秒)とき結合されない", () => {
+  const tailStart = 2.0 + MAX_MATCH_GAP_SEC + 0.001;
+  const out = resolveSegments(
+    [{ keepText: "あいうえおかきくけこ", hook: "h" }],
+    gapBoundaryTranscript(tailStart),
+  );
+  assert.strictEqual(out.length, 1, "頭側だけの区間として残るべき（丸ごと消さない）");
+  assert.strictEqual(
+    out[0].end,
+    2.0,
+    "gapがMAX_MATCH_GAP_SECを僅かでも超えたら尻まで結合してはいけない",
+  );
+});
+
+// ---- P1-9-E: 発話カバー率が境界値でも採否が仕様通り ----
+// transcriptの語を「あ」のmatchLen個連続にし、keepTextはその後ろに素材に存在しない「ん」を
+// 詰めてtargetLenにする。尻は一切一致しないため（joined側に「ん」が無い）、頭のみの片側一致に
+// 固定でき、coverage=matchLen/targetLenを整数比でちょうど作れる。比較は
+// `if (coverage < minCoverage) return null;` （`<=` ではない）＝ちょうど閾値は採用される側。
+function coverageBoundaryTranscript(matchLen) {
+  return {
+    language: "ja",
+    duration: 1.0,
+    words: [{ w: "あ".repeat(matchLen), start: 0.0, end: 1.0 }],
+    segments: [],
+  };
+}
+
+t("P1-9-E: coverageがちょうどMIN_MATCH_COVERAGE(0.5)のとき採用される", () => {
+  const matchLen = 50;
+  const targetLen = Math.round(matchLen / MIN_MATCH_COVERAGE); // 0.5なら100
+  const target = "あ".repeat(matchLen) + "ん".repeat(targetLen - matchLen);
+  const out = resolveSegments([{ keepText: target, hook: "h" }], coverageBoundaryTranscript(matchLen));
+  assert.strictEqual(out.length, 1, "coverage=ちょうどMIN_MATCH_COVERAGEは採用されるべき");
+  assert.strictEqual(out[0].start, 0.0);
+  assert.strictEqual(out[0].end, 1.0);
+});
+
+t("P1-9-E: coverageがMIN_MATCH_COVERAGEを僅かに下回る(0.49)とき採用されない", () => {
+  const targetLen = 100;
+  const matchLen = 49; // 49/100 = 0.49 < MIN_MATCH_COVERAGE(0.5)
+  const target = "あ".repeat(matchLen) + "ん".repeat(targetLen - matchLen);
+  const out = resolveSegments([{ keepText: target, hook: "h" }], coverageBoundaryTranscript(matchLen));
+  assert.strictEqual(out.length, 0, "coverage=0.49は採用されてはいけない");
 });
 
 // ---- P0-5: Web UIの設定が生成物へ反映される（画面選択→mode/orient契約） ----
