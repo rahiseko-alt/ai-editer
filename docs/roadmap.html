@@ -118,21 +118,19 @@
 <script type="application/json" id="roadmap-data">{
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-TESTINFRA-LINT",
-    "next": "PR #68(feature/testinfra-lint)をorigin/mainへマージする（PR#65・PR#76・PR#71・PR#61・PR#56・PR#62・PR#72マージ後の状態との競合をpnpm-lock.yaml再生成込みで解消済み。origin/main側でP0-5-C/P0-5-Dの実機配線テスト(tests/sub-none-render-check.mjs・tests/mosaic-job-wiring-check.mjs)・P1-2-F/G/H/I実サーバー検証・P1-12-A/Bバージョン固定・job-failure-state-check.mjs(モザイク失敗時のstate.json書き戻し回帰テスト)がマージ済みだったため、video-shorts/package.jsonのtestチェーンにこれらを合流させlintスクリプトも維持した）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、残りのレビュー済みPR(#58,#59,#57)をマージする。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\nG-EDIT-MOSAIC-UI-O-1/O-2は依然todo：VS_FIXTURE_MANIFESTによる差し替え機構が未実装のため、/api/jobs経由の実サーバー検証はまだできない（origin/mainのPR#72でstate.json未書き戻しの実装欠陥修正+回帰テストのみ完了済み）。",
+    "active": "GOAL",
+    "next": "PR #55・#57・#59・#73・#74 のコンフリクトを解消してCI完走を確認し、緑ならマージする（#68マージ後の状態を取り込み済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
     "handoff": {
       "done": [
-        "G-TESTINFRA-LINT: video-shortsパッケージにESLint 9系(flat config)を導入した。devDependenciesへeslint/@eslint/js/globalsを追加し、video-shorts/eslint.config.mjsを新設(対象: **/*.mjsはNode/ESM。一部Playwrightのpage.evaluate()コールバックがブラウザグローバルも使うためnode+browserのglobalsを両方許容。ui/app.js・webapp-mockup/app.js・install/consent.jsはブラウザ非モジュールスクリプトとして別扱い)。ルールはeslint:recommended相当+no-unused-vars(catch束縛含む)+no-use-before-define+no-empty(allowEmptyCatch)+no-irregular-whitespace(文字列/コメント/正規表現中の全角スペースは日本語処理で意図的なため除外)。package.jsonへ`\"lint\": \"eslint .\"`を追加。",
-        "既存コードの実Lintエラー(未使用import/変数・呼ばれていない死んだ関数)を最小修正で解消(server/pipeline-runner.mjs・ui/app.js・webapp-mockup/app.js・webapp-mockup/measure.mjs・tests/caption-api-check.mjs・tests/job-quota-race-check.mjs・tests/render-escape-check.mjs・tests/term-dictionary-check.mjs)。大規模リファクタは行っていない。",
-        "`pnpm --filter video-shorts lint`がexit 0で通ることを確認。偽の緑でないことの自己確認として、一時的に構文エラーとuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元した。",
-        "origin/main(criteria-freeze強化3段ゲート・scripts/typecheck導入・PR#71のP0-5-C/P0-5-D実機配線テスト・PR#61のP1-12-A/Bバージョン固定・PR#62のP1-2-F/G/H/I実サーバー検証・PR#72のjob-failure-state-check.mjs追加)とのマージ競合をdocs/roadmap.html・video-shorts/package.jsonで2回にわたり解消(origin/mainが作業中にさらに進んだため再マージした。test scriptはorigin/main側の新規テストファイルをすべて合流させた和集合とし、lint scriptも維持)。新規マージされたtests/mosaic-job-wiring-check.mjs(PR#71由来)のeslintエラー3件(未使用importのassert、timerのuse-before-define×2)を最小修正。",
-        "リポジトリ全体`pnpm -r --if-present typecheck/lint`緑・`pnpm audit --audit-level moderate`脆弱性0件・`node scripts/verify-roadmap-evidence.mjs`緑・`BASE_REF=origin/main node scripts/verify-criteria-freeze.mjs`緑・`BASE_REF=origin/main node scripts/verify-done-gate.mjs`緑・`pnpm --filter scripts test`(45+8+16 PASS)・`video-shorts/tests/smoke.mjs`(96 PASS、P1-2-F/G/H/Iの実サーバー検証含む)を確認した。"
+        "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を完走させた。#56,#58,#61,#62,#65,#66,#68,#69,#70,#71,#72,#76の計12本をマージ済み。",
+        "マージ中、全並列PRがdocs/roadmap.htmlのmeta.next/meta.handoffという単一フィールドを書き換える設計だったため、1本マージされるたびに残り全PRが再衝突する構造的な問題が発覚した（マスター指摘により診断）。",
+        "対策として、AGENTS.md「PR instructions」とcheckin-checkoutスキルの②チェックアウトに「並列バッチ作業中の個々の葉PRはmeta.next/meta.handoffを触らない」という例外規定を追記した。docs/failures.mdにも根因と対策を記録した。",
+        "マスターと運用フローについて議論し、業界標準（trunk-based development、stacked PRs、merge queue、CodeRabbitのincremental review）を調査したうえで、今回の設計の何が業界的に外れていたか（merge queue不在、meta欄の共有設計）を切り分けた。",
+        "マスター指示により、AGENTS.md冒頭の「CodeRabbit は無視する」最優先ルールを削除した。今後CodeRabbitのレビューはPRごとにデフォルトで読んで判断する（無視しない）。",
+        "GitHub純正merge queueの有効化手順を案内したが、個人アカウント所有リポジトリでは提供対象外と判明（Organization所有publicリポジトリまたはEnterprise Cloudのみ）。誤った案内を訂正し、Organization移管・サードパーティ導入・現状維持の3択を提示した。"
       ],
       "trouble": [
-        "video-shortsのtest実行(`pnpm --filter video-shorts test`)がPlaywright Chromium未導入のためこの作業環境で失敗したため、`pnpm exec playwright install --with-deps chromium`で導入してから再実行した。CI(.github/workflows/ci.yml)は既にこの手順を組み込み済みなので影響は無い。",
-        "M-5-B(顔モザイク処理の追加時間しきい値)がこのサンドボックス環境でFAILした(モザイク有り75.9秒/無し32.4秒、受入は30秒以内)。roadmapのverify記載どおりCIのubuntu-24.04ランナーが正式な計測環境であり、今回のLint変更(video-shorts/src/apply-mosaic-stage.mjs等は無変更)とは無関係の既存の環境依存事象と判断し、そのままPRを出してCIの実測値を見る方針にした。",
-        "マージ作業中にorigin/mainがさらに2回進んだ(PR#62→PR#72)。最初のBASE_REF=origin/mainでのcriteria-freeze検証がP1-2-F/G/H/Iを『凍結解除』と誤検知したが、これは検証直前にPR#62がマージされ古いスナップショットで比較してしまったことが原因と判明。git-recursive戦略が一部の非衝突な差分（P1-12-A/B等）を自動適用し損なう挙動も観測されたため、`git merge-file`による独立3-way検証で実際の衝突範囲を裏取りしてから解消した。",
-        "PR#72由来のtests/job-failure-state-check.mjsをマージした際、`pnpm --filter video-shorts lint`がserver/pipeline-runner.mjs:294で`readState`未定義(no-undef)を検出した。原因はG-TESTINFRA-LINTの本PR自身の初回コミットで『呼ばれていない死んだ関数』として readState を削除していたこと(当時は未使用で正しい判断だったが、PR#72が後から readState の新しい呼び出し元を追加したため、削除だけがマージへ残り呼び出し元だけが来て未定義エラーになった＝行単位のdiffでは検出できない意味的な衝突)。origin/main側の実装(state.jsonを読みJSON.parseして返す、無ければnull)をそのまま復元して解消し、tests/job-failure-state-check.mjs(5 PASS)で動作確認した。"
+        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限＋Organization所有が必要で、現状は運用ルール修正のみで対応している。"
       ]
     },
     "updated": "2026-08-10",

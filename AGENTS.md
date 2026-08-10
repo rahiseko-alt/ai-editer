@@ -160,6 +160,7 @@ node scripts/verify-roadmap-evidence.mjs  # roadmap の evidence が外部事実
 - 変更は PR を出し、**誰でもレビュー/承認してマージ**してよい（tier / basis-gate の承認階層は廃止）。守るのは CI が緑なことだけ。
 - ロードマップの `evidence` には外部事実（commit SHA / CI run URL 等）だけを書く。
 - **全PRは `docs/roadmap.html` を必ず更新する**（例外なし。②今回トラブル・③`meta.next` は毎セッション書けるので diff 0 はあり得ない）。CI 関所 `roadmap-required` が差分0のPRを弾く。
+- **並列バッチ例外**：担当葉の `status`/`detail`/`criteria[].evidence` の更新のみで上記を満たす。`meta.next`/`meta.handoff` は個々の葉PRでは触らず、バッチを統括するセッションが区切りで1回だけ更新する（`docs/failures.md` 2026-08-10）。
 
 ## セッション開始の儀式（ロードマップ）
 
