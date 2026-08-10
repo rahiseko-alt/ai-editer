@@ -885,7 +885,7 @@ t("P1-2-A: 起動時トークンは十分な長さのランダム値で、生成
 
 t("P1-2-A: トークン検証はヘッダ優先・無ければクエリ、一致しなければ拒否", () => {
   const token = generateStartupToken();
-  const reqWithHeader = { headers: { "x-kosespark-token": token } };
+  const reqWithHeader = { headers: { "x-ai-editer-token": token } };
   assert.strictEqual(extractToken(reqWithHeader, new URLSearchParams()), token);
 
   const reqWithQuery = { headers: {} };
@@ -1188,7 +1188,7 @@ t("P1-4-B: ジョブトークンは発行したジョブにしか一致しない
 });
 
 t("P1-4-B: ジョブトークンはヘッダ優先・無ければクエリから取り出す", () => {
-  const reqWithHeader = { headers: { "x-kosespark-job-token": "h-token" } };
+  const reqWithHeader = { headers: { "x-ai-editer-job-token": "h-token" } };
   assert.strictEqual(extractJobToken(reqWithHeader, new URLSearchParams()), "h-token");
 
   const reqWithQuery = { headers: {} };

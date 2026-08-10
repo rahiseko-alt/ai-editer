@@ -1,7 +1,7 @@
-# kosespark Writer テスト版 — 導入 Runbook（客の Claude Code へ設置）
+# AI-Editer Writer テスト版 — 導入 Runbook（客の Claude Code へ設置）
 
-> 用途：マスターが導入サービス（60分）で**客の Claude Code デスクトップ版**に kosespark Writer を設置する手順。
-> 前提モデル：呼び出すのは客自身の Claude Code。kosespark は「パッケージ＋設定」を入れるだけ（API を代理・再販しない）。
+> 用途：マスターが導入サービス（60分）で**客の Claude Code デスクトップ版**に AI-Editer Writer を設置する手順。
+> 前提モデル：呼び出すのは客自身の Claude Code。AI-Editer は「パッケージ＋設定」を入れるだけ（API を代理・再販しない）。
 > 全工程キーレス（API 鍵不要）。本 Runbook の全コマンドは Session で実機検証済み（2026-06-16）。
 
 ## 設置するもの（パッケージ一式）

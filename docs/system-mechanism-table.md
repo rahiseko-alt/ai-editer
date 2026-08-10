@@ -1,4 +1,4 @@
-# kosespark video-shorts 仕組み表
+# AI-Editer video-shorts 仕組み表
 
 > 作成 2026-06-20 / マスター確定の方向（CLAUDE.md §4）を1枚に。
 > 到達ゴール=動画→縦型ショート→Instagram/X/ブログ自動投稿。運営コスト≒0（計算は客PCに寄せる）。

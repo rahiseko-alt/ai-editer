@@ -57,7 +57,7 @@ const OUT_ROOT = path.join(ROOT, "output");
 
 // P1-2(A): 起動ごとに変わるトークン。正規のページ(index.html)にのみ埋め込んで配布する。
 const SERVER_TOKEN = generateStartupToken();
-process.stderr.write(`[kosespark] startup token (このプロセス限り有効): ${SERVER_TOKEN}\n`);
+process.stderr.write(`[ai-editer] startup token (このプロセス限り有効): ${SERVER_TOKEN}\n`);
 
 // P1-2(E): ジョブ起動(POST /api/jobs)へのレート制限。単一利用者のローカルツール前提の固定ウィンドウ。
 const jobsRateLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
@@ -73,7 +73,7 @@ function sweepExpiredJobsNow() {
   // に見える)可能性があるため掃除から除外する（pipeline-runner.mjs activeJobIds() 参照）。
   const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now(), activeJobIds());
   for (const r of removed) {
-    process.stderr.write(`[kosespark] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
+    process.stderr.write(`[ai-editer] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
   }
 }
 sweepExpiredJobsNow();
@@ -172,7 +172,7 @@ function serveStatic(req, res) {
   // 別オリジンの悪意あるページはこのレスポンス本文を読めないため、トークンを盗めない）。
   if (reqPath === "/index.html") {
     const html = fs.readFileSync(resolved, "utf-8");
-    const tokenScript = `<script>window.__KOSESPARK_TOKEN__=${JSON.stringify(SERVER_TOKEN)};</script>\n`;
+    const tokenScript = `<script>window.__AI_EDITOR_TOKEN__=${JSON.stringify(SERVER_TOKEN)};</script>\n`;
     const injected = html.includes("</head>")
       ? html.replace("</head>", `${tokenScript}</head>`)
       : tokenScript + html;
@@ -705,5 +705,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  process.stderr.write(`[kosespark] server listening on http://127.0.0.1:${PORT}\n`);
+  process.stderr.write(`[ai-editer] server listening on http://127.0.0.1:${PORT}\n`);
 });

@@ -117,7 +117,7 @@
 
 <script type="application/json" id="roadmap-data">{
   "meta": {
-    "title": "kosespark video-shorts ロードマップ",
+    "title": "AI-Editer video-shorts ロードマップ",
     "active": "GOAL",
     "next": "PR #57・#59・#73・#74 のCI完走を確認し、緑ならマージする（コンフリクト解消済み・全ゲート緑でプッシュ済み。#55はマージ済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
     "handoff": {
@@ -336,7 +336,7 @@
                       "kind": "state",
                       "theme": "起動ごとの合言葉(トークン)で守る",
                       "meaning": "サーバー起動時に発行される合言葉を知らないと操作できない",
-                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
+                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__AI_EDITOR_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
                       "status": "done",
                       "criteria": [
                         {
@@ -2362,8 +2362,8 @@
                           "kind": "state",
                           "theme": "AI の点検に失敗したら、そのジョブが失敗として終わる",
                           "meaning": "AI が失敗したのに、画面には成功と出て、直っていない動画が納品される、が起きない",
-                          "detail": "basis-reviewer の反証で追加。工程の関数が例外を投げても、呼び出し側（server/pipeline-runner.mjs）が握りつぶして次の工程へ進めば、画面には成功として出る。既存の区間選定は『一部失敗でも続行し incomplete:true を返す』方式を採っているので、この工程でどちらを採るかを決めておかないと実装後に選べる。**この工程はジョブ全体を失敗にする**（直っていない字幕を黙って納品する方が害が大きいため）。",
-                          "status": "todo",
+                          "detail": "basis-reviewer の反証で追加。工程の関数が例外を投げても、呼び出し側（server/pipeline-runner.mjs）が握りつぶして次の工程へ進めば、画面には成功として出る。既存の区間選定は『一部失敗でも続行し incomplete:true を返す』方式を採っているので、この工程でどちらを採るかを決めておかないと実装後に選べる。**この工程はジョブ全体を失敗にする**（直っていない字幕を黙って納品する方が害が大きいため）。\n\n2026-08-10 実装者による実地確認。server/pipeline-runner.mjs の runJob() は stage c(aiCaptionFixStage) の例外を try/catch で握りつぶさず、そのまま startJob() の呼び出し側 catch まで伝播させ job.stage を \"error\" にして event: error を broadcast する（後続の stage s/r は一度も呼ばれない）構造に既になっていたため、コード変更は不要だった。この構造を実サーバー2プロセス(server/index.mjs本体・PATH上の偽claude)で検証する自動テスト tests/caption-ai-fail-halts-job-check.mjs を新設し、node --test相当の手動ランナーで実行: (1)必ず失敗する偽claude(kind:fail)では POST /api/jobs → SSEが event: error で終わり、work/<job>/llm-response.json も output/<job>/candidates.json も *.mp4 クリップも1つも作られないこと、偽claudeが実際に1回以上呼ばれたこと(空振り検査でないこと)、を確認。(2)対照として正しく答える偽claude(kind:route、文字起こし直し用と区間選定用のプロンプト文言で答えを出し分け)では同じ手順が event: done まで進み、llm-response.json・candidates.json・実クリップ(実ffmpeg合成mp4)が実際に生成されることを確認。文字起こし段(stage t)は重い実ASRを避けるため、同じくPATH差し替え方式(tests/helpers/fake-transcribe-main.mjs、固定・データ駆動)で「文字起こし済み」を模した。12/12 PASS。",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "AI の点検が失敗したとき、そのジョブが失敗として終わり、次の工程（区間選定・レンダリング）へ進まない",
@@ -2450,8 +2450,8 @@
                           "kind": "state",
                           "theme": "動画を処理すると、この点検が自動で走って字幕に載る",
                           "meaning": "使う人が何も操作しなくても、直った字幕で出来上がる",
-                          "detail": "本物のモデルの当たり外れを、この葉（結線が繋がっているか）の判定に混ぜないため、ここでは PATH に置いた偽 claude を使う。本物のモデルの実力は葉I・葉Jが判定する。文字起こしそのもの（faster-whisper）はこの環境にモデルが無く走らせられないため、文字起こし済みのジョブから流す（G-EDIT-CAPTION-D と同じ既知の制約）。\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 verifyが偽claudeでサーバーを最後まで処理させる想定だが、server/claude-select.mjs(区間選定)も同じsrc/claude-run.mjsを経由して同じPATH上のclaudeを呼ぶため、字幕直し用の偽claudeがそのままでは選定ステージの期待形式と一致せず失敗しうる（相互作用が未解決のまま凍結）。K1のverifyに「選定ステージには別途、選定に必要な最小限の正しい返答を返す偽claude(呼び出し元を判別する合言葉つき)を使う」旨を明記する必要がある。",
-                          "status": "todo",
+                          "detail": "本物のモデルの当たり外れを、この葉（結線が繋がっているか）の判定に混ぜないため、ここでは PATH に置いた偽 claude を使う。本物のモデルの実力は葉I・葉Jが判定する。文字起こしそのもの（faster-whisper）はこの環境にモデルが無く走らせられないため、文字起こし済みのジョブから流す（G-EDIT-CAPTION-D と同じ既知の制約）。\n\n【2026-08-09 ツリー見直しで検出済みの相互作用】server/claude-select.mjs(区間選定)も同じsrc/claude-run.mjsを経由して同じPATH上のclaudeを呼ぶ。実装者が2026-08-10に確認した対処: 偽claudeの中で、ai-caption-fix.mjsのbuildFixPromptにしか出ない固定文言（合言葉）がstdinに含まれるかで呼び出し元を判別し、字幕直しの呼び出しには{\"fixes\":[...]}を、区間選定の呼び出しには受け取ったtranscript-chunkをそのままkeepTextへ載せた{\"segments\":[...]}を返すことで両立できることを実地で確認した。\n\n【2026-08-10 実装者による実地検証(本人実装+実地確認。独立検証は別工程)】既存実装(server/pipeline-runner.mjsのstage \"c\"、src/ai-caption-fix.mjs)を読み、文字起こし(stage t)完了直後・区間選定(stage s)着手前にaiCaptionFixStageが呼ばれていることを確認(既存: tests/smoke.mjsの該当テストも緑)。verify記載どおりの直しあり(fix)E2Eをこの環境で実行: PATHに偽python(固定素材tests/fixtures/ai-caption-fix/transcript-miswritten.jsonをtranscript.jsonへコピーするだけ)と偽claude(上記合言葉判別つき、添字13「以上」→「異常」1件を返す)を置き、ffmpegで合成した55秒程度のダミーmp4をsample.mp4として実サーバー(server/index.mjs)へPOSTし、SSEのdoneまで最後まで処理させた。結果: (a) work/<jobId>/ai-caption-fixes.jsonに{\"fixes\":[{\"index\":13,\"before\":\"以上\",\"after\":\"異常\"}]}が1件残った。(b) 焼き込みに使われたwork/<jobId>/clip-1.assに「異常が見つかる方は以外に多い」という直った語を含む字幕行が現れ、一方で無関係な既存の正しい語「四十歳以上」は変更されず「以上」のまま残っていた(＝語の一律置換ではなく、その添字だけが直っている)ことを確認した。\n\n【未達】直し0件を返す偽claudeに差し替えて同じ.assに「以上」が残ることを確かめる対照実行(control)は、検証の途中でこのセッションが動いていたサンドボックス作業ツリーが失われ(worktreeごと消失)、再構築後の環境ではサーバー子プロセスのspawnがENOENT(絶対パス指定でも)で失敗するようになり、このセッション内では完走できなかった。代わりに、同じ固定素材・同じ添字13を使うユニットレベルの既存テストtests/ai-caption-fix-check.mjsのテスト「C 対照: 直し0件のときも fixes が0件のファイルとして残る」（PATHに置いた実行ファイルへ実際にspawnする経路で{\"fixes\":[]}を返すと ai-caption-fixes.json が {\"fixes\":[]} になり、他のテストで words[13] が直さない限り元の「以上」のまま残ることを確認済み）を対照の代替根拠として引用する。node tests/ai-caption-fix-check.mjs は 66 PASS / 0 FAIL。フルE2Eでの0件側の対照実行は、同じ harness (fixesJson を [] に差し替えるだけ)で次回すぐ再実行できる状態にしてあるが、このセッションでは未完走のため status は doing のまま。independent-verifier による最終判定時にはサーバーE2Eでの0件側対照も併せて実行することを推奨する。",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "サーバでジョブを処理すると、文字起こしのあとに AI の点検が走り、その結果が焼き込みに使う字幕ファイル(.ass)へ載る",
@@ -2465,7 +2465,8 @@
                           "kind": "state",
                           "theme": "AI が字幕を点検していることが、画面の進み具合で分かる",
                           "meaning": "止まっているのか動いているのか分からない時間が生まれない",
-                          "status": "todo",
+                          "detail": "【2026-08-10 実装者によるコードレビュー確認】webapp-mockup/app.jsのEDITING_LABEL['c']=\"AIが字幕の間違いを直しています\"、STEP_ORDER=[\"t\",\"c\",\"s\",\"r\",\"m\"]でtとsの間に既に入っている。webapp-mockup/index.htmlの#progress・#editing-stepsの両方に<... data-k=\"c\">の行/要素が既にある(t/c/s/r/mの5段が並ぶ)。既存のtests/smoke.mjsに「字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている」「UI: 字幕直し段(c)の進捗表示の受け皿がある」の2テストが既にあり(STEP_ORDER/EDITING_LABEL/data-k=\"c\"の3点を機械で検査)、node tests/smoke.mjsは87 PASS / 0 FAILで緑。ブラウザでの実地確認(実行中→完了の表示遷移そのものを目で見る)はこのセッションでは行っておらず、独立検証の工程に委ねる(タスク指示どおり、コードレビューでの確認で代替)。",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "画面の進捗表示に、AI が字幕を点検している工程が独立した段として現れ、終わると完了として表示される",
@@ -2539,7 +2540,7 @@
                           "kind": "state",
                           "theme": "画面から焼き直しを実行すると、AIが直した語より人が直した語が優先される",
                           "meaning": "実際の画面操作でも、人の直しが最後に勝つ",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "文字起こしにAIの直しが適用された状態のジョブで、画面（または実HTTPのPOST /api/jobs/:id/recaption）から焼き直しを実行すると、AIが直した語のうち人がさらに直した語は人の文字で焼かれ、人が触れていない語はAIの直しのまま焼かれる",
@@ -2547,7 +2548,7 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。既存のG-EDIT-CAPTION-AI-Lはcaption-store.mjsのreadEdits/applyEditsを直接呼ぶだけで、本番の焼き直し経路(src/recaption-stage.mjs)を一度も通していない。ツリー自身が既に自覚している失敗パターン（関数を差し替える方式は本番だけ壊れていても緑になる）と同型の穴。"
+                          "detail": "ツリー見直しで検出。既存のG-EDIT-CAPTION-AI-Lはcaption-store.mjsのreadEdits/applyEditsを直接呼ぶだけで、本番の焼き直し経路(src/recaption-stage.mjs)を一度も通していない。ツリー自身が既に自覚している失敗パターン（関数を差し替える方式は本番だけ壊れていても緑になる）と同型の穴。\n\n2026-08-10 実装者による実地確認。src/recaption-stage.mjsは transcript.json(=AI直し適用後に上書きされた本体)を読み、その words[] へ caption-store.mjs の applyEdits(readEdits(workDir)) を重ねてから焼く構造に既になっており(AIの直し→人の直しの順で重なる)、コード変更は不要だった。この結線を実HTTP経由で検証する自動テスト tests/recaption-human-vs-ai-check.mjs を新設: 4語のtranscriptに対し(1)実際にaiCaptionFixStageを偽claude経由で走らせ2語(index1,2)をAI直し済みにし、(2)実サーバーへ PUT /api/jobs/:id/captions でindex1だけ人の直しを追加で重ね(index2は人は触れない)、(3)実サーバーへ POST /api/jobs/:id/recaption で焼き直しを実行、(4)生成された recaption-1.ass を読み、index1は人の文字のみ(AIの文字・元の文字は不在)、index2はAIの文字のみ(元の文字は不在)、誰も触れていない2語はそのまま、を確認。出力クリップ実ファイルが事前に置いたダミーから実際に置き換わったことも確認。16/16 PASS。"
                         }
                       ]
                     }

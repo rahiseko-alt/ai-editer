@@ -1,5 +1,5 @@
-// 配布ビルド: video-shorts の配布対象を dist/kosespark-video-shorts へ同期する。
-// 実行: node video-shorts/build-dist.mjs （kosespark ルート or どこからでも可）
+// 配布ビルド: video-shorts の配布対象を dist/ai-editer-video-shorts へ同期する。
+// 実行: node video-shorts/build-dist.mjs （AI-Editer ルート or どこからでも可）
 //
 // 目的（販売安全・plan ステップ4）:
 // - 手動 cp 運用を廃し配布物を再現可能に（dist は .gitignore で追跡外のため build で毎回再生成）
@@ -19,7 +19,7 @@ const SRC = path.dirname(fileURLToPath(import.meta.url)); // = video-shorts/
 // モザイクを使わない案件では丸ごと不要なので、モデルとモザイク用スクリプトを外して作る。
 const SLIM = process.argv.includes("--slim");
 const DEST = path.join(SRC, "..", "dist",
-  SLIM ? "kosespark-video-shorts-slim" : "kosespark-video-shorts");
+  SLIM ? "ai-editer-video-shorts-slim" : "ai-editer-video-shorts");
 
 // 軽い版で配布しないもの（モザイク一式）
 const MOSAIC_FILES = [
