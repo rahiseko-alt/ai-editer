@@ -109,7 +109,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # 到達性を外部事実(HTTP 200＋本文マーカー)で縛る。スクショにしない。
-      - name: Smoke (video-shorts server start → curl 200 + 'kosespark')
+      - name: Smoke (video-shorts server start → curl 200 + 'AI-Editer')
         run: |
           node video-shorts/server/index.mjs &
           SERVER_PID=$!
@@ -129,12 +129,12 @@ jobs:
 
           # 本文に既知マーカーを含むこと
           body=$(curl -sf http://127.0.0.1:5178)
-          if ! printf '%s' "$body" | grep -q 'kosespark'; then
-            echo "FAIL: body did not contain marker 'kosespark'"
+          if ! printf '%s' "$body" | grep -q 'AI-Editer'; then
+            echo "FAIL: body did not contain marker 'AI-Editer'"
             exit 1
           fi
 
-          echo "SMOKE OK: HTTP 200 かつ本文に 'kosespark' を確認"
+          echo "SMOKE OK: HTTP 200 かつ本文に 'AI-Editer' を確認"
 
   hook-session-start:
     name: session-startフック (G-DELIVERY-HOOK-*) の実地検証

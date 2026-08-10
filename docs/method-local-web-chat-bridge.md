@@ -1,6 +1,6 @@
 # 手法確立：ローカルWebアプリ＋チャット欄で"裏のClaude"を動かす
 
-> 調査 2026-06-20（GitHub実例＋Claude Code公式仕様）。kosespark video-shorts を
+> 調査 2026-06-20（GitHub実例＋Claude Code公式仕様）。AI-Editer video-shorts を
 > 「客PC上のローカルWeb編集アプリ＋チャット欄」に進化させるための確立手法。
 > 目的=ブラウザUI→ローカルNode橋→Claude Code→応答をストリーム表示、クラウド不要・コスト≒0。
 
@@ -27,7 +27,7 @@ Claude Code（既存サブスクで動く＝コスト0）
 
 - **CLI（`claude -p`）= サブスクログイン継承 → 追加課金なし**（claude-code-guide【確信度:高】／実在OSS claudecodeui・claude-code-webui が同方式）
 - **Agent SDK（`@anthropic-ai/claude-agent-sdk`）= 既定 `ANTHROPIC_API_KEY` 必須 → トークン従量課金**
-- → kosespark のコスト0要件には **CLI subprocess 方式を採用**。SDK は構造の参考のみ。
+- → AI-Editer のコスト0要件には **CLI subprocess 方式を採用**。SDK は構造の参考のみ。
 
 ## 参考にする実在リポジトリ（手本）
 

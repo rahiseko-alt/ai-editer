@@ -26,12 +26,12 @@ export function extractNamedToken(req, searchParams, headerName, queryName) {
 
 /** リクエストから起動時トークンを取り出す(P1-2-A)。 */
 export function extractToken(req, searchParams) {
-  return extractNamedToken(req, searchParams, "x-kosespark-token", "token");
+  return extractNamedToken(req, searchParams, "x-ai-editer-token", "token");
 }
 
 /** リクエストからジョブトークンを取り出す(P1-4-B)。 */
 export function extractJobToken(req, searchParams) {
-  return extractNamedToken(req, searchParams, "x-kosespark-job-token", "jobToken");
+  return extractNamedToken(req, searchParams, "x-ai-editer-job-token", "jobToken");
 }
 
 /** トークンが一致するか(タイミング攻撃を避けるため長さ一致後にtimingSafeEqual)。

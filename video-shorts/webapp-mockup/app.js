@@ -1,4 +1,4 @@
-// kosespark 無料版 UI — バックエンドAPI結線済み。
+// AI-Editer 無料版 UI — バックエンドAPI結線済み。
 // POST /api/jobs → SSE /api/jobs/:id/events → GET /api/jobs/:id/candidates → DL /api/clips/:id/:file
 // プレビュー正設計: デバイス枠は固定アスペクト（CSS で aspect-ratio 固定）。
 // サイズ選択→.video-area の px のみを変更（contain 計算）。枠は一切変更しない。
@@ -14,10 +14,10 @@ const $ = (id) => document.getElementById(id);
 // fetch系はヘッダで、EventSource/ダウンロードリンクはカスタムヘッダを付けられないためクエリで送る。
 // P1-4(B): ジョブごとに発行されるjobToken(POST /api/jobsの応答)も、そのジョブ関連の呼び出し
 // (SSE/候補JSON/クリップDL)すべてに併せて付与する(起動時トークンだけでは他ジョブと区別できない)。
-const API_TOKEN = window.__KOSESPARK_TOKEN__ || "";
+const API_TOKEN = window.__AI_EDITOR_TOKEN__ || "";
 function withTokenHeader(init = {}, jobToken = null) {
-  const headers = { ...(init.headers || {}), "X-Kosespark-Token": API_TOKEN };
-  if (jobToken) headers["X-Kosespark-Job-Token"] = jobToken;
+  const headers = { ...(init.headers || {}), "X-AI-Editer-Token": API_TOKEN };
+  if (jobToken) headers["X-AI-Editer-Job-Token"] = jobToken;
   return { ...init, headers };
 }
 function withTokenQuery(url, jobToken = null) {

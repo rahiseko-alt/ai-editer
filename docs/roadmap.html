@@ -120,16 +120,16 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】並列着手した24葉（draft PR群）のCI結果を確認し、緑ならdraft解除→マージする\n  ・ブランチ: feature/p1-2-server-wiring, feature/p0-5-pipeline-wiring, feature/p1-9-boundary-fixtures,\n    feature/dist-hygiene, feature/p1-11-audit-evidence(PR #56)、feature/p1-12-tool-pin-consent,\n    feature/testinfra-lint, feature/testinfra-scriptslint, feature/delivery-ci-gate,\n    feature/m1-mosaic-cli-robustness, feature/m4h-delivery-face-scan, feature/trim-hi-asr-robustness,\n    feature/quality-ac-gates。CIが赤いものは診断して直す。マージ後は該当葉のstatusをdoneにしevidence(commit SHA/CI run URL)を記録する。\n\n【2】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認\n  ・本セッション冒頭でbasis-reviewer 2エージェントが出したobjection（葉A/B/D/Eの偽の緑・音声/字幕/横長経路の欠落・\n    素材未凍結のC/F 等、計20件超の指摘）が反映されているか確認する。反映されていなければ、doneになっている\n    葉（A/B/D/D2/E/G/G2/G3/H/H2/H3）でも実質的に凍結不可の可能性がある。docs/failures.mdに経緯を確認できる\n    記録があるか探し、無ければマスターに直接確認する。\n  ・G-EDIT-REFRAME-C/F（素材未凍結）はまだtodoのまま。着手前にD-7（実写素材調達）の方針確認が必要。\n  ・REFRAME実装が有効になったことで、見送っていたG-EDIT-QUALITY-B/D（追跡クロップ込みの処理時間・配布物内容）\n    が着手可能になっている可能性がある。REFRAME実態確認後に着手を検討する。\n\n【3】ブランド名変更（AI-Editer）の残作業\n  ・docs/roadmap.html のdetailフィールド22箇所に残る「kosespark」は、すべて歴史的な監査ファイル名\n    (docs/audits/2026-07-27-kosespark-test-review-proposal.md)への参照であることを確認済み。ファイル名\n    自体は変更しない方針（参照が壊れるため）。将来もし監査ファイルをリネームする場合は、参照側も\n    一括で直すこと。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「完了」の定義は明示指示があった場合、CIへ確認を依頼する（PR作成）ところまでで良い。CIグリーン確認や\n    マージまで自動で進めるかは、その都度の指示に従う。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・並列作業はworktree隔離を使い、docs/roadmap.htmlのような共有ファイルの同時編集による衝突を避ける。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "マスター指示により、ブランド名をkosespark(KOSEspark)からAI-Editerへ変更した。UI表示・HTTPヘッダー名(X-Kosespark-Token→X-AI-Editer-Token等)・JSトークン変数名(__KOSESPARK_TOKEN__→__AI_EDITOR_TOKEN__)・CI検査マーカー(.github/workflows/ci.yml)・配布フォルダ名(dist/kosespark-video-shorts→ai-editer-video-shorts)・関連ドキュメント(docs/配下のprose)まで一貫して置換した。歴史的な記録(過去のブランチ名kosespark-import・監査ファイル名docs/audits/2026-07-27-kosespark-test-review-proposal.mdなど)は参照が壊れるため意図的に残した。pnpm -r test（video-shorts）を実行し全PASS・0 FAILを確認済み。",
+        "マスター指示により、ロードマップの未着手葉のうちG-EDIT-REFRAME依存分(G-EDIT-QUALITY-B/D)とTRIM-D(基準が測定対象を外していると既に判明・マスター判断待ち)を除いた24葉を13バッチに分け、worktree隔離した並列サブエージェントで実装〜ローカルテスト〜draft PR作成まで着手させた（対象：P0-5-C/D、P1-2-F/G/H/I、P1-9-D/E、P1-10、P1-11、P1-12-A/B、G-TESTINFRA-LINT/SCRIPTSLINT、G-DELIVERY-CIGATE/FAILCLEAR、M-1-E/F、M-4-H、G-EDIT-TRIM-H/I、G-EDIT-QUALITY-A/C）。「完了」の定義はマスター指示によりCIへ確認を依頼する（PR作成）ところまでとし、CIグリーン確認・マージは待たない。",
+        "作業中に、G-EDIT-REFRAME（縦型切り抜き）がPR #54として既にmainへマージ済みであることを検知した（13葉中11葉done）。本セッション冒頭でbasis-reviewer 2エージェントに独立レビューさせた結果は「objection（6葉すべて凍結不可）」で、実装ゼロでもD/Eが合格する・音声/字幕/横長経路に葉が無い等、複数の重大な指摘が出ていたが、その指摘が反映されたかは本セッションでは未確認（別セッションまたはマスターの直接作業による可能性が高い）。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "並列実装バッチのため、各サブエージェントの実際の完了状況（PR番号・CI結果）はタスク通知が届くたびに変わる。この時点のhandoffはキックオフ直後のスナップショットであり、次回チェックイン時は各PRのマージ状況を個別に確認すること。",
+        "PR #54（REFRAME）のマージが、本セッションで検出したbasis-reviewer objectionを解消した上でのマージなのか未確認。次回セッションで docs/failures.md および G-EDIT-REFRAME 配下 detail の反証処理状況を確認すること。"
       ]
     },
     "updated": "2026-08-10",
