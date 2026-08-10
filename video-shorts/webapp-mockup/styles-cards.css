@@ -1,4 +1,4 @@
-/* kosespark webapp-mockup — 左カラム設定カード群（styles.css から分離・line-count-gate 対応）
+/* AI-Editer webapp-mockup — 左カラム設定カード群（styles.css から分離・line-count-gate 対応）
    :root 変数・レイアウトグリッドは styles.css 側に定義。本ファイルは styles.css の後に読み込む。
    設定カード = ガラス質感（半透明 + backdrop-blur + 多層 shadow + 内側ハイライト）+ ホバー浮上。 */
 

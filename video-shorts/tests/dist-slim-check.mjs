@@ -16,8 +16,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(ROOT, "..");
 const DIST = path.join(PKG, "..", "dist");
-const SLIM = path.join(DIST, "kosespark-video-shorts-slim");
-const FULL = path.join(DIST, "kosespark-video-shorts");
+const SLIM = path.join(DIST, "ai-editer-video-shorts-slim");
+const FULL = path.join(DIST, "ai-editer-video-shorts");
 const LIMIT_MB = 30;
 
 let passed = 0;
@@ -48,7 +48,7 @@ check(
 const zipPath = path.join(os.tmpdir(), `slim-check-${process.pid}.zip`);
 fs.rmSync(zipPath, { force: true });
 execFileSync("sh", ["-c",
-  `cd ${JSON.stringify(DIST)} && zip -qr ${JSON.stringify(zipPath)} kosespark-video-shorts-slim`]);
+  `cd ${JSON.stringify(DIST)} && zip -qr ${JSON.stringify(zipPath)} ai-editer-video-shorts-slim`]);
 const zipMB = fs.statSync(zipPath).size / 1e6;
 check(
   "S-1: 軽い版の配布物(zip)が30MB以内に収まる",

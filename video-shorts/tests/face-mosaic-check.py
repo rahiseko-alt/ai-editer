@@ -609,7 +609,7 @@ from face_mosaic import write_face_choices  # noqa: E402
 
 PKG = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 REPO = os.path.abspath(os.path.join(PKG, ".."))
-DIST = os.path.join(REPO, "dist", "kosespark-video-shorts")
+DIST = os.path.join(REPO, "dist", "ai-editer-video-shorts")
 
 # ---------------------------------------------------------------- M-4-A / M-4-B
 build = subprocess.run(

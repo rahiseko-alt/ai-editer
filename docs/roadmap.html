@@ -117,7 +117,7 @@
 
 <script type="application/json" id="roadmap-data">{
   "meta": {
-    "title": "kosespark video-shorts ロードマップ",
+    "title": "AI-Editer video-shorts ロードマップ",
     "active": "GOAL",
     "next": "PR #57・#59・#73・#74 のCI完走を確認し、緑ならマージする（コンフリクト解消済み・全ゲート緑でプッシュ済み。#55はマージ済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
     "handoff": {
@@ -336,7 +336,7 @@
                       "kind": "state",
                       "theme": "起動ごとの合言葉(トークン)で守る",
                       "meaning": "サーバー起動時に発行される合言葉を知らないと操作できない",
-                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
+                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__AI_EDITOR_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
                       "status": "done",
                       "criteria": [
                         {

@@ -594,7 +594,7 @@ stateDiagram-v2
 
 認可は 2 段構えです。
 
-- **起動時トークン**（24 バイト hex, `server/security.mjs:14`）：プロセス起動ごとに変わり、`index.html` 配信時にのみ `window.__KOSESPARK_TOKEN__` として本文へ注入されます（`server/index.mjs:139-150`）。別オリジンのページはレスポンス本文を読めないため盗めない、という前提です。新規ジョブ作成のみがこれを要求します。
+- **起動時トークン**（24 バイト hex, `server/security.mjs:14`）：プロセス起動ごとに変わり、`index.html` 配信時にのみ `window.__AI_EDITOR_TOKEN__` として本文へ注入されます（`server/index.mjs:139-150`）。別オリジンのページはレスポンス本文を読めないため盗めない、という前提です。新規ジョブ作成のみがこれを要求します。
 - **ジョブトークン**（16 バイト hex, `server/security.mjs:56`）：`POST /api/jobs` の応答で 1 ジョブごとに発行され、成果物取得系すべてに必須です。`server/index.mjs:355-373` に、起動時トークンを併用しない理由（全ジョブ共通なので他人のジョブを覗ける）と必須にもしない理由（再起動で値が変わり、正規の SSE 再接続が `interrupted` に到達する前に 401 で弾かれる。2026-07-28 に independent-verifier が実サーバ 2 プロセスで再現）が記録されています。
 
 その他のハードニング:
@@ -656,7 +656,7 @@ stateDiagram-v2
 | `tests/dist-slim-check.mjs` | 実ビルド | slim 配布物が 30MB 以内・手順書にモザイク案内が残らない・標準版は従来どおり |
 | `tests/render-escape-check.mjs` | 実機（ffmpeg 必須） | 特殊文字（`'` `:` `\` `=` `,` `[]` 空白）を含むパスの ASS でも字幕が焼き込まれる（2.7 の 2 段エスケープの回帰）。素材は lavfi で毎回生成しリポジトリに同梱しない。**「ffmpeg が終了コード 0 だった」では合格にせず、字幕なしで焼いた同一フレームと画が異なることまで確認する**（字幕が黙って無視される退行はコード 0 で素通りするため） |
 
-CI（`.github/workflows/ci.yml`）は `quality` と `smoke` の 2 ジョブを回し、集約ゲート `ci-green` を必須チェックとしています（`:161-173`）。`quality` は typecheck / lint（対象パッケージ無し）/ test / build / `pnpm audit --audit-level moderate` / `scripts/verify-roadmap-evidence.mjs` を実行し、ffmpeg・zip・opencv を明示インストールします（版をランナーイメージ任せにしない）。`smoke` はサーバを起動して `curl` で HTTP 200 と本文マーカー `kosespark` を確認する到達性テストです。ほかに `codeql.yml`（JS/TS 静的解析）と `roadmap-required.yml`（全 PR で `docs/roadmap.html` の差分を必須化）があります。
+CI（`.github/workflows/ci.yml`）は `quality` と `smoke` の 2 ジョブを回し、集約ゲート `ci-green` を必須チェックとしています（`:161-173`）。`quality` は typecheck / lint（対象パッケージ無し）/ test / build / `pnpm audit --audit-level moderate` / `scripts/verify-roadmap-evidence.mjs` を実行し、ffmpeg・zip・opencv を明示インストールします（版をランナーイメージ任せにしない）。`smoke` はサーバを起動して `curl` で HTTP 200 と本文マーカー `AI-Editer` を確認する到達性テストです。ほかに `codeql.yml`（JS/TS 静的解析）と `roadmap-required.yml`（全 PR で `docs/roadmap.html` の差分を必須化）があります。
 
 **CI に接続されていないテスト**が 2 本あります。`tests/render-check.mjs`（fixture `samples/test-16x9.mp4` が `.gitignore` 対象で未コミット）と `tests/e2e-server.mjs`（手動用）。
 
