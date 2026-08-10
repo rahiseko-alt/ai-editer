@@ -120,7 +120,7 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-TESTINFRA-LINT",
-    "next": "PR(feature/testinfra-lint)をorigin/mainへマージする（scripts/typecheck導入・criteria-freeze強化3段ゲートとの競合を解消済み）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、現在doingのまま止まっている24葉をdoneへ進める際は、各criteriaにverifyCmd（新設フィールド。CIが実際に実行するコマンド）を追記すること。無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。並行して、中断していたPR #54(REFRAME、CodeRabbit指摘7件・git stash退避済み)の再開も残っている。",
+    "next": "PR(feature/testinfra-lint)をorigin/mainへマージする（PR#76・PR#65マージ後の状態との競合を解消済み）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、現在doingのまま止まっている24葉をdoneへ進める際は、各criteriaにverifyCmd（新設フィールド。CIが実際に実行するコマンド）を追記すること。無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。並行して、中断していたPR #54(REFRAME、CodeRabbit指摘7件・git stash退避済み)の再開も残っている。",
     "handoff": {
       "done": [
         "G-TESTINFRA-LINT: video-shortsパッケージにESLint 9系(flat config)を導入した。devDependenciesへeslint/@eslint/js/globalsを追加し、video-shorts/eslint.config.mjsを新設(対象: **/*.mjsはNode/ESM。一部Playwrightのpage.evaluate()コールバックがブラウザグローバルも使うためnode+browserのglobalsを両方許容。ui/app.js・webapp-mockup/app.js・install/consent.jsはブラウザ非モジュールスクリプトとして別扱い)。ルールはeslint:recommended相当+no-unused-vars(catch束縛含む)+no-use-before-define+no-empty(allowEmptyCatch)+no-irregular-whitespace(文字列/コメント/正規表現中の全角スペースは日本語処理で意図的なため除外)。package.jsonへ`\"lint\": \"eslint .\"`を追加。",
