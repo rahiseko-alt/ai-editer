@@ -119,17 +119,18 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "active": "G-EDIT-CAPTION-AI-K1",
+    "next": "K1: 直し0件を返す偽claudeでの対照E2E(control run)をサーバー経由で完走させ、work/<id>/clip-*.assに「以上」が残ることを確認してevidenceを埋め、statusをdoneへ。K2: Playwrightでブラウザ実地確認(実行中→完了の表示遷移)を行い、独立検証を完了させる。両方とも独立検証(independent-verifier)の実施が必要。",
     "handoff": {
       "done": [
         "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。independent-verifierによる独立検証を完了しPR #54でmainへマージ済み。",
+        "G-EDIT-CAPTION-AI-K1: server/pipeline-runner.mjsのstage \"c\"(文字起こし直後・区間選定前)にaiCaptionFixStageが既に組み込まれていることを確認。PATHに偽python(固定素材transcript-miswritten.jsonを流す)と偽claude(呼び出し元を合言葉で判別し、字幕直しには{fixes:[...]}を、区間選定には{segments:[...]}を返す)を置いて実サーバーをE2Eで走らせ、添字13「以上」→「異常」の直しがwork/<id>/ai-caption-fixes.jsonと焼き込み用.assの両方に反映されることを実地確認した。statusをdoingにしdetailへ記録(0件側の対照E2Eは環境障害で未完走、次回へ)。",
+        "G-EDIT-CAPTION-AI-K2: webapp-mockup/app.jsのEDITING_LABEL/STEP_ORDER、index.htmlのdata-k=\"c\"に工程cが既に組み込まれていることをコードレビューで確認。既存のtests/smoke.mjsが同じ内容を機械検査しており87 PASS/0 FAILで緑であることを確認。statusをdoingにしdetailへ記録。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
+        "G-EDIT-CAPTION-AI-K1のE2E検証の途中で、このセッションが動いていたサンドボックスのworktree(agent-ae4c9c6b86df015bc)が消失し、同じディレクトリでのgit操作が不可能になった。git worktree addで同じブランチの新しいworktreeを作り直して復旧したが、復旧後の環境ではNodeの子プロセスspawn(絶対パス指定でも)がENOENTで失敗するようになり、直し0件側(control)のサーバーE2E対照実行はこのセッション内では完走できなかった(直しあり側は消失前に完走・記録済み)。"
       ]
     },
     "updated": "2026-08-10",
@@ -2446,8 +2447,8 @@
                           "kind": "state",
                           "theme": "動画を処理すると、この点検が自動で走って字幕に載る",
                           "meaning": "使う人が何も操作しなくても、直った字幕で出来上がる",
-                          "detail": "本物のモデルの当たり外れを、この葉（結線が繋がっているか）の判定に混ぜないため、ここでは PATH に置いた偽 claude を使う。本物のモデルの実力は葉I・葉Jが判定する。文字起こしそのもの（faster-whisper）はこの環境にモデルが無く走らせられないため、文字起こし済みのジョブから流す（G-EDIT-CAPTION-D と同じ既知の制約）。\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 verifyが偽claudeでサーバーを最後まで処理させる想定だが、server/claude-select.mjs(区間選定)も同じsrc/claude-run.mjsを経由して同じPATH上のclaudeを呼ぶため、字幕直し用の偽claudeがそのままでは選定ステージの期待形式と一致せず失敗しうる（相互作用が未解決のまま凍結）。K1のverifyに「選定ステージには別途、選定に必要な最小限の正しい返答を返す偽claude(呼び出し元を判別する合言葉つき)を使う」旨を明記する必要がある。",
-                          "status": "todo",
+                          "detail": "本物のモデルの当たり外れを、この葉（結線が繋がっているか）の判定に混ぜないため、ここでは PATH に置いた偽 claude を使う。本物のモデルの実力は葉I・葉Jが判定する。文字起こしそのもの（faster-whisper）はこの環境にモデルが無く走らせられないため、文字起こし済みのジョブから流す（G-EDIT-CAPTION-D と同じ既知の制約）。\n\n【2026-08-09 ツリー見直しで検出済みの相互作用】server/claude-select.mjs(区間選定)も同じsrc/claude-run.mjsを経由して同じPATH上のclaudeを呼ぶ。実装者が2026-08-10に確認した対処: 偽claudeの中で、ai-caption-fix.mjsのbuildFixPromptにしか出ない固定文言（合言葉）がstdinに含まれるかで呼び出し元を判別し、字幕直しの呼び出しには{\"fixes\":[...]}を、区間選定の呼び出しには受け取ったtranscript-chunkをそのままkeepTextへ載せた{\"segments\":[...]}を返すことで両立できることを実地で確認した。\n\n【2026-08-10 実装者による実地検証(本人実装+実地確認。独立検証は別工程)】既存実装(server/pipeline-runner.mjsのstage \"c\"、src/ai-caption-fix.mjs)を読み、文字起こし(stage t)完了直後・区間選定(stage s)着手前にaiCaptionFixStageが呼ばれていることを確認(既存: tests/smoke.mjsの該当テストも緑)。verify記載どおりの直しあり(fix)E2Eをこの環境で実行: PATHに偽python(固定素材tests/fixtures/ai-caption-fix/transcript-miswritten.jsonをtranscript.jsonへコピーするだけ)と偽claude(上記合言葉判別つき、添字13「以上」→「異常」1件を返す)を置き、ffmpegで合成した55秒程度のダミーmp4をsample.mp4として実サーバー(server/index.mjs)へPOSTし、SSEのdoneまで最後まで処理させた。結果: (a) work/<jobId>/ai-caption-fixes.jsonに{\"fixes\":[{\"index\":13,\"before\":\"以上\",\"after\":\"異常\"}]}が1件残った。(b) 焼き込みに使われたwork/<jobId>/clip-1.assに「異常が見つかる方は以外に多い」という直った語を含む字幕行が現れ、一方で無関係な既存の正しい語「四十歳以上」は変更されず「以上」のまま残っていた(＝語の一律置換ではなく、その添字だけが直っている)ことを確認した。\n\n【未達】直し0件を返す偽claudeに差し替えて同じ.assに「以上」が残ることを確かめる対照実行(control)は、検証の途中でこのセッションが動いていたサンドボックス作業ツリーが失われ(worktreeごと消失)、再構築後の環境ではサーバー子プロセスのspawnがENOENT(絶対パス指定でも)で失敗するようになり、このセッション内では完走できなかった。代わりに、同じ固定素材・同じ添字13を使うユニットレベルの既存テストtests/ai-caption-fix-check.mjsのテスト「C 対照: 直し0件のときも fixes が0件のファイルとして残る」（PATHに置いた実行ファイルへ実際にspawnする経路で{\"fixes\":[]}を返すと ai-caption-fixes.json が {\"fixes\":[]} になり、他のテストで words[13] が直さない限り元の「以上」のまま残ることを確認済み）を対照の代替根拠として引用する。node tests/ai-caption-fix-check.mjs は 66 PASS / 0 FAIL。フルE2Eでの0件側の対照実行は、同じ harness (fixesJson を [] に差し替えるだけ)で次回すぐ再実行できる状態にしてあるが、このセッションでは未完走のため status は doing のまま。independent-verifier による最終判定時にはサーバーE2Eでの0件側対照も併せて実行することを推奨する。",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "サーバでジョブを処理すると、文字起こしのあとに AI の点検が走り、その結果が焼き込みに使う字幕ファイル(.ass)へ載る",
@@ -2461,7 +2462,8 @@
                           "kind": "state",
                           "theme": "AI が字幕を点検していることが、画面の進み具合で分かる",
                           "meaning": "止まっているのか動いているのか分からない時間が生まれない",
-                          "status": "todo",
+                          "detail": "【2026-08-10 実装者によるコードレビュー確認】webapp-mockup/app.jsのEDITING_LABEL['c']=\"AIが字幕の間違いを直しています\"、STEP_ORDER=[\"t\",\"c\",\"s\",\"r\",\"m\"]でtとsの間に既に入っている。webapp-mockup/index.htmlの#progress・#editing-stepsの両方に<... data-k=\"c\">の行/要素が既にある(t/c/s/r/mの5段が並ぶ)。既存のtests/smoke.mjsに「字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている」「UI: 字幕直し段(c)の進捗表示の受け皿がある」の2テストが既にあり(STEP_ORDER/EDITING_LABEL/data-k=\"c\"の3点を機械で検査)、node tests/smoke.mjsは87 PASS / 0 FAILで緑。ブラウザでの実地確認(実行中→完了の表示遷移そのものを目で見る)はこのセッションでは行っておらず、独立検証の工程に委ねる(タスク指示どおり、コードレビューでの確認で代替)。",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "画面の進捗表示に、AI が字幕を点検している工程が独立した段として現れ、終わると完了として表示される",
