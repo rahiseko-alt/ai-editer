@@ -27,12 +27,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { runFfmpeg } from "../src/render-vertical.mjs";
-import { CONFIG_FILE as FAKE_CLAUDE_CONFIG_FILE } from "./helpers/fake-claude-main.mjs";
+import { installFakeClaude } from "./helpers/fake-claude-main.mjs";
 import { CONFIG_FILE as FAKE_PYTHON_CONFIG_FILE } from "./helpers/fake-transcribe-main.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
-const FAKE_CLAUDE_MAIN = path.join(HERE, "helpers", "fake-claude-main.mjs");
 const FAKE_PYTHON_MAIN = path.join(HERE, "helpers", "fake-transcribe-main.mjs");
 const WORK_ROOT = path.join(ROOT, "work");
 const OUT_ROOT = path.join(ROOT, "output");
@@ -100,26 +99,8 @@ function installFakePython(label) {
   return { binDir };
 }
 
-function installFakeClaude(label, behavior) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-claude-${label}-`));
-  const binDir = path.join(home, "bin");
-  const logDir = path.join(home, "log");
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  const exe = path.join(binDir, "claude");
-  fs.copyFileSync(FAKE_CLAUDE_MAIN, exe);
-  fs.chmodSync(exe, 0o755);
-  fs.writeFileSync(path.join(binDir, "package.json"), '{"type":"module"}\n', "utf-8");
-  fs.writeFileSync(
-    path.join(binDir, FAKE_CLAUDE_CONFIG_FILE),
-    JSON.stringify({ ...behavior, logDir }),
-    "utf-8",
-  );
-  const calls = () =>
-    fs.readdirSync(logDir).sort()
-      .map((f) => JSON.parse(fs.readFileSync(path.join(logDir, f), "utf-8")));
-  return { binDir, calls };
-}
+// installFakeClaude は tests/helpers/fake-claude-main.mjs 側の共通実装を使う
+// （ai-caption-fix-check.mjs / recaption-human-vs-ai-check.mjs と同じ設置手順の重複を避ける）。
 
 /** 常に失敗する偽 claude（F2 本体: AI点検そのものが落ちる場面）。 */
 const ALWAYS_FAIL_CLAUDE = { kind: "fail", exit: 1, stderr: "boom: fake claude always fails\n" };

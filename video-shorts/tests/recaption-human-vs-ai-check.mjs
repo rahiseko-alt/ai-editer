@@ -30,11 +30,10 @@ import { fileURLToPath } from "node:url";
 
 import { runFfmpeg } from "../src/render-vertical.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
-import { CONFIG_FILE as FAKE_CLAUDE_CONFIG_FILE } from "./helpers/fake-claude-main.mjs";
+import { installFakeClaude } from "./helpers/fake-claude-main.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
-const FAKE_CLAUDE_MAIN = path.join(HERE, "helpers", "fake-claude-main.mjs");
 const WORK_ROOT = path.join(ROOT, "work");
 const OUT_ROOT = path.join(ROOT, "output");
 const PORT = 59195; // このテスト専用の固定ポート
@@ -82,23 +81,8 @@ const AI_FIX_1 = "ガンマ";   // AIが index1 を直す先
 const AI_FIX_2 = "ゼータ";   // AIが index2 を直す先
 const HUMAN_FIX_1 = "デルタ"; // 人が index1 をさらに直す先（AIの直しに勝つはず）
 
-function installFakeClaude(label, behavior) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-claude-${label}-`));
-  const binDir = path.join(home, "bin");
-  const logDir = path.join(home, "log");
-  fs.mkdirSync(binDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  const exe = path.join(binDir, "claude");
-  fs.copyFileSync(FAKE_CLAUDE_MAIN, exe);
-  fs.chmodSync(exe, 0o755);
-  fs.writeFileSync(path.join(binDir, "package.json"), '{"type":"module"}\n', "utf-8");
-  fs.writeFileSync(
-    path.join(binDir, FAKE_CLAUDE_CONFIG_FILE),
-    JSON.stringify({ ...behavior, logDir }),
-    "utf-8",
-  );
-  return { binDir };
-}
+// installFakeClaude は tests/helpers/fake-claude-main.mjs 側の共通実装を使う
+// （ai-caption-fix-check.mjs / caption-ai-fail-halts-job-check.mjs と同じ設置手順の重複を避ける）。
 
 function startServer(extraPathDirs) {
   return new Promise((resolve, reject) => {

@@ -43,11 +43,44 @@
 //                                                       依らず答え分けるためのもの。
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** 設定 JSON のファイル名（PATH に置く claude と同じフォルダに置く）。 */
 export const CONFIG_FILE = "fake-claude.json";
+
+/**
+ * PATH へ「claude」として写す使い捨ての bin フォルダを作り、指定した振る舞い(behavior)を
+ * 仕込んで {binDir, calls} を返す。この本体ファイル自身を丸ごとコピーして claude にするので、
+ * 呼び出す側はこのファイルの場所を知らなくてよい。
+ * ai-caption-fix-check.mjs / caption-ai-fail-halts-job-check.mjs / recaption-human-vs-ai-check.mjs
+ * など、偽 claude を使う複数の検査から共通で呼ばれる（同じ設置手順の重複を避けるため）。
+ * @param {string} label 使い捨てフォルダ名に混ぜる目印（テストごとに変える）
+ * @param {object} behavior 上の BEHAVIORS 表に対応する `{kind, ...}`
+ * @returns {{binDir:string, calls: () => {argv:string[], stdin:string}[]}}
+ *   calls() は、このフォルダの偽 claude が実際に呼ばれた順で argv/stdin を返す。
+ */
+export function installFakeClaude(label, behavior) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-claude-${label}-`));
+  const binDir = path.join(home, "bin");
+  const logDir = path.join(home, "log");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(logDir, { recursive: true });
+  const exe = path.join(binDir, "claude");
+  fs.copyFileSync(fileURLToPath(import.meta.url), exe);
+  fs.chmodSync(exe, 0o755);
+  fs.writeFileSync(path.join(binDir, "package.json"), '{"type":"module"}\n', "utf-8");
+  fs.writeFileSync(
+    path.join(binDir, CONFIG_FILE),
+    JSON.stringify({ ...behavior, logDir }),
+    "utf-8",
+  );
+  const calls = () =>
+    fs.readdirSync(logDir).sort()
+      .map((f) => JSON.parse(fs.readFileSync(path.join(logDir, f), "utf-8")));
+  return { binDir, calls };
+}
 
 /** 本物と同じ `--output-format json` の封筒に本文を入れて返す。 */
 function reply(answer) {
