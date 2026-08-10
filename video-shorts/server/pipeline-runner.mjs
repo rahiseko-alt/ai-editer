@@ -355,7 +355,6 @@ async function runJob(jobId, inputAbsPath, opts) {
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
 
   // state.json 初期作成（pipeline.mjs init の代替）
-  const ext = path.extname(inputAbsPath) || ".mp4";
   const state = {
     id: jobId,
     input: inputAbsPath,

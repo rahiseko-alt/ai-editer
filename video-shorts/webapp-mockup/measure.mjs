@@ -32,25 +32,6 @@ const VIEWPORTS = [
 ];
 const VIEWPORT_LOW = { name: '1280x700', width: 1280, height: 700 };
 
-// WCAG コントラスト比計算（共通）
-const CONTRAST_FN = `
-  function sRGB(c) { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
-  function luminance(r, g, b) { return 0.2126 * sRGB(r) + 0.7152 * sRGB(g) + 0.0722 * sRGB(b); }
-  function contrastRatio(a, b) { const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05); }
-  function parseRgb(s) { const m = s.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/); return m ? [+m[1], +m[2], +m[3]] : null; }
-  function rgbToHsl(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
-    if (max === min) return [0, 0, l];
-    const d = max - min, s = d / (l > 0.5 ? 2 - max - min : max + min);
-    let h;
-    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    return [h / 6, s, l];
-  }
-`;
-
 async function measure(page, vpName) {
   const R = [];
   const push = (check, pass, val) => { R.push({ check, pass, val }); };

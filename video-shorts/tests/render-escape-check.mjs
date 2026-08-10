@@ -8,7 +8,6 @@
 //
 // 実行: node tests/render-escape-check.mjs   (全PASSで exit 0)
 
-import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

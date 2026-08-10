@@ -18,14 +18,12 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   DICT_PATH, MAX_TERM_LENGTH, SHORT_TERM_LENGTH, appendSafeTerm, isSingleTerm, judgeTermPair,
   readDictionary,
 } from "../src/term-dictionary.mjs";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
 
 function t(name, fn) {

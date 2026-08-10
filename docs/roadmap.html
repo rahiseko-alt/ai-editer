@@ -119,12 +119,12 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR feature/dist-hygiene(#59)をorigin/mainへマージする(P1-10/S-5/S-6)。マージ後は origin/main 側の未マージ一覧(#57,#68)の続きに合流する。\n\nPR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元し、実測値がevidenceと変わらないことを確認のうえマージすること(継続中)。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超の指摘）が反映されているか確認が必要。",
+    "next": "PR feature/dist-hygiene(#59)をorigin/mainへマージする(P1-10/S-5/S-6)。origin/mainはPR #68(feature/testinfra-lint、video-shorts向けESLint 9系導入)がマージ済みのため、以降はlintが実質稼働する状態で本PRのbuild-dist.mjs/dist-slim-check.mjsのlintクリーンさも確認すること。マージ後は origin/main 側の未マージ一覧(#57)の続きに合流する。\n\nPR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元し、実測値がevidenceと変わらないことを確認のうえマージすること(継続中)。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超の指摘）が反映されているか確認が必要。",
     "handoff": {
       "done": [
         "P1-10(配布物に開発中のゴミファイルが混ざらない): build-dist.mjsを、既知ディレクトリ名だけを部分削除する方式から、DEST(dist配下)を丸ごとrmSyncしてallowlist(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)のみコピーする「空staging方式」へ変更。",
         "S-5(軽い版に顔モザイク関連の実ファイルが存在しない)・S-6(標準版・軽量版どちらのSKILL.mdにもmosaic:start/endが残らない): video-shorts/tests/dist-slim-check.mjsに専用テストを追加(P1-10は既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし許可リストとの完全一致を確認/S-5はMOSAIC_FILES4件をfs.existsSyncで確認/S-6は標準版・軽量版のSKILL.md双方でmosaic:start・mosaic:endの4通りを横断確認)。node tests/dist-slim-check.mjsで19 PASS/0 FAILを確認。旧実装(部分削除方式)に戻すとP1-10のテストが正しくFAILすることも確認済み(偽の緑でないことの確認)。P1-10/S-5/S-6を status:doing にしdetailへ実装内容を追記(criteria本文は不変)。",
-        "origin/mainがPR #76/#65/#71/#72等分先へ進んでいたため、docs/roadmap.htmlのmeta.next/handoffのみが競合するマージを繰り返し解消し追従した(コード側は自動マージで無衝突)。"
+        "origin/mainがPR #76/#65/#71/#72/#68等分先へ進んでいたため、docs/roadmap.htmlのmeta.next/handoffのみが競合するマージを繰り返し解消し追従した(コード側は自動マージで無衝突)。PR #68(video-shorts ESLint導入)のマージ後はlintが実効ゲートになったため、本PRが触るbuild-dist.mjs/dist-slim-check.mjsのlintクリーンさを追加確認する必要がある。"
       ],
       "trouble": [
         "(REFRAME・継続中/今回は未着手)PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示により修正エージェントを検証完了前にTaskStopで中断。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
@@ -966,8 +966,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",

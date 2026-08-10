@@ -35,7 +35,7 @@ async function autoLoad() {
     state.candidates = (data.candidates || []).map((c) => ({ ...c, status: "pending" }));
     state.baseUrl = `../output/${job}`;
     render();
-  } catch (e) {
+  } catch (_) {
     // fetch 不可 → 手動ファイル選択にフォールバック
   }
 }
