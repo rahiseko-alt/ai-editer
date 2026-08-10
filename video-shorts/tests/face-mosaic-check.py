@@ -1089,5 +1089,154 @@ check(
 )
 
 
+# ================================================================ M-1-E
+# 壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない（配布対象のCLI経路）。
+# 配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する
+# （tests/mosaic-ui-check.py の「途中で切れた動画」節）。ここでは配布対象の
+# apply_mosaic_cli.py 自体を直接叩いて、同じ防波堤(dec_msgチェック)が発火することを確かめる。
+
+E_DIR = os.path.join(FIXTURES, "..", "_truncate_cli_tmp")
+shutil.rmtree(E_DIR, ignore_errors=True)
+os.makedirs(E_DIR, exist_ok=True)
+
+E_W, E_H, E_FPS, E_SEC = 320, 240, 15, 2
+whole_e = os.path.join(E_DIR, "whole.mp4")
+build_e = subprocess.run(
+    shlex.split(
+        f'ffmpeg -y -v error -f lavfi -i "testsrc=duration={E_SEC}:size={E_W}x{E_H}:rate={E_FPS}" '
+        f'-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -movflags +faststart "{whole_e}"'
+    ),
+    capture_output=True, text=True,
+)
+check(
+    "M-1-E: 検証用の正常なmp4を作れる（前提の確認）",
+    build_e.returncode == 0 and os.path.exists(whole_e),
+    (build_e.stderr or "")[-200:],
+)
+
+with open(whole_e, "rb") as f:
+    whole_e_raw = f.read()
+truncated_e = os.path.join(E_DIR, "truncated.mp4")
+with open(truncated_e, "wb") as f:
+    f.write(whole_e_raw[: len(whole_e_raw) * 95 // 100])  # 末尾5%を落とす
+
+# 対照実験: この切り詰め方が「読み出し側ffmpegは終了コード0のまま最後まで読めない」に
+# なっていることを先に確認する。ここが終了コード0以外になると、この葉が狙っている
+# 「黙って短い動画を成功として出す」経路そのものを測れなくなる。
+probe_e = subprocess.run(
+    shlex.split(f'ffmpeg -v error -i "{truncated_e}" -f rawvideo -pix_fmt bgr24 -'),
+    capture_output=True,
+)
+got_frames_e = len(probe_e.stdout) // (E_W * E_H * 3)
+expect_frames_e = E_FPS * E_SEC
+check(
+    "対照M: 切り詰めた動画は読み出し側ffmpegが終了コード0のまま最後まで読めない"
+    "（末尾切り詰めが狙いどおりの壊れ方になっていることの確認）",
+    probe_e.returncode == 0 and bool(probe_e.stderr.strip()) and got_frames_e < expect_frames_e,
+    f"rc={probe_e.returncode} stderrあり={bool(probe_e.stderr.strip())} "
+    f"コマ={got_frames_e}/{expect_frames_e}",
+)
+
+out_e = os.path.join(E_DIR, "out.mp4")
+r_e = subprocess.run(
+    [sys.executable, CLI, truncated_e, out_e],
+    capture_output=True, text=True,
+)
+check(
+    "M-1-E: 末尾を切り詰めた壊れたmp4をapply_mosaic_cli.pyに渡すと、0以外の終了コードで失敗する",
+    r_e.returncode != 0,
+    f"終了コード={r_e.returncode} stderr={(r_e.stderr or '')[-300:]!r}",
+)
+check(
+    "M-1-E: 失敗時にエラーメッセージが出力される",
+    bool((r_e.stderr or "").strip()),
+    f"stderr={r_e.stderr!r}",
+)
+shutil.rmtree(E_DIR, ignore_errors=True)
+
+
+# ================================================================ M-1-F
+# モデルファイルが無い/壊れていても、分かるメッセージで止まる。
+# cv2.FaceDetectorYN.create()（顔検出モデル）が破損時に送出する cv2.error は
+# OSError/RuntimeError/ValueError のいずれの派生でもないため、apply_mosaic_cli.py の
+# main() の捕捉リストに無いと生のトレースバックが標準エラーに出る。
+# src/models/*.onnx はテスト対象の配布物そのもの(git管理下)なので、退避・破損は
+# 一時退避してから必ず元に戻す（他のテストが同じモデルを使うため）。
+
+from face_mosaic import MODEL_PATH, RECOGNIZER_PATH  # noqa: E402
+
+F_DIR = os.path.join(FIXTURES, "..", "_model_broken_tmp")
+shutil.rmtree(F_DIR, ignore_errors=True)
+os.makedirs(F_DIR, exist_ok=True)
+
+F_W, F_H, F_FPS, F_SEC = 320, 240, 15, 1
+src_f = os.path.join(F_DIR, "src.mp4")
+build_f = subprocess.run(
+    shlex.split(
+        f'ffmpeg -y -v error -f lavfi -i "testsrc=duration={F_SEC}:size={F_W}x{F_H}:rate={F_FPS}" '
+        f'-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p "{src_f}"'
+    ),
+    capture_output=True, text=True,
+)
+check(
+    "M-1-F: 検証用のmp4を作れる（前提の確認）",
+    build_f.returncode == 0 and os.path.exists(src_f),
+    (build_f.stderr or "")[-200:],
+)
+
+
+def run_cli_with_broken_model(model_path, mode, extra_args=None):
+    """model_path を一時的にリネーム(退避)/破損させた状態でCLIを実行し、結果を返す。
+
+    実行後は必ず元のファイルへ復元する（他のテスト・配布物が同じファイルを使う）。
+    """
+    backup = model_path + ".bak"
+    shutil.copy(model_path, backup)
+    try:
+        if mode == "missing":
+            os.remove(model_path)
+        elif mode == "corrupt":
+            with open(model_path, "wb") as f:
+                f.write(b"not an onnx model" * 10)
+        out_path = os.path.join(F_DIR, f"out-{os.path.basename(model_path)}-{mode}.mp4")
+        cmd = [sys.executable, CLI, src_f, out_path] + (extra_args or [])
+        return subprocess.run(cmd, capture_output=True, text=True)
+    finally:
+        shutil.move(backup, model_path)
+
+
+for model_path, label in ((MODEL_PATH, "顔検出"), (RECOGNIZER_PATH, "顔識別")):
+    # 顔識別モデルは --target を指定したときだけ使われる経路なので、その場合だけ付ける。
+    extra = (
+        ["--target", os.path.join(FIXTURES, "face-one-alt.png")]
+        if model_path == RECOGNIZER_PATH else None
+    )
+    for mode, mode_label in (("missing", "退避(リネーム相当)"), ("corrupt", "中身を破損")):
+        r = run_cli_with_broken_model(model_path, mode, extra)
+        check(
+            f"M-1-F: {label}モデルを{mode_label}した状態で実行すると0以外の終了コードで止まる",
+            r.returncode != 0,
+            f"終了コード={r.returncode} stderr={(r.stderr or '')[-300:]!r}",
+        )
+        check(
+            f"M-1-F: {label}モデルを{mode_label}した状態でも、[ERROR]で始まる分かるメッセージが出る",
+            bool(re.search(r"^\[ERROR\]", r.stderr or "", re.MULTILINE)),
+            f"stderr={(r.stderr or '')[-400:]!r}",
+        )
+        check(
+            f"M-1-F: {label}モデルを{mode_label}した状態でも、Pythonの生スタックトレースが出ない",
+            "Traceback (most recent call last)" not in (r.stderr or ""),
+            f"stderr={(r.stderr or '')[-500:]!r}",
+        )
+
+# モデルが正しく復元されていること（後続テスト・配布物への影響が残らない）
+check(
+    "M-1-F: テスト後、モデルファイルが元どおりに復元されている",
+    os.path.exists(MODEL_PATH) and os.path.getsize(MODEL_PATH) > 0
+    and os.path.exists(RECOGNIZER_PATH) and os.path.getsize(RECOGNIZER_PATH) > 0,
+)
+shutil.rmtree(F_DIR, ignore_errors=True)
+
+
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
 sys.exit(1 if failed else 0)

@@ -11,19 +11,26 @@
 // 緩めない」。この規律を機械で裏付けるのが本スクリプトの役割。
 //
 // 「凍結」の定義：ある葉ノードの status が "todo" 以外（doing/done/blocked 等）になった時点で、
-// そのノードの criteria/verify 本文は凍結済みとみなす。status:"todo"（着手前）のノードは
+// そのノードの criteria/verify/verifyCmd 本文は凍結済みとみなす。status:"todo"（着手前）のノードは
 // 言語化フェーズなので自由に編集してよい。
 //
 // 検知の仕組み（PRごとに BASE→HEAD の差分で検査する）：
 //   1. BASE/HEAD それぞれの docs/roadmap.html から roadmap JSON を取り出す。
 //   2. 両方のツリーを id をキーにした Map へフラット化する。
-//   3. BASE・HEAD 双方に存在する各ノードIDについて、BASE側で「status を持ち status!=="todo"、
-//      かつ子を持たない state ノード（葉）」であるものだけを対象にする。
-//   4. 対象ノードの criteria から {text, verify} だけを取り出し正規化した文字列の
-//      sha256 を BASE 版・HEAD 版で比較する。一致すれば問題なし。
-//   5. 不一致なら、HEAD側 meta.basisChanges に「今回のPRで新規に追加された」正当な宣言
-//      （{id, criteriaHash, at, reason}, criteriaHash が HEAD 側の新ハッシュと一致）が
-//      あるかを確認する。無ければ違反として報告し exit 1。
+//   3. BASE側で「status を持ち status!=="todo"、かつ子を持たない state ノード（葉）」
+//      （＝凍結済みの葉）であるものを対象にする。
+//   4. 対象ノードについて、HEAD側の状態を3パターンに分けて検査する：
+//      (a) 本文が変わった：criteria から {text, verify, verifyCmd} を取り出し正規化した
+//          文字列の sha256 を BASE 版・HEAD 版で比較し、不一致なら「undeclared」。
+//      (b) 丸ごと削除された：HEADにそのIDが存在しない → 「deleted」。
+//      (c) 凍結が解けた：HEADには存在するが、status が "todo" に戻された／子が足されて
+//          非葉化した／kind が "state" でなくなった等で isFrozenLeaf が false になった
+//          → 「unfrozen」。
+//      本文を書き換えずに「削除する」「一旦 todo に戻して直してまた凍結し直す」という
+//      迂回路も、テキストの無断書き換えと同じく基準を骨抜きにできるため、同じ扱いで塞ぐ。
+//   5. (a)は HEAD 側の新ハッシュ、(b)(c)は BASE 側の元ハッシュを識別子として、
+//      meta.basisChanges に「今回のPRで新規に追加された」正当な宣言
+//      （{id, criteriaHash, at, reason}）があるかを確認する。無ければ違反として報告し exit 1。
 //
 // 実行方法：
 //   - 通常（CI/PR）：環境変数 BASE_REF / HEAD_REF に比較対象の commit-ish を渡す。
@@ -50,7 +57,7 @@ const roadmapAbsPath = resolve(__dirname, "..", ROADMAP_REL_PATH);
 // ---- 純粋関数（テスト対象。git/fsに依存しない） -----------------------------------
 
 /**
- * @typedef {{ text?: string, verify?: string, evidence?: string, [key: string]: any }} Criterion
+ * @typedef {{ text?: string, verify?: string, verifyCmd?: string, evidence?: string, [key: string]: any }} Criterion
  * @typedef {{
  *   id?: string,
  *   kind?: string,
@@ -60,7 +67,7 @@ const roadmapAbsPath = resolve(__dirname, "..", ROADMAP_REL_PATH);
  *   [key: string]: any,
  * }} RoadmapNode
  * @typedef {{ id: string, criteriaHash: string, at?: string, reason?: string }} BasisChangeEntry
- * @typedef {{ id: string, baseHash: string, headHash: string, reason: "undeclared" | "not-new" }} FreezeViolation
+ * @typedef {{ id: string, baseHash: string | null, headHash: string | null, reason: "undeclared" | "not-new" | "deleted" | "unfrozen" }} FreezeViolation
  */
 
 /**
@@ -98,9 +105,12 @@ export function flattenById(nodes) {
 }
 
 /**
- * criteria 配列から text/verify だけを取り出し、JSON.stringify で正規化した文字列にする。
+ * criteria 配列から text/verify/verifyCmd だけを取り出し、JSON.stringify で正規化した文字列にする。
  * evidence・status など「達成状況」に関わるフィールドは意図的に含めない
  * （evidence が埋まっただけで「基準が変わった」と誤検知しないため）。
+ * verifyCmd（done化の直前にCIが実際に実行する検証コマンド。verify-done-gate.mjs が使う）も、
+ * 文章(text/verify)と同じく「着手前に固定し、後から緩めさせない」対象に含める。
+ * コマンド文言だけ差し替えて実質的に検証を骨抜きにする迂回路を防ぐため。
  * @param {Criterion[] | undefined | null} criteria
  * @returns {string}
  */
@@ -108,6 +118,7 @@ export function criteriaFingerprint(criteria) {
   const normalized = (criteria || []).map((c) => ({
     text: c?.text ?? null,
     verify: c?.verify ?? null,
+    verifyCmd: c?.verifyCmd ?? null,
   }));
   return JSON.stringify(normalized);
 }
@@ -163,13 +174,43 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
 }
 
 /**
+ * ある識別子(idとcriteriaHash)について、HEAD側に「今回のPRで新規に追加された」正当な宣言が
+ * あるかを判定する。無ければ違反。あるが BASE 時点で既に存在していれば "not-new" として違反。
+ * 無ければ null（＝合格）を返す純粋ヘルパー（3つの違反パターンで共有する）。
+ * @param {{
+ *   id: string,
+ *   criteriaHash: string,
+ *   headBasisChanges: BasisChangeEntry[],
+ *   baseBasisChanges: BasisChangeEntry[],
+ *   baseHash: string | null,
+ *   headHash: string | null,
+ *   undeclaredReason: FreezeViolation["reason"],
+ * }} args
+ * @returns {FreezeViolation | null}
+ */
+function checkDeclaration({ id, criteriaHash, headBasisChanges, baseBasisChanges, baseHash, headHash, undeclaredReason }) {
+  const declaredInHead = headBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
+  if (!declaredInHead) {
+    return { id, baseHash, headHash, reason: undeclaredReason };
+  }
+  const alreadyDeclaredInBase = baseBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
+  if (alreadyDeclaredInBase) {
+    return { id, baseHash, headHash, reason: "not-new" };
+  }
+  return null; // 正当な基準変更として合格
+}
+
+/**
  * BASE/HEAD それぞれの roadmap JSON（parse済みオブジェクト）を比較し、
- * 「凍結済み葉の criteria/verify が正当な宣言なしに書き換えられている」違反を検出する。
+ * 「凍結済み葉の criteria/verify/verifyCmd が正当な宣言なしに書き換えられている」、
+ * および「本文は変えずに削除・凍結解除で基準を骨抜きにしている」違反を検出する。
  * git や fs に一切依存しない純粋関数（テストしやすくするため分離）。
  *
  * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason } の形。
  *   reason: "undeclared"（宣言が無い、またはat/reasonが欠けていて宣言として不完全） |
- *           "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない）
+ *           "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない） |
+ *           "deleted"（凍結済み葉が丸ごと削除された） |
+ *           "unfrozen"（凍結済み葉が todo に戻された／非葉化された／state でなくなった）
  * @param {any} baseRoadmap
  * @param {any} headRoadmap
  * @returns {FreezeViolation[]}
@@ -191,30 +232,43 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
   const violations = [];
 
   for (const [id, baseNode] of baseMap) {
-    if (!headMap.has(id)) continue; // HEADで削除されたノードは今回のスコープ外
     if (!isFrozenLeaf(baseNode)) continue; // status:"todo" or 非葉 or 非state は言語化フェーズ＝自由編集可
+    const baseHash = hashCriteria(baseNode.criteria);
+
+    if (!headMap.has(id)) {
+      // 丸ごと削除：本文は書き換えていないが、基準ごと消せば実質的に無効化できてしまう迂回路。
+      // 識別子は BASE 側のハッシュ（=消される基準そのもの）で宣言させる。
+      const v = checkDeclaration({
+        id, criteriaHash: baseHash, headBasisChanges, baseBasisChanges,
+        baseHash, headHash: null, undeclaredReason: "deleted",
+      });
+      if (v) violations.push(v);
+      continue;
+    }
 
     const headNode = headMap.get(id);
     if (!headNode) continue; // headMap.has(id)で確認済みだが、TSの型上は念のため防御的に確認する
-    const baseHash = hashCriteria(baseNode.criteria);
+
+    if (!isFrozenLeaf(headNode)) {
+      // 凍結解除：status を todo に戻す／子を足して非葉化する／kind を変える、のいずれか。
+      // 「一旦アンフリーズしてから自由に直す」を、本文の書き換えと同じ扱いで塞ぐ。
+      const headHash = hashCriteria(headNode.criteria);
+      const v = checkDeclaration({
+        id, criteriaHash: baseHash, headBasisChanges, baseBasisChanges,
+        baseHash, headHash, undeclaredReason: "unfrozen",
+      });
+      if (v) violations.push(v);
+      continue;
+    }
+
     const headHash = hashCriteria(headNode.criteria);
     if (baseHash === headHash) continue; // 本文は変わっていない＝問題なし
 
-    const declaredInHead = headBasisChanges.some((e) => isCompleteDeclaration(e, id, headHash));
-    if (!declaredInHead) {
-      violations.push({ id, baseHash, headHash, reason: "undeclared" });
-      continue;
-    }
-
-    // 宣言はあるが、BASE時点で既に同じ宣言が存在していた＝今回のPRで新規に追加されたものではない。
-    const alreadyDeclaredInBase = baseBasisChanges.some((e) =>
-      isCompleteDeclaration(e, id, headHash),
-    );
-    if (alreadyDeclaredInBase) {
-      violations.push({ id, baseHash, headHash, reason: "not-new" });
-      continue;
-    }
-    // ここまで来れば「正当な基準変更」として合格。
+    const v = checkDeclaration({
+      id, criteriaHash: headHash, headBasisChanges, baseBasisChanges,
+      baseHash, headHash, undeclaredReason: "undeclared",
+    });
+    if (v) violations.push(v);
   }
 
   return violations;
@@ -226,8 +280,26 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
  * @returns {string}
  */
 export function formatViolation(v) {
+  if (v.reason === "deleted") {
+    return (
+      `凍結済みの葉 ${v.id} が docs/roadmap.html から丸ごと削除されています。` +
+      `本文を書き換えずに基準ごと消す迂回路も無断変更と同じ扱いです。` +
+      `正当な削除なら meta.basisChanges に ` +
+      `{id: "${v.id}", criteriaHash: "${v.baseHash}", at, reason} を追加すること` +
+      `（criteriaHash は削除される直前のcriteria本文のsha256(hex)）。`
+    );
+  }
+  if (v.reason === "unfrozen") {
+    return (
+      `凍結済みの葉 ${v.id} の凍結が解除されています（status を "todo" に戻す／子を足して` +
+      `非葉化する／kind を変える、のいずれか）。一旦アンフリーズしてから自由に基準を書き換える` +
+      `迂回路も無断変更と同じ扱いです。正当な理由があるなら meta.basisChanges に ` +
+      `{id: "${v.id}", criteriaHash: "${v.baseHash}", at, reason} を追加すること` +
+      `（criteriaHash は凍結解除される直前のcriteria本文のsha256(hex)）。`
+    );
+  }
   const base =
-    `凍結済みの葉 ${v.id} の criteria/verify 本文が、正当な宣言（meta.basisChanges）なしに` +
+    `凍結済みの葉 ${v.id} の criteria/verify/verifyCmd 本文が、正当な宣言（meta.basisChanges）なしに` +
     `書き換えられています。正当な変更なら meta.basisChanges に ` +
     `{id: "${v.id}", criteriaHash: "${v.headHash}", at, reason} を追加すること。` +
     `criteriaHash は新しいcriteria本文のsha256(hex)。`;
