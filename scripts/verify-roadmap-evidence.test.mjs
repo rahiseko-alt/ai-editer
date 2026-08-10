@@ -12,6 +12,10 @@ import { extractRoadmapJson, findRoadmapViolations } from "./verify-roadmap-evid
 
 let pass = 0;
 let fail = 0;
+/**
+ * @param {string} name
+ * @param {() => void} fn
+ */
 function t(name, fn) {
   try {
     fn();
@@ -19,14 +23,26 @@ function t(name, fn) {
     console.log(`PASS ${name}`);
   } catch (e) {
     fail++;
-    console.log(`FAIL ${name}\n      ${e.message}`);
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`FAIL ${name}\n      ${message}`);
   }
 }
 
+/**
+ * @param {{
+ *   id?: string,
+ *   status?: string,
+ *   criteria?: Array<{ text: string, verify: string, evidence: string }>,
+ * }} [opts]
+ */
 function leaf({ id = "G-1", status = "done", criteria = [] } = {}) {
   return { id, kind: "state", status, criteria };
 }
 
+/**
+ * @param {{ id: string }} leafNode
+ * @param {Record<string, any>} [metaOverrides]
+ */
 function tree(leafNode, metaOverrides = {}) {
   return {
     meta: {

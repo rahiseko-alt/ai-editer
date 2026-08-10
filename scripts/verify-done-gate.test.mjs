@@ -18,6 +18,10 @@ import {
 
 let pass = 0;
 let fail = 0;
+/**
+ * @param {string} name
+ * @param {() => void} fn
+ */
 function t(name, fn) {
   try {
     fn();
@@ -25,16 +29,27 @@ function t(name, fn) {
     console.log(`PASS ${name}`);
   } catch (e) {
     fail++;
-    console.log(`FAIL ${name}\n      ${e.message}`);
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`FAIL ${name}\n      ${message}`);
   }
 }
 
+/**
+ * @param {{
+ *   id?: string,
+ *   status?: string,
+ *   criteria?: Array<{ text: string, verify: string, verifyCmd?: string }>,
+ *   children?: any[],
+ * }} [opts]
+ */
 function leaf({ id = "G-1", status = "todo", criteria = [], children } = {}) {
+  /** @type {any} */
   const node = { id, kind: "state", status, criteria };
   if (children) node.children = children;
   return node;
 }
 
+/** @param {{ id: string }} leafNode */
 function tree(leafNode) {
   return { meta: {}, nodes: [{ id: "ROOT", kind: "state", children: [leafNode] }] };
 }
@@ -60,12 +75,13 @@ t("BASEでdoingだった葉がHEADでdoneに遷移していれば対象になる
   const head = tree(leaf({ status: "done" }));
   const result = findNewlyDoneLeaves(base, head);
   assert.strictEqual(result.length, 1);
+  assert.ok(result[0]);
   assert.strictEqual(result[0].id, "G-1");
 });
 
 t("BASEで既にdoneだった葉は対象外（過去に受理済みの葉へ遡って強制しない移行措置）", () => {
-  const base = tree(leaf({ status: "done", criteria: [{ text: "t", verify: "v", evidence: "abcdef1234567" }] }));
-  const head = tree(leaf({ status: "done", criteria: [{ text: "t", verify: "v", evidence: "abcdef1234567" }] }));
+  const base = tree(leaf({ status: "done", criteria: [{ text: "t", verify: "v", verifyCmd: "true" }] }));
+  const head = tree(leaf({ status: "done", criteria: [{ text: "t", verify: "v", verifyCmd: "true" }] }));
   const result = findNewlyDoneLeaves(base, head);
   assert.deepStrictEqual(result, []);
 });
@@ -90,6 +106,7 @@ t("verifyCmdが無いcriteriaは違反になる", () => {
   const newlyDone = [{ id: "G-1", node: leaf({ criteria: [{ text: "t", verify: "v" }] }) }];
   const violations = findMissingVerifyCmdViolations(newlyDone);
   assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "missing-verifycmd");
 });
 
@@ -117,8 +134,10 @@ t("verifyCmdの実行結果が非0なら違反になる（AIが自己申告だ�
   const newlyDone = [{ id: "G-1", node: leaf({ criteria: [{ text: "t", verify: "v", verifyCmd: "false" }] }) }];
   const violations = runVerifyCommands(newlyDone, () => ({ code: 1, output: "FAIL: 境界値のテストで失敗" }));
   assert.strictEqual(violations.length, 1);
-  assert.strictEqual(violations[0].reason, "verify-failed");
-  assert.strictEqual(violations[0].cmd, "false");
+  const v = violations[0];
+  assert.ok(v);
+  assert.strictEqual(v.reason, "verify-failed");
+  assert.strictEqual(v.reason === "verify-failed" ? v.cmd : undefined, "false");
 });
 
 t("複数criteriaのうち一部だけ失敗しても、失敗した分だけ違反として報告される", () => {
@@ -133,9 +152,11 @@ t("複数criteriaのうち一部だけ失敗しても、失敗した分だけ違
       }),
     },
   ];
+  /** @param {string} cmd */
   const runCmd = (cmd) => (cmd === "cmd-ng" ? { code: 1, output: "ng" } : { code: 0, output: "ok" });
   const violations = runVerifyCommands(newlyDone, runCmd);
   assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].index, 1);
 });
 
