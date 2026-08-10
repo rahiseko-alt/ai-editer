@@ -689,8 +689,8 @@
                       "kind": "state",
                       "theme": "外部ツールのバージョンを固定する",
                       "meaning": "実行するたびに違うバージョンが動く事故を防ぐ",
-                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。",
-                      "status": "todo",
+                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。実施: video-shorts/requirements.txt の faster-whisper/groq/opencv-python-headlessを`>=`(上限無し)から`==`固定に変更。.github/workflows/ci.yml と measure-leak-rate.yml の apt-get install ffmpeg/zip を ubuntu-24.04 実測版(ffmpeg=7:6.1.1-3ubuntu5, zip=3.0-13ubuntu0.2)へ固定。.claude/hooks/session-start.sh のリモート自動導入も同じ ffmpeg 版へ固定(取得不能時は警告を出した上で無指定版へフォールバック＝ユーザーが使えなくなる事故を避けつつ、ドリフトを隠さない)。CI 内の opencv 導入はrequirements.txtの固定値を参照するため自動追従。リポジトリ内grep(uvx/npx/pip install/apt-get install)で他に無指定呼び出しが無いことを確認済み(video-shorts配下)。docs/setup-runbook.mdの`uv tool install`/`npx marp`はvideo-shorts以外の別製品(kosespark Writer、本ロードマップのGOAL=動画編集の対象外)のため今回は対象外(別途起票が必要)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
@@ -704,8 +704,8 @@
                       "kind": "state",
                       "theme": "初回実行時に同意を得る",
                       "meaning": "何が実行されるか知らないまま外部ツールが動かない",
-                      "detail": "バージョン固定前の初回実行に同意フローを設ける。",
-                      "status": "todo",
+                      "detail": "バージョン固定前の初回実行に同意フローを設ける。実施: video-shorts/start-here.mdを確認したところ、ローカルPC想定のフロー(⓪はじめの説明と同意 → ①必要なソフトの導入=Node/Python/ffmpeg/pip installの前に毎回「何がなぜ必要かを説明→入手方法提示→承認を得てから導入」)には既に✋ゲートがあり満たしていた。一方、PCを持たないユーザー向けのクラウドリモートセッション経路は`.claude/hooks/session-start.sh`がSessionStart時に無音でffmpeg/pipライブラリを自動導入しており、技術的にフック実行前にユーザーと対話して同意を得ることはできない(セッション開始前に走るため)。この経路の同意欠落を埋めるため、start-here.mdの冒頭注記を改訂し、⓪の説明時に「ffmpeg/文字起こしライブラリはこの環境へ承認前に自動導入済みで、入れたのはこの2つだけ」と開示してからユーザーの同意を得るよう明記した(事後開示+同意でリスクを可視化。無言のまま先へ進めることを禁止)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
