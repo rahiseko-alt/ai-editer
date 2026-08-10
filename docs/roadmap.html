@@ -119,17 +119,18 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "active": "GOAL",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 直近: P0-5-C/P0-5-D の PR（feature/p0-5-pipeline-wiring）のCIが緑になったらevidenceを埋めてdoneにし、マージする。\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること（マスター指示 2026-08-09。この2本を並行して進める）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】縦型切り抜き（G-EDIT-REFRAME）に着手する\n  ・現状 6葉すべて todo・実装ゼロ。今回のツリー見直し5系統レビューでも「fixture不備」が\n    指摘されたまま葉が割り直されていない（葉数が複雑さに対して少なすぎる可能性が高い、\n    という所見が2026-08-09 の会話記録に残っている）。\n  ・着手前に必ず踏む手順（省略禁止。過去に3回、同じ手順を省いて事故を起こしている）：\n      (a) G-EDIT-REFRAME の detail にある反証11件（2026-08-08記録）を1件ずつ「反映した」\n          か「マスター判断で見送った（理由つき）」に処理する。未処理のまま実装しない。\n      (b) 凍結前の探り3本（AGENTS.md 検証の規律／docs/failures.md 2026-08-08「素材を凍結した\n          つもりが実装ゼロで3葉緑にできた」の教訓）：①何もしていない偽物を当てる\n          ②正しい実装の値を1回測る ③意図的に壊したものを当てる。C-5（関所の明文化）は\n          まだ機械強制されていないので、人力で必ず実行し、実行記録を evidence に残すこと。\n      (c) 葉A/B/D/E は「粒度不揃い・fixture不備」が detail に記録済み。criteria/verify を\n          直すなら着手前に basis-reviewer を通し、meta.basisChanges 宣言つきで直すこと\n          （本文だけ書き換えると scripts/verify-criteria-freeze.mjs が検知する）。\n      (d) 葉C・葉Fは D-7（実写素材の調達）がマスター判断待ちのまま。調達方針が決まって\n          いなければ、この2葉は着手せず先に確認すること。\n\n【2】UIの並行開発（G-P2、UI/UX品質・13葉）を進める\n  ・G-EDIT-REFRAME（バックエンド）とは依存が無く、凍結もされていないため並行して進めてよい\n    （2026-08-09 の会話で確認済み）。\n  ・対象：P2-1〜P2-8（設定ファイルの原子的書き込み、壊れた動画の検出、字幕タイミング、\n    古いジョブの自動削除・容量上限・同時実行数上限、スマホ幅、文字サイズ、支援技術対応、\n    モーダルのキーボード操作）。\n  ・こちらも着手前に凍結前の探り3本を省略しないこと（G-P2 は今回の見直しで粒度不足の指摘は\n    出ていないが、「指摘が出なかった＝安全」ではなく「まだ実装して確かめていない」だけである\n    ことを踏まえる）。\n  ・G-EDIT-MOSAIC-UI（顔モザイクの画面化）はマスター指示で凍結中（D-1が解けるまで）。\n    UI作業のついでに触れないこと。\n\n【並行の進め方】\n  ・2本は互いに独立なので、別々のサブエージェント（別ブランチ推奨）で同時に進めてよい。\n    ただし docs/roadmap.html は共有ファイルなので、片方が編集中はもう片方の反映を待つか、\n    最新を fetch してから編集すること（コンフリクト防止）。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・検証は公式サブ（independent-verifier / basis-reviewer）に掛ける。本人採点をしない。\n  ・サブを並行させている間は、意図したファイルだけを git add する（git add -A を使わない）。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ この2本より後回し（着手しない）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・今回のツリー見直しで追加した新規backlog葉（25件＋G-TESTINFRA-SCRIPTSLINT）のうちREFRAME/UI以外\n  ・G-EDIT-CAPTION-AI の残り3葉（F2/K1/K2）の受入\n  ・凍結済み葉に記録された『粒度不揃い』『fixture不備』15件（REFRAME関連を除く）\n  ・G-EDIT-TRIM（無音詰め）・前セッションから持ち越しのC-2/C-5〜C-14、D-2〜D-5、E-2〜E-6、\n    TRIM-F/G/A の done 判定\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・検証は公式サブ（independent-verifier / basis-reviewer）に掛ける。本人採点をしない。\n  ・criteria に「〜していないこと」を凍結したら、その禁止事項を実装の指示へ必ず引き写す。\n  ・基準と実装が食い違ったら、動かすのは実装のほう。基準を緩めない。\n  ・凍結前の探り3本（何もしていない偽物／正しい実装の値／意図的に壊したもの）を省略しない。\n  ・auto-merge は維持する（マスター承認済み）が、CI緑＝レビュー完了ではない。マージ後に\n    CodeRabbit等の指摘が届いたら、マージ済みブランチへ追いpushせずmainから枝を作り直す。\n",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "P0-5-C（sub=noneで字幕が焼き込まれない）・P0-5-D（mosaic=onのときだけモザイクが適用される）の実機配線検証を追加した。既存配線（server/pipeline-runner.mjs → pipeline.mjs render の --no-sub / state.sub、runJobのopts.mosaic===\"on\"分岐）は元々正しく実装済みだったため、コード修正はテスト追加のみで完了した。",
+        "P0-5-C: tests/sub-none-render-check.mjs を追加。ffmpeg実機で node pipeline.mjs init/render を実行し、独立に呼んだ renderClip(字幕無し)基準フレームと sub=none の出力フレームが一致・sub=on は同基準と異なることを確認（ローカルALL PASS）。",
+        "P0-5-D: tests/mosaic-job-wiring-check.mjs を追加。既存の face-mosaic-check.py / mosaic-ui-check.py が src/apply-mosaic-stage.mjs を直接叩くだけで startJob() 経由の runJob を一度も通していないことを確認したうえで、startJob() を実際に起動する統合テストを新設。t/c/s段はPATHへ差し込んだ身代わり python/claude で固定応答させ、r段(render)・m段(mosaic)は本物のffmpeg/opencvを通した。mosaic=on では applyMosaicStage が呼ばれ candidates.json が -mosaic.mp4 を指すこと、mosaic未指定（既定）ではモザイク工程が一切呼ばれないことを対照として確認（ローカルALL PASS）。",
+        "両テストを package.json の test チェーンへ追加し、pnpm -r test 全体（video-shorts全テスト＋scripts）を実行してALL GREENを確認した。",
+        "P0-5-C/P0-5-D の status を doing へ変更し、detail に実装内容を追記した（criteria 本文は不変）。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "tests/ai-caption-fix-check.mjs の葉E（claude起動口は共通口1つのみという凍結検査）が、新設テストの説明コメントに書いた文字列（関数呼び出しの形で claude を渡す例示）に反応して誤検出した（コメントも走査対象という設計のため）。コメントの言い回しを関数呼び出し形式を使わない表現へ書き換えて解消した。テスト内容自体（実際に claude を起動していない）は変更していない。"
       ]
     },
     "updated": "2026-08-10",
@@ -202,7 +203,7 @@
                       "kind": "state",
                       "theme": "字幕なしを選んだら、実際に字幕が焼き込まれない",
                       "meaning": "「字幕オフ」を選んだのに字幕が出てしまう、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "sub=noneを選んだジョブの出力動画に字幕が焼き込まれていない",
@@ -210,21 +211,22 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。"
+                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     },
                     {
                       "id": "P0-5-D",
                       "kind": "state",
                       "theme": "モザイクを選んだときだけ、実際に顔にモザイクが掛かる",
                       "meaning": "「モザイクあり」を選んだのに素顔のまま出る、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "mosaic=onを選んだジョブの成果物に、選んだときだけモザイク処理が適用される",
                           "verify": "実際にmosaic:\"on\"を指定したジョブを流し、applyMosaicStageが呼ばれcandidates.jsonが更新されることを確認する（既存のface-mosaic-check.py等との重複が無いかを確認した上で追加する）",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     }
                   ],
                   "detail": "根拠: server/pipeline-runner.mjs:241-247 が作るstateにmode/sub/orientが無い。opts.cut/opts.sizeも後段で未使用。1:1/4:5はレンダラー未実装。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P0-5）"
