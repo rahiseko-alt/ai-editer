@@ -39,12 +39,23 @@ function writeFileOfSize(p, bytes) {
 }
 
 // ── resolveQuotaBytes: env解決の純粋関数 ────────────────────────
+// CodeRabbit指摘: resolveQuotaBytes(undefined) は引数省略と同じ扱いになり、実行環境に
+// VS_STORAGE_QUOTA_BYTES が設定されていると「既定へ落ちる」経路が本物のenv値を見てしまう。
+// 既定値の検証中だけ、この環境変数を明示的に退避・削除してから確認し、必ず元へ戻す。
 t("resolveQuotaBytes: 既定は10GB、envに正の数値があればそれを使う、不正値は既定へ", () => {
-  assert.strictEqual(resolveQuotaBytes(undefined), 10 * 1024 * 1024 * 1024);
-  assert.strictEqual(resolveQuotaBytes("1000"), 1000);
-  assert.strictEqual(resolveQuotaBytes("0"), 10 * 1024 * 1024 * 1024);
-  assert.strictEqual(resolveQuotaBytes("-1"), 10 * 1024 * 1024 * 1024);
-  assert.strictEqual(resolveQuotaBytes("nan"), 10 * 1024 * 1024 * 1024);
+  const hadEnv = Object.prototype.hasOwnProperty.call(process.env, "VS_STORAGE_QUOTA_BYTES");
+  const savedEnv = process.env.VS_STORAGE_QUOTA_BYTES;
+  delete process.env.VS_STORAGE_QUOTA_BYTES;
+  try {
+    assert.strictEqual(resolveQuotaBytes(undefined), 10 * 1024 * 1024 * 1024);
+    assert.strictEqual(resolveQuotaBytes("1000"), 1000);
+    assert.strictEqual(resolveQuotaBytes("0"), 10 * 1024 * 1024 * 1024);
+    assert.strictEqual(resolveQuotaBytes("-1"), 10 * 1024 * 1024 * 1024);
+    assert.strictEqual(resolveQuotaBytes("nan"), 10 * 1024 * 1024 * 1024);
+  } finally {
+    if (hadEnv) process.env.VS_STORAGE_QUOTA_BYTES = savedEnv;
+    else delete process.env.VS_STORAGE_QUOTA_BYTES;
+  }
 });
 
 // ── ②: 小さいクォータで実測 ──────────────────────────────────

@@ -35,7 +35,10 @@
   - ローカル Web UI: `node video-shorts/server/index.mjs`（`http://127.0.0.1:5178`）
   - CLI パイプライン: `node video-shorts/pipeline.mjs init "<動画パス>" --mode <mode> --sub <on/off> --orient <向き>`
 - ビルド: 無し（配布物生成は `node video-shorts/build-dist.mjs`）
-- テスト: `pnpm --filter video-shorts test`（= `node tests/smoke.mjs && python3 tests/transcribe-corrections-check.py`）
+- テスト: `pnpm --filter video-shorts test`（`package.json` の `test` スクリプトに列挙した Node/Python の
+  検査群が直列に走る。2026-08-10 時点で30本、うち3本（`webapp-mobile-layout-check.mjs` /
+  `webapp-aria-pressed-check.mjs` / `webapp-modal-focus-check.mjs`）は Playwright(Chromium) による
+  実ブラウザ検証。中身の正は `package.json` の `test` スクリプト自体を見る（ここで本数を管理しない））
 - Lint: 未導入
 - 型チェック: 対象外（プレーン JS）
 - デプロイ: 対象外（客 PC 上でのローカル動作）

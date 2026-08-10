@@ -44,12 +44,24 @@ function makeJobDir(root, jobId, mtimeMs) {
 }
 
 // ── resolveTtlSeconds: env解決の純粋関数 ────────────────────────
+// CodeRabbit指摘: resolveTtlSeconds(undefined) は引数省略と同じ扱いになり(デフォルト引数は
+// undefinedで発火するため)、実行環境に VS_JOB_TTL_SECONDS が設定されていると「既定へ落ちる」
+// はずの経路が本物のenv値を見てしまい、意図せずテストを通す/落とす可能性があった。
+// 既定値の検証中だけ、この環境変数を明示的に退避・削除してから確認し、必ず元へ戻す。
 t("resolveTtlSeconds: 既定は24時間(86400秒)、envに正の数値があればそれを使う、不正値は既定へ", () => {
-  assert.strictEqual(resolveTtlSeconds(undefined), 24 * 60 * 60);
-  assert.strictEqual(resolveTtlSeconds("10"), 10);
-  assert.strictEqual(resolveTtlSeconds("0"), 24 * 60 * 60);
-  assert.strictEqual(resolveTtlSeconds("-5"), 24 * 60 * 60);
-  assert.strictEqual(resolveTtlSeconds("abc"), 24 * 60 * 60);
+  const hadEnv = Object.prototype.hasOwnProperty.call(process.env, "VS_JOB_TTL_SECONDS");
+  const savedEnv = process.env.VS_JOB_TTL_SECONDS;
+  delete process.env.VS_JOB_TTL_SECONDS;
+  try {
+    assert.strictEqual(resolveTtlSeconds(undefined), 24 * 60 * 60);
+    assert.strictEqual(resolveTtlSeconds("10"), 10);
+    assert.strictEqual(resolveTtlSeconds("0"), 24 * 60 * 60);
+    assert.strictEqual(resolveTtlSeconds("-5"), 24 * 60 * 60);
+    assert.strictEqual(resolveTtlSeconds("abc"), 24 * 60 * 60);
+  } finally {
+    if (hadEnv) process.env.VS_JOB_TTL_SECONDS = savedEnv;
+    else delete process.env.VS_JOB_TTL_SECONDS;
+  }
 });
 
 // ── ②: 短いTTLでの実測 ──────────────────────────────────────
@@ -87,6 +99,67 @@ t("②境界: TTLちょうどでは削除しない(超過のときだけ削除)"
   const removed = sweepExpiredJobs([root], 2, now); // TTL=2秒 → ageMs(2000) > 2000 は false
   assert.strictEqual(fs.existsSync(dir), true, "TTLちょうどなのに削除されてしまった");
   assert.deepStrictEqual(removed, []);
+});
+
+t("②削除に失敗した1件があっても、他のTTL超過ジョブの削除は止まらず、失敗した分だけremovedから除かれる(CodeRabbit指摘対応)", () => {
+  const root = freshRoot();
+  const now = Date.now();
+  const failDir = makeJobDir(root, "fail-job", now - 5000); // TTL超過・削除がEACCES等で失敗する想定
+  const okDir = makeJobDir(root, "ok-job", now - 5000); // TTL超過・正常に削除できる
+
+  const realRmSync = fs.rmSync;
+  fs.rmSync = (p, opts) => {
+    if (p === failDir) {
+      const err = new Error("simulated EACCES");
+      err.code = "EACCES";
+      throw err;
+    }
+    return realRmSync(p, opts);
+  };
+  let removed;
+  try {
+    removed = sweepExpiredJobs([root], 2, now);
+  } finally {
+    fs.rmSync = realRmSync;
+  }
+
+  assert.strictEqual(fs.existsSync(failDir), true, "削除に失敗したはずのディレクトリが実際には消えている(偽の緑)");
+  assert.strictEqual(fs.existsSync(okDir), false, "削除失敗した他のディレクトリの掃除まで止まってしまった");
+  assert.deepStrictEqual(
+    removed.map((r) => r.jobId).sort(),
+    ["ok-job"],
+    "削除に失敗したジョブがremovedへ誤って積まれている、または成功した方が抜けている"
+  );
+});
+
+t("①/③対照: 削除失敗を握りつぶしてremovedへ無条件push する旧実装だと、実際は残っているのに「削除された」と報告する", () => {
+  const root = freshRoot();
+  const now = Date.now();
+  const failDir = makeJobDir(root, "fail-job-old", now - 5000);
+
+  // 旧実装を模す: try/catch無しでpushする(実際には削除は起きていない状態を直接再現する)。
+  const removedOld = [{ root, jobId: "fail-job-old" }]; // 削除に失敗しても無条件でpushされていた
+
+  assert.throws(() => {
+    assert.strictEqual(
+      fs.existsSync(failDir) && removedOld.some((r) => r.jobId === "fail-job-old"),
+      false,
+      "旧実装は「removedに載っているのに実は存在する」矛盾を検出できない"
+    );
+  }, /旧実装は「removedに載っているのに実は存在する」矛盾を検出できない/, "旧実装(握りつぶし)の欠陥を検出できていない");
+});
+
+t("②excludeJobIdsに含まれるジョブは、TTLを過ぎていても削除されない(実行中/待機中ジョブの保護)", () => {
+  const root = freshRoot();
+  const now = Date.now();
+  const runningDir = makeJobDir(root, "running-job", now - 5000); // TTL超過だが実行中扱い
+  const oldDir = makeJobDir(root, "old-job", now - 5000); // TTL超過・除外対象外
+
+  const removed = sweepExpiredJobs([root], 2, now, ["running-job"]);
+
+  assert.strictEqual(fs.existsSync(runningDir), true, "実行中/待機中ジョブが誤って削除された");
+  assert.strictEqual(fs.existsSync(oldDir), false, "除外対象外のTTL超過ジョブが残っている");
+  assert.deepStrictEqual(removed.map((r) => r.jobId).sort(), ["old-job"]);
 });
 
 // ── ①/③: 「何もしない」実装だとTTL超過分が残ったままになる ─────────

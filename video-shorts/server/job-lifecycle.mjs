@@ -85,9 +85,16 @@ function dirMtimeMs(dir) {
  * @param {number} ttlSeconds
  * @param {number} nowMs 現在時刻。テストで実時間を待たずに検証できるよう呼び出し側が渡す
  *   （Date.now() を既定値にすると、テストが実時間の経過を待つ必要が出てしまう）。
+ * @param {Iterable<string>} [excludeJobIds] 掃除対象から除外するジョブID一覧
+ *   （実行中/待機中のジョブ。pipeline-runner.mjs の startJob() はジョブをキューへ積んだ
+ *   直後・最初の工程が state.json を書く前から jobs Map へ登録するため、ディレクトリの
+ *   mtimeだけで判定すると「作成直後でまだ何も書き込まれていない実行中ジョブ」を
+ *   「放置された古いジョブ」と誤認して消してしまう。呼び出し側が実行中/待機中の
+ *   ジョブID一覧を渡し、ここでは無条件にスキップする）。
  * @returns {{root:string, jobId:string}[]} 削除したジョブ
  */
-export function sweepExpiredJobs(roots, ttlSeconds, nowMs) {
+export function sweepExpiredJobs(roots, ttlSeconds, nowMs, excludeJobIds = []) {
+  const exclude = excludeJobIds instanceof Set ? excludeJobIds : new Set(excludeJobIds);
   const removed = [];
   for (const root of roots) {
     let entries;
@@ -98,11 +105,22 @@ export function sweepExpiredJobs(roots, ttlSeconds, nowMs) {
     }
     for (const ent of entries) {
       if (!ent.isDirectory()) continue;
+      if (exclude.has(ent.name)) continue; // 実行中/待機中のジョブは掃除対象から外す
       const p = path.join(root, ent.name);
       const ageMs = nowMs - dirMtimeMs(p);
       if (ageMs > ttlSeconds * 1000) {
-        fs.rmSync(p, { recursive: true, force: true });
-        removed.push({ root, jobId: ent.name });
+        // CodeRabbit指摘: fs.rmSync は EACCES/EPERM 等で例外を投げうるが、無条件で
+        // removed へ push していたため「削除できたことになっているが実は残っている」
+        // 状態を報告してしまっていた。1件の削除失敗が他のディレクトリの掃除を止めないよう
+        // try/catchで個別に包み、実際に削除できたものだけを removed へ積む。
+        try {
+          fs.rmSync(p, { recursive: true, force: true });
+          removed.push({ root, jobId: ent.name });
+        } catch (e) {
+          process.stderr.write(
+            `[job-lifecycle] TTL超過ジョブの削除に失敗しました(次回以降に再試行します): ${p} ${e?.message ?? e}\n`
+          );
+        }
       }
     }
   }

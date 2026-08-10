@@ -39,14 +39,24 @@ async function t(name, fn) {
 (async () => {
   const browser = await chromium.launch(chromiumLaunchOptions());
   const page = await browser.newPage();
-  page.on("pageerror", (err) => console.error("PAGE ERROR:", err.message));
+  const pageErrors = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(err);
+    console.error("PAGE ERROR:", err.message);
+  });
   await page.goto(filePath);
   await page.waitForTimeout(300);
 
-  // 対象: サイズchip(9:16 / 16:9)・字幕chip(なし/あり)の2グループで確認する
+  // 対象: サイズ・字幕・顔モザイク・間を詰める・カット方法の5グループで確認する
+  // (index.html の各 .chips/.size-chips グループを網羅する。app.js 側は
+  //  ".chips, .size-chips" に対して共通ハンドラを1つ付けているだけなので、
+  //  1グループだけの検査では他グループの断線(例: 個別にdata-group分岐が壊れる)を検出できない)
   const groups = [
     { name: "サイズ", selector: '.size-chip', values: ["9:16", "16:9"] },
     { name: "字幕", selector: '.sub-chip', values: ["none", "on"] },
+    { name: "顔モザイク", selector: '.mosaic-chip', values: ["none", "on"] },
+    { name: "間を詰める", selector: '.trim-chip', values: ["none", "on"] },
+    { name: "カット方法", selector: '[data-group="cut"] .chip', values: ["topic", "minutes"] },
   ];
 
   for (const g of groups) {
@@ -81,6 +91,14 @@ async function t(name, fn) {
       await page.waitForTimeout(50);
     });
   }
+
+  await t("②実行中、ブラウザ側で読み込み・実行時エラーが発生していない(pageerrorが1件も無い)", async () => {
+    assert.strictEqual(
+      pageErrors.length,
+      0,
+      `ブラウザ側で実行時エラーが発生した: ${pageErrors.map((e) => e.message).join(", ")}`
+    );
+  });
 
   await browser.close();
 

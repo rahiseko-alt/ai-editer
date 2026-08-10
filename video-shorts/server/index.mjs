@@ -16,6 +16,7 @@ import {
   subscribeJob,
   unsubscribeJob,
   isRunning,
+  activeJobIds,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
@@ -68,7 +69,9 @@ const STORAGE_QUOTA_BYTES = resolveQuotaBytes();
 
 /** P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。 */
 function sweepExpiredJobsNow() {
-  const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now());
+  // 実行中/待機中のジョブは、まだ state.json を書いていない(=ディレクトリのmtimeが古いまま
+  // に見える)可能性があるため掃除から除外する（pipeline-runner.mjs activeJobIds() 参照）。
+  const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now(), activeJobIds());
   for (const r of removed) {
     process.stderr.write(`[kosespark] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
   }
@@ -186,6 +189,19 @@ function serveStatic(req, res) {
   fs.createReadStream(resolved).pipe(res);
 }
 
+// P2-4(B) 補助: アップロードクォータの受付判定に使う、プロセス内の「予約済みバイト数」。
+// 旧実装は computeUsedBytes() で得た「その時点のディスク使用量」だけをクォータと比較して
+// いたため、(a) 複数リクエストが同時に来ると全部が同じスナップショットを見て admission を
+// 通過してから書き込みが始まり合計で上限を超えうる、(b) Content-Length を admission 判定に
+// 含めていないため単一リクエストの書き込み中にも上限を超えうる、という2つの穴があった
+// (CodeRabbit指摘)。ここへ「申告済み/受信済みだが、まだディスク使用量には反映されていない」
+// バイト数を積んでおき、後続リクエストの admission 判定にも反映させる。Node は単一スレッドの
+// イベントループなので、チェックと加算の間に他リクエストのハンドラが割り込むことはなく、
+// レースは起きない。
+let reservedUploadBytes = 0;
+const QUOTA_EXCEEDED_MESSAGE =
+  "保存容量の上限に達しています。既存のジョブを整理するか、しばらく待ってから再試行してください。";
+
 // ── POST /api/jobs ──────────────────────────────────────────
 async function handlePostJobs(req, res) {
   // クエリパラメータ取得
@@ -205,101 +221,128 @@ async function handlePostJobs(req, res) {
 
   // P2-4(B): 保存容量が上限に達していれば、本文を受け取る前に新規保存を拒否する
   // （書き始めてから溢れるのを待つと、途中まで書いた分が無駄になる）。
-  const usedBytes = computeUsedBytes([WORK_ROOT, OUT_ROOT]);
-  if (!hasQuotaAvailable(usedBytes, STORAGE_QUOTA_BYTES)) {
-    return jsonRes(res, 507, {
-      error: "保存容量の上限に達しています。既存のジョブを整理するか、しばらく待ってから再試行してください。",
-    });
+  // Content-Length が分かる場合は「使用量 + 予約済み + 申告長」を admission 条件に含める(b対策)。
+  // reservedUploadBytes の確認→加算をここで同期的に行うことで、同時に来た複数リクエストが
+  // 全部 admission を通過してしまうのを防ぐ(a対策)。
+  const hasDeclaredLength = Number.isFinite(declaredLength) && declaredLength >= 0;
+  const usedBytesAtStart = computeUsedBytes([WORK_ROOT, OUT_ROOT]);
+  let myReservation = hasDeclaredLength ? declaredLength : 0;
+  if (!hasQuotaAvailable(usedBytesAtStart + reservedUploadBytes + myReservation, STORAGE_QUOTA_BYTES)) {
+    return jsonRes(res, 507, { error: QUOTA_EXCEEDED_MESSAGE });
   }
+  reservedUploadBytes += myReservation;
+  // 予約は成功・拒否・失敗のいずれの経路でも必ず解放する(try/finally)。多重解放を防ぐため
+  // 一度だけ実行するガードを付ける。
+  let reservationReleased = false;
+  const releaseReservation = () => {
+    if (reservationReleased) return;
+    reservationReleased = true;
+    reservedUploadBytes -= myReservation;
+  };
 
-  // ファイル名からジョブID生成・サニタイズ。P1-3: 乱数suffixで同名ファイルの同時アップロードを
-  // ジョブ単位に分離する(workDir/inputPathがジョブごとに必ず別になり、書込みが衝突しない)。
-  const rawId = makeUniqueJobId(name);
-  const jobId = safeId(rawId);
-  if (!jobId) {
-    return jsonRes(res, 400, { error: "無効なファイル名" });
-  }
-
-  const ext = path.extname(name) || ".mp4";
-  const workDir = path.join(WORK_ROOT, jobId);
-  fs.mkdirSync(workDir, { recursive: true });
-  const inputPath = path.join(workDir, `input${ext}`);
-
-  // リクエストボディをストリームで保存（全量メモリ展開しない）。
-  // 併せて P1-2(C) 先頭バイト列のmagic byte検証と、P1-2(D) 実受信量の上限超過検知(宣言値が
-  // 無い/嘘の場合の保険)を行う。TCPの都合で最初のdataチャンクが判定に必要な量未満のことが
-  // ありうるため(実際にCodeRabbitレビューで指摘)、判定ロジックはcreateSignatureSniffer()に
-  // 切り出し、十分な先頭バイト数が揃う(またはストリーム終端する)まで複数チャンクをまたいで
-  // 蓄積してから1回だけ判定する。
-  let rejection = null;
   try {
-    await new Promise((resolve, reject) => {
-      const ws = createWriteStream(inputPath);
-      let receivedBytes = 0;
-      let checkedSignature = false;
-      const sniffer = createSignatureSniffer();
+    // ファイル名からジョブID生成・サニタイズ。P1-3: 乱数suffixで同名ファイルの同時アップロードを
+    // ジョブ単位に分離する(workDir/inputPathがジョブごとに必ず別になり、書込みが衝突しない)。
+    const rawId = makeUniqueJobId(name);
+    const jobId = safeId(rawId);
+    if (!jobId) {
+      return jsonRes(res, 400, { error: "無効なファイル名" });
+    }
 
-      const abort = (status, message) => {
-        rejection = { status, message };
-        req.pause();
-        ws.destroy();
-        reject(new Error(message));
-      };
+    const ext = path.extname(name) || ".mp4";
+    const workDir = path.join(WORK_ROOT, jobId);
+    fs.mkdirSync(workDir, { recursive: true });
+    const inputPath = path.join(workDir, `input${ext}`);
 
-      const applySniffResult = (result) => {
-        checkedSignature = true;
-        if (!result.ok) return abort(415, "動画ファイルとして認識できません");
-        ws.write(result.head);
-      };
+    // リクエストボディをストリームで保存（全量メモリ展開しない）。
+    // 併せて P1-2(C) 先頭バイト列のmagic byte検証と、P1-2(D) 実受信量の上限超過検知(宣言値が
+    // 無い/嘘の場合の保険)を行う。TCPの都合で最初のdataチャンクが判定に必要な量未満のことが
+    // ありうるため(実際にCodeRabbitレビューで指摘)、判定ロジックはcreateSignatureSniffer()に
+    // 切り出し、十分な先頭バイト数が揃う(またはストリーム終端する)まで複数チャンクをまたいで
+    // 蓄積してから1回だけ判定する。
+    let rejection = null;
+    try {
+      await new Promise((resolve, reject) => {
+        const ws = createWriteStream(inputPath);
+        let receivedBytes = 0;
+        let checkedSignature = false;
+        const sniffer = createSignatureSniffer();
 
-      req.on("data", (chunk) => {
-        if (rejection) return;
-        receivedBytes += chunk.length;
-        if (receivedBytes > MAX_UPLOAD_BYTES) return abort(413, "ファイルが大きすぎます");
+        const abort = (status, message) => {
+          rejection = { status, message };
+          req.pause();
+          ws.destroy();
+          reject(new Error(message));
+        };
 
-        if (!checkedSignature) {
-          const result = sniffer.push(chunk);
-          if (result.decided) applySniffResult(result);
-          return;
-        }
-        ws.write(chunk);
+        const applySniffResult = (result) => {
+          checkedSignature = true;
+          if (!result.ok) return abort(415, "動画ファイルとして認識できません");
+          ws.write(result.head);
+        };
+
+        req.on("data", (chunk) => {
+          if (rejection) return;
+          receivedBytes += chunk.length;
+          if (receivedBytes > MAX_UPLOAD_BYTES) return abort(413, "ファイルが大きすぎます");
+
+          if (!hasDeclaredLength) {
+            // Content-Length が無い(chunked等)場合は、宣言長ぶんを事前予約できない。
+            // 代わりに受信するたびにここまでの分を動的に予約へ積み増し、都度クォータを
+            // 確認して、超える前(=書き込む前)に拒否する。
+            reservedUploadBytes += chunk.length;
+            myReservation += chunk.length;
+            if (usedBytesAtStart + reservedUploadBytes > STORAGE_QUOTA_BYTES) {
+              return abort(507, QUOTA_EXCEEDED_MESSAGE);
+            }
+          }
+
+          if (!checkedSignature) {
+            const result = sniffer.push(chunk);
+            if (result.decided) applySniffResult(result);
+            return;
+          }
+          ws.write(chunk);
+        });
+        req.on("end", () => {
+          if (rejection) return;
+          // ファイル全体が判定に必要な量未満のまま終端した場合、集まった分だけで判定する。
+          if (!checkedSignature) applySniffResult(sniffer.finish());
+          if (!rejection) ws.end();
+        });
+        req.on("error", (e) => {
+          if (!rejection) reject(e);
+        });
+        ws.on("finish", resolve);
+        ws.on("error", (e) => {
+          if (!rejection) reject(e);
+        });
       });
-      req.on("end", () => {
-        if (rejection) return;
-        // ファイル全体が判定に必要な量未満のまま終端した場合、集まった分だけで判定する。
-        if (!checkedSignature) applySniffResult(sniffer.finish());
-        if (!rejection) ws.end();
-      });
-      req.on("error", (e) => {
-        if (!rejection) reject(e);
-      });
-      ws.on("finish", resolve);
-      ws.on("error", (e) => {
-        if (!rejection) reject(e);
-      });
-    });
-  } catch (e) {
-    fs.rmSync(workDir, { recursive: true, force: true });
-    if (rejection) return jsonRes(res, rejection.status, { error: rejection.message });
-    throw e;
+    } catch (e) {
+      fs.rmSync(workDir, { recursive: true, force: true });
+      if (rejection) return jsonRes(res, rejection.status, { error: rejection.message });
+      throw e;
+    }
+
+    // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
+    const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
+    if (!started) {
+      return jsonRes(res, 409, { error: "already running", jobId });
+    }
+
+    // P1-4(B): このジョブ専用のトークンを発行する。起動時トークンは全ジョブ共通のため、
+    // これが無いと同じ起動時トークンを持つ別ジョブの作成者が、jobIdさえ知れば/推測できれば
+    // 他人の成果物(SSE進捗・候補JSON・生成動画)を取得できてしまう。
+    const jobToken = issueJobToken(jobId);
+    // P1-6: メモリのregistryだけだとサーバー再起動で失われ、進行中だったジョブへの正規の
+    // 再接続まで401/403で弾かれてしまう(利用者に「再起動で中断された」ことを伝えられない)。
+    // workDirへも永続化し、再起動後の再接続を認可できるようにする。
+    persistJobToken(workDir, jobToken);
+
+    return jsonRes(res, 202, { jobId, jobToken });
+  } finally {
+    releaseReservation();
   }
-
-  // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
-  const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
-  if (!started) {
-    return jsonRes(res, 409, { error: "already running", jobId });
-  }
-
-  // P1-4(B): このジョブ専用のトークンを発行する。起動時トークンは全ジョブ共通のため、
-  // これが無いと同じ起動時トークンを持つ別ジョブの作成者が、jobIdさえ知れば/推測できれば
-  // 他人の成果物(SSE進捗・候補JSON・生成動画)を取得できてしまう。
-  const jobToken = issueJobToken(jobId);
-  // P1-6: メモリのregistryだけだとサーバー再起動で失われ、進行中だったジョブへの正規の
-  // 再接続まで401/403で弾かれてしまう(利用者に「再起動で中断された」ことを伝えられない)。
-  // workDirへも永続化し、再起動後の再接続を認可できるようにする。
-  persistJobToken(workDir, jobToken);
-
-  return jsonRes(res, 202, { jobId, jobToken });
 }
 
 // ── GET /api/jobs/:id/events（SSE） ────────────────────────

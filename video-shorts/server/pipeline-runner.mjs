@@ -25,6 +25,9 @@ const TRANSCRIBE_PY = path.join(ROOT, "src", "transcribe.py");
  */
 const jobs = new Map();
 
+/** 「実行中/待機中」とみなすstage一覧。TTL掃除の除外判定・二重起動ガードの両方から参照する。 */
+const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
+
 /** SSE イベントを購読者全員に push。error/done は接続も close する */
 function broadcast(jobId, payload, event = null) {
   const job = jobs.get(jobId);
@@ -51,7 +54,22 @@ function broadcast(jobId, payload, event = null) {
 /** ジョブが実行中（init/t/c/s/r/m）かを返す。POST 受理前の二重起動チェック用。 */
 export function isRunning(jobId) {
   const j = jobs.get(jobId);
-  return !!j && ["init", "t", "c", "s", "r", "m"].includes(j.stage);
+  return !!j && RUNNING_STAGES.includes(j.stage);
+}
+
+/**
+ * 現在「実行中/待機中」(RUNNING_STAGES)のジョブID一覧。
+ * P2-4-A: TTL掃除(job-lifecycle.mjs の sweepExpiredJobs)は work/output ディレクトリの
+ * mtimeだけを見るため、startJob() でキューへ積まれた直後（state.jsonをまだ書いていない・
+ * ディレクトリのmtimeが古いまま）のジョブを「放置された古いジョブ」と誤認して消しうる。
+ * server/index.mjs はこの一覧を掃除の除外リストとして渡す。
+ */
+export function activeJobIds() {
+  const ids = [];
+  for (const [id, job] of jobs) {
+    if (RUNNING_STAGES.includes(job.stage)) ids.push(id);
+  }
+  return ids;
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
@@ -252,8 +270,7 @@ export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
   // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
-  const RUNNING = ["init", "t", "c", "s", "r", "m"];
-  if (existing && RUNNING.includes(existing.stage)) {
+  if (existing && RUNNING_STAGES.includes(existing.stage)) {
     return false;
   }
   if (!existing) {

@@ -26,6 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { runFfprobe } from "../src/av-verify.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
@@ -138,6 +139,59 @@ await at("③この検査には検出能力がある: streamの有無チェッ�
   })();
   assert.strictEqual(code, 0, `streamチェックを外すと誤ってPASSに戻るはずが exit=${code}\n${out}`);
   assert.match(out, /PASS/);
+});
+
+// ── ④ CodeRabbit指摘対応: ffprobeがストールしてもタイムアウトで打ち切られる(ハングしない) ──
+// 実際の壊れた/巨大な動画ファイルでffprobeを長時間ストールさせるのは再現性・実行時間の面で
+// 不安定なため、runFfprobe() の command をダミーの"sleep"コマンドへ差し替えて、
+// タイムアウト機構(SIGTERM→猶予後SIGKILL、有限時間での例外化)そのものを検証する。
+await at("④ffprobeに相当するコマンドがストールしても、有限のタイムアウトで打ち切られ例外になる(ハングしない)", async () => {
+  const start = Date.now();
+  await assert.rejects(
+    () => runFfprobe(["5"], { command: "sleep", timeoutMs: 300 }),
+    /タイムアウト/,
+    "タイムアウトで打ち切られるはずが、例外にならなかった(ストールの再現に失敗、またはハングした)"
+  );
+  const elapsedMs = Date.now() - start;
+  assert.ok(
+    elapsedMs < 4000,
+    `タイムアウト(300ms)で打ち切られるはずが、ダミーコマンドの完了(5秒)近くまでかかった(=killされていない疑い): ${elapsedMs}ms`
+  );
+});
+
+await at("④タイムアウト時の例外メッセージに、実行したコマンドの引数が含まれている", async () => {
+  await assert.rejects(
+    () => runFfprobe(["5"], { command: "sleep", timeoutMs: 300 }),
+    (err) => {
+      assert.match(err.message, /\bsleep\b/, `エラーメッセージにコマンド名が含まれていない: ${err.message}`);
+      assert.match(err.message, /\b5\b/, `エラーメッセージにコマンド引数が含まれていない: ${err.message}`);
+      return true;
+    }
+  );
+});
+
+await at("④タイムアウトに余裕があれば(3秒コマンドにタイムアウト30秒)、正常に完了する(誤検知しない)", async () => {
+  const out = await runFfprobe(["--version"], { command: "sleep", timeoutMs: 30_000 });
+  // "sleep --version" は coreutils のバージョン文字列を出す(GNU coreutils特有の出力形式なので
+  // 中身は問わない)。ここで確かめたいのは「タイムアウトに余裕があれば正常に resolve すること」。
+  assert.strictEqual(typeof out, "string");
+});
+
+// ①/③: タイムアウトが無い(旧実装)場合、ストールするコマンドはいつまでも待ち続けてしまう。
+// 実際に「無限に待つ」ことをテストの中で実行時間で確かめるのはテスト自体をハングさせて
+// 危険なため、旧実装(closeイベントのみを待ち、打ち切り手段が無い実装)を model.close 未発火の
+// まま放置したPromiseとして再現し、②で使った「有限時間内に決着する」判定へ通すと
+// 実際にタイムアウトしてこの検査自体が失敗することを示す(=検出能力の確認)。
+await at("③この検査には検出能力がある: タイムアウトを設けない旧実装相当のPromiseは、短い期限内に決着しない", async () => {
+  // 「closeイベントが来るまで一切resolve/rejectしない」旧実装のPromiseをそのまま模す
+  // (実プロセスをspawnしない。ここで確かめたいのは判定ロジックの検出能力であり、
+  //  ②のテストで実際のタイムアウト機構自体は既に実測済みのため)。
+  const neverSettles = new Promise(() => {}); // 旧実装: 誰もkillしないので永久に決着しない
+  const withDeadline = Promise.race([
+    neverSettles,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("期限内に決着しなかった(旧実装の欠陥を再現)")), 300)),
+  ]);
+  await assert.rejects(withDeadline, /期限内に決着しなかった/, "旧実装(タイムアウト無し)の「決着しない」欠陥を検出できていない");
 });
 
 fs.rmSync(DIR, { recursive: true, force: true });

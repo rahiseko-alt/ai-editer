@@ -72,7 +72,11 @@ async function isModalHidden(page) {
   const browser = await chromium.launch(chromiumLaunchOptions());
   const context = await browser.newContext();
   const page = await context.newPage();
-  page.on("pageerror", (err) => console.error("PAGE ERROR:", err.message));
+  const pageErrors = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(err);
+    console.error("PAGE ERROR:", err.message);
+  });
   await page.goto(filePath);
   await page.waitForTimeout(300);
 
@@ -126,6 +130,14 @@ async function isModalHidden(page) {
     // （openConfirmModal内で page.click('#btn-run') したため、クリックでフォーカスも移る）。
     const id = await getFocusedId(page);
     assert.strictEqual(id, "btn-run", `フォーカスが元の場所に戻っていない: ${id}`);
+  });
+
+  await t("②実行中、ブラウザ側で読み込み・実行時エラーが発生していない(pageerrorが1件も無い)", async () => {
+    assert.strictEqual(
+      pageErrors.length,
+      0,
+      `ブラウザ側で実行時エラーが発生した: ${pageErrors.map((e) => e.message).join(", ")}`
+    );
   });
 
   await context.close();

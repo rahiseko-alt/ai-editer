@@ -52,14 +52,25 @@ function makeTracker() {
 }
 
 // ── resolveMaxConcurrentJobs: env解決の純粋関数 ─────────────────
+// CodeRabbit指摘: resolveMaxConcurrentJobs(undefined) は引数省略と同じ扱いになり、実行環境に
+// VS_MAX_CONCURRENT_JOBS が設定されていると「既定へ落ちる」経路が本物のenv値を見てしまう。
+// 既定値の検証中だけ、この環境変数を明示的に退避・削除してから確認し、必ず元へ戻す。
 t("resolveMaxConcurrentJobs: 既定は3、envに正の整数があればそれを使う、不正値は既定へ", () => {
-  assert.strictEqual(resolveMaxConcurrentJobs(undefined), 3);
-  assert.strictEqual(resolveMaxConcurrentJobs("5"), 5);
-  assert.strictEqual(resolveMaxConcurrentJobs("1"), 1);
-  assert.strictEqual(resolveMaxConcurrentJobs("0"), 3);   // 0本は不正 → 既定へ
-  assert.strictEqual(resolveMaxConcurrentJobs("-2"), 3);  // 負数は不正 → 既定へ
-  assert.strictEqual(resolveMaxConcurrentJobs("abc"), 3); // 数値でない → 既定へ
-  assert.strictEqual(resolveMaxConcurrentJobs("2.7"), 2); // 小数は切り捨て
+  const hadEnv = Object.prototype.hasOwnProperty.call(process.env, "VS_MAX_CONCURRENT_JOBS");
+  const savedEnv = process.env.VS_MAX_CONCURRENT_JOBS;
+  delete process.env.VS_MAX_CONCURRENT_JOBS;
+  try {
+    assert.strictEqual(resolveMaxConcurrentJobs(undefined), 3);
+    assert.strictEqual(resolveMaxConcurrentJobs("5"), 5);
+    assert.strictEqual(resolveMaxConcurrentJobs("1"), 1);
+    assert.strictEqual(resolveMaxConcurrentJobs("0"), 3);   // 0本は不正 → 既定へ
+    assert.strictEqual(resolveMaxConcurrentJobs("-2"), 3);  // 負数は不正 → 既定へ
+    assert.strictEqual(resolveMaxConcurrentJobs("abc"), 3); // 数値でない → 既定へ
+    assert.strictEqual(resolveMaxConcurrentJobs("2.7"), 2); // 小数は切り捨て
+  } finally {
+    if (hadEnv) process.env.VS_MAX_CONCURRENT_JOBS = savedEnv;
+    else delete process.env.VS_MAX_CONCURRENT_JOBS;
+  }
 });
 
 // ── ②: createConcurrencyGate(2) に5本投入し、同時実行数が2を超えないことを実測 ──
@@ -81,6 +92,12 @@ await t("②同時実行数の上限(=2)を超えて走ることはなく、5本
   assert.strictEqual(tr.maxConcurrent, 2, `上限2まで使い切って並列実行されるはずが maxConcurrent=${tr.maxConcurrent}`);
   assert.strictEqual(tr.startedOrder.length, N, "拒否されたタスクがある(キューイングされるはずが実行されなかった)");
   for (let i = 0; i < N; i++) assert.strictEqual(tr.runCounts.get(i), 1, `id=${i} が1回ちょうど実行されていない`);
+  // CodeRabbit指摘: 同時実行数の上限と「全部ちょうど1回実行される」ことだけでは、待機順(FIFO)は
+  // 検証できていなかった。投入順どおりに開始されること(0,1,2,3,4)を直接assertする。
+  assert.deepStrictEqual(
+    tr.startedOrder, [0, 1, 2, 3, 4],
+    `待機がFIFOになっていない(投入順どおりに開始されていない): startedOrder=${JSON.stringify(tr.startedOrder)}`
+  );
 });
 
 await t("②上限=1なら常に直列（同時実行数の最大値は1）", async () => {

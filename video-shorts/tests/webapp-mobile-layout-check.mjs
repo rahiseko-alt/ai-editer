@@ -44,7 +44,11 @@ async function t(name, fn) {
   const browser = await chromium.launch(chromiumLaunchOptions());
   const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
   const page = await context.newPage();
-  page.on("pageerror", (err) => console.error("PAGE ERROR:", err.message));
+  const pageErrors = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(err);
+    console.error("PAGE ERROR:", err.message);
+  });
   await page.goto(filePath);
   await page.waitForTimeout(400);
 
@@ -75,10 +79,12 @@ async function t(name, fn) {
     assert.ok(scrollWidth <= innerWidth + 1, `横スクロールが発生している(要素がはみ出している): scrollWidth=${scrollWidth} > innerWidth=${innerWidth}`);
   });
 
-  await t("②375px幅でも読み込みエラーが無い(node --check相当の実行時確認)", async () => {
-    const errors = await page.evaluate(() => (window.__loadErrors || []).length);
-    // __loadErrorsが未定義(0扱い)でも構わない。ここでは pageerror が飛んでいないことを別途console監視で担保する。
-    assert.strictEqual(errors, 0);
+  await t("②375px幅でも読み込みエラーが無い(pageerrorイベントが1件も飛んでいないことを直接assertする)", async () => {
+    assert.strictEqual(
+      pageErrors.length,
+      0,
+      `ブラウザ側で実行時エラーが発生した: ${pageErrors.map((e) => e.message).join(", ")}`
+    );
   });
 
   await context.close();

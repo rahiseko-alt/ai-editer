@@ -19,14 +19,38 @@ import path from "node:path";
  * @param {object} data JSON化するオブジェクト
  */
 export function writeJsonAtomically(filePath, data) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
   const tmp = `${filePath}.tmp-${process.pid}`;
+  const buf = Buffer.from(`${JSON.stringify(data, null, 2)}\n`, "utf-8");
   const fd = fs.openSync(tmp, "w");
   try {
-    fs.writeSync(fd, `${JSON.stringify(data, null, 2)}\n`);
+    // fs.writeSync は要求したバイト数を全部書き切るとは限らない（部分書き込みが起こりうる）。
+    // 戻り値(実際に書けたバイト数)を無視すると、未完成のJSONをfsync/renameしてしまい、
+    // 「一時ファイルへ書く→fsync→rename」という原子性の前提が崩れる。書き切るまでループする。
+    let written = 0;
+    while (written < buf.length) {
+      written += fs.writeSync(fd, buf, written, buf.length - written);
+    }
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
   }
   fs.renameSync(tmp, filePath);
+
+  // POSIXでは、rename の永続化(ディレクトリエントリの更新)自体もfsyncしないと、電源喪失時に
+  // renameが巻き戻りうる（ファイル内容のfsyncだけでは不十分）。親ディレクトリをreadで開いて
+  // fsyncする。
+  try {
+    const dirFd = fs.openSync(dir, "r");
+    try {
+      fs.fsyncSync(dirFd);
+    } finally {
+      fs.closeSync(dirFd);
+    }
+  } catch (_) {
+    // Windows等、ディレクトリをopen/fsyncできない環境がある。ファイル自体のfsyncは既に
+    // 済んでおり、ここは「rename巻き戻り防止」という追加の堅牢化のためのベストエフォートなので、
+    // 失敗しても処理全体は成功として扱う(握りつぶす)。
+  }
 }
