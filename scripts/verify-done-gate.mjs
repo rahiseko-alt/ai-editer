@@ -34,9 +34,18 @@ const REPO_ROOT = resolve(__dirname, "..");
 const ROADMAP_REL_PATH = "docs/roadmap.html";
 const roadmapAbsPath = resolve(REPO_ROOT, ROADMAP_REL_PATH);
 
+/**
+ * @typedef {{ id: string, index: number, reason: "missing-verifycmd" }
+ *   | { id: string, index: number, reason: "verify-failed", cmd: string, code: number, output: string }} DoneGateViolation
+ */
+
 // ---- 純粋関数（テスト対象。git/fs/子プロセスに依存しない） -----------------------------
 
-/** 葉ノード（子を持たない state ノード）かつ status:"done" かどうか。 */
+/**
+ * 葉ノード（子を持たない state ノード）かつ status:"done" かどうか。
+ * @param {any} node
+ * @returns {boolean}
+ */
 export function isDoneLeaf(node) {
   if (!node || typeof node !== "object") return false;
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
@@ -49,6 +58,9 @@ export function isDoneLeaf(node) {
  * BASEでは done でなかった葉が対象。BASEで既に done だった葉（過去に受理済み）は
  * 今回のPRでは対象外にする＝過去に受理済みの葉へ遡って verifyCmd 必須化を強制しない
  * （既存ツリーを壊さないための移行措置。新規に done 化する葉から適用が始まる）。
+ * @param {any} baseRoadmap
+ * @param {any} headRoadmap
+ * @returns {Array<{ id: string, node: any }>}
  */
 export function findNewlyDoneLeaves(baseRoadmap, headRoadmap) {
   const baseMap = flattenById(baseRoadmap?.nodes || []);
@@ -63,11 +75,16 @@ export function findNewlyDoneLeaves(baseRoadmap, headRoadmap) {
   return result;
 }
 
-/** 新規にdoneへ遷移した葉のうち、criteriaにverifyCmdが無いものを違反として返す。 */
+/**
+ * 新規にdoneへ遷移した葉のうち、criteriaにverifyCmdが無いものを違反として返す。
+ * @param {Array<{ id: string, node: any }>} newlyDone
+ * @returns {DoneGateViolation[]}
+ */
 export function findMissingVerifyCmdViolations(newlyDone) {
+  /** @type {DoneGateViolation[]} */
   const violations = [];
   for (const { id, node } of newlyDone) {
-    (node.criteria || []).forEach((c, index) => {
+    (node.criteria || []).forEach((/** @type {any} */ c, /** @type {number} */ index) => {
       const cmd = c?.verifyCmd;
       if (typeof cmd !== "string" || cmd.trim() === "") {
         violations.push({ id, index, reason: "missing-verifycmd" });
@@ -81,11 +98,15 @@ export function findMissingVerifyCmdViolations(newlyDone) {
  * newlyDone の各criteriaのverifyCmdを実行し、失敗したものを違反として返す。
  * runCmd: (cmd: string) => { code: number, output: string } を注入する
  * （実行部分をI/Oから分離し、テストでは実際にプロセスを起動せずロジックだけ検証できるようにする）。
+ * @param {Array<{ id: string, node: any }>} newlyDone
+ * @param {(cmd: string) => { code: number, output: string }} runCmd
+ * @returns {DoneGateViolation[]}
  */
 export function runVerifyCommands(newlyDone, runCmd) {
+  /** @type {DoneGateViolation[]} */
   const violations = [];
   for (const { id, node } of newlyDone) {
-    (node.criteria || []).forEach((c, index) => {
+    (node.criteria || []).forEach((/** @type {any} */ c, /** @type {number} */ index) => {
       const cmd = typeof c?.verifyCmd === "string" ? c.verifyCmd.trim() : "";
       if (!cmd) return; // missing-verifycmd 側で既に報告済みなので二重報告しない
       const { code, output } = runCmd(cmd);
@@ -97,7 +118,11 @@ export function runVerifyCommands(newlyDone, runCmd) {
   return violations;
 }
 
-/** 違反1件を人間可読な日本語メッセージへ整形する。 */
+/**
+ * 違反1件を人間可読な日本語メッセージへ整形する。
+ * @param {DoneGateViolation} v
+ * @returns {string}
+ */
 export function formatDoneGateViolation(v) {
   if (v.reason === "missing-verifycmd") {
     return (
@@ -119,11 +144,19 @@ export function formatDoneGateViolation(v) {
 
 // ---- git/fs/子プロセス依存の入出力（CLI実行時のみ使う） --------------------------------
 
+/**
+ * @param {string} [ref]
+ * @returns {string}
+ */
 function readRoadmapAt(ref) {
   if (!ref) return readFileSync(roadmapAbsPath, "utf8");
   return execFileSync("git", ["show", `${ref}:${ROADMAP_REL_PATH}`], { encoding: "utf8" });
 }
 
+/**
+ * @param {string} cmd
+ * @returns {{ code: number, output: string }}
+ */
 function realRunCmd(cmd) {
   try {
     const output = execSync(cmd, {
@@ -135,8 +168,9 @@ function realRunCmd(cmd) {
     });
     return { code: 0, output };
   } catch (e) {
-    const output = `${e.stdout || ""}\n${e.stderr || ""}`.trim();
-    return { code: typeof e.status === "number" ? e.status : 1, output };
+    const err = /** @type {any} */ (e);
+    const output = `${err?.stdout || ""}\n${err?.stderr || ""}`.trim();
+    return { code: typeof err?.status === "number" ? err.status : 1, output };
   }
 }
 
