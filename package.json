@@ -15,6 +15,7 @@
     "verify:roadmap": "node scripts/verify-roadmap-evidence.mjs"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "^5.7.3"
   },
   "pnpm": {
