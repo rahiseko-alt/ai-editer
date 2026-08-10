@@ -41,6 +41,11 @@ handoff は独立ファイルではなく **`docs/roadmap.html` の `meta.handof
 
 作業ノードを閉じてロードマップ JSON を編集する、その同じ瞬間に handoff も更新する。
 
+**例外＝並列バッチ中の個々の葉PR**：`meta.next`/`meta.handoff` は触らない。担当葉の
+`status`/`detail`/`criteria[].evidence` 更新のみで `roadmap-required` を満たす（AGENTS.md「PR
+instructions」、`docs/failures.md` 2026-08-10）。`meta.next`/`meta.handoff` の更新はバッチを
+統括するセッションが区切りで1回だけ行う。以下①〜⑥は通常チェックアウト／バッチ統括の区切りの手順。
+
 1. **前回の値を消してから**、今回の値を上書きする：
    - `meta.handoff.done` ＝ ①今回実施。
    - `meta.handoff.trouble` ＝ ②今回トラブル（無ければ「無し」）。
