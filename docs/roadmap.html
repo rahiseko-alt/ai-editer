@@ -119,17 +119,18 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "active": "G-TESTINFRA-LINT",
+    "next": "PR(feature/testinfra-lint)のCIが緑であることを確認し、問題無ければマージする。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。並行して、中断していたPR #54(REFRAME、CodeRabbit指摘7件・git stash退避済み)の再開も残っている。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "G-TESTINFRA-LINT: video-shortsパッケージにESLint 9系(flat config)を導入した。devDependenciesへeslint/@eslint/js/globalsを追加し、video-shorts/eslint.config.mjsを新設(対象: **/*.mjsはNode/ESM。一部Playwrightのpage.evaluate()コールバックがブラウザグローバルも使うためnode+browserのglobalsを両方許容。ui/app.js・webapp-mockup/app.js・install/consent.jsはブラウザ非モジュールスクリプトとして別扱い)。ルールはeslint:recommended相当+no-unused-vars(catch束縛含む)+no-use-before-define+no-empty(allowEmptyCatch)+no-irregular-whitespace(文字列/コメント/正規表現中の全角スペースは日本語処理で意図的なため除外)。package.jsonへ`\"lint\": \"eslint .\"`を追加。",
+        "既存コードの実Lintエラー(未使用import/変数・呼ばれていない死んだ関数)を最小修正で解消(server/pipeline-runner.mjs・ui/app.js・webapp-mockup/app.js・webapp-mockup/measure.mjs・tests/caption-api-check.mjs・tests/job-quota-race-check.mjs・tests/render-escape-check.mjs・tests/term-dictionary-check.mjs)。大規模リファクタは行っていない。",
+        "`pnpm --filter video-shorts lint`がexit 0で通ることを確認。偽の緑でないことの自己確認として、一時的に構文エラーとuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元した。",
+        "リポジトリ全体`pnpm -r --if-present lint`緑・`pnpm audit --audit-level moderate`脆弱性0件・`node scripts/verify-roadmap-evidence.mjs`緑・`pnpm --filter scripts test`(34 PASS)を確認した。`pnpm --filter video-shorts test`は74 PASS/1 FAILで、FAILはM-5-B(モザイク処理時間の性能しきい値、CIのubuntu-24.04ランナー基準で計測する設計。今回のサンドボックス環境のCPUが遅く発生した既存の性能テストで、今回のLint変更とは無関係。src/apply-mosaic-stage.mjs等の対象ファイルは一切変更していない)。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "video-shortsのtest実行(`pnpm --filter video-shorts test`)がPlaywright Chromium未導入のためこの作業環境で失敗したため、`pnpm exec playwright install --with-deps chromium`で導入してから再実行した。CI(.github/workflows/ci.yml)は既にこの手順を組み込み済みなので影響は無い。",
+        "M-5-B(顔モザイク処理の追加時間しきい値)がこのサンドボックス環境でFAILした(モザイク有り75.9秒/無し32.4秒、受入は30秒以内)。roadmapのverify記載どおりCIのubuntu-24.04ランナーが正式な計測環境であり、今回のLint変更(video-shorts/src/apply-mosaic-stage.mjs等は無変更)とは無関係の既存の環境依存事象と判断し、そのままPRを出してCIの実測値を見る方針にした。"
       ]
     },
     "updated": "2026-08-10",
@@ -966,8 +967,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",

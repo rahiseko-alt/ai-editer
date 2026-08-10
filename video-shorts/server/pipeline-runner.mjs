@@ -119,13 +119,6 @@ export function unsubscribeJob(jobId, push) {
   }
 }
 
-/** ジョブの state.json を読む（無ければ null） */
-function readState(workDir) {
-  const sp = path.join(workDir, "state.json");
-  if (!fs.existsSync(sp)) return null;
-  return JSON.parse(fs.readFileSync(sp, "utf-8"));
-}
-
 /**
  * ジョブの state.json を書く。
  * P2-1: 直接 truncate 書込みだと、書いている途中でプロセスが落ちたときに state.json が
@@ -336,7 +329,6 @@ async function runJob(jobId, inputAbsPath, opts) {
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
 
   // state.json 初期作成（pipeline.mjs init の代替）
-  const ext = path.extname(inputAbsPath) || ".mp4";
   const state = {
     id: jobId,
     input: inputAbsPath,
