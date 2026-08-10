@@ -119,17 +119,18 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "PR #57・#59・#68 のCI完走を確認し、緑ならマージする（コンフリクトは解消済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。#55(このPR自身)をマージしたら、今回追記したAGENTS.md/checkin-checkoutスキルの並列バッチ例外規定が有効になる。\n\n次回、複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター手動設定が必要）：GitHubのmerge queueが未有効化。Settings → Rules → Rulesets → 対象rulesetを開く → \"Require merge queue\"を有効化すると、今回発生したような大量並列PRの再衝突が自動化される。",
+    "next": "PR #55・#57・#59・#73・#74 のコンフリクトを解消してCI完走を確認し、緑ならマージする（#68マージ後の状態を取り込み済み）。#63(TRIM-H/I)は「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘が残っており、マスター判断待ちのまま保留。\n\n複数PRを並列で走らせる場合は新規定に従うこと：個々の葉PRはmeta.next/meta.handoffを触らず、担当葉のstatus/detail/evidenceだけ更新する。meta.next/meta.handoffはバッチを統括するセッションが区切りで1回だけ更新する。\n\n未対応（マスター判断待ち・PR#76レビューで指摘）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可と判明（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。",
     "handoff": {
       "done": [
-        "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を完走させた。#56,#58,#61,#62,#65,#66,#69,#70,#71,#72,#73,#74,#76の計13本をマージ済み。",
+        "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を完走させた。#56,#58,#61,#62,#65,#66,#68,#69,#70,#71,#72,#76の計12本をマージ済み。",
         "マージ中、全並列PRがdocs/roadmap.htmlのmeta.next/meta.handoffという単一フィールドを書き換える設計だったため、1本マージされるたびに残り全PRが再衝突する構造的な問題が発覚した（マスター指摘により診断）。",
         "対策として、AGENTS.md「PR instructions」とcheckin-checkoutスキルの②チェックアウトに「並列バッチ作業中の個々の葉PRはmeta.next/meta.handoffを触らない」という例外規定を追記した。docs/failures.mdにも根因と対策を記録した。",
         "マスターと運用フローについて議論し、業界標準（trunk-based development、stacked PRs、merge queue、CodeRabbitのincremental review）を調査したうえで、今回の設計の何が業界的に外れていたか（merge queue不在、meta欄の共有設計）を切り分けた。",
-        "マスター指示により、AGENTS.md冒頭の「CodeRabbit は無視する」最優先ルールを削除した。今後CodeRabbitのレビューはPRごとにデフォルトで読んで判断する（無視しない）。"
+        "マスター指示により、AGENTS.md冒頭の「CodeRabbit は無視する」最優先ルールを削除した。今後CodeRabbitのレビューはPRごとにデフォルトで読んで判断する（無視しない）。",
+        "GitHub純正merge queueの有効化手順を案内したが、個人アカウント所有リポジトリでは提供対象外と判明（Organization所有publicリポジトリまたはEnterprise Cloudのみ）。誤った案内を訂正し、Organization移管・サードパーティ導入・現状維持の3択を提示した。"
       ],
       "trouble": [
-        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限が必要でAI側では設定できない。マスターへの手動設定依頼が必要。"
+        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限＋Organization所有が必要で、現状は運用ルール修正のみで対応している。"
       ]
     },
     "updated": "2026-08-10",
@@ -967,8 +968,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
