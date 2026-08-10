@@ -62,7 +62,7 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install ffmpeg (verifyCmdが実機ffmpegを使う場合に備える。版はquality同様ubuntu-24.04固定)
