@@ -181,6 +181,7 @@ function collectEvents(jobId, jobToken, timeoutMs) {
   return new Promise((resolve, reject) => {
     let body = "";
     let settled = false;
+    let timer;
     const settle = (fn, arg) => {
       if (settled) return;
       settled = true;
@@ -197,7 +198,7 @@ function collectEvents(jobId, jobToken, timeoutMs) {
       res.on("end", () => settle(resolve, { status: res.statusCode, body }));
     });
     req.on("error", (e) => settle(reject, e));
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       req.destroy();
       settle(reject, new Error(`SSEが${timeoutMs}msで終わらなかった（最後まで読めた分）: ${body.slice(-500)}`));
     }, timeoutMs);

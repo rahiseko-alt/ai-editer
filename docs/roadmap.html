@@ -119,13 +119,14 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "G-EDIT-CAPTION-AI-F2（AIの点検失敗でジョブが失敗として終わる）・L2（画面からの焼き直しでAIの直しより人の直しが優先される）を実サーバー検証で確認した（status=doing、独立検証者によるevidence記録待ち）。次セッションでindependent-verifierにF2/L2の受入を掛けdoneへ更新する。あわせて残りtodo葉のK1（点検が自動でジョブに載る）・K2（進み具合が画面で分かる）、および同系統でdoing中のA3/D2/M1/M2（origin/mainマージで#69/#70の確認作業に追随済み）のevidence記録も進める。origin/mainを本PRへマージ済み（video-shorts/package.jsonのtestチェーンはunion方式で解決、直接の依存はないがCI基盤の最新に追随。P0-5-C/D配線検証#71・依存脆弱性スキャンdetail#56ほか）。",
+    "next": "G-EDIT-CAPTION-AI-F2（AIの点検失敗でジョブが失敗として終わる）・L2（画面からの焼き直しでAIの直しより人の直しが優先される）を実サーバー検証で確認した（status=doing、独立検証者によるevidence記録待ち）。次セッションでindependent-verifierにF2/L2の受入を掛けdoneへ更新する。あわせて残りtodo葉のK1（点検が自動でジョブに載る）・K2（進み具合が画面で分かる）、および同系統でdoing中のA3/D2/M1/M2（origin/mainマージで#69/#70の確認作業に追随済み）のevidence記録も進める。origin/mainを本PRへマージ済み（video-shorts/package.jsonのtestチェーンはunion方式で解決、直接の依存はないがCI基盤の最新に追随。P0-5-C/D配線検証#71・依存脆弱性スキャンdetail#56・PR#68でvideo-shortsへESLint(flat config)が導入されlintスクリプトが追加されたため本PRのtestチェーンにもlintを合流させ、新規テストファイル2本を実際にeslintへ通した上でF2/L2の確認作業を継続ほか）。",
     "handoff": {
       "done": [
         "G-EDIT-CAPTION-AI-F2: server/pipeline-runner.mjsのstage c（aiCaptionFixStage）は元々例外を握りつぶさず伝播させる構造だったため実装変更は不要と確認した。実サーバー2プロセス（server/index.mjs本体・PATH上の偽claude）で、必ず失敗する偽claudeではevent: errorで終わりllm-response.json/candidates.json/クリップが1つも作られないこと、正しく答える偽claudeでは実ffmpeg合成素材を使いevent: doneまで進み成果物が実際に生成されることを、tests/caption-ai-fail-halts-job-check.mjsで検証した（12/12 PASS）。",
         "G-EDIT-CAPTION-AI-L2: src/recaption-stage.mjsは既にtranscript.json（AI直し適用後）へcaption-store.mjsのapplyEditsで人の直しを重ねてから焼く構造だったため実装変更は不要と確認した。aiCaptionFixStageを偽claude経由で走らせAI直し済みのtranscript.jsonを作り、実サーバーへPUT /captions・POST /recaptionを叩いて焼き直し、生成された.assの中身で「AI直し→人がさらに直した語は人の文字」「人が触れていない語はAIの直しのまま」を確認するtests/recaption-human-vs-ai-check.mjsを追加した（16/16 PASS）。",
         "偽claude設置の重複コード（installFakeClaude()）をvideo-shorts/tests/helpers/fake-claude-main.mjsへ抽出し、上記2テストから共通利用する形に整理した。node scripts/verify-roadmap-evidence.mjsとBASE_REF=origin/main node scripts/verify-criteria-freeze.mjsはいずれも緑。",
-        "origin/mainを本PRへマージした。video-shorts/package.jsonのtestチェーンでコンフリクトし、両側のテスト（本PR追加のcaption-ai-fail-halts-job-check.mjs/recaption-human-vs-ai-check.mjs、main側追加のsub-none-render-check.mjs/mosaic-job-wiring-check.mjs/delivery-face-scan-check.py）を全件含むunion方式で解決した。docs/roadmap.htmlのmeta.next/handoffはHEAD側が更新していなかった領域だったため自動マージでmain側の内容になっており、本PRの実際の作業内容（F2/L2）を反映する形に書き直した。"
+        "origin/mainを本PRへマージした。video-shorts/package.jsonのtestチェーンでコンフリクトし、両側のテスト（本PR追加のcaption-ai-fail-halts-job-check.mjs/recaption-human-vs-ai-check.mjs、main側追加のsub-none-render-check.mjs/mosaic-job-wiring-check.mjs/delivery-face-scan-check.py）を全件含むunion方式で解決した。docs/roadmap.htmlのmeta.next/handoffはHEAD側が更新していなかった領域だったため自動マージでmain側の内容になっており、本PRの実際の作業内容（F2/L2）を反映する形に書き直した。",
+        "2回目のマージ：origin/mainへPR#68(video-shortsへESLint導入、G-TESTINFRA-LINT)がさらにマージされたため再度origin/mainを取り込んだ。docs/roadmap.htmlのmeta.next/handoffは前回同様HEAD側（本PRのF2/L2作業内容）を維持しPR#68の合流に触れる形で追記。video-shorts/package.jsonはtestチェーンのunionを維持しつつ`\"lint\": \"eslint .\"`をorigin/main側から取り込んだ。本PR追加のtests/caption-ai-fail-halts-job-check.mjs・tests/recaption-human-vs-ai-check.mjs・tests/helpers/fake-claude-main.mjsを`pnpm --filter video-shorts lint`へ通し、検出されたlintエラー2件を最小修正した：(1)tests/caption-ai-fail-halts-job-check.mjsのcollectEvents()内でno-use-before-define(timer)、既存のtests/mosaic-job-wiring-check.mjsのwaitForJob()と同じ書式（`let timer;`を先に宣言し`const`ではなく代入に変更）へ揃えて解消。(2)tests/recaption-human-vs-ai-check.mjsの`import assert from \"node:assert\"`が未使用(no-unused-vars)。同ファイルは独自のcheck()ヘルパーで判定しassertは実際に使っていなかったため、importごと削除。fake-claude-main.mjs自体にはlintエラー無し。"
       ],
       "trouble": [
         "無し。"
@@ -966,8 +967,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
@@ -1942,7 +1943,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、画面に失敗として出る",
                       "meaning": "顔を隠せなかったことが画面に出ないまま「終わりました」と見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n本PRでは実装しない。ジョブの状態の扱いはモザイク以外の工程の失敗にも共通するため、マスターの承認を得てから着手する。",
+                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n2026-08-10 マスターの承認を得て着手・確認した(未doing・確認内容のみ記録)。(1) VS_FIXTURE_MANIFEST はリポジトリ全体を grep しても docs/roadmap.html の本verify文言以外に一切存在せず、未実装であることを確認した(video-shorts/server, video-shorts/src 配下に該当コードなし)。(2) 葉J-1(video-shorts/tests/mosaic-ui-check.py)は video-shorts/src/apply-mosaic-stage.mjs を直接呼んでモザイク工程だけを検証しており、/api/jobs 経由でもSSE経由でもない。本葉が要求する実サーバー経路の検証には使えない。(3) server/pipeline-runner.mjs を読んだところ、startJob() の exec().catch() は既に broadcast(jobId,...,\"error\") でSSE\"error\"イベントを配信しており、後から subscribeJob() した購読者にもリプレイされる(既存コード、今回の変更ではない)。つまりSSE配信自体の骨格は既にある。(4) ただし本criteriaの凍結verifyは「文字起こし・区間選定を通し、/api/jobsから実サーバーへ流し、モザイク工程だけを失敗させる」ことを要求しており、これには文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs、claude -p 呼び出し)・区間選定(server/claude-select.mjs、claude -p 呼び出し)の3箇所を差し替えるVS_FIXTURE_MANIFEST機構が要る。この3箇所の差し替えは今回のセッションでは実装していない(範囲が大きく、既存の凍結済みcriteria群(transcribe/caption-fix/select系の多数の葉)に影響しうる改修のため、拙速な実装を避けた)。(5) 代わりに、O-2で見つかったstate.json未書き戻しの実装欠陥を直接コードで修正し(server/pipeline-runner.mjs)、その状態永続化ロジック自体の回帰テスト(tests/job-failure-state-check.mjs、GROQ/claude不要・文字起こし入力欠如で決定的に数秒で失敗させる経路)を追加した。このテストはSSEのリプレイ(O-1相当)とstate.jsonへのerror書き戻し(O-2相当)の両方を機械的に確認するが、/api/jobsからの実投入・実文字起こし・実区間選定を経由しないため、本葉の凍結verifyそのものの代替にはならない(status は todo のまま据え置く)。次にやるなら、VS_FIXTURE_MANIFEST(transcribe.py・ai-caption-fix.mjs・claude-select.mjsの3差し替え点)の実装が要る。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -1957,7 +1958,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、保存された記録にも失敗が残る",
                       "meaning": "サーバーを再起動したときに、失敗したジョブが成功したように見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n本PRでは実装しない(O-1 と同じ理由)。",
+                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n2026-08-10 マスターの承認を得て着手。診断どおり、server/pipeline-runner.mjs の startJob() の catch はメモリ上の job.stage だけを更新し state.json を書き戻していないことをコード読解で確認した(修正前)。この欠陥そのものは修正済み: catch 内で readState()/writeState() により state.json の stage を \"error\" へ、error/errorCode を書き戻すよう server/pipeline-runner.mjs を変更した(既存フィールドはスプレッドで保持し丸ごと上書きしない)。tests/job-failure-state-check.mjs で「失敗後に work/<id>/state.json の stage が error になる」「失敗理由が残る」「他フィールドが失われない」ことを回帰確認済み(5/5 PASS、ローカル実行)。ただし本criteriaの凍結verifyが要求する経路(O-1と同じジョブ＝/api/jobsから実サーバーへ、実文字起こし・実区間選定・実レンダリングを経て、モザイク工程だけを葉J-1の「2本目が動画として読めない」パターンで失敗させ、サーバー再起動後に読み直す)は、VS_FIXTURE_MANIFEST(O-1のdetail参照、未実装)が無いと再現できないため未実施。したがって status は todo のまま据え置き、コード修正の事実だけをここに記録する(evidenceは外部事実のみなので、ここに書く自己申告は証拠として扱わない)。",
                       "status": "todo",
                       "criteria": [
                         {
