@@ -118,18 +118,35 @@
 <script type="application/json" id="roadmap-data">{
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "GOAL",
-    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 直近: P0-5-C/P0-5-D の PR（feature/p0-5-pipeline-wiring, #71）のCIが緑になったらevidenceを埋めてdoneにし、マージする。origin/mainをこのPRへマージ済み（PR#76のcheckDeclaration() category誤表示バグ修正を含む最新mainに追随）。\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること（マスター指示 2026-08-09。この2本を並行して進める）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】縦型切り抜き（G-EDIT-REFRAME）に着手する\n  ・現状 6葉すべて todo・実装ゼロ。今回のツリー見直し5系統レビューでも「fixture不備」が\n    指摘されたまま葉が割り直されていない（葉数が複雑さに対して少なすぎる可能性が高い、\n    という所見が2026-08-09 の会話記録に残っている）。\n  ・着手前に必ず踏む手順（省略禁止。過去に3回、同じ手順を省いて事故を起こしている）：\n      (a) G-EDIT-REFRAME の detail にある反証11件（2026-08-08記録）を1件ずつ「反映した」\n          か「マスター判断で見送った（理由つき）」に処理する。未処理のまま実装しない。\n      (b) 凍結前の探り3本（AGENTS.md 検証の規律／docs/failures.md 2026-08-08「素材を凍結した\n          つもりが実装ゼロで3葉緑にできた」の教訓）：①何もしていない偽物を当てる\n          ②正しい実装の値を1回測る ③意図的に壊したものを当てる。C-5（関所の明文化）は\n          まだ機械強制されていないので、人力で必ず実行し、実行記録を evidence に残すこと。\n      (c) 葉A/B/D/E は「粒度不揃い・fixture不備」が detail に記録済み。criteria/verify を\n          直すなら着手前に basis-reviewer を通し、meta.basisChanges 宣言つきで直すこと\n          （本文だけ書き換えると scripts/verify-criteria-freeze.mjs が検知する）。\n      (d) 葉C・葉Fは D-7（実写素材の調達）がマスター判断待ちのまま。調達方針が決まって\n          いなければ、この2葉は着手せず先に確認すること。\n\n【2】UIの並行開発（G-P2、UI/UX品質・13葉）を進める\n  ・G-EDIT-REFRAME（バックエンド）とは依存が無く、凍結もされていないため並行して進めてよい\n    （2026-08-09 の会話で確認済み）。\n  ・対象：P2-1〜P2-8（設定ファイルの原子的書き込み、壊れた動画の検出、字幕タイミング、\n    古いジョブの自動削除・容量上限・同時実行数上限、スマホ幅、文字サイズ、支援技術対応、\n    モーダルのキーボード操作）。\n  ・こちらも着手前に凍結前の探り3本を省略しないこと（G-P2 は今回の見直しで粒度不足の指摘は\n    出ていないが、「指摘が出なかった＝安全」ではなく「まだ実装して確かめていない」だけである\n    ことを踏まえる）。\n  ・G-EDIT-MOSAIC-UI（顔モザイクの画面化）はマスター指示で凍結中（D-1が解けるまで）。\n    UI作業のついでに触れないこと。\n\n【並行の進め方】\n  ・2本は互いに独立なので、別々のサブエージェント（別ブランチ推奨）で同時に進めてよい。\n    ただし docs/roadmap.html は共有ファイルなので、片方が編集中はもう片方の反映を待つか、\n    最新を fetch してから編集すること（コンフリクト防止）。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・検証は公式サブ（independent-verifier / basis-reviewer）に掛ける。本人採点をしない。\n  ・サブを並行させている間は、意図したファイルだけを git add する（git add -A を使わない）。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ この2本より後回し（着手しない）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・今回のツリー見直しで追加した新規backlog葉（25件＋G-TESTINFRA-SCRIPTSLINT）のうちREFRAME/UI以外\n  ・G-EDIT-CAPTION-AI の残り3葉（F2/K1/K2）の受入\n  ・凍結済み葉に記録された『粒度不揃い』『fixture不備』15件（REFRAME関連を除く）\n  ・G-EDIT-TRIM（無音詰め）・前セッションから持ち越しのC-2/C-5〜C-14、D-2〜D-5、E-2〜E-6、\n    TRIM-F/G/A の done 判定\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・検証は公式サブ（independent-verifier / basis-reviewer）に掛ける。本人採点をしない。\n  ・criteria に「〜していないこと」を凍結したら、その禁止事項を実装の指示へ必ず引き写す。\n  ・基準と実装が食い違ったら、動かすのは実装のほう。基準を緩めない。\n  ・凍結前の探り3本（何もしていない偽物／正しい実装の値／意図的に壊したもの）を省略しない。\n  ・auto-merge は維持する（マスター承認済み）が、CI緑＝レビュー完了ではない。マージ後に\n    CodeRabbit等の指摘が届いたら、マージ済みブランチへ追いpushせずmainから枝を作り直す。\n",
+    "active": "G-EDIT-REFRAME",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】今回追加した3段の機械ゲート（criteria-freeze拡張／done-gate新設／evidence拡張）をPRとして出し、CIで実地確認する\n  ・特にverify-done-gate.mjsをroadmap-requiredワークフローに追加したことで実行時間が伸びる（pnpm install/ffmpeg/opencv\n    のセットアップが増えるため）。実際のCI所要時間を確認し、長すぎるようなら環境構築の要否を見直す。\n\n【2】現在doingのまま止まっている葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, M-1-E/F, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmd（今回新設したフィールド。CIが実際に実行するコマンド）を追記すること。\n  無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。M-4-HとG-EDIT-MOSAIC-UI-O-1/O-2はマージ済み。\n\n【3】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認は未着手のまま。前回セッションのbasis-reviewer 2エージェントが\n  出したobjection（20件超の指摘）が反映されているか、引き続き確認が必要。\n\n【4】G-EDIT-MOSAIC-UI-O-1/O-2の凍結verifyを満たすには、VS_FIXTURE_MANIFESTによる文字起こし(src/transcribe.py)・\n  AI字幕直し(src/ai-caption-fix.mjs)・区間選定(server/claude-select.mjs)3箇所の差し替え機構を実装する必要がある\n  （未着手）。それが出来て初めて/api/jobs経由の実サーバー検証(モザイク工程だけ失敗させる)ができ、O-1/O-2をdoingへ\n  進められる。現状は「state.json未書き戻しの実装欠陥修正+回帰テスト」のみ完了し、statusはtodoのまま据え置いている。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
     "handoff": {
       "done": [
-        "P0-5-C（sub=noneで字幕が焼き込まれない）・P0-5-D（mosaic=onのときだけモザイクが適用される）の実機配線検証を追加した。既存配線（server/pipeline-runner.mjs → pipeline.mjs render の --no-sub / state.sub、runJobのopts.mosaic===\"on\"分岐）は元々正しく実装済みだったため、コード修正はテスト追加のみで完了した。",
-        "P0-5-C: tests/sub-none-render-check.mjs を追加。ffmpeg実機で node pipeline.mjs init/render を実行し、独立に呼んだ renderClip(字幕無し)基準フレームと sub=none の出力フレームが一致・sub=on は同基準と異なることを確認（ローカルALL PASS）。",
-        "P0-5-D: tests/mosaic-job-wiring-check.mjs を追加。既存の face-mosaic-check.py / mosaic-ui-check.py が src/apply-mosaic-stage.mjs を直接叩くだけで startJob() 経由の runJob を一度も通していないことを確認したうえで、startJob() を実際に起動する統合テストを新設。t/c/s段はPATHへ差し込んだ身代わり python/claude で固定応答させ、r段(render)・m段(mosaic)は本物のffmpeg/opencvを通した。mosaic=on では applyMosaicStage が呼ばれ candidates.json が -mosaic.mp4 を指すこと、mosaic未指定（既定）ではモザイク工程が一切呼ばれないことを対照として確認（ローカルALL PASS）。",
-        "両テストを package.json の test チェーンへ追加し、pnpm -r test 全体（video-shorts全テスト＋scripts）を実行してALL GREENを確認した。",
-        "P0-5-C/P0-5-D の status を doing へ変更し、detail に実装内容を追記した（criteria 本文は不変）。"
+        "マスター指摘「CI緑だけではAIがハードルを下げているだけでは？機械ブロックされているのか」を受け、",
+        "基準の凍結を機械で強制する3段のゲートを実装しmainへマージした（PR #75）。",
+        "①scripts/verify-criteria-freeze.mjs を拡張：凍結済み葉のtext/verifyだけでなくverifyCmd（新設）も凍結対象にし、",
+        "  本文を書き換えずに「葉を削除する」「statusをtodoへ戻して直してから再凍結する」という迂回路も、",
+        "  正当な宣言(meta.basisChanges)なしには機械が違反として検知するようにした（reason: deleted / unfrozen を追加）。",
+        "②scripts/verify-done-gate.mjs を新設：今回のPRで新規にdoneへ遷移した葉について、全criteriaにverifyCmdが",
+        "  設定されていることを必須化し、CIがそのコマンドを実際に実行してexit 0になることを要求する。",
+        "  過去に受理済み(BASEで既にdoneだった)葉には遡及しない移行措置とした。",
+        "③scripts/verify-roadmap-evidence.mjs を拡張：status:doneなのにevidenceが空のままの葉を違反として検知するようにした",
+        "  （自己申告だけで完了扱いにできる穴を閉じる）。同スクリプトをfindRoadmapViolations()として純粋関数へ分離しテスト可能にした。",
+        "branch protectionのルールセットに roadmap-required を必須チェックとして追加し、上記3段に実効力を持たせた。",
+        "M-4-H（納品フォルダの素顔混入検知）・M-1-E/F（apply_mosaic_cli.pyのcv2.error捕捉漏れ修正）をmainへマージ済み。",
+        "G-EDIT-MOSAIC-UI-O-1/O-2: VS_FIXTURE_MANIFESTが未実装であることを確認。server/pipeline-runner.mjsのstartJob()が",
+        "  失敗時にstate.jsonへ書き戻していない実装欠陥を修正し、回帰テストtests/job-failure-state-check.mjs(5 PASS)を追加してmainへマージ済み。",
+        "  凍結verifyが要求する/api/jobs経由の実サーバー検証はVS_FIXTURE_MANIFESTが無いと実施できないため、statusはtodoのまま据え置いた。"
       ],
       "trouble": [
-        "tests/ai-caption-fix-check.mjs の葉E（claude起動口は共通口1つのみという凍結検査）が、新設テストの説明コメントに書いた文字列（関数呼び出しの形で claude を渡す例示）に反応して誤検出した（コメントも走査対象という設計のため）。コメントの言い回しを関数呼び出し形式を使わない表現へ書き換えて解消した。テスト内容自体（実際に claude を起動していない）は変更していない。"
+        "既存の「HEADで削除されたノードは今回のスコープ外」という旧テストケースは、今回閉じた抜け穴そのものだったため、",
+        "挙動を反転させて書き直した（意図的な仕様変更であり後退ではない）。",
+        "新設のverifyCmdフィールドは、今回の作業葉（G-EDIT-CAPTION-AI-*等、doingのまま）には遡及的に付与していない。",
+        "次にこれらをdoneへ進める際、verify-done-gate.mjsによりverifyCmd未設定では機械的にブロックされる",
+        "（想定どおりの強制だが、次回作業者は驚かないよう申し送る）。",
+        "PR#72（G-EDIT-MOSAIC-UI-O-1/O-2）はmainとdocs/roadmap.html・video-shorts/package.jsonでコンフリクトしたため、",
+        "手動でマージ解消した（meta.next/handoffはPR#75由来の内容を基本に、O-1/O-2固有の申し送りを統合）。",
+        "このマージ時点のorigin/mainではP0-5-C（sub=none字幕未焼き込み）/P0-5-D（mosaic=on時のみモザイク適用）の実機配線検証（PR#71）も別途マージ済みだった（本PRの変更とは独立）。"
       ]
     },
     "updated": "2026-08-10",
@@ -1943,7 +1960,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、画面に失敗として出る",
                       "meaning": "顔を隠せなかったことが画面に出ないまま「終わりました」と見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n本PRでは実装しない。ジョブの状態の扱いはモザイク以外の工程の失敗にも共通するため、マスターの承認を得てから着手する。",
+                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n2026-08-10 マスターの承認を得て着手・確認した(未doing・確認内容のみ記録)。(1) VS_FIXTURE_MANIFEST はリポジトリ全体を grep しても docs/roadmap.html の本verify文言以外に一切存在せず、未実装であることを確認した(video-shorts/server, video-shorts/src 配下に該当コードなし)。(2) 葉J-1(video-shorts/tests/mosaic-ui-check.py)は video-shorts/src/apply-mosaic-stage.mjs を直接呼んでモザイク工程だけを検証しており、/api/jobs 経由でもSSE経由でもない。本葉が要求する実サーバー経路の検証には使えない。(3) server/pipeline-runner.mjs を読んだところ、startJob() の exec().catch() は既に broadcast(jobId,...,\"error\") でSSE\"error\"イベントを配信しており、後から subscribeJob() した購読者にもリプレイされる(既存コード、今回の変更ではない)。つまりSSE配信自体の骨格は既にある。(4) ただし本criteriaの凍結verifyは「文字起こし・区間選定を通し、/api/jobsから実サーバーへ流し、モザイク工程だけを失敗させる」ことを要求しており、これには文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs、claude -p 呼び出し)・区間選定(server/claude-select.mjs、claude -p 呼び出し)の3箇所を差し替えるVS_FIXTURE_MANIFEST機構が要る。この3箇所の差し替えは今回のセッションでは実装していない(範囲が大きく、既存の凍結済みcriteria群(transcribe/caption-fix/select系の多数の葉)に影響しうる改修のため、拙速な実装を避けた)。(5) 代わりに、O-2で見つかったstate.json未書き戻しの実装欠陥を直接コードで修正し(server/pipeline-runner.mjs)、その状態永続化ロジック自体の回帰テスト(tests/job-failure-state-check.mjs、GROQ/claude不要・文字起こし入力欠如で決定的に数秒で失敗させる経路)を追加した。このテストはSSEのリプレイ(O-1相当)とstate.jsonへのerror書き戻し(O-2相当)の両方を機械的に確認するが、/api/jobsからの実投入・実文字起こし・実区間選定を経由しないため、本葉の凍結verifyそのものの代替にはならない(status は todo のまま据え置く)。次にやるなら、VS_FIXTURE_MANIFEST(transcribe.py・ai-caption-fix.mjs・claude-select.mjsの3差し替え点)の実装が要る。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -1958,7 +1975,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、保存された記録にも失敗が残る",
                       "meaning": "サーバーを再起動したときに、失敗したジョブが成功したように見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n本PRでは実装しない(O-1 と同じ理由)。",
+                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n2026-08-10 マスターの承認を得て着手。診断どおり、server/pipeline-runner.mjs の startJob() の catch はメモリ上の job.stage だけを更新し state.json を書き戻していないことをコード読解で確認した(修正前)。この欠陥そのものは修正済み: catch 内で readState()/writeState() により state.json の stage を \"error\" へ、error/errorCode を書き戻すよう server/pipeline-runner.mjs を変更した(既存フィールドはスプレッドで保持し丸ごと上書きしない)。tests/job-failure-state-check.mjs で「失敗後に work/<id>/state.json の stage が error になる」「失敗理由が残る」「他フィールドが失われない」ことを回帰確認済み(5/5 PASS、ローカル実行)。ただし本criteriaの凍結verifyが要求する経路(O-1と同じジョブ＝/api/jobsから実サーバーへ、実文字起こし・実区間選定・実レンダリングを経て、モザイク工程だけを葉J-1の「2本目が動画として読めない」パターンで失敗させ、サーバー再起動後に読み直す)は、VS_FIXTURE_MANIFEST(O-1のdetail参照、未実装)が無いと再現できないため未実施。したがって status は todo のまま据え置き、コード修正の事実だけをここに記録する(evidenceは外部事実のみなので、ここに書く自己申告は証拠として扱わない)。",
                       "status": "todo",
                       "criteria": [
                         {

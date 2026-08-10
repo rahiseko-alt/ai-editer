@@ -282,6 +282,7 @@ export function startJob(jobId, inputAbsPath, opts) {
     existing.errorCode = null;
   }
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
+  const workDir = path.join(WORK_ROOT, jobId);
   const exec = () =>
     runJob(jobId, inputAbsPath, opts).catch((err) => {
       process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
@@ -290,6 +291,24 @@ export function startJob(jobId, inputAbsPath, opts) {
         job.stage = "error";
         job.error = err?.message ?? String(err);
         job.errorCode = err?.code ?? null;
+      }
+      // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
+      // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
+      // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
+      // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
+      // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
+      try {
+        const current = readState(workDir) || {};
+        writeState(workDir, {
+          ...current,
+          stage: "error",
+          error: err?.message ?? String(err),
+          errorCode: err?.code ?? null,
+        });
+      } catch (writeErr) {
+        process.stderr.write(
+          `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
+        );
       }
       broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
     });
