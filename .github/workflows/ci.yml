@@ -12,7 +12,7 @@ jobs:
     name: typecheck / lint / test / build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -92,7 +92,7 @@ jobs:
     name: 起動スモーク (start → curl 200 + marker)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -140,7 +140,7 @@ jobs:
     name: session-startフック (G-DELIVERY-HOOK-*) の実地検証
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: ローカル扱い(CLAUDE_CODE_REMOTE未設定)は無音no-op
         run: |
