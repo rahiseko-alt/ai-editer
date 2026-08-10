@@ -23,7 +23,6 @@
 //
 // 実行: node tests/mosaic-job-wiring-check.mjs   (全PASSで exit 0)
 
-import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -107,6 +106,7 @@ function waitForJob(jobId, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
     const lines = [];
     let settled = false;
+    let timer;
     const push = (line) => {
       lines.push(line);
       if (settled) return;
@@ -124,7 +124,7 @@ function waitForJob(jobId, timeoutMs = 180000) {
     };
     const close = () => {};
     subscribeJob(jobId, push, close);
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       unsubscribeJob(jobId, push);

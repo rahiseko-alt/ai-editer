@@ -119,7 +119,7 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-CAPTION-AI-K1",
-    "next": "K1: 直し0件を返す偽claudeでの対照E2E(control run)をサーバー経由で完走させ、work/<id>/clip-*.assに「以上」が残ることを確認してevidenceを埋め、statusをdoneへ。K2: Playwrightでブラウザ実地確認(実行中→完了の表示遷移)を行い、独立検証を完了させる。両方とも独立検証(independent-verifier)の実施が必要。\n\n(origin/mainをマージ: P0-5-C/P0-5-D(PR #71)・P1-12-A/B(外部ツールのバージョン固定/初回同意フロー、PR #61)がmainへマージ済みで、tests/ai-caption-fix-check.mjsの葉E誤検出も解消済み。K1/K2の対照E2E実行時に同テストとの干渉が無いか併せて確認する。)",
+    "next": "K1: 直し0件を返す偽claudeでの対照E2E(control run)をサーバー経由で完走させ、work/<id>/clip-*.assに「以上」が残ることを確認してevidenceを埋め、statusをdoneへ。K2: Playwrightでブラウザ実地確認(実行中→完了の表示遷移)を行い、独立検証を完了させる。両方とも独立検証(independent-verifier)の実施が必要。\n\n(origin/mainをマージ: P0-5-C/P0-5-D(PR #71)・P1-12-A/B(外部ツールのバージョン固定/初回同意フロー、PR #61)がmainへマージ済みで、tests/ai-caption-fix-check.mjsの葉E誤検出も解消済み。K1/K2の対照E2E実行時に同テストとの干渉が無いか併せて確認する。また、G-TESTINFRA-LINT(video-shortsへのESLint 9系導入)がPR #68でmainへマージ済みのため、以降このリポジトリでのpnpm -r lintは実質チェックとして機能する。)",
     "handoff": {
       "done": [
         "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
@@ -130,7 +130,8 @@
       "trouble": [
         "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
         "G-EDIT-CAPTION-AI-K1のE2E検証の途中で、このセッションが動いていたサンドボックスのworktree(agent-ae4c9c6b86df015bc)が消失し、同じディレクトリでのgit操作が不可能になった。git worktree addで同じブランチの新しいworktreeを作り直して復旧したが、復旧後の環境ではNodeの子プロセスspawn(絶対パス指定でも)がENOENTで失敗するようになり、直し0件側(control)のサーバーE2E対照実行はこのセッション内では完走できなかった(直しあり側は消失前に完走・記録済み)。",
-        "参考: origin/mainのPR #71(P0-5-C/P0-5-D)作業でも、tests/ai-caption-fix-check.mjsの葉E(claude起動口は共通口1つのみという凍結検査)が新設テストの説明コメント中の文字列に反応して誤検出する事象が起きていた(コメントの言い回し変更で解消・mainへマージ済み)。"
+        "参考: origin/mainのPR #71(P0-5-C/P0-5-D)作業でも、tests/ai-caption-fix-check.mjsの葉E(claude起動口は共通口1つのみという凍結検査)が新設テストの説明コメント中の文字列に反応して誤検出する事象が起きていた(コメントの言い回し変更で解消・mainへマージ済み)。",
+        "本PR(#73)はorigin/mainがPR #68(video-shortsへのESLint 9系導入)をマージして再度先行したため2回目のマージ競合が発生。docs/roadmap.htmlのmeta.next/handoff.done/handoff.troubleのみが競合しており、G-EDIT-CAPTION-AI-K1/K2のノードデータには衝突が無かったためHEAD(このPRの内容)をそのまま維持し、origin/main側の直近の到達点(PR #68マージ)への言及だけをnextへ一行追記して解消した。"
       ]
     },
     "updated": "2026-08-10",
@@ -409,7 +410,7 @@
                       "kind": "state",
                       "theme": "起動時トークンなしのAPI呼び出しが実サーバーで拒否される",
                       "meaning": "トークンを持たない人が動画データにアクセスできない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、POST /api/jobs にトークン無し/誤トークンでリクエストすると401/403が返る",
@@ -417,14 +418,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。"
+                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-G",
                       "kind": "state",
                       "theme": "許可外Originからの呼び出しが実サーバーで拒否される",
                       "meaning": "他所のサイトから裏でアクセスされない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、許可外Originヘッダを付けたリクエストが拒否される",
@@ -432,14 +433,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。"
+                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-H",
                       "kind": "state",
                       "theme": "宣言Content-Lengthが上限超のアップロードが実サーバーで413を返す",
                       "meaning": "大きすぎるファイルは早い段階で断られる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "宣言Content-Lengthが上限を超えるリクエストへ、実サーバーが413相当で早期拒否する",
@@ -447,14 +448,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-I",
                       "kind": "state",
                       "theme": "短時間に閾値超のリクエストで実サーバーが429を返す",
                       "meaning": "短時間に押し寄せても実際にブロックされる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "短時間に閾値を超えるリクエストを送ると、実サーバーが429を返す",
@@ -462,7 +463,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     }
                   ],
                   "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
@@ -968,8 +969,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
@@ -1944,7 +1945,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、画面に失敗として出る",
                       "meaning": "顔を隠せなかったことが画面に出ないまま「終わりました」と見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n本PRでは実装しない。ジョブの状態の扱いはモザイク以外の工程の失敗にも共通するため、マスターの承認を得てから着手する。",
+                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n2026-08-10 マスターの承認を得て着手・確認した(未doing・確認内容のみ記録)。(1) VS_FIXTURE_MANIFEST はリポジトリ全体を grep しても docs/roadmap.html の本verify文言以外に一切存在せず、未実装であることを確認した(video-shorts/server, video-shorts/src 配下に該当コードなし)。(2) 葉J-1(video-shorts/tests/mosaic-ui-check.py)は video-shorts/src/apply-mosaic-stage.mjs を直接呼んでモザイク工程だけを検証しており、/api/jobs 経由でもSSE経由でもない。本葉が要求する実サーバー経路の検証には使えない。(3) server/pipeline-runner.mjs を読んだところ、startJob() の exec().catch() は既に broadcast(jobId,...,\"error\") でSSE\"error\"イベントを配信しており、後から subscribeJob() した購読者にもリプレイされる(既存コード、今回の変更ではない)。つまりSSE配信自体の骨格は既にある。(4) ただし本criteriaの凍結verifyは「文字起こし・区間選定を通し、/api/jobsから実サーバーへ流し、モザイク工程だけを失敗させる」ことを要求しており、これには文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs、claude -p 呼び出し)・区間選定(server/claude-select.mjs、claude -p 呼び出し)の3箇所を差し替えるVS_FIXTURE_MANIFEST機構が要る。この3箇所の差し替えは今回のセッションでは実装していない(範囲が大きく、既存の凍結済みcriteria群(transcribe/caption-fix/select系の多数の葉)に影響しうる改修のため、拙速な実装を避けた)。(5) 代わりに、O-2で見つかったstate.json未書き戻しの実装欠陥を直接コードで修正し(server/pipeline-runner.mjs)、その状態永続化ロジック自体の回帰テスト(tests/job-failure-state-check.mjs、GROQ/claude不要・文字起こし入力欠如で決定的に数秒で失敗させる経路)を追加した。このテストはSSEのリプレイ(O-1相当)とstate.jsonへのerror書き戻し(O-2相当)の両方を機械的に確認するが、/api/jobsからの実投入・実文字起こし・実区間選定を経由しないため、本葉の凍結verifyそのものの代替にはならない(status は todo のまま据え置く)。次にやるなら、VS_FIXTURE_MANIFEST(transcribe.py・ai-caption-fix.mjs・claude-select.mjsの3差し替え点)の実装が要る。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -1959,7 +1960,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、保存された記録にも失敗が残る",
                       "meaning": "サーバーを再起動したときに、失敗したジョブが成功したように見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n本PRでは実装しない(O-1 と同じ理由)。",
+                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n2026-08-10 マスターの承認を得て着手。診断どおり、server/pipeline-runner.mjs の startJob() の catch はメモリ上の job.stage だけを更新し state.json を書き戻していないことをコード読解で確認した(修正前)。この欠陥そのものは修正済み: catch 内で readState()/writeState() により state.json の stage を \"error\" へ、error/errorCode を書き戻すよう server/pipeline-runner.mjs を変更した(既存フィールドはスプレッドで保持し丸ごと上書きしない)。tests/job-failure-state-check.mjs で「失敗後に work/<id>/state.json の stage が error になる」「失敗理由が残る」「他フィールドが失われない」ことを回帰確認済み(5/5 PASS、ローカル実行)。ただし本criteriaの凍結verifyが要求する経路(O-1と同じジョブ＝/api/jobsから実サーバーへ、実文字起こし・実区間選定・実レンダリングを経て、モザイク工程だけを葉J-1の「2本目が動画として読めない」パターンで失敗させ、サーバー再起動後に読み直す)は、VS_FIXTURE_MANIFEST(O-1のdetail参照、未実装)が無いと再現できないため未実施。したがって status は todo のまま据え置き、コード修正の事実だけをここに記録する(evidenceは外部事実のみなので、ここに書く自己申告は証拠として扱わない)。",
                       "status": "todo",
                       "criteria": [
                         {
