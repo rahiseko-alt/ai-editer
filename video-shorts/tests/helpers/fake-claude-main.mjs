@@ -38,13 +38,53 @@
 //     {"kind":"digest","critiqueNeedle":"...","critique":"...","draft":"..."}
 //     {"kind":"digest-model-gate","modelArg":"--model","exit":1,"stderr":"...",
 //      "critiqueNeedle":"...","critique":"...","draft":"..."}
+//     {"kind":"route","rules":[{"needle":"...","answer":"..."}, ...],"fallback":"..."}
+//                                                       stdin に needle を含む最初のルールで
+//                                                       答える（無ければ fallback）。1本の
+//                                                       サーバープロセスの中で「工程ごとに
+//                                                       プロンプトの文言が違う複数の claude
+//                                                       呼び出し」に、呼ばれた順や回数に
+//                                                       依らず答え分けるためのもの。
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** 設定 JSON のファイル名（PATH に置く claude と同じフォルダに置く）。 */
 export const CONFIG_FILE = "fake-claude.json";
+
+/**
+ * PATH へ「claude」として写す使い捨ての bin フォルダを作り、指定した振る舞い(behavior)を
+ * 仕込んで {binDir, calls} を返す。この本体ファイル自身を丸ごとコピーして claude にするので、
+ * 呼び出す側はこのファイルの場所を知らなくてよい。
+ * ai-caption-fix-check.mjs / caption-ai-fail-halts-job-check.mjs / recaption-human-vs-ai-check.mjs
+ * など、偽 claude を使う複数の検査から共通で呼ばれる（同じ設置手順の重複を避けるため）。
+ * @param {string} label 使い捨てフォルダ名に混ぜる目印（テストごとに変える）
+ * @param {object} behavior 上の BEHAVIORS 表に対応する `{kind, ...}`
+ * @returns {{binDir:string, calls: () => {argv:string[], stdin:string}[]}}
+ *   calls() は、このフォルダの偽 claude が実際に呼ばれた順で argv/stdin を返す。
+ */
+export function installFakeClaude(label, behavior) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), `vs-fake-claude-${label}-`));
+  const binDir = path.join(home, "bin");
+  const logDir = path.join(home, "log");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(logDir, { recursive: true });
+  const exe = path.join(binDir, "claude");
+  fs.copyFileSync(fileURLToPath(import.meta.url), exe);
+  fs.chmodSync(exe, 0o755);
+  fs.writeFileSync(path.join(binDir, "package.json"), '{"type":"module"}\n', "utf-8");
+  fs.writeFileSync(
+    path.join(binDir, CONFIG_FILE),
+    JSON.stringify({ ...behavior, logDir }),
+    "utf-8",
+  );
+  const calls = () =>
+    fs.readdirSync(logDir).sort()
+      .map((f) => JSON.parse(fs.readFileSync(path.join(logDir, f), "utf-8")));
+  return { binDir, calls };
+}
 
 /** 本物と同じ `--output-format json` の封筒に本文を入れて返す。 */
 function reply(answer) {
@@ -106,6 +146,12 @@ const BEHAVIORS = {
 
   /** digest-editor の2種類の呼び出し（台本ドラフト / 講評）に答える。 */
   digest: (cfg, ctx) => digestReply(cfg, ctx.stdin),
+
+  /** stdin に needle を含む最初のルールで答える（無ければ fallback）。 */
+  route: (cfg, ctx) => {
+    const rule = (cfg.rules || []).find((r) => String(ctx.stdin).includes(r.needle));
+    return reply(rule ? rule.answer : cfg.fallback);
+  },
 
   /** --model が付いた呼び出しだけ失敗させ、付いていなければ digest として答える。 */
   "digest-model-gate": (cfg, ctx) =>
