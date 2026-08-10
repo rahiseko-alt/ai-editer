@@ -3,9 +3,11 @@
 
 import assert from "node:assert";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import {
   resolveSegments,
   normalize,
@@ -988,6 +990,159 @@ t("P1-2-E: レート制限はウィンドウが変われば再度許可する", 
   fakeNow += 1000; // ウィンドウ経過をシミュレート(実時間を待たない)
   assert.strictEqual(limiter.allow("k"), true, "ウィンドウ経過後は再度許可される");
 });
+
+// ---- P1-2-F/G/H/I: 単体関数ではなく、実サーバーのHTTPハンドラへの配線を検証 ----
+// 上のP1-2-A/B/D/Eは security.mjs の関数を直接呼ぶ単体テストのみで、server/index.mjs の
+// リクエストハンドラが実際にそれらを配線して呼んでいるかは未検証だった(ツリー見直しで検出)。
+// 子プロセスで実サーバー(server/index.mjs)を起動し、本物のHTTPリクエストで確認する。
+
+const SMOKE_SERVER_PORT = 59196; // 他のchild-process系テスト(59179/59191等)と衝突しない専用ポート
+
+/** 実サーバーを起動し、"listening"ログが出たら{child, token}でresolveする(他のcheckファイルと同じ手口)。
+ *  起動タイムアウト/起動失敗のときも、reject前に子プロセスをkillする(呼び出し元はchildを受け取れず
+ *  stopSmokeServerへ渡せないため、ここでやらないとプロセス/ポートが残留する)。 */
+function startSmokeServer() {
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", [path.join(ROOT, "server", "index.mjs")], {
+      cwd: ROOT,
+      env: { ...process.env, PORT: String(SMOKE_SERVER_PORT) },
+    });
+    let buf = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("server起動タイムアウト"));
+    }, 8000);
+    child.stderr.on("data", (chunk) => {
+      buf += chunk.toString();
+      const m = buf.match(/startup token[^:]*:\s*([0-9a-f]+)/);
+      if (m && /listening/.test(buf)) {
+        clearTimeout(timer);
+        resolve({ child, token: m[1] });
+      }
+    });
+    child.on("error", (e) => { clearTimeout(timer); child.kill("SIGTERM"); reject(e); });
+  });
+}
+
+function stopSmokeServer(child) {
+  return new Promise((resolve) => {
+    if (!child || child.killed) return resolve();
+    child.once("exit", () => resolve());
+    child.kill("SIGTERM");
+    setTimeout(resolve, 2000);
+  });
+}
+
+/**
+ * POST /api/jobs を実HTTPで叩く。body は書き込まない(node:httpはContent-Lengthヘッダを
+ * 明示指定しても実際に書き込んだバイト数と食い違っても構わず送出することを確認済み。
+ * P1-2-Hの検証(宣言長のみ上限超・実体は送らない)に必要な挙動)。
+ */
+function postJobsRaw({ headers = {}, query = {} }) {
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ sub: "none", cut: "topic", size: "9:16", name: "x.mp4", ...query }).toString();
+    const req = http.request({
+      host: "127.0.0.1", port: SMOKE_SERVER_PORT, path: `/api/jobs?${q}`, method: "POST", timeout: 5000,
+      headers: {
+        host: `127.0.0.1:${SMOKE_SERVER_PORT}`,
+        "content-type": "application/octet-stream",
+        "content-length": 0,
+        // 宣言Content-Lengthどおりの実体を送らないリクエスト(P1-2-H/I)では、Connection: close
+        // を付けないと、サーバー側が「同じソケットで続きの本文が来るかもしれない」と待ち続け、
+        // 後続リクエストが交互にタイムアウトする(実地で確認済み)。毎回別ソケットで完結させる。
+        connection: "close",
+        ...headers,
+      },
+    }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => resolve({ status: res.statusCode, body }));
+    });
+    req.on("timeout", () => req.destroy(new Error("request timeout")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** t() の非同期版。同じ pass/fail カウンタ・同じ PASS/FAIL 出力形式を使う。 */
+async function at(name, fn) {
+  try {
+    await fn();
+    pass++;
+    console.log(`PASS ${name}`);
+  } catch (e) {
+    fail++;
+    console.log(`FAIL ${name}: ${e.message}`);
+  }
+}
+
+// 起動に失敗しても(タイムアウト・ポート衝突等)、以降のP1-3〜P1-5等の無関係なテストを
+// 巻き込んで全体をクラッシュさせない(未catchのままだとtop-level awaitが例外を伝播し、
+// このファイルの残り約30件のテストが1件も実行されずに終了してしまう)。
+let smokeServer = null;
+try {
+  let started;
+  try {
+    started = await startSmokeServer();
+  } catch (e) {
+    fail++;
+    console.log(`FAIL P1-2-F/G/H/I: 実サーバーの起動に失敗しました: ${e.message}`);
+  }
+  if (started) {
+  smokeServer = started.child;
+  const VALID_TOKEN = started.token;
+
+  await at("P1-2-F: 実サーバーへトークン無しでPOST /api/jobsすると401/403が返る", async () => {
+    const r = await postJobsRaw({});
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  await at("P1-2-F: 実サーバーへ誤トークンでPOST /api/jobsすると401/403が返る", async () => {
+    const r = await postJobsRaw({ query: { token: "wrong-token-deadbeef" } });
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  await at("P1-2-G: 実サーバーへ許可外Originを付けてPOST /api/jobsすると拒否される", async () => {
+    // トークンは正しくても、Origin検査は/api/*全体でトークン検査より前に行われるため拒否される。
+    const r = await postJobsRaw({
+      query: { token: VALID_TOKEN },
+      headers: { origin: "http://evil.example.com" },
+    });
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  // P1-2-H と P1-2-I は同じ「宣言Content-Lengthを上限超にし、実体は送らない」リクエストを
+  // 使って1本のサーバーで連続して検証する(F/Gは401/403でハンドラ内のレート制限に到達する前に
+  // 拒否されるためカウントされない=このループの前でカウンタは0のまま)。
+  // レート制限(P1-2-I)判定はContent-Length判定より前に行われるため、1〜10回目は判定順どおり
+  // 413(P1-2-H)、11回目でレート制限にかかり429(P1-2-I)になる。
+  const OVERSIZED_HEADERS = { headers: { "content-length": MAX_UPLOAD_BYTES + 1024 } };
+
+  await at(
+    "P1-2-H: 宣言Content-Lengthが上限超のリクエストへ、実サーバーが実ボディを受け取らず早期に413を返す",
+    async () => {
+      const r = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+      assert.strictEqual(r.status, 413, `status=${r.status} body=${r.body}`);
+    },
+  );
+
+  await at(
+    "P1-2-I: 短時間に閾値(10回/60秒)を超える頻度でPOST /api/jobsすると実サーバーが429を返す",
+    async () => {
+      // 直前のP1-2-Hテストで既に1回消費済みなので、ここで9回(計10回)までは許可され、
+      // 11回目(このテスト内の10回目の呼び出し)で閾値超過となり429になるはず。
+      for (let i = 0; i < 9; i++) {
+        const r = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+        assert.strictEqual(r.status, 413, `${i + 2}回目(閾値内)はstatus=${r.status}`);
+      }
+      const denied = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+      assert.strictEqual(denied.status, 429, `11回目(閾値超)はstatus=${denied.status}のはず`);
+    },
+  );
+  }
+} finally {
+  await stopSmokeServer(smokeServer);
+}
 
 // ---- P1-3: 同名ファイルを同時にアップロードしても混線しない ----
 

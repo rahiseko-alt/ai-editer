@@ -408,7 +408,7 @@
                       "kind": "state",
                       "theme": "起動時トークンなしのAPI呼び出しが実サーバーで拒否される",
                       "meaning": "トークンを持たない人が動画データにアクセスできない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、POST /api/jobs にトークン無し/誤トークンでリクエストすると401/403が返る",
@@ -416,14 +416,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。"
+                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-G",
                       "kind": "state",
                       "theme": "許可外Originからの呼び出しが実サーバーで拒否される",
                       "meaning": "他所のサイトから裏でアクセスされない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、許可外Originヘッダを付けたリクエストが拒否される",
@@ -431,14 +431,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。"
+                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-H",
                       "kind": "state",
                       "theme": "宣言Content-Lengthが上限超のアップロードが実サーバーで413を返す",
                       "meaning": "大きすぎるファイルは早い段階で断られる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "宣言Content-Lengthが上限を超えるリクエストへ、実サーバーが413相当で早期拒否する",
@@ -446,14 +446,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-I",
                       "kind": "state",
                       "theme": "短時間に閾値超のリクエストで実サーバーが429を返す",
                       "meaning": "短時間に押し寄せても実際にブロックされる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "短時間に閾値を超えるリクエストを送ると、実サーバーが429を返す",
@@ -461,7 +461,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     }
                   ],
                   "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
