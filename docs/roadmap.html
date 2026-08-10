@@ -126,14 +126,15 @@
         "AI字幕修正・分解精度の見直し・凍結基準ハッシュ固定機構までを、PR #49/#50/#51 として main へマージ済み。",
         "GitHubの記録に基づき①の完成形（G-P0/P1/P2・G-TESTINFRA・G-DELIVERY・G-MOSAIC・G-SLIM・G-EDITORの全doneが完成）と、外部OSS流用の状況（4候補すべて却下・1件のみ構造参考）を回答した。",
         "縦型切り抜き（G-EDIT-REFRAME）とUI（G-P2）の依存関係を確認し、両者は独立・凍結なしのため並行着手可能と判定した。",
-        "マスター指示により、次セッションのテーマを「①REFRAME着手 ②UI並行開発」の2本に確定し、meta.nextへ着手前手順（反証11件処理・凍結前探り3本・fixture不備の是正手順・D-7待ち）とともに固定した。"
+        "マスター指示により、次セッションのテーマを「①REFRAME着手 ②UI並行開発」の2本に確定し、meta.nextへ着手前手順（反証11件処理・凍結前探り3本・fixture不備の是正手順・D-7待ち）とともに固定した。",
+        "UI(G-P2、13葉)をPR #53としてmainへマージ準備完了。CodeRabbit指摘14件（偽の緑・進行中ジョブ誤削除・アップロード競合・タイムアウト欠如等）も全て修正しCI緑を確認。全13葉をdoneにしevidence(CI run URL)を記録した。"
       ],
       "trouble": [
         "会話の要約(compaction)により、チェックアウト指示後に次セッション分の作業（ツリー見直し・ハッシュ固定機構）まで実行してしまう逸脱があった。以後、明示の指示範囲を超えないよう注意する。",
         "PR #50・#51 とも、CIが緑になった直後にauto-mergeでCodeRabbitのレビューを待たずマージされた。マスターの判断でauto-mergeは維持するが、マージ後の指摘には都度対応が必要（2026-07-25の教訓どおりmainから枝を作り直す運用を継続）。"
       ]
     },
-    "updated": "2026-08-09",
+    "updated": "2026-08-10",
     "basisChanges": [
       {
         "id": "G-EDIT-TRIM-E",
@@ -731,13 +732,13 @@
                   "kind": "state",
                   "theme": "設定ファイルの書き込み中にデータが壊れない",
                   "meaning": "処理中に電源が落ちても、状態ファイルが壊れて読めなくならない",
-                  "detail": "根拠: JSONを最終pathへ直接truncate書込みしている。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-1）",
-                  "status": "todo",
+                  "detail": "根拠: JSONを最終pathへ直接truncate書込みしている。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-1）\n\n2026-08-09 実装。src/atomic-json.mjs の writeJsonAtomically（同ディレクトリの一時ファイル→fsync→rename）へ集約し、server/pipeline-runner.mjs・pipeline.mjs の状態JSON書き込みをこれに置き換えた。検査は tests/state-atomic-write-check.mjs（実子プロセスをrename直前でSIGKILLし、元のstate.jsonが壊れず残ることを確認）。凍結前の探り3本を実行：①直接truncate書き込みする偽実装は同じ検査で元の内容が失われる ②正しい実装は0.5秒早いkillでも1画素ならぬ1バイトも欠けない ③偽実装を「壊れない」判定へ通すと実際に落ちることを確認。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "状態JSON書込みがsibling temp+fsync+atomic renameで行われ、書込み中の破損読み出しがない",
                       "verify": "書込み処理中に強制終了するテスト(または fault injection)で、既存の状態JSONが壊れずに残ることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -746,13 +747,13 @@
                   "kind": "state",
                   "theme": "音声や映像が欠けている動画を正しく検出する",
                   "meaning": "音が無い動画を「0秒の音声」として見逃さない",
-                  "detail": "根拠: A/V verifierがストリーム欠落を0秒扱いする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-2）",
-                  "status": "todo",
+                  "detail": "根拠: A/V verifierがストリーム欠落を0秒扱いする。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-2）\n\n2026-08-09 実装。src/av-verify.mjs に probeStreamExists を追加し、音声/映像ストリームが無い場合を『長さ0秒』ではなく検証失敗として扱う。検査は tests/av-verify-stream-check.mjs（ffmpeg lavfiで両方揃った動画・映像のみ・音声のみの3種を合成し実行）。探り3本：①旧ロジック(Number(\"\")===0の扱い)は映像のみ/音声のみでも誤ってPASS ②本物は両方揃った動画のみPASS ③旧ロジックを「欠落はFAIL」判定へ通すと実際に落ちる。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "A/V検証が音声/映像streamの欠落を「長さ0秒」ではなく検証失敗として扱う",
                       "verify": "音声または映像streamが欠落した動画をav-verify.mjsへ入力し、FAILとして検出されることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -761,13 +762,13 @@
                   "kind": "state",
                   "theme": "字幕の表示タイミングがずれない",
                   "meaning": "字幕がコンマ何秒か早く/遅く出るズレが起きない",
-                  "detail": "根拠: ASS時刻の100センチ秒繰上げが不備。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-3）",
-                  "status": "todo",
+                  "detail": "根拠: ASS時刻の100センチ秒繰上げが不備。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-3）\n\n2026-08-09 実装。src/srt-builder.mjs の assTime を、centisecond合計へ1回だけ丸めてから時分秒へ分解する方式へ書き換え、59.996秒等の境界で0:00:59.100のような不正な3桁centisecondが出ていた不具合を修正。検査は tests/srt-builder-timestamp-check.mjs（0-3000msの全域走査＋7つの境界値＋buildAssの実際のDialogue行）。探り3本：①旧実装は59.996秒で\"0:00:59.100\"という不正時刻を出す ②新実装は全境界で正しく繰り上がる ③旧実装を「正しく繰り上がる」判定へ通すと実際に落ちる。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "字幕(ASS)タイムスタンプのcentisecond→時分秒変換で繰り上げが正しく行われる",
                       "verify": "99センチ秒台をまたぐ境界値でbuildAssを実行し、時分秒への繰り上げが正しいことを確認するテストを実行する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -782,13 +783,13 @@
                       "kind": "state",
                       "theme": "古いジョブを自動削除する",
                       "meaning": "何日か経ったジョブのファイルが自動で消える",
-                      "detail": "ジョブ/成果物にTTLを設け、期限切れ分を自動削除する。",
-                      "status": "todo",
+                      "detail": "ジョブ/成果物にTTLを設け、期限切れ分を自動削除する。\n\n2026-08-09 実装。server/job-lifecycle.mjs に resolveTtlSeconds（既定24時間・環境変数VS_JOB_TTL_SECONDSで上書き）とsweepExpiredJobsを実装し、server/index.mjsの起動時＋1時間ごとに実行するよう結線。検査はtests/job-ttl-check.mjs。探り3本：①何もしないsweepは期限切れジョブを残したまま ②TTL2秒の設定で期限切れは削除・期限内は残る、work/outputの2ルート横断、TTLちょうどでは削除しない境界も確認 ③何もしない実装を「削除された」判定へ通すと実際に落ちる。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "ジョブ/成果物にTTLがあり、期限切れ分が自動削除される",
                           "verify": "TTLを短く設定した状態でジョブを作成し、TTL経過後にファイルが自動削除されることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -797,13 +798,13 @@
                       "kind": "state",
                       "theme": "保存容量に上限を設ける",
                       "meaning": "ディスクを使い切ってPCが動かなくなるのを防ぐ",
-                      "detail": "保存容量にクォータ上限を設ける。",
-                      "status": "todo",
+                      "detail": "保存容量にクォータ上限を設ける。\n\n2026-08-09 実装。server/job-lifecycle.mjs に resolveQuotaBytes（既定10GB・環境変数VS_STORAGE_QUOTA_BYTESで上書き）とcomputeUsedBytes/hasQuotaAvailableを実装し、POST /api/jobsでクォータ超過時に507で新規受付を拒否するよう結線。検査はtests/job-quota-check.mjs。探り3本：①使用量を常に0とみなす偽実装は超過時も空きありと誤判定 ②work/output配下のネストしたファイルも含め実サイズを正しく合計、クォータちょうどの境界も確認 ③偽実装を「拒否される」判定へ通すと実際に落ちる。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "保存容量にクォータ上限があり、超過時に新規保存が拒否/警告される",
                           "verify": "クォータ上限に達するまでジョブを作成し、超過時の挙動(拒否/警告)を確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -812,13 +813,13 @@
                       "kind": "state",
                       "theme": "同時に動かせるジョブ数に上限を設ける",
                       "meaning": "一度に大量のジョブを投げてPCが固まらない",
-                      "detail": "同時接続/同時ジョブ数に上限を設ける。",
-                      "status": "todo",
+                      "detail": "同時接続/同時ジョブ数に上限を設ける。\n\n2026-08-09 実装。server/pipeline-runner.mjs に resolveMaxConcurrentJobs（既定3・環境変数VS_MAX_CONCURRENT_JOBSで上書き）とcreateConcurrencyGate（拒否せずFIFOで順番待ちにする）を実装し、Groq(クラウド)経路をこのゲート経由に変更（local経路は元々CPU律速の直列FIFOのため上限値に関わらず既に満たしている）。検査はtests/job-concurrency-check.mjs（純粋なスケジューラを疑似タスクで検証）。探り3本：①ゲート無し(即時実行)は上限を超えて同時実行される ②上限2で5本投入すると同時実行数の最大値が2に収まり全5本が実行される、上限1でも確認 ③上限が効かないゲート(max=Infinity)を「上限内」判定へ通すと実際に落ちる。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "同時ジョブ数に上限があり、超過リクエストが拒否/キューイングされる",
                           "verify": "上限を超える数のジョブを同時に投入し、超過分が拒否またはキューイングされることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     }
@@ -830,13 +831,13 @@
                   "kind": "state",
                   "theme": "スマホ幅で画面が崩れない",
                   "meaning": "スマホでも操作できる1カラム表示になる",
-                  "detail": "根拠: 375pxで2カラムを維持し、右カラムが約96pxへ圧縮され崩壊する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-5）",
-                  "status": "todo",
+                  "detail": "根拠: 375pxで2カラムを維持し、右カラムが約96pxへ圧縮され崩壊する。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-5）\n\n2026-08-09 実装。webapp-mockup/styles.css に @media (max-width:640px) を追加し、.two-colを1カラムへ、col-previewをcol-settingsの後段へ配置。検査は2本：①CI常設のtests/webapp-mobile-layout-static-check.mjs（CSSを静的解析、メディアクエリ無し相当のCSSで1カラム化判定が落ちることを対照として確認） ②tests/webapp-mobile-layout-check.mjs（Playwright実ブラウザで375px幅を実際に開き、2カラムが1カラムになり右カラムの圧縮(旧96px)が解消され横スクロールも発生しないことを確認）。探り3本：①メディアクエリ無しの旧CSS相当は1カラム化判定に落ちる ②実ブラウザでの実測 ③2カラムのままのCSSを「1カラム」判定へ通すと実際に落ちる。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "モバイル幅(375px)で1カラムレイアウトになり、プレビューが後段に移動している",
                       "verify": "375px幅でwebapp-mockupを表示し、レイアウトが1カラムになり要素が重ならないことを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -845,13 +846,13 @@
                   "kind": "state",
                   "theme": "文字が小さすぎて読めない箇所が無い",
                   "meaning": "どの画面でも文字がちゃんと読める大きさになっている",
-                  "detail": "根拠: 最小文字が11.5px(webapp-mockup/measure.mjs実測)。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-6）",
-                  "status": "todo",
+                  "detail": "根拠: 最小文字が11.5px(webapp-mockup/measure.mjs実測)。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-6）\n\n2026-08-09 実装。webapp-mockup/styles-editing.css・styles-overlay.css の該当箇所（.editing-status等）を13px/14px以上へ引き上げ。node webapp-mockup/measure.mjsの実測が『最小11.5px・4件FAIL』から『最小13px・0件FAIL』へ改善したことを確認。あわせてCI常設のtests/webapp-font-size-static-check.mjs（CSS全体をclamp()込みで静的解析、修正前相当の11px/11.52pxを含む合成CSSで13px未満として検出できることを対照として確認）を追加。探り3本：①修正前相当のCSSはパーサが正しく13px未満として検出 ②measure.mjs実測とstatic-checkの両方で13px以上を確認 ③対照の合成CSSを「全て13px以上」判定へ通すと実際に落ちる。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "全テキストの最小フォントサイズが13px以上(主要説明は14px以上)である",
                       "verify": "node webapp-mockup/measure.mjsを実行し、最小フォントサイズが13px以上であることを確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -860,13 +861,13 @@
                   "kind": "state",
                   "theme": "選択した項目が支援技術にも正しく伝わる",
                   "meaning": "スクリーンリーダーを使う人にも、選んだ項目が選ばれていると伝わる",
-                  "detail": "根拠: 選択chipのARIA状態が未同期。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-7）",
-                  "status": "todo",
+                  "detail": "根拠: 選択chipのARIA状態が未同期。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P2-7）\n\n2026-08-09 実装。webapp-mockup/index.html の選択chip（サイズ・字幕・モザイク・トリム・カット等）にaria-pressedを追加し、app.jsのクリックハンドラでis-onと同期して更新するよう変更。検査はtests/webapp-aria-pressed-check.mjs（Playwright実ブラウザでchipをクリックし、aria-pressedがis-onと一致して変化することをDOM検査で確認）。探り3本：①③対照 aria-pressedを更新しない旧実装だとクリック後もfalseのままで判定に落ちる ②実ブラウザでの実測（サイズ・字幕の両chipで確認）。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "選択chipのARIA状態(aria-pressed等)が選択状態と同期している",
                       "verify": "選択chipをクリックし、aria-pressed(またはradio semantics)が選択状態と一致して変化することをDOM検査で確認する",
-                      "evidence": ""
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                     }
                   ]
                 },
@@ -881,13 +882,13 @@
                       "kind": "state",
                       "theme": "モーダルを開いたら最初にフォーカスが移る",
                       "meaning": "モーダルが開いた瞬間にキー操作を続けられる",
-                      "detail": "モーダル表示時に初期フォーカスを設定する。",
-                      "status": "todo",
+                      "detail": "モーダル表示時に初期フォーカスを設定する。\n\n2026-08-09 実装。webapp-mockup/app.js に共通のattachModal()を新設（初期フォーカス・Tabトラップ・Escape閉じる・フォーカス復帰の4機能）し、confirm-overlay/result-overlayへ結線。検査はtests/webapp-modal-focus-check.mjs（Playwright実ブラウザ）。探り3本：①③対照 attachModal結線前のapp.jsだとモーダルを開いてもフォーカスがbtn-runのまま移動しない ②実ブラウザでモーダルを開いた直後にフォーカスが#confirm-runにあることを確認。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "モーダル表示時に初期フォーカスが移動する",
                           "verify": "モーダルを開き、開いた直後にfocusがモーダル内要素にあることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -896,13 +897,13 @@
                       "kind": "state",
                       "theme": "モーダルの外にTabで抜けられない",
                       "meaning": "背後の画面を誤操作しない",
-                      "detail": "モーダル内でfocus trapを効かせる。",
-                      "status": "todo",
+                      "detail": "モーダル内でfocus trapを効かせる。\n\n2026-08-09 実装。P2-8-Aと同じattachModal()のTabトラップ機構。検査はtests/webapp-modal-focus-check.mjs。探り3本：①③対照 結線前のapp.jsだとTabでモーダル外へ抜けてしまう ②実ブラウザでTabキーを30回以上連打してもモーダル内の2つの要素間のみを巡回することを確認。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "モーダル内でfocus trapが効いている(モーダル外にTabで抜けない)",
                           "verify": "モーダルを開いた状態でTabキーを連打し、フォーカスがモーダル内要素間のみを巡回することを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -911,13 +912,13 @@
                       "kind": "state",
                       "theme": "Escapeキーでモーダルが閉じる",
                       "meaning": "キーボードだけでモーダルを閉じられる",
-                      "detail": "Escapeキーでモーダルを閉じる処理を追加する。",
-                      "status": "todo",
+                      "detail": "Escapeキーでモーダルを閉じる処理を追加する。\n\n2026-08-09 実装。P2-8-Aと同じattachModal()のEscape処理。検査はtests/webapp-modal-focus-check.mjs。探り3本：①③対照 結線前のapp.jsだとEscapeキーを押してもモーダルが閉じない ②実ブラウザでEscapeキーを押すとhiddenクラスが付き閉じることを確認。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "Escapeキーでモーダルが閉じる",
                           "verify": "モーダルを開いた状態でEscapeキーを押し、モーダルが閉じることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     },
@@ -926,13 +927,13 @@
                       "kind": "state",
                       "theme": "モーダルを閉じたら元の場所にフォーカスが戻る",
                       "meaning": "閉じた後にどこを操作していたか見失わない",
-                      "detail": "モーダルを閉じた後、開く前にフォーカスがあった要素へ復帰させる。",
-                      "status": "todo",
+                      "detail": "モーダルを閉じた後、開く前にフォーカスがあった要素へ復帰させる。\n\n2026-08-09 実装。P2-8-Aと同じattachModal()のフォーカス復帰処理。検査はtests/webapp-modal-focus-check.mjs。探り3本：①③対照 結線前のapp.jsだとモーダルを閉じてもフォーカスが復帰しない ②実ブラウザでモーダルを開く前にフォーカスしていた#btn-runへ、閉じた後にフォーカスが戻ることを確認。\n\n【Playwrightの依存導入について（2026-08-09マスター承認）】P2-5/7/8の検証は実ブラウザが必要。video-shorts/AGENTS.mdの『npm依存ゼロ』は配布物（客のPCへ届くもの）についての方針であり、build-dist.mjsはserver/・webapp-mockup/自体を配布物へ含めない（保留経路）ため、devDependenciesへの追加は配布物に一切影響しない。既存のwebapp-mockup/measure.mjsが未宣言のままplaywrightを使っていた状態を、正式なdevDependency化＋CI(.github/workflows/ci.yml)へのChromiumインストールステップ追加という形で解消した。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "モーダルを閉じた後、元の要素へフォーカスが復帰する",
                           "verify": "モーダルを開く前にfocusしていた要素を記録し、モーダルを閉じた後に同じ要素へfocusが戻ることを確認する",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31351815375"
                         }
                       ]
                     }

@@ -37,3 +37,6 @@ _m5c_work/
 # Python のキャッシュ（リポジトリ直下の scripts/ でも生成される）
 __pycache__/
 *.pyc
+
+# Agent tool worktree scratch dirs (isolation:"worktree")
+.claude/worktrees/

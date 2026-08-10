@@ -49,8 +49,15 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
   if (!g) return;
   group.addEventListener("click", (ev) => {
     const btn = ev.target.closest(".chip"); if (!btn) return;
-    group.querySelectorAll(".chip").forEach((b) => b.classList.remove("is-on"));
-    btn.classList.add("is-on"); state[g] = btn.dataset.val;
+    // P2-7: 選んだ状態は見た目(is-on)だけでなくARIA状態(aria-pressed)も同期する。
+    // 支援技術（スクリーンリーダー等）は is-on クラスを読めないため、これが無いと
+    // 画面を見ずに操作する利用者に「どれを選んだか」が伝わらない。
+    group.querySelectorAll(".chip").forEach((b) => {
+      b.classList.remove("is-on");
+      b.setAttribute("aria-pressed", "false");
+    });
+    btn.classList.add("is-on"); btn.setAttribute("aria-pressed", "true");
+    state[g] = btn.dataset.val;
     if (g === "sub") updateSubDesc();
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
     if (g === "trim") updateTrimDesc();
@@ -202,6 +209,63 @@ function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+// ── 共通モーダル制御（フォーカス管理） — P2-8 ──────────────────
+// 開いたら中の最初のフォーカス可能要素へ移す(A)・Tabで外へ出さない=トラップ(B)・
+// Escapeで閉じる(C)・閉じたら開く前にフォーカスしていた要素へ戻す(D)。
+// マウスを使わずキーボードだけで操作する利用者や、スクリーンリーダー利用者が
+// モーダルの外の要素を誤操作しない（例: 背後に隠れた「編集実行」を意図せず再度押す）ため。
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getFocusable(root) {
+  return Array.from(root.querySelectorAll(FOCUSABLE_SELECTOR))
+    .filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
+
+/**
+ * root（モーダルの外枠要素）にフォーカストラップとEscape閉じを取り付ける。
+ * onClose は Escape が押されたときに実際にモーダルを閉じる関数（表示のhidden切替を
+ * アニメーション付きで行う既存のclose関数）を渡す。
+ * @returns {{open: function(HTMLElement=): void, close: function(): void}}
+ */
+function attachModal(root, onClose) {
+  let lastFocused = null;
+
+  function handleKeydown(ev) {
+    if (ev.key === "Escape") { ev.preventDefault(); onClose(); return; }
+    if (ev.key !== "Tab") return;
+    const focusable = getFocusable(root);
+    if (focusable.length === 0) { ev.preventDefault(); return; }
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (!focusable.includes(document.activeElement)) {
+      // フォーカスがモーダルの外に漏れていたら、強制的に中へ戻す
+      ev.preventDefault(); first.focus(); return;
+    }
+    if (ev.shiftKey && document.activeElement === first) {
+      ev.preventDefault(); last.focus();
+    } else if (!ev.shiftKey && document.activeElement === last) {
+      ev.preventDefault(); first.focus();
+    }
+  }
+
+  return {
+    /** モーダルを開く。initialFocusEl未指定なら中の最初のフォーカス可能要素へ移す(A)。 */
+    open(initialFocusEl) {
+      lastFocused = document.activeElement; // 閉じたときに戻す先(D)
+      root.addEventListener("keydown", handleKeydown);
+      const target = initialFocusEl || getFocusable(root)[0] || root;
+      // hidden解除直後はまだ表示レイアウト前のことがあるため、次のフレームで確実にフォーカスする。
+      requestAnimationFrame(() => target.focus());
+    },
+    /** モーダルを閉じる。トラップを外し、開く前にフォーカスしていた要素へ戻す(D)。 */
+    close() {
+      root.removeEventListener("keydown", handleKeydown);
+      if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
+      lastFocused = null;
+    },
+  };
+}
+
 // ---- タブ（採用候補 / 使わない候補）----
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
   document.querySelectorAll(".tab").forEach((t) => t.classList.remove("is-on"));
@@ -211,17 +275,20 @@ document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click",
 }));
 
 // ---- 編集実行: まず中央モーダルで最終確認 → 実行する/戻る ----
+const confirmModal = attachModal($("confirm-overlay"), closeConfirm);
 $("btn-run").addEventListener("click", openConfirm);
 function openConfirm() {
   $("confirm-summary").innerHTML = summaryHTML();
   const ov = $("confirm-overlay");
   ov.classList.remove("hidden");
   requestAnimationFrame(() => ov.classList.add("show"));
+  confirmModal.open($("confirm-run")); // 初期フォーカスは「実行する」（内容確認の主動線）
 }
 function closeConfirm() {
   const ov = $("confirm-overlay");
   ov.classList.remove("show");
   setTimeout(() => ov.classList.add("hidden"), 300);
+  confirmModal.close();
 }
 // 実行する=編集開始（進捗へ） / 戻る=操作画面に戻る
 $("confirm-run").addEventListener("click", () => { closeConfirm(); run(); });
@@ -608,10 +675,12 @@ $("tab-trash").addEventListener("click", (e) => {
   renderJobList(); renderResults();
 });
 // 結果パネルを開く（再表示にも使う・データは保持されているので再実行不要）
+const resultModal = attachModal($("result-overlay"), closeResult);
 function openResult() {
   const ov = $("result-overlay");
   ov.classList.remove("hidden");
   requestAnimationFrame(() => ov.classList.add("show"));
+  resultModal.open($("result-close")); // 初期フォーカスは閉じるボタン
 }
 function fillResults(jobId, jobToken, candidates, incomplete) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
@@ -630,6 +699,7 @@ function closeResult() {
   const ov = $("result-overlay");
   ov.classList.remove("show");
   setTimeout(() => ov.classList.add("hidden"), 450);
+  resultModal.close();
 }
 $("result-close").addEventListener("click", closeResult);
 $("result-overlay").addEventListener("click", (e) => { if (e.target === $("result-overlay")) closeResult(); });

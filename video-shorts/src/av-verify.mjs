@@ -2,31 +2,103 @@
 // 実行: node src/av-verify.mjs <clip.mp4>   (offset < 5ms で PASS/exit0・超過で FAIL/exit1)
 // 設計知見: renderClip は setpts=PTS-STARTPTS + -bf 0 で映像先頭を 0 に揃え音声 0.000 と一致させる
 //           （render-vertical.mjs コメント参照）。本ツールはその結果を客観測定する再利用可能な検証器。
+//
+// P2-2: 映像/音声どちらかのstreamが丸ごと欠けている(無音動画・音声トラック無し等)クリップは、
+// ffprobe に -select_streams で存在しないstreamを指定すると「exit code 0・stdout空」を返す。
+// これを従来どおり Number("") === 0 として扱うと「start_time=0.0秒（＝offset無し）」に化けて
+// しまい、A/V同期がPASS判定される（本来は「そもそも片方のstreamが無い」という別種の不具合で、
+// A/V同期の良し悪し以前の問題）。streamの有無は start_time とは別に明示的に確認し、
+// 欠けていれば「長さ0秒」に丸めず検証失敗として扱う。
 import fs from "node:fs";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 const THRESHOLD_MS = 5; // A/V offset 許容上限（目標 0.0ms）
 
-/** ffprobe で指定ストリーム(v:0 / a:0)の start_time(秒) を取得。欠損(N/A・空)は null を返す。 */
-export function probeStartTime(file, stream) {
+// CodeRabbit指摘: runFfprobe は spawn("ffprobe", ...) を待つだけでタイムアウトが無かった。
+// 入力はユーザー提供の動画のため、壊れた/巨大なファイルで ffprobe がストールするとハングする。
+// server/claude-select.mjs の CLAUDE_TIMEOUT_MS と同じ考え方で、有限のタイムアウトを定数として
+// 切り出す(既定30秒。ffprobeはstream情報を読むだけなので通常は一瞬で終わる想定)。
+export const FFPROBE_TIMEOUT_MS = 30_000;
+/** 打ち切り(SIGTERM)のあと、まだ生きている子を強制終了(SIGKILL)するまでの猶予。 */
+export const FFPROBE_SIGKILL_GRACE_MS = 5_000;
+
+/**
+ * @param {string[]} args ffprobeへ渡す引数
+ * @param {object} [opts]
+ * @param {string} [opts.command] 起動するコマンド(既定"ffprobe"。テストでダミーコマンドへ差し替える用)
+ * @param {number} [opts.timeoutMs] この時間を超えたらkillして例外にする(既定FFPROBE_TIMEOUT_MS)
+ */
+export function runFfprobe(args, opts = {}) {
+  const command = opts.command ?? "ffprobe";
+  const timeoutMs = opts.timeoutMs ?? FFPROBE_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
-    const args = [
-      "-v", "error",
-      "-select_streams", stream,
-      "-show_entries", "stream=start_time",
-      "-of", "csv=p=0",
-      file,
-    ];
-    const proc = spawn("ffprobe", args, { windowsHide: true });
+    const proc = spawn(command, args, { windowsHide: true });
     let out = "";
+    let settled = false;
     proc.stdout.on("data", (d) => (out += d.toString()));
-    proc.on("error", (e) => reject(e));
+
+    // 打ち切ったのに SIGTERM を無視する子は、そのまま残って CPU を持ち続ける。
+    // 猶予のあと SIGKILL で確実に落とす(src/claude-run.mjsのタイムアウト作法と同じ)。
+    let killTimer = null;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      proc.kill("SIGTERM");
+      killTimer = setTimeout(() => proc.kill("SIGKILL"), FFPROBE_SIGKILL_GRACE_MS);
+      killTimer.unref();
+      reject(new Error(`${command} タイムアウト (${timeoutMs / 1000}s) (args: ${args.join(" ")})`));
+    }, timeoutMs);
+    timer.unref();
+    const clearTimers = () => {
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+    };
+
+    proc.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      reject(e);
+    });
     proc.on("close", (code) => {
-      if (code !== 0) return reject(new Error(`ffprobe code ${code} (stream ${stream})`));
-      const val = Number(out.trim());
-      resolve(Number.isFinite(val) ? val : null); // "N/A"/空 は null（数値化不能）
+      if (settled) return; // タイムアウト後の遅延closeは無視(既にrejectしている)
+      settled = true;
+      clearTimers();
+      if (code !== 0) return reject(new Error(`${command} code ${code} (args: ${args.join(" ")})`));
+      resolve(out.trim());
     });
   });
+}
+
+/** ffprobe で指定ストリーム(v:0 / a:0)の start_time(秒) を取得。欠損(N/A・空)は null を返す。 */
+export async function probeStartTime(file, stream) {
+  const out = await runFfprobe([
+    "-v", "error",
+    "-select_streams", stream,
+    "-show_entries", "stream=start_time",
+    "-of", "csv=p=0",
+    file,
+  ]);
+  const val = Number(out);
+  return Number.isFinite(val) && out !== "" ? val : null; // "N/A"/空 は null（数値化不能）
+}
+
+/**
+ * 指定ストリーム(v:0 / a:0)がファイルに存在するかを判定する。
+ * -select_streams が該当streamを選べないと、ffprobe は exit code 0 のまま stdout が
+ * 空文字になる（エラー扱いされない）。start_time の欠損と原因が違う（"値を取得できない"
+ * のではなく"そもそもstreamが無い"）ため、別関数として明示的に確認する。
+ */
+export async function probeStreamExists(file, stream) {
+  const out = await runFfprobe([
+    "-v", "error",
+    "-select_streams", stream,
+    "-show_entries", "stream=index",
+    "-of", "csv=p=0",
+    file,
+  ]);
+  return out.length > 0;
 }
 
 async function main() {
@@ -39,24 +111,42 @@ async function main() {
     console.log(`FAIL ファイルがありません: ${file}`);
     process.exit(1);
   }
-  const [vRaw, aRaw] = await Promise.all([
+  const [hasVideo, hasAudio] = await Promise.all([
+    probeStreamExists(file, "v:0"),
+    probeStreamExists(file, "a:0"),
+  ]);
+  // streamそのものが無い場合は「長さ0秒」に丸めず、A/V同期以前の問題として検証失敗にする。
+  if (!hasVideo || !hasAudio) {
+    if (!hasVideo) console.log("FAIL 映像(v:0) streamがありません");
+    if (!hasAudio) console.log("FAIL 音声(a:0) streamがありません");
+    process.exit(1);
+  }
+
+  const [v, a] = await Promise.all([
     probeStartTime(file, "v:0"),
     probeStartTime(file, "a:0"),
   ]);
-  // 欠損は 0.0 とみなすが、握り潰さず明示する（サイレントフェイル禁止）。
-  if (vRaw === null) console.log("[WARN] 映像 start_time が取得できず 0.0 とみなす");
-  if (aRaw === null) console.log("[WARN] 音声 start_time が取得できず 0.0 とみなす");
-  const v = vRaw ?? 0.0;
-  const a = aRaw ?? 0.0;
+  // streamは存在するが start_time だけ取得できない(N/A)場合は、握り潰さず明示した上で
+  // 0.0秒とみなす（streamの有無はすでに確認済みなので、ここでの欠損は数値化不能の意味のみ）。
+  if (v === null) console.log("[WARN] 映像 start_time が取得できず 0.0 とみなす");
+  if (a === null) console.log("[WARN] 音声 start_time が取得できず 0.0 とみなす");
+  const vSec = v ?? 0.0;
+  const aSec = a ?? 0.0;
 
-  const offsetMs = Math.abs(v - a) * 1000;
+  const offsetMs = Math.abs(vSec - aSec) * 1000;
   const pass = offsetMs < THRESHOLD_MS;
-  console.log(`v:0 start=${v.toFixed(6)}s / a:0 start=${a.toFixed(6)}s`);
+  console.log(`v:0 start=${vSec.toFixed(6)}s / a:0 start=${aSec.toFixed(6)}s`);
   console.log(`${pass ? "PASS" : "FAIL"} A/V offset = ${offsetMs.toFixed(1)}ms (閾値 < ${THRESHOLD_MS}ms)`);
   process.exit(pass ? 0 : 1);
 }
 
-main().catch((e) => {
-  console.log("FAIL 例外: " + (e.message || e));
-  process.exit(1);
-});
+// CLIとして直接実行された時だけ main() を走らせる。tests/av-verify-stream-check.mjs が
+// runFfprobe() のタイムアウト機構を直接検証するために import するので、import時に
+// main()(process.argv[2]必須・process.exit呼び出し)が無条件に走ってしまうとテストプロセスが
+// 巻き添えで終了する。実行ファイルとして呼ばれた場合(process.argv[1]がこのファイル自身)のみ走らせる。
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((e) => {
+    console.log("FAIL 例外: " + (e.message || e));
+    process.exit(1);
+  });
+}

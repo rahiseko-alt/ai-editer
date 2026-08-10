@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
+import { writeJsonAtomically } from "../src/atomic-json.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -23,6 +24,9 @@ const TRANSCRIBE_PY = path.join(ROOT, "src", "transcribe.py");
  * メモリ上の状態 Map。プロセス再起動で消える設計（ローカル用途）。
  */
 const jobs = new Map();
+
+/** 「実行中/待機中」とみなすstage一覧。TTL掃除の除外判定・二重起動ガードの両方から参照する。 */
+const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
 
 /** SSE イベントを購読者全員に push。error/done は接続も close する */
 function broadcast(jobId, payload, event = null) {
@@ -50,7 +54,22 @@ function broadcast(jobId, payload, event = null) {
 /** ジョブが実行中（init/t/c/s/r/m）かを返す。POST 受理前の二重起動チェック用。 */
 export function isRunning(jobId) {
   const j = jobs.get(jobId);
-  return !!j && ["init", "t", "c", "s", "r", "m"].includes(j.stage);
+  return !!j && RUNNING_STAGES.includes(j.stage);
+}
+
+/**
+ * 現在「実行中/待機中」(RUNNING_STAGES)のジョブID一覧。
+ * P2-4-A: TTL掃除(job-lifecycle.mjs の sweepExpiredJobs)は work/output ディレクトリの
+ * mtimeだけを見るため、startJob() でキューへ積まれた直後（state.jsonをまだ書いていない・
+ * ディレクトリのmtimeが古いまま）のジョブを「放置された古いジョブ」と誤認して消しうる。
+ * server/index.mjs はこの一覧を掃除の除外リストとして渡す。
+ */
+export function activeJobIds() {
+  const ids = [];
+  for (const [id, job] of jobs) {
+    if (RUNNING_STAGES.includes(job.stage)) ids.push(id);
+  }
+  return ids;
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
@@ -107,14 +126,14 @@ function readState(workDir) {
   return JSON.parse(fs.readFileSync(sp, "utf-8"));
 }
 
-/** ジョブの state.json を書く */
+/**
+ * ジョブの state.json を書く。
+ * P2-1: 直接 truncate 書込みだと、書いている途中でプロセスが落ちたときに state.json が
+ * 壊れて読めなくなる（ジョブが再開できなくなる）。writeJsonAtomically で
+ * 「同じディレクトリの一時ファイルへ書く→fsync→rename」の作法にする。
+ */
 function writeState(workDir, state) {
-  fs.mkdirSync(workDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(workDir, "state.json"),
-    JSON.stringify(state, null, 2),
-    "utf-8"
-  );
+  writeJsonAtomically(path.join(workDir, "state.json"), state);
 }
 
 /**
@@ -197,6 +216,49 @@ function drainLocalQueue() {
   });
 }
 
+// ── 同時実行数の上限（P2-4-C） ──────────────────────────────────
+// Groq（クラウド）経路は元々「同時に何本でも」起動していた。大量投入すると外部APIの
+// レート制限や端末のネットワーク/CPUを使い切りうるため、同時に走らせる本数へ上限を設け、
+// 超過分は拒否せずFIFOで順番待ちにする（local経路はもともとCPU律速でFIFO=1本ずつのため、
+// どんな上限値でも既に満たしており変更不要）。
+
+/** 同時実行数の上限を環境変数から解決する（純粋関数・テスト用に切り出し）。既定3。 */
+export function resolveMaxConcurrentJobs(envValue = process.env.VS_MAX_CONCURRENT_JOBS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
+}
+
+/**
+ * 同時実行数を max 本までに絞るゲートを作る。run(fn) は fn（引数無しで Promise を返す
+ * 関数）をキューへ積み、空きスロットがあれば即実行・無ければ順番待ちにする（拒否しない）。
+ * pipeline-runner.mjs 固有の spawn/SSE 等には依存しない純粋なスケジューラなので、
+ * 実際のジョブ実行を伴わずに単体テストできる。
+ */
+export function createConcurrencyGate(max) {
+  let running = 0;
+  const queue = [];
+  function drain() {
+    if (running >= max || queue.length === 0) return;
+    running++;
+    const fn = queue.shift();
+    fn().finally(() => {
+      running--;
+      drain();
+    });
+  }
+  return {
+    run(fn) {
+      queue.push(fn);
+      drain();
+    },
+    get running() { return running; },
+    get waiting() { return queue.length; },
+  };
+}
+
+const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
+const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
+
 /**
  * ジョブ実行開始（非同期・kick して即返す）
  *
@@ -208,8 +270,7 @@ export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
   // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
-  const RUNNING = ["init", "t", "c", "s", "r", "m"];
-  if (existing && RUNNING.includes(existing.stage)) {
+  if (existing && RUNNING_STAGES.includes(existing.stage)) {
     return false;
   }
   if (!existing) {
@@ -233,7 +294,9 @@ export function startJob(jobId, inputAbsPath, opts) {
       broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
     });
   if (groqKeyAvailable()) {
-    exec(); // Groq: 並列実行（クラウド側で並列処理される）
+    // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
+    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C)。
+    concurrencyGate.run(exec);
   } else {
     // local: 直列。待ち中であることを購読者へ通知してからキュー投入
     if (localRunning || localQueue.length > 0) {

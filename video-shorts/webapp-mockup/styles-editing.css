@@ -59,9 +59,12 @@
 .snip-svg .sil  { fill: var(--ink); }
 .snip-svg .hole { fill: var(--surface-1); }
 
+/* P2-6: 最小フォントサイズ13px以上(主要説明は14px以上)。旧 .78rem/.72rem(=12.48px/11.52px)は
+   実測で最小文字11.5pxの原因だったので、状況を伝える主要文言(editing-status/error-msg)は14px、
+   補足情報(editing-eta)は13pxへ引き上げる。 */
 .editing-title  { font-family: var(--font-display); font-size: .95rem; color: var(--ink); margin: 0 0 6px; }
-.editing-status { color: var(--muted); font-weight: 600; font-size: .78rem; margin: 0; }
-.editing-eta    { color: var(--muted); font-size: .72rem; margin: 3px 0 0; opacity: .85; }
+.editing-status { color: var(--muted); font-weight: 600; font-size: 14px; margin: 0; }
+.editing-eta    { color: var(--muted); font-size: 13px; margin: 3px 0 0; opacity: .85; }
 .editing-eta b  { color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* 失敗時: アニメ・進捗を隠してエラーを明示（沈黙で閉じない） */
@@ -70,7 +73,7 @@
 .editing-card.is-error .editing-status,
 .editing-card.is-error .editing-eta { display: none; }
 .editing-error.hidden { display: none; }
-.editing-error-msg { color: var(--ink); font-weight: 600; font-size: .82rem; margin: 6px 0 10px; }
+.editing-error-msg { color: var(--ink); font-weight: 600; font-size: 14px; margin: 6px 0 10px; }
 
 /* 3段ステップ（文字起こし→選定→縦化のどこか・モノクロ） */
 .editing-steps { display: flex; gap: 5px; justify-content: center; margin: 0 0 6px; }
@@ -105,11 +108,11 @@
 .ce-svg .slash { stroke-width: 3; }
 
 .ce-title  { font-family: var(--font-display); font-size: 1.05rem; color: var(--ink); margin: 0 0 4px; }
-.ce-reason { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+.ce-reason { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
 .ce-guide  { display: grid; gap: 7px; text-align: left; margin: 0 0 14px; }
 .ce-col    { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
-.ce-col b      { font-size: .76rem; color: var(--ink); }
-.ce-col span   { font-size: .72rem; color: var(--muted); line-height: 1.3; }
+.ce-col b      { font-size: 13px; color: var(--ink); }
+.ce-col span   { font-size: 14px; color: var(--muted); line-height: 1.3; }
 .ce-col.ce-ng  { opacity: .82; }
 .cantedit-card .btn.cta { width: 100%; }
 

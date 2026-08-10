@@ -564,7 +564,7 @@ t("サーバ: 受け取った mosaic をジョブ設定として startJob へ渡
 
 t("サーバ: モザイク工程(stage m)を走行中として扱う（二重起動を防ぐ）", () => {
   const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
-  const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
+  const running = src.match(/RUNNING(?:_STAGES)?\s*=\s*\[([^\]]*)\]/);
   assert.ok(running && /"m"/.test(running[1]), "startJob の走行中判定に m が入っている");
   assert.ok(/includes\(j\.stage\)/.test(src) && /"init", "t", "c", "s", "r", "m"/.test(src),
     "isRunning の走行中判定にも m が入っている");
@@ -586,7 +586,7 @@ t("字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が
 
 t("字幕直し: 走行中判定(stage c)に入っている（二重起動を防ぐ）", () => {
   const src = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
-  const running = src.match(/RUNNING\s*=\s*\[([^\]]*)\]/);
+  const running = src.match(/RUNNING(?:_STAGES)?\s*=\s*\[([^\]]*)\]/);
   assert.ok(running && /"c"/.test(running[1]), "startJob の走行中判定に c が入っている");
 });
 

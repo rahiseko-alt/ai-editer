@@ -30,6 +30,7 @@ import { runDigestEditor } from "./src/digest-editor.mjs";
 import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./src/timing.mjs";
 import { makeUniqueJobId } from "./src/job-id.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "./src/ai-caption-fix.mjs";
+import { writeJsonAtomically } from "./src/atomic-json.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -45,9 +46,11 @@ function log(msg) {
 function readJson(p) {
   return JSON.parse(fs.readFileSync(p, "utf-8"));
 }
+// P2-1: state.json 等の書込みは直接 truncate すると、書いている途中で落ちたときに
+// 壊れて読めなくなる（src/atomic-json.mjs 参照）。writeJson はここ経由で state.json /
+// llm-response.json / candidates.json など全て書くので、ここを atomic にすれば一括で直る。
 function writeJson(p, obj) {
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(obj, null, 2), "utf-8");
+  writeJsonAtomically(p, obj);
 }
 function loadState(workDir) {
   const sp = path.join(workDir, "state.json");

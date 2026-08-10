@@ -385,3 +385,30 @@ body::before {
 .progress li.done { color: var(--ok); }
 .progress li.done::before { border-color: var(--ok); background: var(--ok); }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== モバイル幅（P2-5）: 1カラム・プレビューは設定の後段へ ===== */
+/* このUIは元々「PC横長専用」設計で、.two-col が左:右=1.6:1の2カラム固定だった。
+   幅の狭い画面(スマホ)でこの比率を維持すると、右カラム(プレビュー)が実測で約96pxまで
+   圧縮されて崩壊する。狭い画面では1カラムへ切り替え、DOM順（設定→プレビュー）どおり
+   プレビューを下段へ回す。PC専用の「高さ固定・スクロール禁止」もモバイルでは外し、
+   自然な縦スクロールを許容する。 */
+@media (max-width: 640px) {
+  html, body { height: auto; }
+  body { overflow-y: auto; }
+
+  .two-col {
+    grid-template-columns: 1fr;   /* 1カラム化。DOM順(col-settings→col-preview)がそのまま表示順になる */
+    height: auto; min-height: auto; max-height: none;
+  }
+
+  .col-settings { grid-template-columns: 1fr; } /* ②字幕③カットの横並びもモバイルでは縦積み */
+  #card-sub, #card-cut { grid-column: 1 / -1; }
+
+  .col-preview { height: auto; overflow: visible; }
+  .preview-wrap { padding: var(--sp-2) 0; }
+
+  /* デバイス枠はPCでは「親の高さ100%」基準だが、親の高さが auto の1カラムでは
+     基準が無く潰れてしまうため、幅基準(aspect-ratioで縦横比を保つ)へ切り替える。 */
+  .phone-device { height: auto; width: min(64vw, 240px); max-width: 100%; }
+  .pc-device { height: auto; width: 100%; }
+}

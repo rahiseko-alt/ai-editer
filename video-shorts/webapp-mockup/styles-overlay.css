@@ -139,8 +139,9 @@
   background: var(--surface-1, #fff); color: inherit; min-width: 3.5em; text-align: center;
 }
 .caption-word.is-edited input { border-color: #2b7; background: #eefaf3; }
-.caption-word .caption-orig { font-size: 11px; color: #777; text-align: center; }
+/* P2-6: 最小フォントサイズ13px以上。旧11px/12pxを引き上げる。 */
+.caption-word .caption-orig { font-size: 13px; color: #777; text-align: center; }
 .caption-actions { display: flex; align-items: center; gap: 10px; }
 .caption-status { font-size: 13px; color: #555; }
 .caption-status.err { color: #c33; }
-.caption-learn { font-size: 12px; padding: 2px 6px; }
+.caption-learn { font-size: 13px; padding: 2px 6px; }
