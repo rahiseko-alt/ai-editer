@@ -2908,14 +2908,15 @@
                       "kind": "state",
                       "theme": "これまでのテストが通ったままである",
                       "meaning": "新しい機能のせいで前の機能が壊れていない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "ワークスペース全体の型/Lint/テスト/ビルドがCIで緑になる",
                           "verify": "CI(ci-green)のrunが success であることを確認する",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: .github/workflows/ci.yml の quality ジョブは `pnpm -r --if-present typecheck` / `pnpm -r --if-present lint` / `pnpm -r test`（--if-presentなし=全パッケージ必須） / `pnpm -r --if-present build` を実行しており、pnpm-workspace.yaml の packages(video-shorts, scripts)を pnpm -r が両方カバーしている（root package.jsonにパッケージは無い）。ci-green(gate)ジョブは quality/smoke 両方が success であることを集約している。抜けは見つからず、CI設定の変更は不要だった。ローカルでも `pnpm install --frozen-lockfile` 後に typecheck/lint（両パッケージとも未導入でスキップ、偽装ではなく該当パッケージが無いだけ）・`pnpm -r test`・buildを実行して確認した。同一コンテナ内で他セッションの並列テスト実行によるCPU競合があった状態での1回のローカル実行では、M-5-B(モザイク処理時間、G-MOSAIC所属・本PRのスコープ外)が実測差35.0秒(上限30秒)で一時的にFAILしたが、これは本PRが一切触れていないモザイク処理の負荷計測テストであり、docs/roadmap.htmlのみの変更に起因するものではない。本criteriaはCI(ci-green)のrun成否そのものを見るため、実際の合否は隔離されたCIランナーでの run で判定する。evidenceは本PRのCI run URL確定後に記録する（このセッションでは自己申告のため未記入のまま）。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-B",
@@ -2937,14 +2938,15 @@
                       "kind": "state",
                       "theme": "軽い配布物が、メールに添付できる大きさのままである",
                       "meaning": "顔を隠す必要がないお客様への渡し方が壊れない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "本ゴールの機能を追加したあとも、軽い版の配布物(zip)が30MB以内に収まる",
                           "verify": "軽い版をビルドしてzipを作り、その大きさが30MB以内であることをテストで確認する(S-1と同じ上限・同じ測り方)",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: video-shorts/tests/dist-slim-check.mjs に既に S-1 相当のテスト（`node build-dist.mjs --slim` で軽い版を実ビルドし、実際に zip を作って実測サイズを30MB上限と比較）があり、本criteriaの verify(「S-1と同じ上限・同じ測り方」)と同一の測定方法。このテストは video-shorts/package.json の test スクリプトに組み込まれ pnpm -r test（=CI quality ジョブ）で毎回実行される。ローカル実行で `PASS S-1: 軽い版の配布物(zip)が30MB以内に収まる` を確認済み（実測値はテスト実行時のログ参照。G-EDIT-REFRAME/TRIM機能は軽い版のビルド対象に含まれないためzipサイズへの影響はなく、現時点では新規テスト追加は不要と判断）。新規テストの追加は行わなかった（既存のS-1テストがそのまま本criteriaを満たすため）。evidenceは本PRのCI run URL確定後に記録する。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-D",
