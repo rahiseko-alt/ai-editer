@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
+import { writeJsonAtomically } from "../src/atomic-json.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -107,14 +108,14 @@ function readState(workDir) {
   return JSON.parse(fs.readFileSync(sp, "utf-8"));
 }
 
-/** ジョブの state.json を書く */
+/**
+ * ジョブの state.json を書く。
+ * P2-1: 直接 truncate 書込みだと、書いている途中でプロセスが落ちたときに state.json が
+ * 壊れて読めなくなる（ジョブが再開できなくなる）。writeJsonAtomically で
+ * 「同じディレクトリの一時ファイルへ書く→fsync→rename」の作法にする。
+ */
 function writeState(workDir, state) {
-  fs.mkdirSync(workDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(workDir, "state.json"),
-    JSON.stringify(state, null, 2),
-    "utf-8"
-  );
+  writeJsonAtomically(path.join(workDir, "state.json"), state);
 }
 
 /**
@@ -197,6 +198,49 @@ function drainLocalQueue() {
   });
 }
 
+// ── 同時実行数の上限（P2-4-C） ──────────────────────────────────
+// Groq（クラウド）経路は元々「同時に何本でも」起動していた。大量投入すると外部APIの
+// レート制限や端末のネットワーク/CPUを使い切りうるため、同時に走らせる本数へ上限を設け、
+// 超過分は拒否せずFIFOで順番待ちにする（local経路はもともとCPU律速でFIFO=1本ずつのため、
+// どんな上限値でも既に満たしており変更不要）。
+
+/** 同時実行数の上限を環境変数から解決する（純粋関数・テスト用に切り出し）。既定3。 */
+export function resolveMaxConcurrentJobs(envValue = process.env.VS_MAX_CONCURRENT_JOBS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
+}
+
+/**
+ * 同時実行数を max 本までに絞るゲートを作る。run(fn) は fn（引数無しで Promise を返す
+ * 関数）をキューへ積み、空きスロットがあれば即実行・無ければ順番待ちにする（拒否しない）。
+ * pipeline-runner.mjs 固有の spawn/SSE 等には依存しない純粋なスケジューラなので、
+ * 実際のジョブ実行を伴わずに単体テストできる。
+ */
+export function createConcurrencyGate(max) {
+  let running = 0;
+  const queue = [];
+  function drain() {
+    if (running >= max || queue.length === 0) return;
+    running++;
+    const fn = queue.shift();
+    fn().finally(() => {
+      running--;
+      drain();
+    });
+  }
+  return {
+    run(fn) {
+      queue.push(fn);
+      drain();
+    },
+    get running() { return running; },
+    get waiting() { return queue.length; },
+  };
+}
+
+const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
+const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
+
 /**
  * ジョブ実行開始（非同期・kick して即返す）
  *
@@ -233,7 +277,9 @@ export function startJob(jobId, inputAbsPath, opts) {
       broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
     });
   if (groqKeyAvailable()) {
-    exec(); // Groq: 並列実行（クラウド側で並列処理される）
+    // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
+    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C)。
+    concurrencyGate.run(exec);
   } else {
     // local: 直列。待ち中であることを購読者へ通知してからキュー投入
     if (localRunning || localQueue.length > 0) {

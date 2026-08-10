@@ -52,12 +52,28 @@ export function groupCaptionsWords(words, maxChars = 14) {
   return lines;
 }
 
-/** 秒 → ASS タイム形式 h:mm:ss.cc */
-function assTime(sec) {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  const cs = Math.round((sec - Math.floor(sec)) * 100);
+/**
+ * 秒 → ASS タイム形式 h:mm:ss.cc
+ *
+ * 【P2-3 のバグと直し方】旧実装は h/m/s を先に切り捨ててから、centisecond を
+ * 別途 `Math.round((sec - Math.floor(sec)) * 100)` で出していた。99.xx センチ秒台の
+ * 値を四捨五入すると 100 になりうる（例: 59.996秒 → 整数秒部分は59のまま・小数部
+ * 0.996*100=99.6 を round すると100）が、繰り上げ先の秒(s)側はすでに切り捨て済みで
+ * 更新されないため `0:00:59.100` のような3桁のcentisecond（ASSとして不正な時刻）を
+ * 吐いてしまい、字幕の表示タイミングがずれる（実際には59.996秒は次の1分00秒0.00秒に
+ * 繰り上がるべき）。
+ *
+ * 直し方は「先に全体を100分の1秒単位の整数へ丸めてから、その整数１つを
+ * h/m/s/cs に分解する」。丸めを1回・最後に整数だけで行うため、centisecondが
+ * 100になる余地そのものが無くなり、繰り上がりは自動的に h/m/s 側へ伝播する。
+ */
+export function assTime(sec) {
+  const totalCs = Math.round(sec * 100); // 100分の1秒単位の整数へ丸める（ここでしか丸めない）
+  const cs = totalCs % 100;
+  const totalSec = Math.floor(totalCs / 100);
+  const s = totalSec % 60;
+  const m = Math.floor(totalSec / 60) % 60;
+  const h = Math.floor(totalSec / 3600);
   const pad = (n, w = 2) => String(n).padStart(w, "0");
   return `${h}:${pad(m)}:${pad(s)}.${pad(cs)}`;
 }

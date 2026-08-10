@@ -71,6 +71,11 @@ jobs:
           echo "installing: $spec"
           python -m pip install "$spec"
 
+      # P2-5/7/8（webapp-mockup の実ブラウザ検証）が playwright を使う。devDependencies を
+      # `pnpm install` が既に入れているので、ここでは実行に要る Chromium バイナリだけを取得する。
+      - name: Install Playwright Chromium
+        run: pnpm --filter video-shorts exec playwright install --with-deps chromium
+
       - name: Test
         run: pnpm -r test
 

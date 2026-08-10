@@ -40,6 +40,13 @@ import {
   createRateLimiter,
   MAX_UPLOAD_BYTES,
 } from "./security.mjs";
+import {
+  resolveTtlSeconds,
+  resolveQuotaBytes,
+  computeUsedBytes,
+  hasQuotaAvailable,
+  sweepExpiredJobs,
+} from "./job-lifecycle.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -53,6 +60,23 @@ process.stderr.write(`[kosespark] startup token (このプロセス限り有効)
 
 // P1-2(E): ジョブ起動(POST /api/jobs)へのレート制限。単一利用者のローカルツール前提の固定ウィンドウ。
 const jobsRateLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
+
+// P2-4(A/B): ジョブの寿命管理。既定値はVS_JOB_TTL_SECONDS/VS_STORAGE_QUOTA_BYTESで上書きできる
+// （job-lifecycle.mjs 参照。客のPC上でwork/outputが際限なく溜まるのを防ぐ）。
+const JOB_TTL_SECONDS = resolveTtlSeconds();
+const STORAGE_QUOTA_BYTES = resolveQuotaBytes();
+
+/** P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。 */
+function sweepExpiredJobsNow() {
+  const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now());
+  for (const r of removed) {
+    process.stderr.write(`[kosespark] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
+  }
+}
+sweepExpiredJobsNow();
+// 起動しっぱなしのローカルサーバーでも定期的に掃除されるよう、1時間ごとに再実行する。
+// unref() でこのタイマーだけのためにプロセスが終了できなくなるのを防ぐ(テスト等での後始末)。
+setInterval(sweepExpiredJobsNow, 60 * 60 * 1000).unref();
 
 // ── MIME マップ ───────────────────────────────────────────────
 const MIME = {
@@ -177,6 +201,15 @@ async function handlePostJobs(req, res) {
   const declaredLength = Number(req.headers["content-length"]);
   if (Number.isFinite(declaredLength) && declaredLength > MAX_UPLOAD_BYTES) {
     return jsonRes(res, 413, { error: "ファイルが大きすぎます" });
+  }
+
+  // P2-4(B): 保存容量が上限に達していれば、本文を受け取る前に新規保存を拒否する
+  // （書き始めてから溢れるのを待つと、途中まで書いた分が無駄になる）。
+  const usedBytes = computeUsedBytes([WORK_ROOT, OUT_ROOT]);
+  if (!hasQuotaAvailable(usedBytes, STORAGE_QUOTA_BYTES)) {
+    return jsonRes(res, 507, {
+      error: "保存容量の上限に達しています。既存のジョブを整理するか、しばらく待ってから再試行してください。",
+    });
   }
 
   // ファイル名からジョブID生成・サニタイズ。P1-3: 乱数suffixで同名ファイルの同時アップロードを

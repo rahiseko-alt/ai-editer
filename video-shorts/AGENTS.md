@@ -15,7 +15,11 @@
 - クラウド / ホスティング: 不要（客の PC 上でローカル動作。kosespark のサーバ・アカウントを介さない）
 - 言語 / ランタイム: Node.js 22（標準モジュールのみ・npm 依存ゼロ） + Python 3（文字起こし: Groq Whisper API）
 - フレームワーク: 無し（`server/index.mjs` は `node:http` のみで実装した素の HTTP サーバ）
-- パッケージ / 依存管理: pnpm workspace（本パッケージ自体は npm 依存ゼロ）。外部バイナリとして ffmpeg/ffprobe が必須（別途導入）
+- パッケージ / 依存管理: pnpm workspace（配布物は npm 依存ゼロ）。外部バイナリとして ffmpeg/ffprobe が必須（別途導入）。
+  2026-08-09 マスター承認により `playwright` を devDependencies へ追加した（P2-5/7/8 の実ブラウザ検証用）。
+  `server/`・`webapp-mockup/` は `build-dist.mjs` が配布物へ含めない保留経路のため、devDependencies が
+  増えても配布物（客のPCへ届くもの）には一切影響しない。CI（`.github/workflows/ci.yml`）で Chromium を
+  インストールしてから `pnpm test` を実行する。
 - DB / データアクセス: 不要（ジョブ状態はファイルシステム上の JSON、`work/`/`output/` はコミット対象外）
 - 認証: **未導入**（`server/index.mjs` の localhost API は現状無認証。2026-07-27 監査 P1-2 で指摘済み、roadmap 参照）
 - IaC / デプロイ: 客の Claude Code へ `start-here.md` 経由でパッケージ＋設定を配置（`build-dist.mjs` が配布物を生成）
