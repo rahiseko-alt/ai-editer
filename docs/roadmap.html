@@ -125,11 +125,11 @@
         "20本規模の並列PRバッチ（ロードマップ24葉）のマージ作業を完走させた。#56,#58,#61,#62,#65,#66,#69,#70,#71,#72,#73,#74,#76の計13本をマージ済み。",
         "マージ中、全並列PRがdocs/roadmap.htmlのmeta.next/meta.handoffという単一フィールドを書き換える設計だったため、1本マージされるたびに残り全PRが再衝突する構造的な問題が発覚した（マスター指摘により診断）。",
         "対策として、AGENTS.md「PR instructions」とcheckin-checkoutスキルの②チェックアウトに「並列バッチ作業中の個々の葉PRはmeta.next/meta.handoffを触らない」という例外規定を追記した。docs/failures.mdにも根因と対策を記録した。",
-        "マスターと運用フローについて議論し、業界標準（trunk-based development、stacked PRs、merge queue、CodeRabbitのincremental review）を調査したうえで、今回の設計の何が業界的に外れていたか（merge queue不在、meta欄の共有設計）を切り分けた。"
+        "マスターと運用フローについて議論し、業界標準（trunk-based development、stacked PRs、merge queue、CodeRabbitのincremental review）を調査したうえで、今回の設計の何が業界的に外れていたか（merge queue不在、meta欄の共有設計）を切り分けた。",
+        "マスター指示により、AGENTS.md冒頭の「CodeRabbit は無視する」最優先ルールを削除した。今後CodeRabbitのレビューはPRごとにデフォルトで読んで判断する（無視しない）。"
       ],
       "trouble": [
-        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限が必要でAI側では設定できない。マスターへの手動設定依頼が必要。",
-        "CodeRabbitからは大量の通知が届き続けたが、マスター指示「無視する」に従い一貫して無視した（判断材料はCIのみ）。"
+        "同じPR（#57は3回、#68は2回）を重複して再解消する無駄が生じた。原因は上記のmeta欄共有設計＋merge queue不在。今回はAGENTS.md/スキルの規定追加で今後の再発を防いだが、merge queueの有効化自体はGitHub管理者権限が必要でAI側では設定できない。マスターへの手動設定依頼が必要。"
       ]
     },
     "updated": "2026-08-10",
@@ -202,7 +202,7 @@
                       "kind": "state",
                       "theme": "字幕なしを選んだら、実際に字幕が焼き込まれない",
                       "meaning": "「字幕オフ」を選んだのに字幕が出てしまう、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "sub=noneを選んだジョブの出力動画に字幕が焼き込まれていない",
@@ -210,21 +210,22 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。"
+                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     },
                     {
                       "id": "P0-5-D",
                       "kind": "state",
                       "theme": "モザイクを選んだときだけ、実際に顔にモザイクが掛かる",
                       "meaning": "「モザイクあり」を選んだのに素顔のまま出る、が起きない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "mosaic=onを選んだジョブの成果物に、選んだときだけモザイク処理が適用される",
                           "verify": "実際にmosaic:\"on\"を指定したジョブを流し、applyMosaicStageが呼ばれcandidates.jsonが更新されることを確認する（既存のface-mosaic-check.py等との重複が無いかを確認した上で追加する）",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
                     }
                   ],
                   "detail": "根拠: server/pipeline-runner.mjs:241-247 が作るstateにmode/sub/orientが無い。opts.cut/opts.sizeも後段で未使用。1:1/4:5はレンダラー未実装。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P0-5）"
@@ -407,7 +408,7 @@
                       "kind": "state",
                       "theme": "起動時トークンなしのAPI呼び出しが実サーバーで拒否される",
                       "meaning": "トークンを持たない人が動画データにアクセスできない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、POST /api/jobs にトークン無し/誤トークンでリクエストすると401/403が返る",
@@ -415,14 +416,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。"
+                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-G",
                       "kind": "state",
                       "theme": "許可外Originからの呼び出しが実サーバーで拒否される",
                       "meaning": "他所のサイトから裏でアクセスされない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、許可外Originヘッダを付けたリクエストが拒否される",
@@ -430,14 +431,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。"
+                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-H",
                       "kind": "state",
                       "theme": "宣言Content-Lengthが上限超のアップロードが実サーバーで413を返す",
                       "meaning": "大きすぎるファイルは早い段階で断られる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "宣言Content-Lengthが上限を超えるリクエストへ、実サーバーが413相当で早期拒否する",
@@ -445,14 +446,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     },
                     {
                       "id": "P1-2-I",
                       "kind": "state",
                       "theme": "短時間に閾値超のリクエストで実サーバーが429を返す",
                       "meaning": "短時間に押し寄せても実際にブロックされる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "短時間に閾値を超えるリクエストを送ると、実サーバーが429を返す",
@@ -460,7 +461,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。"
+                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
                     }
                   ],
                   "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
@@ -620,7 +621,7 @@
                       "kind": "state",
                       "theme": "クリップ結合の間隔判定が境界値でも正しく動く",
                       "meaning": "「ぎりぎり」の間隔でも結合するかどうかが仕様通り",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "頭尾の間隔がちょうどMAX_MATCH_GAP_SECのときは結合され、僅かに超えるときは結合されない",
@@ -628,14 +629,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。"
+                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-D用の2テスト（gap=ちょうどMAX_MATCH_GAP_SEC→結合／gap=+0.001秒→非結合）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
                     },
                     {
                       "id": "P1-9-E",
                       "kind": "state",
                       "theme": "発話カバー率が境界値でも採否が仕様通り",
                       "meaning": "「ぎりぎり」のカバー率でも採用するかどうかが仕様通り",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "カバー率がちょうどMIN_MATCH_COVERAGEのときは採用され、僅かに下回るときは採用されない",
@@ -643,7 +644,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。"
+                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-E用の2テスト（coverage=ちょうどMIN_MATCH_COVERAGE→採用／coverage=0.49→非採用）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
                     }
                   ],
                   "detail": "根拠: reverse matchが前方語と100秒後の後方語を1クリップにできる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-9）"
@@ -668,8 +669,8 @@
                   "kind": "state",
                   "theme": "依存ライブラリに既知の重大な脆弱性が無い",
                   "meaning": "使っている部品(ライブラリ)に、既に知られている危険な穴が無い",
-                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）",
-                  "status": "todo",
+                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）。pnpm audit --audit-level moderateが既にCI(quality→gate)に組み込まれ、脆弱性0件であることを確認済み。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
@@ -689,8 +690,8 @@
                       "kind": "state",
                       "theme": "外部ツールのバージョンを固定する",
                       "meaning": "実行するたびに違うバージョンが動く事故を防ぐ",
-                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。",
-                      "status": "todo",
+                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。実施: video-shorts/requirements.txt の faster-whisper/groq/opencv-python-headlessを`>=`(上限無し)から`==`固定に変更。.github/workflows/ci.yml と measure-leak-rate.yml の apt-get install ffmpeg/zip を ubuntu-24.04 実測版(ffmpeg=7:6.1.1-3ubuntu5, zip=3.0-13ubuntu0.2)へ固定。.claude/hooks/session-start.sh のリモート自動導入も同じ ffmpeg 版へ固定(取得不能時は警告を出した上で無指定版へフォールバック＝ユーザーが使えなくなる事故を避けつつ、ドリフトを隠さない)。CI 内の opencv 導入はrequirements.txtの固定値を参照するため自動追従。リポジトリ内grep(uvx/npx/pip install/apt-get install)で他に無指定呼び出しが無いことを確認済み(video-shorts配下)。docs/setup-runbook.mdの`uv tool install`/`npx marp`はvideo-shorts以外の別製品(kosespark Writer、本ロードマップのGOAL=動画編集の対象外)のため今回は対象外(別途起票が必要)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
@@ -704,8 +705,8 @@
                       "kind": "state",
                       "theme": "初回実行時に同意を得る",
                       "meaning": "何が実行されるか知らないまま外部ツールが動かない",
-                      "detail": "バージョン固定前の初回実行に同意フローを設ける。",
-                      "status": "todo",
+                      "detail": "バージョン固定前の初回実行に同意フローを設ける。実施: video-shorts/start-here.mdを確認したところ、ローカルPC想定のフロー(⓪はじめの説明と同意 → ①必要なソフトの導入=Node/Python/ffmpeg/pip installの前に毎回「何がなぜ必要かを説明→入手方法提示→承認を得てから導入」)には既に✋ゲートがあり満たしていた。一方、PCを持たないユーザー向けのクラウドリモートセッション経路は`.claude/hooks/session-start.sh`がSessionStart時に無音でffmpeg/pipライブラリを自動導入しており、技術的にフック実行前にユーザーと対話して同意を得ることはできない(セッション開始前に走るため)。この経路の同意欠落を埋めるため、start-here.mdの冒頭注記を改訂し、⓪の説明時に「ffmpeg/文字起こしライブラリはこの環境へ承認前に自動導入済みで、入れたのはこの2つだけ」と開示してからユーザーの同意を得るよう明記した(事後開示+同意でリスクを可視化。無言のまま先へ進めることを禁止)。",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
@@ -1035,8 +1036,8 @@
                   "kind": "state",
                   "theme": "scripts/パッケージ(ロードマップの機械チェック群)にtypecheck/lintが導入されている",
                   "meaning": "ロードマップを守る仕組み自体のコードも、型やLintで機械チェックされている",
-                  "status": "todo",
-                  "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。",
+                  "status": "doing",
+                  "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。2026-08-10、軽い方(tsconfig checkJs)を選択して着手：scripts/tsconfig.json（../tsconfig.base.jsonを継承し、allowJs/checkJs/noEmitを追加）を新設し、scripts/package.jsonに\"typecheck\": \"tsc --noEmit -p tsconfig.json\"を追加。@types/node(^22.10.0)をルートpackage.jsonのdevDependenciesに追加（node:*インポート・process・consoleの型解決に必須）。tsconfig.base.jsonのstrict:true（noUncheckedIndexedAccess含む）は緩めず、scripts/*.mjsの3ファイル（verify-roadmap-evidence.mjs・verify-criteria-freeze.mjs・verify-criteria-freeze.test.mjs）すべてに実際のJSDoc型注釈（@param/@returns/@typedef）を追加して型エラーを解消した。@ts-nocheckは1件も使用していない（段階導入ではなく全ファイル本物のcheckJsを通した）。pnpm --filter scripts typecheckで実行できることを確認し、一時的にhtml.thisMethodDoesNotExist()という存在しないメソッド呼び出しを混入させてtypecheckが非0（exit 2、TS2339）で終了することを確認してから元に戻した（このコミットには含めていない）。pnpm -r --if-present typecheck（ルート）・pnpm --filter scripts test（34 PASS）・node scripts/verify-roadmap-evidence.mjs・BASE_REF=origin/main node scripts/verify-criteria-freeze.mjsがいずれも緑であることを確認済み。",
                   "criteria": [
                     {
                       "text": "scripts/パッケージにtypecheck(またはJSDoc+tsc --checkJs)かLintの少なくとも一方が導入され、pnpm -r --if-presentから実行される",
@@ -1119,7 +1120,7 @@
                   "kind": "state",
                   "theme": "クラウド向け自動導入フックが壊れたら、そのPRはマージできない",
                   "meaning": "この仕組みが壊れても、気づかず配ってしまわない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "hook-session-startジョブがci-green(gate)のneedsに含まれ、失敗時にci-greenも失敗する",
@@ -1127,14 +1128,14 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。"
+                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。\n2026-08-10 PR feature/delivery-ci-gate で対応: gate.needsに hook-session-start を追加し [quality, smoke, hook-session-start] にした。if: always() のため上流のいずれかが失敗/スキップでもgateステップ自体は走り、判定ロジックが needs['hook-session-start'].result も success かを見て非successならexit 1でci-greenを赤くする（GitHub Actionsのneeds+デフォルトの失敗伝播に基づく確認。ジョブIDにハイフンを含むためdot記法 needs.hook-session-start ではハイフンが減算と解釈され式が壊れる点に注意し、ブラケット記法 needs['hook-session-start'] を使った）。実地確認（意図的に失敗させたブランチでのPR作成→ci-green赤の実地観測）は本セッションでは未実施（コードレビューでのロジック確認まで）。"
                 },
                 {
                   "id": "G-DELIVERY-FAILCLEAR",
                   "kind": "state",
                   "theme": "外部ツール導入に失敗しても、原因が分かる形でセッションの状態が伝わる",
                   "meaning": "クラウド起動時の自動インストールが失敗しても、何が起きたか分かる",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "apt-get/pipのインストールが失敗した場合、session-start.shの終了コード・出力が、利用者が原因を把握できる形になっている",
@@ -1142,7 +1143,7 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。"
+                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。\n2026-08-10 PR feature/delivery-ci-gate で対応: .claude/hooks/session-start.sh の apt-get install ffmpeg / pip install requirements.txt の各失敗時に [session-start][ERROR] プレフィックス付きでstderrへ原因(exit code・確認すべき箇所)を出力し、その終了コードでexitするよう修正。修正前は `if ! cmd; then rc=$?` の形で否定(!)後に$?を取っていたため、否定演算で$?が反転し常にexit code 0でexitする不具合があった（実地でモック検証し発見・修正）。修正後は `if cmd; then :; else rc=$?; ...; exit \"$rc\"; fi` の形にし、else節でcmdそのものの終了コードを正しく取得するようにした。apt-get/sudo/python3をモック(/tmp配下)に差し替えたローカル実行で、(1) apt-get install失敗時: stderrに[ERROR]メッセージ+exit code 100(mock)で終了コード100、(2) pip install失敗時: 同様にexit code 1で終了、(3) ローカル(CLAUDE_CODE_REMOTE未設定)は無音no-op、(4) 実ffmpeg/パッケージが揃っている環境ではexit 0で無音、の4パターンを実行し出力・終了コードを確認した。CI側の hook-session-start ジョブはハッピーパス(導入成功)のみを検証しており、失敗パスの実地確認はローカルのモック実行によるもの。"
                 }
               ],
               "detail": "2026-07-28 マスター指示: 配布パターン「Claude Codeあり×PCなし(クラウド上のClaude Codeセッションのみで完結)」をまず完成させる。スタック・アーキテクチャは変更せず(既存のNode/Python/ffmpeg/Claude Code構成のまま)、セッション起動時の環境自動整備で対応する。"
@@ -1246,7 +1247,7 @@
                       "kind": "state",
                       "theme": "壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない",
                       "meaning": "動画ファイルが壊れていたら、気づかず短い動画を渡してしまわない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
@@ -1254,14 +1255,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。"
+                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
                     },
                     {
                       "id": "M-1-F",
                       "kind": "state",
                       "theme": "モデルファイルが無い/壊れていても、分かるメッセージで止まる",
                       "meaning": "内部の部品が欠けていても、意味の分からないエラー画面を客に見せない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
@@ -1269,7 +1270,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。"
+                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
                     }
                   ]
                 },
@@ -1482,7 +1483,7 @@
                       "kind": "state",
                       "theme": "素顔ファイルが客への納品物に混ざらないことが、仕組みでも防がれている",
                       "meaning": "手順を間違えても、素顔が客に渡らない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
@@ -1490,7 +1491,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。"
+                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
                     }
                   ]
                 },
@@ -1942,7 +1943,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、画面に失敗として出る",
                       "meaning": "顔を隠せなかったことが画面に出ないまま「終わりました」と見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n本PRでは実装しない。ジョブの状態の扱いはモザイク以外の工程の失敗にも共通するため、マスターの承認を得てから着手する。",
+                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n2026-08-10 マスターの承認を得て着手・確認した(未doing・確認内容のみ記録)。(1) VS_FIXTURE_MANIFEST はリポジトリ全体を grep しても docs/roadmap.html の本verify文言以外に一切存在せず、未実装であることを確認した(video-shorts/server, video-shorts/src 配下に該当コードなし)。(2) 葉J-1(video-shorts/tests/mosaic-ui-check.py)は video-shorts/src/apply-mosaic-stage.mjs を直接呼んでモザイク工程だけを検証しており、/api/jobs 経由でもSSE経由でもない。本葉が要求する実サーバー経路の検証には使えない。(3) server/pipeline-runner.mjs を読んだところ、startJob() の exec().catch() は既に broadcast(jobId,...,\"error\") でSSE\"error\"イベントを配信しており、後から subscribeJob() した購読者にもリプレイされる(既存コード、今回の変更ではない)。つまりSSE配信自体の骨格は既にある。(4) ただし本criteriaの凍結verifyは「文字起こし・区間選定を通し、/api/jobsから実サーバーへ流し、モザイク工程だけを失敗させる」ことを要求しており、これには文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs、claude -p 呼び出し)・区間選定(server/claude-select.mjs、claude -p 呼び出し)の3箇所を差し替えるVS_FIXTURE_MANIFEST機構が要る。この3箇所の差し替えは今回のセッションでは実装していない(範囲が大きく、既存の凍結済みcriteria群(transcribe/caption-fix/select系の多数の葉)に影響しうる改修のため、拙速な実装を避けた)。(5) 代わりに、O-2で見つかったstate.json未書き戻しの実装欠陥を直接コードで修正し(server/pipeline-runner.mjs)、その状態永続化ロジック自体の回帰テスト(tests/job-failure-state-check.mjs、GROQ/claude不要・文字起こし入力欠如で決定的に数秒で失敗させる経路)を追加した。このテストはSSEのリプレイ(O-1相当)とstate.jsonへのerror書き戻し(O-2相当)の両方を機械的に確認するが、/api/jobsからの実投入・実文字起こし・実区間選定を経由しないため、本葉の凍結verifyそのものの代替にはならない(status は todo のまま据え置く)。次にやるなら、VS_FIXTURE_MANIFEST(transcribe.py・ai-caption-fix.mjs・claude-select.mjsの3差し替え点)の実装が要る。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -1957,7 +1958,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、保存された記録にも失敗が残る",
                       "meaning": "サーバーを再起動したときに、失敗したジョブが成功したように見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n本PRでは実装しない(O-1 と同じ理由)。",
+                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n2026-08-10 マスターの承認を得て着手。診断どおり、server/pipeline-runner.mjs の startJob() の catch はメモリ上の job.stage だけを更新し state.json を書き戻していないことをコード読解で確認した(修正前)。この欠陥そのものは修正済み: catch 内で readState()/writeState() により state.json の stage を \"error\" へ、error/errorCode を書き戻すよう server/pipeline-runner.mjs を変更した(既存フィールドはスプレッドで保持し丸ごと上書きしない)。tests/job-failure-state-check.mjs で「失敗後に work/<id>/state.json の stage が error になる」「失敗理由が残る」「他フィールドが失われない」ことを回帰確認済み(5/5 PASS、ローカル実行)。ただし本criteriaの凍結verifyが要求する経路(O-1と同じジョブ＝/api/jobsから実サーバーへ、実文字起こし・実区間選定・実レンダリングを経て、モザイク工程だけを葉J-1の「2本目が動画として読めない」パターンで失敗させ、サーバー再起動後に読み直す)は、VS_FIXTURE_MANIFEST(O-1のdetail参照、未実装)が無いと再現できないため未実施。したがって status は todo のまま据え置き、コード修正の事実だけをここに記録する(evidenceは外部事実のみなので、ここに書く自己申告は証拠として扱わない)。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -2475,7 +2476,7 @@
                           "kind": "state",
                           "theme": "同じ語が同じ段落に複数回出ても、直した語自身の位置だけが変わる",
                           "meaning": "同じ言葉が2回出てきても、直すべき方だけが直る",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "段落の文章に同じ語が2回以上出るとき、モデルが指した1語だけが書き換わり、同じ段落内の他の同じ文字列は変わらない",
@@ -2483,14 +2484,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのapplyFixesToSegmentsは段落内の語オフセットを1語ずつ走査して求め、置換をオフセット降順で当てるため、同じ語が複数回出ても対象語の位置だけが変わる実装になっている。verifyが指す「後ろ/前/真ん中/2件同時/工程通し」の5ケースはtests/ai-caption-fix-check.mjsに既存（実装追加なし）。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#（後述）のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-D2",
                           "kind": "state",
                           "theme": "そのかたまりに出していない添字は、beforeが正しくても書き換わらない",
                           "meaning": "AIが今回見ていない場所を、勝手に書き換えない",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "あるかたまりの返答が、そのかたまりに含まれない添字を指しているとき、beforeが実際の語と一致していても採用されない",
@@ -2498,14 +2499,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。"
+                          "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのparseFixResponseはrange(offset/length)を受け取り、採用する添字をoffset<=index<offset+lengthに絞っているため、そのかたまりに出していない添字はbeforeが実際の語と一致していても採用されない実装になっている。verifyが指す「かたまり外」およびその対照のテストケースはtests/ai-caption-fix-check.mjsに既存(実装追加なし)。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#(後述)のCIが緑になり次第追記する。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M1",
                           "kind": "state",
                           "theme": "claudeの標準出力そのものがJSONとして壊れていても、工程は例外で安全に終わる",
                           "meaning": "AIの応答そのものが壊れていても、変な動画にならず止まる",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "--output-format jsonの封筒自体(claude-run.mjsが直接JSON.parseする最外層)が壊れているとき、runClaudeJsonは例外を投げ、ai-caption-fixステージはそれをそのまま工程の失敗として伝播する",
@@ -2513,14 +2514,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。"
+                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にclose(code:0)後にJSON.parse(stdoutBuf.trim())を試み、失敗時は`claude stdout JSON parse 失敗`で例外を投げる実装になっており、ai-caption-fix.mjsのaiCaptionFixStageもtranscript.jsonへの書き込みをchunkループ完了後に置いているため、実装変更は不要だった。tests/helpers/fake-claude-main.mjsへ封筒を被せない生テキスト応答を返す`kind:\"raw\"`を追加し、tests/ai-caption-fix-check.mjsにM1の3件（runClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗として伝播すること／失敗後transcript.jsonが入力と完全一致すること）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M2",
                           "kind": "state",
                           "theme": "claude実行ファイル自体が起動できないときも、工程は同じように失敗として終わる",
                           "meaning": "AIを呼び出す仕組み自体が無いときも、静かに失敗する",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "PATH上にclaudeという実行ファイルが存在しない（spawnエラーになる）とき、runClaudeJsonは例外を投げ、ai-caption-fixステージは失敗としてtranscript.jsonを一切書き換えない",
@@ -2528,7 +2529,7 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。"
+                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にspawnの'error'イベントで`claude spawn エラー: ...`を投げる実装になっており、ai-caption-fix.mjsも書き込みをchunkループ完了後に行うため、実装変更は不要だった。tests/ai-caption-fix-check.mjsにM2の2件（PATHをclaude不在の空ディレクトリへ差し替えてrunClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗しtranscript.json・ai-caption-fixes.json・transcript.raw.jsonのいずれも作られないこと）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-L2",
@@ -2698,37 +2699,37 @@
                   "kind": "state",
                   "theme": "話している人を追いかけて縦型に切り抜く",
                   "meaning": "16:9の素材が上下黒帯の小さい絵になるのをやめ、人が大きく写る",
-                  "detail": "現状 render-vertical.mjs は scale(force_original_aspect_ratio=decrease)+pad(黒帯)のみで、切り抜き・追尾は実装されていない。競合3つ(openshorts=MediaPipe+YOLOv8 / AI-Youtube-Shorts-Generator=OpenCV+モーション平滑化 / yt-short-clipper=MediaPipeで口の動きから話者判定)はいずれも実装済みで、ここが最も分かりやすい機能差。ただし競合も3人以上になると追跡が破綻すると報告されているため、破綻時に黒帯へ戻すことを独立の受入事実として置く(そこまで作れば逆に差になる)。顔検出は G-MOSAIC で導入済みの OpenCV 資産を流用できる見込み。4項目の中で最も重い。\n\n2026-08-08のレビュー指摘で、最も重大な穴が見つかった。旧A(黒帯が出ない)と旧B(顔が15%以上)は、どちらも出来上がりが縦型かを確認していなかったため、16:9のまま出力すれば黒帯は出ず顔も約30%を占め、切り抜きも追尾も一切作らずに両方合格した(15%という閾値は、16:9を9:16の枠に収めると高さが0.316倍になり顔が約10%になる、という前提で置いていた)。両方の verify の先頭に出力が9:16であることの確認を入れて塞いだ。あわせて、旧D(破綻時のフォールバック)は「正常に生成される」の中身が無くファイルさえ出れば合格し、逆に3人でも正しく追えた良い実装が不合格になる作りだったので、顔ゼロ素材と多人数素材の2葉に割ったうえで合格条件を絵で定義し直した。\n\n【検証素材の凍結（2026-08-08）】A・B・D・E の verify は「素材R／素材N／素材M（親ノードのdetailで凍結）」と書いていたが、**その定義がどこにも無かった**。定義の無い素材を指したまま実装に入ると、実装後に都合のよい素材を選べる。着手前に、次のとおり数値で凍結する。合成の実体は video-shorts/tests/reframe_fixtures.py。\n・元になる静止画（これが変われば合成結果も変わるので SHA-256 で固定し、合成のたびに照合する）:\n　face-one.png c06fe35d4f8482b49a514ca56812105064fedc7d61976b44542137f30ad51a7e / face-two.png 6da3832aa9dd5cddad9f6894f5261c57789902e1b1b6964963fa25d269f14962 / face-other.png 085b180755c743c9719c20b28ba2b08598803f98894a6c268ae7420f4416a2e6\n・共通: 1920x1080（16:9）、30コマ、30fps。背景は 青=横位置に比例・緑=縦位置に比例・赤=64px角の市松（30 と 230）。一様な背景にしないのは、黒帯の判定と「入力の絵が保たれているか」の判定に位置が一意に定まる模様が要るため。貼り付けの拡大は最近傍（INTER_NEAREST）で、拡大方法によって顔の大きさが変わらないようにする。書き出しは可逆（libx264rgb -qp 0 -pix_fmt bgr24）で、読み戻して1画素も違わないことを合成のたびに確かめる（非可逆だと合格ラインの根拠が符号化器の版に依存する。顔モザイクで実際にそうなった）。\n・素材R（1人）: face-one.png を3倍（642x720）にして y=180 に貼り、横位置 x を 1119 → 159 へ30コマで等間隔に動かす（顔の中心が 1437 → 477）。顔を横中央に置かないのは、画面中央に固定で切り抜くだけの実装を落とすため。実測: 全30コマで顔検出はちょうど1件、顔の高さは画面の 30.8〜32.4%、黒帯方式へ落とすと 10.0%（葉Bの境界15%を挟んで上下に分かれる）。\n・素材N（顔なし）: 背景だけ。ただしコマごとに横へ8pxずつずらす（30コマで232px動く）。静止画のままだと、1コマ目を全編に貼り付けるだけの壊れ方を誰も検出できない。実測: 顔検出は全コマ0件。\n・素材M（3人）: face-one.png / face-two.png の右半分（x=269..483／Aldrin）/ face-other.png をそれぞれ2倍にして y=300、x=160 / 760 / 1360 に貼る。実測: 顔検出はちょうど3件。\n\n【葉D の許容差を実測で訂正（2026-08-08）】旧 verify は「入力の対応領域と8bit階調で差4以下で一致」と書いていたが、これは**製品自身の符号化器でも満たせない**。素材Nを現行の黒帯方式で出力し、同じフィルタ列を可逆で書き出した参照と比べると、最大差は68（平均差0.690）だった。h264/yuv420p の量子化と色差の間引きで、市松の境目に必ずこの程度の差が出る。また旧 verify は「入力の対応領域」の作り方（縮小の仕方）を書いていなかったため、検証者ごとに比較相手が変わる。\n→ 比較相手を「素材Nに scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1 を掛けて可逆（libx264rgb -qp 0）で書き出したもの」と明記し、測る量を最大差から**画面全体の平均絶対差**へ改め、合格ラインを 4.0 とする。4.0 は、正しい実装の実測 0.690 と、いちばん近い壊れ方の実測 23.444 の相乗平均（4.02）に置いた。\n実測した壊れ方（いずれも同じ測り方で、この線を大きく超える）: 引き伸ばし 107.5 / 中央切り抜きで絵が欠ける 109.0 / 真っ黒 41.9 / 1コマ目を全編に固着 23.4。\n\n【basis-reviewer の反証11件（2026-08-08・門は止まった）】上の凍結をレビューさせたところ、**切り抜きも追尾も一行も書かないまま、A・B・D・E の4葉のうち3葉を緑にできる**ことが実測で示された。この11件を潰すまで実装に入らない。うち4件は実際にコマンドを走らせて素通りを確認したもの。\n(1)【実証済み】葉A は、帯の色を真っ黒から少し明るい灰色にするだけで通る。pad の色を 0x1c1c1c にすると、上下656pxの帯があるのに検出される帯は0pxになり合格する（RGB(28,28,28)/(32,32,32)/(40,40,40) いずれも0px）。「帯が無いこと」を合格条件にしているのに「帯があるときに帯があると言える」対照が無い。黒帯方式の出力を同じ手順で測ると656pxと出ることを対照として verify に書き込む必要がある。葉D の(1)も同じ定義を参照している。\n(2)【実証済み】葉A と葉B は、顔を一切見ない「右から左へ一定の速さで窓を動かすだけ」の決め打ちで30コマ全部通る（解像度1080x1920・黒帯0px・顔高さ28.4%が30/30）。素材R の動きが1秒の等速直線ひとつしかないため、本物の追尾と決め打ちのパンを見分けられない。素材R に速度変化・向きの反転・数コマの遮蔽を入れる必要がある。なお中央固定の切り抜き（9コマ検出ゼロ）と引き伸ばし（30コマ検出ゼロ）を落とす目的には、いまの33px/コマで足りている。\n(3)【実証済み】「素材R / 素材N / 素材M」という同じ名前が、G-EDITOR の detail と G-EDIT-REFRAME の detail に**まったく違う中身で二重定義**されている（旧: 1280x720・15fps・2秒・静止 / 新: 1920x1080・30fps・30コマ・動く）。しかも旧側の素材N の説明は「G-EDIT-REFRAME-D の画素比較が…」と当の葉を名指ししており、どちらも葉D向けを主張している。さらに G-EDIT-QUALITY-B の verify は「素材Rのような無音・静止画・15fps の素材は使わない」と書いており、新しい素材R を指すと文意が成立しない。名前を分ける（RF-R / RF-N / RF-M 等）か、旧定義を明示的に廃止する。\n(4)【実証済み】葉D の合格ライン4.0 は、素材N が1コマで動く量より大きい。参照フレーム同士の平均絶対差は1コマ固着2.792 / 2コマ5.455 / 3コマ8.216 で、4.0 は1コマと2コマの間に落ちている。製品と同じ設定の出力を1コマ遅らせた対照は最大3.772で合格してしまった。8px/コマ では「2コマ以上の固着」しか捕まらない。移動量を16px/コマ以上にするか、合格線を2.0付近へ下げるか、時間方向のずれを別の測り方（コマ番号の焼き込み。素材R-M で既にやっている）で見る。\n(5)葉D の4.0 の根拠にした「正しい実装なら0.690」が、書いた手順どおりでは再現しない。0.690 は**-pix_fmt を指定していない現行コードの偶然**（ffmpeg が yuv444p を選ぶ）に依存した値で、配布互換のため yuv420p を足すと1.426、crf を28にすると1.677 になる。yuv420p を基準にすると相乗平均は5.78 となり、凍結した4.0 より上＝正しい実装のほうが基準線より悪い側に来る。AGENTS.md の凍結4点のうち「設定」が欠けている。verify に -c:v libx264 -preset veryfast -crf 20 -bf 0 -pix_fmt <値> まで書き切る。あわせて、この測り方が捕まえられるのは幾何が壊れる系に限られること（半分の解像度に落として戻す劣化は1.55で素通り）を明記する。\n(6)葉E が原子でない。criteria は「入力の絵を全編保った」と言うのに、verify の「切り抜きが働いた場合は顔が15%以上」の枝を通ると絵が保たれているかを一度も測らない（切り抜きは入力の3分の2を捨てるので、この枝では criteria が成立しない）。しかもその枝は葉B とまったく同じ受入事実。2葉に割るか、E を「絵が保たれている」1本に絞る。\n(7)【実測】素材M は30コマすべて同じ絵（隣接コマ差0.000）なので「全編にわたって絵が保たれている」を原理的に測れない。黒帯方式の出力も、全編を1コマ目に固着させた出力も、同じ0.580 で区別が付かない。素材N に動きを入れた理由が素材M に適用されていない。さらに、切り抜きを一行も書いていない現行実装が、素材M に対して葉E の合格条件（黒帯656px≧192px・平均絶対差0.580≦4.0）を**今この瞬間に満たす**ことも実測された。\n(8)「追いきれなくなったら黒帯へ戻す」を要求する葉が1つも無い。親の detail は「破綻時に黒帯へ戻すことを独立の受入事実として置く」と宣言しているのに、葉E はフォールバック経路の存在を要求しない。葉を足すか、親の主張を外すか、どちらかに揃える。\n(9)凍結した素材はどれも音が無いので、切り抜きの実装が音声を落としてもA・B・D・E は全部緑のまま。顔モザイクでは同じ穴を塞ぐために素材R-A（左440Hz・右880Hz）を足している。同じ手当てが要る。\n(10)葉B の「顔検出を掛け、顔の高さが画面高さの15%以上」は、検出器（YuNet・SCORE_THRESHOLD=0.6・NMS=0.3）も、その版も、「顔の高さ」が検出枠の高さなのか実際の顔なのかも凍結していない。実装と同じ検出器を判定にも使えば、実装が顔だと思った所を同じ道具が追認するだけになる（顔モザイクの10〜11巡目と同じ穴）。あわせて detail の「黒帯方式なら10.0%」は実測 9.6〜10.0% の最小を落としている。実測範囲で書く。\n(11)素材の自己検査（元画像のSHA-256照合・可逆で書き出せたかの確認）が pnpm test にも CI にも登録されておらず、手で実行したときしか走らない。face-one.png 等が差し替わっても CI は赤にならない。登録する。",
+                  "detail": "現状 render-vertical.mjs は scale(force_original_aspect_ratio=decrease)+pad(黒帯)のみで、切り抜き・追尾は実装されていない。競合3つ(openshorts=MediaPipe+YOLOv8 / AI-Youtube-Shorts-Generator=OpenCV+モーション平滑化 / yt-short-clipper=MediaPipeで口の動きから話者判定)はいずれも実装済みで、ここが最も分かりやすい機能差。ただし競合も3人以上になると追跡が破綻すると報告されているため、破綻時に黒帯へ戻すことを独立の受入事実として置く(そこまで作れば逆に差になる)。顔検出は G-MOSAIC で導入済みの OpenCV 資産を流用できる見込み。4項目の中で最も重い。\n\n2026-08-08のレビュー指摘で、最も重大な穴が見つかった。旧A(黒帯が出ない)と旧B(顔が15%以上)は、どちらも出来上がりが縦型かを確認していなかったため、16:9のまま出力すれば黒帯は出ず顔も約30%を占め、切り抜きも追尾も一切作らずに両方合格した(15%という閾値は、16:9を9:16の枠に収めると高さが0.316倍になり顔が約10%になる、という前提で置いていた)。両方の verify の先頭に出力が9:16であることの確認を入れて塞いだ。あわせて、旧D(破綻時のフォールバック)は「正常に生成される」の中身が無くファイルさえ出れば合格し、逆に3人でも正しく追えた良い実装が不合格になる作りだったので、顔ゼロ素材と多人数素材の2葉に割ったうえで合格条件を絵で定義し直した。\n\n【検証素材の凍結（2026-08-08）】A・B・D・E の verify は「素材R／素材N／素材M（親ノードのdetailで凍結）」と書いていたが、**その定義がどこにも無かった**。定義の無い素材を指したまま実装に入ると、実装後に都合のよい素材を選べる。着手前に、次のとおり数値で凍結する。合成の実体は video-shorts/tests/reframe_fixtures.py。\n・元になる静止画（これが変われば合成結果も変わるので SHA-256 で固定し、合成のたびに照合する）:\n　face-one.png c06fe35d4f8482b49a514ca56812105064fedc7d61976b44542137f30ad51a7e / face-two.png 6da3832aa9dd5cddad9f6894f5261c57789902e1b1b6964963fa25d269f14962 / face-other.png 085b180755c743c9719c20b28ba2b08598803f98894a6c268ae7420f4416a2e6\n・共通: 1920x1080（16:9）、30コマ、30fps。背景は 青=横位置に比例・緑=縦位置に比例・赤=64px角の市松（30 と 230）。一様な背景にしないのは、黒帯の判定と「入力の絵が保たれているか」の判定に位置が一意に定まる模様が要るため。貼り付けの拡大は最近傍（INTER_NEAREST）で、拡大方法によって顔の大きさが変わらないようにする。書き出しは可逆（libx264rgb -qp 0 -pix_fmt bgr24）で、読み戻して1画素も違わないことを合成のたびに確かめる（非可逆だと合格ラインの根拠が符号化器の版に依存する。顔モザイクで実際にそうなった）。\n・素材R（1人）: face-one.png を3倍（642x720）にして y=180 に貼り、横位置 x を 1119 → 159 へ30コマで等間隔に動かす（顔の中心が 1437 → 477）。顔を横中央に置かないのは、画面中央に固定で切り抜くだけの実装を落とすため。実測: 全30コマで顔検出はちょうど1件、顔の高さは画面の 30.8〜32.4%、黒帯方式へ落とすと 10.0%（葉Bの境界15%を挟んで上下に分かれる）。\n・素材N（顔なし）: 背景だけ。ただしコマごとに横へ8pxずつずらす（30コマで232px動く）。静止画のままだと、1コマ目を全編に貼り付けるだけの壊れ方を誰も検出できない。実測: 顔検出は全コマ0件。\n・素材M（3人）: face-one.png / face-two.png の右半分（x=269..483／Aldrin）/ face-other.png をそれぞれ2倍にして y=300、x=160 / 760 / 1360 に貼る。実測: 顔検出はちょうど3件。\n\n【葉D の許容差を実測で訂正（2026-08-08）】旧 verify は「入力の対応領域と8bit階調で差4以下で一致」と書いていたが、これは**製品自身の符号化器でも満たせない**。素材Nを現行の黒帯方式で出力し、同じフィルタ列を可逆で書き出した参照と比べると、最大差は68（平均差0.690）だった。h264/yuv420p の量子化と色差の間引きで、市松の境目に必ずこの程度の差が出る。また旧 verify は「入力の対応領域」の作り方（縮小の仕方）を書いていなかったため、検証者ごとに比較相手が変わる。\n→ 比較相手を「素材Nに scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1 を掛けて可逆（libx264rgb -qp 0）で書き出したもの」と明記し、測る量を最大差から**画面全体の平均絶対差**へ改め、合格ラインを 4.0 とする。4.0 は、正しい実装の実測 0.690 と、いちばん近い壊れ方の実測 23.444 の相乗平均（4.02）に置いた。\n実測した壊れ方（いずれも同じ測り方で、この線を大きく超える）: 引き伸ばし 107.5 / 中央切り抜きで絵が欠ける 109.0 / 真っ黒 41.9 / 1コマ目を全編に固着 23.4。\n\n【basis-reviewer の反証11件（2026-08-08・門は止まった）】上の凍結をレビューさせたところ、**切り抜きも追尾も一行も書かないまま、A・B・D・E の4葉のうち3葉を緑にできる**ことが実測で示された。この11件を潰すまで実装に入らない。うち4件は実際にコマンドを走らせて素通りを確認したもの。\n(1)【実証済み】葉A は、帯の色を真っ黒から少し明るい灰色にするだけで通る。pad の色を 0x1c1c1c にすると、上下656pxの帯があるのに検出される帯は0pxになり合格する（RGB(28,28,28)/(32,32,32)/(40,40,40) いずれも0px）。「帯が無いこと」を合格条件にしているのに「帯があるときに帯があると言える」対照が無い。黒帯方式の出力を同じ手順で測ると656pxと出ることを対照として verify に書き込む必要がある。葉D の(1)も同じ定義を参照している。\n(2)【実証済み】葉A と葉B は、顔を一切見ない「右から左へ一定の速さで窓を動かすだけ」の決め打ちで30コマ全部通る（解像度1080x1920・黒帯0px・顔高さ28.4%が30/30）。素材R の動きが1秒の等速直線ひとつしかないため、本物の追尾と決め打ちのパンを見分けられない。素材R に速度変化・向きの反転・数コマの遮蔽を入れる必要がある。なお中央固定の切り抜き（9コマ検出ゼロ）と引き伸ばし（30コマ検出ゼロ）を落とす目的には、いまの33px/コマで足りている。\n(3)【実証済み】「素材R / 素材N / 素材M」という同じ名前が、G-EDITOR の detail と G-EDIT-REFRAME の detail に**まったく違う中身で二重定義**されている（旧: 1280x720・15fps・2秒・静止 / 新: 1920x1080・30fps・30コマ・動く）。しかも旧側の素材N の説明は「G-EDIT-REFRAME-D の画素比較が…」と当の葉を名指ししており、どちらも葉D向けを主張している。さらに G-EDIT-QUALITY-B の verify は「素材Rのような無音・静止画・15fps の素材は使わない」と書いており、新しい素材R を指すと文意が成立しない。名前を分ける（RF-R / RF-N / RF-M 等）か、旧定義を明示的に廃止する。\n(4)【実証済み】葉D の合格ライン4.0 は、素材N が1コマで動く量より大きい。参照フレーム同士の平均絶対差は1コマ固着2.792 / 2コマ5.455 / 3コマ8.216 で、4.0 は1コマと2コマの間に落ちている。製品と同じ設定の出力を1コマ遅らせた対照は最大3.772で合格してしまった。8px/コマ では「2コマ以上の固着」しか捕まらない。移動量を16px/コマ以上にするか、合格線を2.0付近へ下げるか、時間方向のずれを別の測り方（コマ番号の焼き込み。素材R-M で既にやっている）で見る。\n(5)葉D の4.0 の根拠にした「正しい実装なら0.690」が、書いた手順どおりでは再現しない。0.690 は**-pix_fmt を指定していない現行コードの偶然**（ffmpeg が yuv444p を選ぶ）に依存した値で、配布互換のため yuv420p を足すと1.426、crf を28にすると1.677 になる。yuv420p を基準にすると相乗平均は5.78 となり、凍結した4.0 より上＝正しい実装のほうが基準線より悪い側に来る。AGENTS.md の凍結4点のうち「設定」が欠けている。verify に -c:v libx264 -preset veryfast -crf 20 -bf 0 -pix_fmt <値> まで書き切る。あわせて、この測り方が捕まえられるのは幾何が壊れる系に限られること（半分の解像度に落として戻す劣化は1.55で素通り）を明記する。\n(6)葉E が原子でない。criteria は「入力の絵を全編保った」と言うのに、verify の「切り抜きが働いた場合は顔が15%以上」の枝を通ると絵が保たれているかを一度も測らない（切り抜きは入力の3分の2を捨てるので、この枝では criteria が成立しない）。しかもその枝は葉B とまったく同じ受入事実。2葉に割るか、E を「絵が保たれている」1本に絞る。\n(7)【実測】素材M は30コマすべて同じ絵（隣接コマ差0.000）なので「全編にわたって絵が保たれている」を原理的に測れない。黒帯方式の出力も、全編を1コマ目に固着させた出力も、同じ0.580 で区別が付かない。素材N に動きを入れた理由が素材M に適用されていない。さらに、切り抜きを一行も書いていない現行実装が、素材M に対して葉E の合格条件（黒帯656px≧192px・平均絶対差0.580≦4.0）を**今この瞬間に満たす**ことも実測された。\n(8)「追いきれなくなったら黒帯へ戻す」を要求する葉が1つも無い。親の detail は「破綻時に黒帯へ戻すことを独立の受入事実として置く」と宣言しているのに、葉E はフォールバック経路の存在を要求しない。葉を足すか、親の主張を外すか、どちらかに揃える。\n(9)凍結した素材はどれも音が無いので、切り抜きの実装が音声を落としてもA・B・D・E は全部緑のまま。顔モザイクでは同じ穴を塞ぐために素材R-A（左440Hz・右880Hz）を足している。同じ手当てが要る。\n(10)葉B の「顔検出を掛け、顔の高さが画面高さの15%以上」は、検出器（YuNet・SCORE_THRESHOLD=0.6・NMS=0.3）も、その版も、「顔の高さ」が検出枠の高さなのか実際の顔なのかも凍結していない。実装と同じ検出器を判定にも使えば、実装が顔だと思った所を同じ道具が追認するだけになる（顔モザイクの10〜11巡目と同じ穴）。あわせて detail の「黒帯方式なら10.0%」は実測 9.6〜10.0% の最小を落としている。実測範囲で書く。\n(11)素材の自己検査（元画像のSHA-256照合・可逆で書き出せたかの確認）が pnpm test にも CI にも登録されておらず、手で実行したときしか走らない。face-one.png 等が差し替わっても CI は赤にならない。登録する。\n\n【2026-08-10 分解のやり直し・反証11件+ツリー見直し4件+basis-reviewer反証5件を反映して再凍結】検証素材を数値で作り直した(実体は tests/reframe_fixtures.py)。旧名「素材R/N/M」は G-EDITOR の detail にある別実体(1280x720・15fps・静止・無音、G-MOSAIC-UI等が使用中)と名前が衝突していたため、この葉たちが使う素材は **RF-R / RF-N / RF-M** と呼び分ける(以後、この葉の criteria/verify で「素材R/N/M」と書かれていたらRF-のことを指す)。\n\n・RF-R(1人)：face-one.pngを3倍にして貼り、4段階の速度変化・向きの反転・3コマの部分遮蔽を伴う動きにした(旧: 1秒の等速直線のみ→顔を見ない決め打ちパンで全部緑になっていた反証を解消)。\n・RF-N(顔なし)：横移動を8→16px/コマへ(旧: 1コマ固着と2コマ固着の間にしきい値があり1コマ遅延が誤って合格していた反証を解消)。\n・RF-M(3人)：3人の顔がそれぞれ独立に動くようにした(旧: 30コマ完全同一画像で絵の保持を原理的に測れなかった反証を解消)。\n・元画像のSHA-256照合と可逆書き出しの自己検査を tests/reframe-fixtures-check.py として作り、pnpm testへ登録した(旧: 手で実行したときしか走らなかった反証を解消)。\n\n【葉Dの分割】黒帯の存在(D)と絵の保持(D2)が1criteriaに同居していた原子性違反を、2葉に分割して解消した。\n【葉Eの再設計】旧「切り抜き成功 or 黒帯」の二分岐は、切り抜き分岐を通ると絵の保持を一度も測らない構造上の欠陥を持っていた。RF-Mへ動きを入れたうえで、E は「3人以上は常に黒帯へ落ちる」という単一の振る舞いに絞った。basis-reviewerの指摘により、「MAX_TRACKED_FACES=2」という具体的な実装定数の凍結は見送った(RF-Mが常に3人固定のため、この葉のverifyでは上限の値そのものを反証できない)。2人までクロップし続ける下限側の保証は葉C(実写素材が必要・今回スコープ外)が担う。\n【葉G/Hの新設、G2/H2/G3/H3への分割】凍結素材はどれも無音だったため、切り抜き実装が音声を落としても全葉が緑のままだった反証(9)を解消するため、音声の存在(G系)と左右チャンネルの正しさ(H系)を新設した。当初G/Hの1criteriaにRF-R-A(追跡成功)とRF-N-A(D/D2フォールバック=顔0人)をAND条件で詰め込んでいたが、round3のbasis-reviewer指摘(別コード経路で独立に壊れうる)によりG/G2、H/H2へ分割。さらにround4の指摘で、E側のフォールバック(顔3人以上で追跡破綻)がG2/H2でカバーされておらず、RF-M-Aが凍結されたのに未使用だったため、G3/H3を追加してE側も独立に検証する。結果としてG/G2/G3(音声存在)とH/H2/H3(左右チャンネル)がRF-R-A/RF-N-A/RF-M-Aの3経路それぞれを担う。いずれも1.000秒の短い素材のみで検証しており、長尺での音声ドリフト等は別途カバーが必要(backlog)。\n\n【着手範囲】このセッションでは葉A/B/D/D2/E/G/Hを対象とする。葉C・Fは実写素材の調達(D-7)がマスター判断待ちのため、引き続き着手しない。\n\n【音声付き素材の仕様（凍結）】RF-R-A / RF-N-A / RF-M-A は、それぞれ RF-R / RF-N / RF-M の映像に、左440Hz・右880Hz・48000Hz・1.000秒のステレオ正弦波(ffmpeg lavfi aevalsrc)を足したもの(video-shorts/tests/reframe_fixtures.py build_with_audio())。左右で異なる周波数にするのは、左右チャンネルが入れ替わる壊れ方を検出できるようにするため(モノラルだと入れ替えても同じ音になり判定できない)。\n\n【2026-08-10 独立検証(independent-verifier)で判明・backlog】葉Bのverify文が指す「A葉と同じ決め打ちパン実装」の具体的な数式(cx(0)=1440→cx(29)=480の直線)は、A葉のverify/detail双方から参照が消えており、tests/reframe_fixtures.pyのdocstringにのみ残っている(参照切れ)。実害は無い(独立検証で3回再実行し数値完全一致・再現性あり)と判断したが、次回このサブツリーをbasis-reviewerに通す機会に、B葉のverifyへ定義を書き戻すか明示参照を加えることが望ましい。",
                   "children": [
                     {
                       "id": "G-EDIT-REFRAME-A",
                       "kind": "state",
                       "theme": "縦型の出力に、上下の黒帯が出ない",
                       "meaning": "画面の上下が黒く埋まって無駄にならない",
-                      "status": "todo",
+                      "status": "done",
                       "criteria": [
                         {
-                          "text": "素材Rの縦型出力で、フレームの上端と下端が黒帯になっていない",
-                          "verify": "素材R(親ノードのdetailで凍結)を用いる。まず出力の解像度が9:16(1080x1920)であることを確認する(この確認が無いと、縦型変換をやめて16:9のまま出すだけで黒帯は出ず合格してしまう)。そのうえで出力の全30フレームを測定し、各フレームの上端および下端それぞれについて、外側から連続して「近黒画素が98%以上を占める行」が続く高さが、上下いずれも画面高さの2%未満であることを確認する。近黒はBT.601輝度Y≤24(0-255換算)と定義する。サンプリングはしない。上端・下端の1行だけを見る方法は使わない(端の1行に非黒画素が1つあるだけで内側が黒帯でも合格するため)。",
-                          "evidence": ""
+                          "text": "素材RF-Rの縦型出力で、フレームの上端と下端が黒帯になっていない",
+                          "verify": "素材RF-R(親ノードのdetailで凍結。face-one.pngを3倍にして4段階の速度変化・向きの反転・3コマの部分遮蔽を伴う動きで貼った1人素材)を用いる。まず出力の解像度が9:16(1080x1920)であることを確認する(この確認が無いと、縦型変換をやめて16:9のまま出すだけで黒帯は出ず合格してしまう)。そのうえで出力の全30フレームを測定し、各フレームの上端および下端それぞれについて、外側から連続して「近黒画素が98%以上を占める行」が続く高さが、上下いずれも画面高さの2%未満であることを確認する。近黒はBT.601輝度Y≤24(0-255換算)と定義する。サンプリングはしない。対照として、RF-Rを製品と同じ scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black で letterbox方式(切り抜きをしない)に出力し、上下の黒帯が画面高さの約34%(656px相当)検出され不合格になることを確認する(この対照が無いと、そもそも黒帯を検出できていない場合でも合格してしまう。なお、顔を一切見ず一定速度で窓を動かすだけの決め打ちパンは、このRF-Rのパン範囲とクロップ幅の組み合わせでは切り抜き窓がフレーム境界を一度も超えないため黒帯を作らず、この葉だけでは検出できない。その決め打ちパンは葉B(顔の高さ15%以上、部分遮蔽区間で検出が外れて不合格になる)が検出する。黒帯の有無と追従の正しさは別々の受入事実であり、この葉は前者だけを担う)。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
                         }
                       ],
-                      "detail": "\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 fixture(tests/reframe_fixtures.py frames_R())の顔の動きが単純な線形等速移動のみで、「顔を一切見ず一定速度で窓を動かすだけの決め打ちパン」を弾けない（親detail反証(2)で実測済みだが是正未反映）。音声トラックも含まれていない。"
+                      "detail": "\n\n【2026-08-10 是正済み】fixture(tests/reframe_fixtures.py frames_R())を4段階の速度変化・向きの反転・3コマの部分遮蔽を伴う動きへ作り直した(旧: 単純な線形等速移動のみで決め打ちパンを弾けなかった反証を解消)。音声付き版(RF-R-A)も追加し、G-EDIT-REFRAME-G/Hで検証する。\n\n【2026-08-10 basis-reviewer指摘】このRF-Rのパン範囲・クロップ幅では、決め打ちパンでも切り抜き窓がフレーム境界を超えず黒帯が発生しない(実測:全30コマで境界超過0件)。そのため本葉(黒帯の有無)は決め打ちパンを検出できない。決め打ちパンの検出は葉B(顔の高さ15%以上)が担う。verifyの対照は letterbox方式が黒帯656px相当を出し不合格になることへ差し替えた。"
                     },
                     {
                       "id": "G-EDIT-REFRAME-B",
                       "kind": "state",
                       "theme": "顔が、画面に対して十分な大きさで写る",
                       "meaning": "スマホの小さい画面でも表情が見える",
-                      "status": "todo",
+                      "status": "done",
                       "criteria": [
                         {
-                          "text": "素材Rの縦型出力で、顔の高さが画面高さの15%以上を占める",
-                          "verify": "素材Rを用いる。まず出力の解像度が9:16(1080x1920)であることを確認する(この確認が無いと、16:9のまま出せば顔は約30%のままなので、何も作らずに合格してしまう)。そのうえで出力の全30フレームに顔検出を掛け、顔の高さが画面高さの15%以上であるフレームが30/30であることを確認する。顔が検出できなかったフレームは不合格として数える。閾値15%の根拠は、素材Rを現行の黒帯方式で9:16に収めると高さが0.316倍になり顔が約10%にとどまるのに対し、切り抜き方式なら約30%になるため、黒帯方式なら落ちて切り抜き方式なら通る境界として置いた点にある。",
-                          "evidence": ""
+                          "text": "素材RF-Rの縦型出力で、顔の高さが画面高さの15%以上を占める",
+                          "verify": "素材RF-Rを用いる。まず出力の解像度が9:16(1080x1920)であることを確認する(この確認が無いと、16:9のまま出せば顔は約30%のままなので、何も作らずに合格してしまう)。顔検出は cv2.FaceDetectorYN、SCORE_THRESHOLD=0.6、NMS_THRESHOLD=0.3 に固定し(video-shorts/src/face_mosaic.pyと同じ値)、「顔の高さ」は検出矩形(bbox)の高さと定義する。この検出器・設定で出力の全30フレームを測定し、顔の高さが画面高さの15%以上であるフレームが30/30であることを確認する。顔が検出できなかったフレームは不合格として数える。対照として、A葉と同じ決め打ちパン実装を当て、RF-Rの部分遮蔽区間または追従が外れる区間で不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
                         }
                       ],
-                      "detail": "\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 A と同じfixtureの欠陥（線形等速移動のみ）を共有する。"
+                      "detail": "\n\n【2026-08-10 是正済み】A と同じfixture(RF-R)を共有しており、A の是正(4段階の速度変化・向きの反転・部分遮蔽)により本葉も是正済み。決め打ちパン実装は部分遮蔽区間を含む一部フレームで顔検出が外れ、30/30を満たせず不合格になることを実測済み。"
                     },
                     {
                       "id": "G-EDIT-REFRAME-C",
@@ -2751,12 +2752,26 @@
                       "theme": "顔が写らない素材でも、絵が壊れずに出てくる",
                       "meaning": "風景だけの動画を入れても失敗しない",
                       "detail": "2026-08-08のレビュー指摘で旧Dから分割。顔が写らない場合と多人数で追跡が破綻する場合は、別々に落ちうる。また旧案の合格条件「黒帯方式で正常に生成される」は中身が定義されておらず、ファイルさえ出れば(中身が真っ黒でも)合格した。絵で定義し直す。\n\n2026-08-08、着手前の見直しで、凍結していた許容差(差4以下)が製品自身の符号化器でも満たせないことを実測で確認し、測る量と合格ラインを訂正した。根拠は親ノードのdetail。\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 黒帯の存在と絵の保持という独立した2つの受入事実が1criteriaに同居している（粒度不揃いの可能性、確信度中）。また現行の未実装コード(scale+padのみ)が今この時点で後者の分岐により合格しうる状態。",
-                      "status": "todo",
+                      "status": "done",
                       "criteria": [
                         {
-                          "text": "素材N(顔なし)の縦型出力が、入力の絵を全編保った黒帯方式の動画になっている",
-                          "verify": "素材N（親ノードのdetailで凍結）を用いる。出力の解像度が9:16(1080x1920)であること、フレーム数が入力と一致することを確認したうえで、全30フレームについて次の両方を確認する。\n(1)上端または下端に画面高さの10%以上の黒帯が存在すること（＝切り抜きではなく黒帯方式へ戻っていること）。黒帯の判定は G-EDIT-REFRAME-A と同じ定義を用い、近黒画素を BT.601 輝度 Y≤24(0-255換算)、黒帯の行を「近黒画素が98%以上を占める行」とし、外側から連続する行数で高さを測る（定義を書かないと検証者ごとに黒帯の判定が変わり、同じ測り方を参照する G-EDIT-REFRAME-E にも波及するため）。\n(2)出力のフレームが、素材Nに scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1 を掛けて可逆(libx264rgb -qp 0 -pix_fmt bgr24)で書き出した参照フレームと、画面全体の平均絶対差(8bit階調)で 4.0 以下で一致すること。最大差では判定しない（製品自身の符号化器でも市松の境目で最大68の差が出るため、最大差では正しい実装が落ちる）。比較相手のフィルタ列をここに書き切るのは、書かないと「入力の対応領域」の作り方が検証者ごとに変わるため。\n合格ライン4.0の根拠と、この測り方が壊れ方を捕まえられることは親ノードのdetailに実測値で記録してある。対照として、引き伸ばし・中央切り抜き・真っ黒・1コマ目固着の4通りの壊れた出力を同じ測り方で測り、いずれも4.0を超えて不合格になることを同時に確認する（この対照が無いと、そもそも測れていない場合も合格する）。「ファイルが生成された」ことは合格条件にしない。",
-                          "evidence": ""
+                          "text": "素材RF-N(顔なし)の縦型出力で、上端または下端に画面高さの10%以上の黒帯が存在する(G-EDIT-REFRAME-Aと同じ黒定義)",
+                          "verify": "素材RF-N(親ノードのdetailで凍結。16px/コマで横移動する背景のみの素材)を用いる。出力の解像度が9:16であることを確認したうえで、全30フレームについて、上端または下端に画面高さの10%以上の黒帯(G-EDIT-REFRAME-Aと同じ、近黒画素Y≤24が98%以上を占める行が連続する高さ)が存在することを確認する。対照として、全画面へ引き伸ばす実装(黒帯0px)を当て、不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-D2",
+                      "kind": "state",
+                      "theme": "縦型に直しても、風景の絵そのものは変わらない",
+                      "meaning": "黒帯で囲んだだけで、映像の中身がすり替わっていない",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-Nの縦型出力の各フレームが、letterbox参照フレームと画面全体の平均絶対差(8bit階調)で3.0以下で一致する(全30フレームすべてで成立すること。30フレームをならした1つの平均ではなく、各フレーム個別に3.0以下であること)",
+                          "verify": "素材RF-Nを用いる。参照はRF-Nに scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1 を掛け、可逆(libx264rgb -qp 0 -pix_fmt bgr24)で書き出したもの。実装側の出力は -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p で書き出す(製品と同じ設定)。**各フレームごとに**画面全体の平均絶対差を計算し、その値が3.0以下であることを**30フレーム全て**で確認する(1つに平均した値ではなく、フレームごとの値を個別に判定する。一部フレームだけの局所的な破綻を見逃さないため)。しきい値3.0は、正しい実装の実測(最大1.4655)といちばん近い壊れ方(1コマ遅延、最大6.3474)の間に置いた。対照として、引き伸ばし・中央切り抜き・真っ黒・1コマ目固着の4通りの壊れた出力を同じ測り方で測り、いずれも3.0を超えて不合格になることを同時に確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
                         }
                       ]
                     },
@@ -2765,15 +2780,105 @@
                       "kind": "state",
                       "theme": "大勢が写って追いきれないときも、絵が壊れずに出てくる",
                       "meaning": "何人も写る会議の録画でも失敗しない",
-                      "status": "todo",
+                      "status": "done",
                       "criteria": [
                         {
-                          "text": "素材M(3人)の縦型出力が、追跡を諦めた場合でも入力の絵を全編保った動画になっている",
-                          "verify": "素材M(親ノードのdetailで凍結)を用いる。出力の解像度が9:16であること、フレーム数が入力と一致することを確認したうえで、全30フレームについて、切り抜きが働いた場合は G-EDIT-REFRAME-B と同じ測り方で顔が画面高さの15%以上を占めること、追跡を諦めた場合は G-EDIT-REFRAME-D と同じ測り方（黒帯の定義と、素材Mへ同じフィルタ列を掛けた可逆の参照との平均絶対差4.0以下）で黒帯方式かつ入力の絵が保たれていること、のいずれかを満たすことを確認する。どちらでもない出力(絵が欠ける・引き伸ばされる・真っ黒になる)は不合格とする。正しく追えた実装を不合格にしないため、黒帯方式であることを一律には求めない。",
-                          "evidence": ""
+                          "text": "素材RF-M(3人)の縦型出力は、常に黒帯方式へ落ち、G-EDIT-REFRAME-D2と同じ測り方・同じしきい値(各フレーム3.0以下、全30フレーム)で入力の絵を保っている",
+                          "verify": "素材RF-M(親ノードのdetailで凍結。全30コマで顔検出が常に3件になる、3人が独立に動く素材)を用いる。出力の解像度が9:16であることを確認したうえで、G-EDIT-REFRAME-D2と同じ測り方(letterbox参照との各フレームごとの平均絶対差が3.0以下、全30フレーム)で絵が保たれていることを確認する。この葉は「3人以上を同時に追跡しようとせず、常に黒帯方式に留まる」という振る舞いだけを固定するものであり、実装が内部で持つ追跡人数の上限の具体的な値(1人・2人等)は、この葉では判定しない(RF-Mが常に3人固定のため、上限がいくつであっても3人超であれば同じ結果になり判別できない)。上限を2人までクロップし続けることは別葉(G-EDIT-REFRAME-C、今回のスコープ外)が固定する。対照として、人数を無視して常に検出した顔の重心へ追従し続ける実装を当て、大きく不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
                         }
                       ],
-                      "detail": "\n\n【2026-08-09 ツリー見直しで検出・未反映（次セッションでbasis-reviewer/マスター判断のうえ対応）】 fixture(frames_M())が全30コマ完全同一画像のコピーであり、「絵が保たれているか」を測る力が無い（1コマ目に固着する壊れ方と黒帯方式の正しい出力が区別不能）。現行の未実装コード(scale+padのみ)がこの瞬間すでに合格しうる。画面端に接する境界値ケースもfixtureに無い。"
+                      "detail": "2026-08-08のレビュー指摘で旧Dから分割。顔が写らない場合と多人数で追跡が破綻する場合は、別々に落ちうる。また旧案の合格条件「黒帯方式で正常に生成される」は中身が定義されておらず、ファイルさえ出れば(中身が真っ黒でも)合格した。絵で定義し直す。\n\n2026-08-08、着手前の見直しで、凍結していた許容差(差4以下)が製品自身の符号化器でも満たせないことを実測で確認し、測る量と合格ラインを訂正した。根拠は親ノードのdetail。\n\n【2026-08-10 basis-reviewer 指摘を反映して再凍結】旧設計は「切り抜きが働いた場合は顔15%以上／追跡を諦めた場合は黒帯」という二分岐だったが、(1)切り抜き分岐を通ると絵の保持を一度も測らない(criteriaが不成立になりうる)、(2)素材RF-Mは30コマ完全同一画像だったため絵の保持そのものが原理的に測れなかった、という2件の反証で崩壊済みだった。RF-Mに動きを持たせたうえで、この葉は「3人以上は常に黒帯へ落ちる」という単一の振る舞いに絞った(旧B相当の『2人まではクロップし続ける』下限側は葉C=今回スコープ外が担う。それまで2人トラッキング能力そのものは今回の凍結範囲では未保証)。当初「MAX_TRACKED_FACES=2」という具体的な実装定数を凍結する案があったが、RF-Mが常に3人固定のため、この葉の verify では上限の値そのもの(1でも2でも同じ結果になる)を反証できないと basis-reviewer に指摘され、振る舞いの主張のみへ絞った。"
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-G",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、音が消えない（話者を追いかけている間）",
+                      "meaning": "映像だけ処理して、うっかり音を落とさない",
+                      "detail": "2026-08-08のbasis-reviewer指摘(反証9)：凍結素材はどれも無音のため、切り抜きの実装が音声を落としてもA/B/D/D2/Eは全部緑のままだった。同じ手当てが要る。\n\n【未確定・backlog】この葉の検証素材(RF-R-A)は1.000秒のみで、実際のパイプラインが処理する可変長のセグメントに比べて短い。時間経過で蓄積するドリフトや-shortestの挙動差など、短い素材では発現しない壊れ方はこの葉では検出できない。長尺での音声ドリフトの検証は別途カバーが必要(2026-08-10 basis-reviewer指摘)。\n\n【2026-08-10 basis-reviewer指摘で分割】当初この葉はRF-R-AとRF-N-A(黒帯フォールバックパス)の両方をAND条件で1criteriaに詰め込んでいたが、『追跡成功パスとフォールバックパスは別コード経路で別々に壊れうる独立した受入事実』という原子性違反を指摘され、追跡成功パス用(本葉)とフォールバックパス用(G2)の2葉へ割り直した。",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-R-A(追跡成功パス)の縦型出力に音声ストリームが存在し、長さが1.000秒±0.05秒である",
+                          "verify": "素材RF-R-A(親ノードのdetailで凍結)を用いる。出力をffprobeで調べ、音声ストリームが1本以上存在し、その長さが1.000秒±0.05秒であることを確認する。対照として、音声を落とす(-an相当)実装を当て、音声ストリームが0本になり不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-G2",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、音が消えない（黒帯に切り替わっている間）",
+                      "meaning": "追跡を諦めたときも、うっかり音を落とさない",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-N-A(黒帯フォールバックパス)の縦型出力に音声ストリームが存在し、長さが1.000秒±0.05秒である",
+                          "verify": "素材RF-N-A(RF-Nに親ノードのdetailで凍結した音声を足したもの)を用いる。出力をffprobeで調べ、音声ストリームが1本以上存在し、その長さが1.000秒±0.05秒であることを確認する。対照として、音声を落とす(-an相当)実装を当て、音声ストリームが0本になり不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ],
+                      "detail": "2026-08-10 basis-reviewer指摘で新設。G-EDIT-REFRAME-Gと同じ理由(反証9)だが、RF-R-A(追跡成功パス)だけでは黒帯フォールバックパス(D/D2相当のコード経路。顔が0人の場合)だけ音声を落とす壊れ方を検出できないため、独立した葉として分離した(2つの経路は別々に壊れうる独立した受入事実のため)。\n\n【未確定・backlog】検証素材は1.000秒のみ。長尺での挙動は別途カバーが必要。\n\n【2026-08-10 round4 basis-reviewer指摘】本葉はD/D2側のフォールバック(顔0人)のみをカバーする。E側のフォールバック(顔3人以上で追跡が破綻する場合)は別のコード経路になりうるため、別途 G-EDIT-REFRAME-G3 で検証する。"
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-G3",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、音が消えない（3人以上で追跡を諦め黒帯に切り替わっている間）",
+                      "meaning": "3人以上で追いきれなくなったときも、うっかり音を落とさない",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-M-A(3人以上・追跡破綻フォールバックパス)の縦型出力に音声ストリームが存在し、長さが1.000秒±0.05秒である",
+                          "verify": "素材RF-M-A(RF-Mに親ノードのdetailで凍結した音声を足したもの)を用いる。出力をffprobeで調べ、音声ストリームが1本以上存在し、その長さが1.000秒±0.05秒であることを確認する。対照として、音声を落とす(-an相当)実装を当て、音声ストリームが0本になり不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ],
+                      "detail": "2026-08-10 round4 basis-reviewer指摘で新設。G2(D/D2側のフォールバック=顔0人)だけでは、E側のフォールバック(顔3人以上で追跡が破綻し黒帯へ切り替わる場合)だけ音声を落とす壊れ方を検出できない。RF-M-A(親ノードのdetailで凍結)を用いて独立に検証する。\n\n【未確定・backlog】検証素材は1.000秒のみ。長尺での挙動は別途カバーが必要。"
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-H",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、左右の音が入れ替わらない（話者を追いかけている間）",
+                      "meaning": "右から聞こえるはずの音が、左から聞こえるようにならない",
+                      "detail": "2026-08-08のbasis-reviewer指摘(反証9)から派生。左右で違う周波数の音を使うのは、左右が入れ替わる壊れ方を検出できるようにするため(モノラルだと左右を入れ替えても同じ音になり、判定器がチャンネルの違いに盲目になる)。\n\n【未確定・backlog】検証素材は1.000秒のみ。長尺での挙動は別途カバーが必要。\n\n【2026-08-10 basis-reviewer指摘で分割】G葉と同じ理由でRF-R-A用(本葉)とRF-N-A用(H2)の2葉へ割り直した。",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-R-A(追跡成功パス)の縦型出力で、左右チャンネルを分離しFFTした支配周波数が、左440Hz±5Hz・右880Hz±5Hzである",
+                          "verify": "素材RF-R-Aを用いる。出力の音声を左右チャンネルへ分離し、それぞれFFTして支配周波数を求める。左チャンネルが440Hz±5Hz、右チャンネルが880Hz±5Hzであることを両方確認する(片方だけの判定にしない。モノラル化のような、片チャンネルだけ正しく見える壊れ方を見逃さないため)。対照として、左右チャンネルを入れ替えた実装、および左右をモノラルへ混合した実装を当て、いずれも不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-H2",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、左右の音が入れ替わらない（黒帯に切り替わっている間）",
+                      "meaning": "追跡を諦めたときも、右から聞こえるはずの音が左から聞こえるようにならない",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-N-A(黒帯フォールバックパス)の縦型出力で、左右チャンネルを分離しFFTした支配周波数が、左440Hz±5Hz・右880Hz±5Hzである",
+                          "verify": "素材RF-N-Aを用いる。出力の音声を左右チャンネルへ分離し、それぞれFFTして支配周波数を求める。左チャンネルが440Hz±5Hz、右チャンネルが880Hz±5Hzであることを両方確認する。対照として、左右チャンネルを入れ替えた実装、および左右をモノラルへ混合した実装を当て、いずれも不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ],
+                      "detail": "2026-08-10 basis-reviewer指摘で新設。G-EDIT-REFRAME-Hと同じ理由でRF-N-A(黒帯フォールバックパス。顔が0人の場合)を独立した葉として分離した。\n\n【未確定・backlog】検証素材は1.000秒のみ。長尺での挙動は別途カバーが必要。\n\n【2026-08-10 round4 basis-reviewer指摘】本葉はD/D2側のフォールバック(顔0人)のみをカバーする。E側のフォールバック(顔3人以上で追跡が破綻する場合)は別のコード経路になりうるため、別途 G-EDIT-REFRAME-H3 で検証する。"
+                    },
+                    {
+                      "id": "G-EDIT-REFRAME-H3",
+                      "kind": "state",
+                      "theme": "縦型に切り抜いても、左右の音が入れ替わらない（3人以上で追跡を諦め黒帯に切り替わっている間）",
+                      "meaning": "3人以上で追いきれなくなったときも、右から聞こえるはずの音が左から聞こえるようにならない",
+                      "status": "done",
+                      "criteria": [
+                        {
+                          "text": "素材RF-M-A(3人以上・追跡破綻フォールバックパス)の縦型出力で、左右チャンネルを分離しFFTした支配周波数が、左440Hz±5Hz・右880Hz±5Hzである",
+                          "verify": "素材RF-M-Aを用いる。出力の音声を左右チャンネルへ分離し、それぞれFFTして支配周波数を求める。左チャンネルが440Hz±5Hz、右チャンネルが880Hz±5Hzであることを両方確認する。対照として、左右チャンネルを入れ替えた実装、および左右をモノラルへ混合した実装を当て、いずれも不合格になることを確認する。",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054"
+                        }
+                      ],
+                      "detail": "2026-08-10 round4 basis-reviewer指摘で新設。H2(D/D2側のフォールバック=顔0人)だけでは、E側のフォールバック(顔3人以上で追跡が破綻する場合)だけ左右チャンネルが入れ替わる壊れ方を検出できない。RF-M-A(親ノードのdetailで凍結)を用いて独立に検証する。\n\n【未確定・backlog】検証素材は1.000秒のみ。長尺での挙動は別途カバーが必要。"
                     },
                     {
                       "id": "G-EDIT-REFRAME-F",
@@ -2804,14 +2909,15 @@
                       "kind": "state",
                       "theme": "これまでのテストが通ったままである",
                       "meaning": "新しい機能のせいで前の機能が壊れていない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "ワークスペース全体の型/Lint/テスト/ビルドがCIで緑になる",
                           "verify": "CI(ci-green)のrunが success であることを確認する",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: .github/workflows/ci.yml の quality ジョブは `pnpm -r --if-present typecheck` / `pnpm -r --if-present lint` / `pnpm -r test`（--if-presentなし=全パッケージ必須） / `pnpm -r --if-present build` を実行しており、pnpm-workspace.yaml の packages(video-shorts, scripts)を pnpm -r が両方カバーしている（root package.jsonにパッケージは無い）。ci-green(gate)ジョブは quality/smoke 両方が success であることを集約している。抜けは見つからず、CI設定の変更は不要だった。ローカルでも `pnpm install --frozen-lockfile` 後に typecheck/lint（両パッケージとも未導入でスキップ、偽装ではなく該当パッケージが無いだけ）・`pnpm -r test`・buildを実行して確認した。同一コンテナ内で他セッションの並列テスト実行によるCPU競合があった状態での1回のローカル実行では、M-5-B(モザイク処理時間、G-MOSAIC所属・本PRのスコープ外)が実測差35.0秒(上限30秒)で一時的にFAILしたが、これは本PRが一切触れていないモザイク処理の負荷計測テストであり、docs/roadmap.htmlのみの変更に起因するものではない。本criteriaはCI(ci-green)のrun成否そのものを見るため、実際の合否は隔離されたCIランナーでの run で判定する。本PR(#66, commit 57da3d5)のCIが実際に走り、ci-green(gate)を含む全チェックがsuccessで完了した: https://github.com/rahiseko-alt/ai-editer/actions/runs/31367454971 （隔離されたCIランナー上ではM-5-Bを含め全テストがPASS。ローカルで見えたFAILは前述のとおりローカル環境固有のCPU競合によるもので、CI上では再現しなかった）。evidenceへの転記・statusのdoneへの更新は、本PRのマージ判断とあわせて人間/次セッションが行う。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-B",
@@ -2833,14 +2939,15 @@
                       "kind": "state",
                       "theme": "軽い配布物が、メールに添付できる大きさのままである",
                       "meaning": "顔を隠す必要がないお客様への渡し方が壊れない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "本ゴールの機能を追加したあとも、軽い版の配布物(zip)が30MB以内に収まる",
                           "verify": "軽い版をビルドしてzipを作り、その大きさが30MB以内であることをテストで確認する(S-1と同じ上限・同じ測り方)",
                           "evidence": ""
                         }
-                      ]
+                      ],
+                      "detail": "2026-08-10 確認: video-shorts/tests/dist-slim-check.mjs に既に S-1 相当のテスト（`node build-dist.mjs --slim` で軽い版を実ビルドし、実際に zip を作って実測サイズを30MB上限と比較）があり、本criteriaの verify(「S-1と同じ上限・同じ測り方」)と同一の測定方法。このテストは video-shorts/package.json の test スクリプトに組み込まれ pnpm -r test（=CI quality ジョブ）で毎回実行される。ローカル実行で `PASS S-1: 軽い版の配布物(zip)が30MB以内に収まる` を確認済み（実測値はテスト実行時のログ参照。G-EDIT-REFRAME/TRIM機能は軽い版のビルド対象に含まれないためzipサイズへの影響はなく、現時点では新規テスト追加は不要と判断）。新規テストの追加は行わなかった（既存のS-1テストがそのまま本criteriaを満たすため）。本PR(#66, commit 57da3d5)のCIが実際に走り、`pnpm -r test`を含むqualityジョブがsuccessで完了した(=dist-slim-check.mjsのS-1テストもCI上でPASS): https://github.com/rahiseko-alt/ai-editer/actions/runs/31367454971 。evidenceへの転記・statusのdoneへの更新は、本PRのマージ判断とあわせて人間/次セッションが行う。"
                     },
                     {
                       "id": "G-EDIT-QUALITY-D",
@@ -2955,9 +3062,17 @@
       <h3>受入条件（criteria）の書き方</h3>
       <p class="rule">条件は「動くこと」で書く。「ドキュメントがある／レビューした」で書かない。</p>
       <ul>
-        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝実行可能な手順）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
-        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。</li>
+        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝人が読む手順の説明文）＋ <code>verifyCmd</code>（<code>verify</code> を機械が実行できる形にした具体的な1コマンド。任意だが、<code>done</code>化のゲートに必須）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
+        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。<code>status:"done"</code> なのに <code>evidence</code> が空のままだと <code>scripts/verify-roadmap-evidence.mjs</code> がCIで落とす（自己申告だけで完了扱いにできる穴を機械で塞ぐ）。</li>
         <li>証拠は「◯◯レビュー.md が存在する」を認めない。実物が動いた記録を指す。</li>
+      </ul>
+      <h3>基準を機械で下げさせない仕組み（2026-08-10 追加）</h3>
+      <p class="rule">CIが緑・criteriaが凍結済みでも、それは「実装者が自分で書いたテストに自分の実装が通った」という自己申告の域を出ない。以下の3段で機械が閉じる。</p>
+      <ul>
+        <li><b>①凍結（<code>scripts/verify-criteria-freeze.mjs</code>）</b>：着手前に固定した <code>text</code>/<code>verify</code>/<code>verifyCmd</code> は、その葉が <code>status:"todo"</code> 以外になった瞬間から無断で書き換え禁止。BASE/HEADの<code>docs/roadmap.html</code>を比較し、正当な理由（<code>meta.basisChanges</code>に<code>{id, criteriaHash, at, reason}</code>を新規追加）が無い変更をCIで落とす。<b>本文を書き換えず「葉ごと削除する」「一旦 <code>todo</code> に戻して直してからまた凍結し直す」という迂回路も同じ扱いで塞ぐ</b>（reason: <code>deleted</code> / <code>unfrozen</code>）。</li>
+        <li><b>②実行（<code>scripts/verify-done-gate.mjs</code>）</b>：ある葉が今回のPRで新規に <code>doing</code>/<code>todo</code> → <code>done</code> へ遷移するとき、全 <code>criteria</code> に <code>verifyCmd</code> が設定されていることを必須化し、CIがそのコマンドを<b>今この場で実際に実行</b>して exit code 0 になることを要求する。「テストを書いた」という申告ではなく「このコミットで今まさに実行して合格した」という事実そのものをdoneの条件にする。過去に受理済み（BASEで既に<code>done</code>だった）葉には遡及しない＝既存ツリーは壊さず、新規のdone化から適用が始まる。</li>
+        <li><b>③evidence（<code>scripts/verify-roadmap-evidence.mjs</code>）</b>：①②を通過しても、最終的に<code>evidence</code>へ外部事実（CI run URL等）を記入しない限り<code>done</code>は成立しない。</li>
+        <li><b>正直な限界</b>：①②③は「自己採点そのもの（テストを書かない／書いたが実行しない／実行したら実は落ちる）」を機械で閉じるが、「<code>verifyCmd</code>の中身が<code>criteria.text</code>の要求を本当に厳密に検証しているか（境界値・対照実験の有無等）」までは exit code だけからは判定できない。ここは引き続き人間・独立サブエージェント（<code>basis-reviewer</code>／<code>independent-verifier</code>）の役目。</li>
       </ul>
 
       <h2>分解の規則（不変・自己相似）</h2>

@@ -3,10 +3,18 @@
 
 import assert from "node:assert";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveSegments, normalize, dedupeOverlap } from "../src/reverse-match.mjs";
+import { spawn } from "node:child_process";
+import {
+  resolveSegments,
+  normalize,
+  dedupeOverlap,
+  MAX_MATCH_GAP_SEC,
+  MIN_MATCH_COVERAGE,
+} from "../src/reverse-match.mjs";
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
@@ -365,6 +373,85 @@ t("P1-9-C: keepTextのカバー率が閾値未満の区間は採用しない", (
     distantTranscript,
   );
   assert.strictEqual(out.length, 0, "ごく一部しか当たっていない区間は捨てるべき");
+});
+
+// ---- P1-9-D: クリップ結合の間隔判定が境界値でも正しく動く ----
+// 頭「あいうえお」と尻「かきくけこ」の間に無関係な語「べつのことば」を挟み、完全一致経路を
+// 避けて部分一致（頭/尻を別々に探す）経路を通す。gapは headEndWord.end と tailStartWord.start
+// の差だけで決まる（reverse-match.mjs: `if (tailStartWord.start - headEndWord.end > maxGapSec)`）
+// ので、比較演算子が `>` （`>=` ではない）＝ちょうど閾値は結合される側であることをfixtureで突く。
+function gapBoundaryTranscript(tailStart) {
+  return {
+    language: "ja",
+    duration: tailStart + 2.0,
+    words: [
+      { w: "あいうえお", start: 0.0, end: 2.0 },
+      { w: "べつのことば", start: 5.0, end: 7.0 },
+      { w: "かきくけこ", start: tailStart, end: tailStart + 2.0 },
+    ],
+    segments: [],
+  };
+}
+
+t("P1-9-D: gapがちょうどMAX_MATCH_GAP_SEC(10秒)のとき結合される", () => {
+  const tailStart = 2.0 + MAX_MATCH_GAP_SEC; // headEndWord.end(2.0)からのgapがちょうど閾値
+  const out = resolveSegments(
+    [{ keepText: "あいうえおかきくけこ", hook: "h" }],
+    gapBoundaryTranscript(tailStart),
+  );
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].start, 0.0);
+  assert.strictEqual(
+    out[0].end,
+    tailStart + 2.0,
+    "gap=ちょうどMAX_MATCH_GAP_SECは結合され、尻の語まで区間が伸びるべき",
+  );
+});
+
+t("P1-9-D: gapがMAX_MATCH_GAP_SECを僅かに超える(+0.001秒)とき結合されない", () => {
+  const tailStart = 2.0 + MAX_MATCH_GAP_SEC + 0.001;
+  const out = resolveSegments(
+    [{ keepText: "あいうえおかきくけこ", hook: "h" }],
+    gapBoundaryTranscript(tailStart),
+  );
+  assert.strictEqual(out.length, 1, "頭側だけの区間として残るべき（丸ごと消さない）");
+  assert.strictEqual(
+    out[0].end,
+    2.0,
+    "gapがMAX_MATCH_GAP_SECを僅かでも超えたら尻まで結合してはいけない",
+  );
+});
+
+// ---- P1-9-E: 発話カバー率が境界値でも採否が仕様通り ----
+// transcriptの語を「あ」のmatchLen個連続にし、keepTextはその後ろに素材に存在しない「ん」を
+// 詰めてtargetLenにする。尻は一切一致しないため（joined側に「ん」が無い）、頭のみの片側一致に
+// 固定でき、coverage=matchLen/targetLenを整数比でちょうど作れる。比較は
+// `if (coverage < minCoverage) return null;` （`<=` ではない）＝ちょうど閾値は採用される側。
+function coverageBoundaryTranscript(matchLen) {
+  return {
+    language: "ja",
+    duration: 1.0,
+    words: [{ w: "あ".repeat(matchLen), start: 0.0, end: 1.0 }],
+    segments: [],
+  };
+}
+
+t("P1-9-E: coverageがちょうどMIN_MATCH_COVERAGE(0.5)のとき採用される", () => {
+  const matchLen = 50;
+  const targetLen = Math.round(matchLen / MIN_MATCH_COVERAGE); // 0.5なら100
+  const target = "あ".repeat(matchLen) + "ん".repeat(targetLen - matchLen);
+  const out = resolveSegments([{ keepText: target, hook: "h" }], coverageBoundaryTranscript(matchLen));
+  assert.strictEqual(out.length, 1, "coverage=ちょうどMIN_MATCH_COVERAGEは採用されるべき");
+  assert.strictEqual(out[0].start, 0.0);
+  assert.strictEqual(out[0].end, 1.0);
+});
+
+t("P1-9-E: coverageがMIN_MATCH_COVERAGEを僅かに下回る(0.49)とき採用されない", () => {
+  const targetLen = 100;
+  const matchLen = 49; // 49/100 = 0.49 < MIN_MATCH_COVERAGE(0.5)
+  const target = "あ".repeat(matchLen) + "ん".repeat(targetLen - matchLen);
+  const out = resolveSegments([{ keepText: target, hook: "h" }], coverageBoundaryTranscript(matchLen));
+  assert.strictEqual(out.length, 0, "coverage=0.49は採用されてはいけない");
 });
 
 // ---- P0-5: Web UIの設定が生成物へ反映される（画面選択→mode/orient契約） ----
@@ -903,6 +990,159 @@ t("P1-2-E: レート制限はウィンドウが変われば再度許可する", 
   fakeNow += 1000; // ウィンドウ経過をシミュレート(実時間を待たない)
   assert.strictEqual(limiter.allow("k"), true, "ウィンドウ経過後は再度許可される");
 });
+
+// ---- P1-2-F/G/H/I: 単体関数ではなく、実サーバーのHTTPハンドラへの配線を検証 ----
+// 上のP1-2-A/B/D/Eは security.mjs の関数を直接呼ぶ単体テストのみで、server/index.mjs の
+// リクエストハンドラが実際にそれらを配線して呼んでいるかは未検証だった(ツリー見直しで検出)。
+// 子プロセスで実サーバー(server/index.mjs)を起動し、本物のHTTPリクエストで確認する。
+
+const SMOKE_SERVER_PORT = 59196; // 他のchild-process系テスト(59179/59191等)と衝突しない専用ポート
+
+/** 実サーバーを起動し、"listening"ログが出たら{child, token}でresolveする(他のcheckファイルと同じ手口)。
+ *  起動タイムアウト/起動失敗のときも、reject前に子プロセスをkillする(呼び出し元はchildを受け取れず
+ *  stopSmokeServerへ渡せないため、ここでやらないとプロセス/ポートが残留する)。 */
+function startSmokeServer() {
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", [path.join(ROOT, "server", "index.mjs")], {
+      cwd: ROOT,
+      env: { ...process.env, PORT: String(SMOKE_SERVER_PORT) },
+    });
+    let buf = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("server起動タイムアウト"));
+    }, 8000);
+    child.stderr.on("data", (chunk) => {
+      buf += chunk.toString();
+      const m = buf.match(/startup token[^:]*:\s*([0-9a-f]+)/);
+      if (m && /listening/.test(buf)) {
+        clearTimeout(timer);
+        resolve({ child, token: m[1] });
+      }
+    });
+    child.on("error", (e) => { clearTimeout(timer); child.kill("SIGTERM"); reject(e); });
+  });
+}
+
+function stopSmokeServer(child) {
+  return new Promise((resolve) => {
+    if (!child || child.killed) return resolve();
+    child.once("exit", () => resolve());
+    child.kill("SIGTERM");
+    setTimeout(resolve, 2000);
+  });
+}
+
+/**
+ * POST /api/jobs を実HTTPで叩く。body は書き込まない(node:httpはContent-Lengthヘッダを
+ * 明示指定しても実際に書き込んだバイト数と食い違っても構わず送出することを確認済み。
+ * P1-2-Hの検証(宣言長のみ上限超・実体は送らない)に必要な挙動)。
+ */
+function postJobsRaw({ headers = {}, query = {} }) {
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ sub: "none", cut: "topic", size: "9:16", name: "x.mp4", ...query }).toString();
+    const req = http.request({
+      host: "127.0.0.1", port: SMOKE_SERVER_PORT, path: `/api/jobs?${q}`, method: "POST", timeout: 5000,
+      headers: {
+        host: `127.0.0.1:${SMOKE_SERVER_PORT}`,
+        "content-type": "application/octet-stream",
+        "content-length": 0,
+        // 宣言Content-Lengthどおりの実体を送らないリクエスト(P1-2-H/I)では、Connection: close
+        // を付けないと、サーバー側が「同じソケットで続きの本文が来るかもしれない」と待ち続け、
+        // 後続リクエストが交互にタイムアウトする(実地で確認済み)。毎回別ソケットで完結させる。
+        connection: "close",
+        ...headers,
+      },
+    }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => resolve({ status: res.statusCode, body }));
+    });
+    req.on("timeout", () => req.destroy(new Error("request timeout")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** t() の非同期版。同じ pass/fail カウンタ・同じ PASS/FAIL 出力形式を使う。 */
+async function at(name, fn) {
+  try {
+    await fn();
+    pass++;
+    console.log(`PASS ${name}`);
+  } catch (e) {
+    fail++;
+    console.log(`FAIL ${name}: ${e.message}`);
+  }
+}
+
+// 起動に失敗しても(タイムアウト・ポート衝突等)、以降のP1-3〜P1-5等の無関係なテストを
+// 巻き込んで全体をクラッシュさせない(未catchのままだとtop-level awaitが例外を伝播し、
+// このファイルの残り約30件のテストが1件も実行されずに終了してしまう)。
+let smokeServer = null;
+try {
+  let started;
+  try {
+    started = await startSmokeServer();
+  } catch (e) {
+    fail++;
+    console.log(`FAIL P1-2-F/G/H/I: 実サーバーの起動に失敗しました: ${e.message}`);
+  }
+  if (started) {
+  smokeServer = started.child;
+  const VALID_TOKEN = started.token;
+
+  await at("P1-2-F: 実サーバーへトークン無しでPOST /api/jobsすると401/403が返る", async () => {
+    const r = await postJobsRaw({});
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  await at("P1-2-F: 実サーバーへ誤トークンでPOST /api/jobsすると401/403が返る", async () => {
+    const r = await postJobsRaw({ query: { token: "wrong-token-deadbeef" } });
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  await at("P1-2-G: 実サーバーへ許可外Originを付けてPOST /api/jobsすると拒否される", async () => {
+    // トークンは正しくても、Origin検査は/api/*全体でトークン検査より前に行われるため拒否される。
+    const r = await postJobsRaw({
+      query: { token: VALID_TOKEN },
+      headers: { origin: "http://evil.example.com" },
+    });
+    assert.ok(r.status === 401 || r.status === 403, `status=${r.status} body=${r.body}`);
+  });
+
+  // P1-2-H と P1-2-I は同じ「宣言Content-Lengthを上限超にし、実体は送らない」リクエストを
+  // 使って1本のサーバーで連続して検証する(F/Gは401/403でハンドラ内のレート制限に到達する前に
+  // 拒否されるためカウントされない=このループの前でカウンタは0のまま)。
+  // レート制限(P1-2-I)判定はContent-Length判定より前に行われるため、1〜10回目は判定順どおり
+  // 413(P1-2-H)、11回目でレート制限にかかり429(P1-2-I)になる。
+  const OVERSIZED_HEADERS = { headers: { "content-length": MAX_UPLOAD_BYTES + 1024 } };
+
+  await at(
+    "P1-2-H: 宣言Content-Lengthが上限超のリクエストへ、実サーバーが実ボディを受け取らず早期に413を返す",
+    async () => {
+      const r = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+      assert.strictEqual(r.status, 413, `status=${r.status} body=${r.body}`);
+    },
+  );
+
+  await at(
+    "P1-2-I: 短時間に閾値(10回/60秒)を超える頻度でPOST /api/jobsすると実サーバーが429を返す",
+    async () => {
+      // 直前のP1-2-Hテストで既に1回消費済みなので、ここで9回(計10回)までは許可され、
+      // 11回目(このテスト内の10回目の呼び出し)で閾値超過となり429になるはず。
+      for (let i = 0; i < 9; i++) {
+        const r = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+        assert.strictEqual(r.status, 413, `${i + 2}回目(閾値内)はstatus=${r.status}`);
+      }
+      const denied = await postJobsRaw({ query: { token: VALID_TOKEN }, ...OVERSIZED_HEADERS });
+      assert.strictEqual(denied.status, 429, `11回目(閾値超)はstatus=${denied.status}のはず`);
+    },
+  );
+  }
+} finally {
+  await stopSmokeServer(smokeServer);
+}
 
 // ---- P1-3: 同名ファイルを同時にアップロードしても混線しない ----
 
