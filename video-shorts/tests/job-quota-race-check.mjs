@@ -12,7 +12,6 @@
 //
 // 実行: node tests/job-quota-race-check.mjs   (全PASSで exit 0)
 
-import assert from "node:assert";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";

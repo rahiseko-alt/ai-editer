@@ -118,35 +118,21 @@
 <script type="application/json" id="roadmap-data">{
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-EDIT-REFRAME",
-    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】今回追加した3段の機械ゲート（criteria-freeze拡張／done-gate新設／evidence拡張）をPRとして出し、CIで実地確認する\n  ・特にverify-done-gate.mjsをroadmap-requiredワークフローに追加したことで実行時間が伸びる（pnpm install/ffmpeg/opencv\n    のセットアップが増えるため）。実際のCI所要時間を確認し、長すぎるようなら環境構築の要否を見直す。\n\n【2】現在doingのまま止まっている葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, M-1-E/F, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmd（今回新設したフィールド。CIが実際に実行するコマンド）を追記すること。\n  無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。M-4-HとG-EDIT-MOSAIC-UI-O-1/O-2はマージ済み。\n\n【3】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認は未着手のまま。前回セッションのbasis-reviewer 2エージェントが\n  出したobjection（20件超の指摘）が反映されているか、引き続き確認が必要。\n\n【4】G-EDIT-MOSAIC-UI-O-1/O-2の凍結verifyを満たすには、VS_FIXTURE_MANIFESTによる文字起こし(src/transcribe.py)・\n  AI字幕直し(src/ai-caption-fix.mjs)・区間選定(server/claude-select.mjs)3箇所の差し替え機構を実装する必要がある\n  （未着手）。それが出来て初めて/api/jobs経由の実サーバー検証(モザイク工程だけ失敗させる)ができ、O-1/O-2をdoingへ\n  進められる。現状は「state.json未書き戻しの実装欠陥修正+回帰テスト」のみ完了し、statusはtodoのまま据え置いている。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
+    "active": "G-TESTINFRA-LINT",
+    "next": "PR #68(feature/testinfra-lint)をorigin/mainへマージする（PR#65・PR#76・PR#71・PR#61・PR#56・PR#62・PR#72マージ後の状態との競合をpnpm-lock.yaml再生成込みで解消済み。origin/main側でP0-5-C/P0-5-Dの実機配線テスト(tests/sub-none-render-check.mjs・tests/mosaic-job-wiring-check.mjs)・P1-2-F/G/H/I実サーバー検証・P1-12-A/Bバージョン固定・job-failure-state-check.mjs(モザイク失敗時のstate.json書き戻し回帰テスト)がマージ済みだったため、video-shorts/package.jsonのtestチェーンにこれらを合流させlintスクリプトも維持した）。マージ後、G-TESTINFRA-LINTのcriteriaにCI run URLをevidenceとして記録しstatusをdoneにする。以降、残りのレビュー済みPR(#58,#59,#57)をマージする。\n\nG-EDIT-REFRAMEの実態確認は依然未着手：basis-reviewer 2エージェントが出したobjection（20件超）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。\n\nG-EDIT-MOSAIC-UI-O-1/O-2は依然todo：VS_FIXTURE_MANIFESTによる差し替え機構が未実装のため、/api/jobs経由の実サーバー検証はまだできない（origin/mainのPR#72でstate.json未書き戻しの実装欠陥修正+回帰テストのみ完了済み）。",
     "handoff": {
       "done": [
-        "マスター指摘「CI緑だけではAIがハードルを下げているだけでは？機械ブロックされているのか」を受け、",
-        "基準の凍結を機械で強制する3段のゲートを実装しmainへマージした（PR #75）。",
-        "①scripts/verify-criteria-freeze.mjs を拡張：凍結済み葉のtext/verifyだけでなくverifyCmd（新設）も凍結対象にし、",
-        "  本文を書き換えずに「葉を削除する」「statusをtodoへ戻して直してから再凍結する」という迂回路も、",
-        "  正当な宣言(meta.basisChanges)なしには機械が違反として検知するようにした（reason: deleted / unfrozen を追加）。",
-        "②scripts/verify-done-gate.mjs を新設：今回のPRで新規にdoneへ遷移した葉について、全criteriaにverifyCmdが",
-        "  設定されていることを必須化し、CIがそのコマンドを実際に実行してexit 0になることを要求する。",
-        "  過去に受理済み(BASEで既にdoneだった)葉には遡及しない移行措置とした。",
-        "③scripts/verify-roadmap-evidence.mjs を拡張：status:doneなのにevidenceが空のままの葉を違反として検知するようにした",
-        "  （自己申告だけで完了扱いにできる穴を閉じる）。同スクリプトをfindRoadmapViolations()として純粋関数へ分離しテスト可能にした。",
-        "branch protectionのルールセットに roadmap-required を必須チェックとして追加し、上記3段に実効力を持たせた。",
-        "M-4-H（納品フォルダの素顔混入検知）・M-1-E/F（apply_mosaic_cli.pyのcv2.error捕捉漏れ修正）をmainへマージ済み。",
-        "G-EDIT-MOSAIC-UI-O-1/O-2: VS_FIXTURE_MANIFESTが未実装であることを確認。server/pipeline-runner.mjsのstartJob()が",
-        "  失敗時にstate.jsonへ書き戻していない実装欠陥を修正し、回帰テストtests/job-failure-state-check.mjs(5 PASS)を追加してmainへマージ済み。",
-        "  凍結verifyが要求する/api/jobs経由の実サーバー検証はVS_FIXTURE_MANIFESTが無いと実施できないため、statusはtodoのまま据え置いた。"
+        "G-TESTINFRA-LINT: video-shortsパッケージにESLint 9系(flat config)を導入した。devDependenciesへeslint/@eslint/js/globalsを追加し、video-shorts/eslint.config.mjsを新設(対象: **/*.mjsはNode/ESM。一部Playwrightのpage.evaluate()コールバックがブラウザグローバルも使うためnode+browserのglobalsを両方許容。ui/app.js・webapp-mockup/app.js・install/consent.jsはブラウザ非モジュールスクリプトとして別扱い)。ルールはeslint:recommended相当+no-unused-vars(catch束縛含む)+no-use-before-define+no-empty(allowEmptyCatch)+no-irregular-whitespace(文字列/コメント/正規表現中の全角スペースは日本語処理で意図的なため除外)。package.jsonへ`\"lint\": \"eslint .\"`を追加。",
+        "既存コードの実Lintエラー(未使用import/変数・呼ばれていない死んだ関数)を最小修正で解消(server/pipeline-runner.mjs・ui/app.js・webapp-mockup/app.js・webapp-mockup/measure.mjs・tests/caption-api-check.mjs・tests/job-quota-race-check.mjs・tests/render-escape-check.mjs・tests/term-dictionary-check.mjs)。大規模リファクタは行っていない。",
+        "`pnpm --filter video-shorts lint`がexit 0で通ることを確認。偽の緑でないことの自己確認として、一時的に構文エラーとuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元した。",
+        "origin/main(criteria-freeze強化3段ゲート・scripts/typecheck導入・PR#71のP0-5-C/P0-5-D実機配線テスト・PR#61のP1-12-A/Bバージョン固定・PR#62のP1-2-F/G/H/I実サーバー検証・PR#72のjob-failure-state-check.mjs追加)とのマージ競合をdocs/roadmap.html・video-shorts/package.jsonで2回にわたり解消(origin/mainが作業中にさらに進んだため再マージした。test scriptはorigin/main側の新規テストファイルをすべて合流させた和集合とし、lint scriptも維持)。新規マージされたtests/mosaic-job-wiring-check.mjs(PR#71由来)のeslintエラー3件(未使用importのassert、timerのuse-before-define×2)を最小修正。",
+        "リポジトリ全体`pnpm -r --if-present typecheck/lint`緑・`pnpm audit --audit-level moderate`脆弱性0件・`node scripts/verify-roadmap-evidence.mjs`緑・`BASE_REF=origin/main node scripts/verify-criteria-freeze.mjs`緑・`BASE_REF=origin/main node scripts/verify-done-gate.mjs`緑・`pnpm --filter scripts test`(45+8+16 PASS)・`video-shorts/tests/smoke.mjs`(96 PASS、P1-2-F/G/H/Iの実サーバー検証含む)を確認した。"
       ],
       "trouble": [
-        "既存の「HEADで削除されたノードは今回のスコープ外」という旧テストケースは、今回閉じた抜け穴そのものだったため、",
-        "挙動を反転させて書き直した（意図的な仕様変更であり後退ではない）。",
-        "新設のverifyCmdフィールドは、今回の作業葉（G-EDIT-CAPTION-AI-*等、doingのまま）には遡及的に付与していない。",
-        "次にこれらをdoneへ進める際、verify-done-gate.mjsによりverifyCmd未設定では機械的にブロックされる",
-        "（想定どおりの強制だが、次回作業者は驚かないよう申し送る）。",
-        "PR#72（G-EDIT-MOSAIC-UI-O-1/O-2）はmainとdocs/roadmap.html・video-shorts/package.jsonでコンフリクトしたため、",
-        "手動でマージ解消した（meta.next/handoffはPR#75由来の内容を基本に、O-1/O-2固有の申し送りを統合）。",
-        "このマージ時点のorigin/mainではP0-5-C（sub=none字幕未焼き込み）/P0-5-D（mosaic=on時のみモザイク適用）の実機配線検証（PR#71）も別途マージ済みだった（本PRの変更とは独立）。"
+        "video-shortsのtest実行(`pnpm --filter video-shorts test`)がPlaywright Chromium未導入のためこの作業環境で失敗したため、`pnpm exec playwright install --with-deps chromium`で導入してから再実行した。CI(.github/workflows/ci.yml)は既にこの手順を組み込み済みなので影響は無い。",
+        "M-5-B(顔モザイク処理の追加時間しきい値)がこのサンドボックス環境でFAILした(モザイク有り75.9秒/無し32.4秒、受入は30秒以内)。roadmapのverify記載どおりCIのubuntu-24.04ランナーが正式な計測環境であり、今回のLint変更(video-shorts/src/apply-mosaic-stage.mjs等は無変更)とは無関係の既存の環境依存事象と判断し、そのままPRを出してCIの実測値を見る方針にした。",
+        "マージ作業中にorigin/mainがさらに2回進んだ(PR#62→PR#72)。最初のBASE_REF=origin/mainでのcriteria-freeze検証がP1-2-F/G/H/Iを『凍結解除』と誤検知したが、これは検証直前にPR#62がマージされ古いスナップショットで比較してしまったことが原因と判明。git-recursive戦略が一部の非衝突な差分（P1-12-A/B等）を自動適用し損なう挙動も観測されたため、`git merge-file`による独立3-way検証で実際の衝突範囲を裏取りしてから解消した。",
+        "PR#72由来のtests/job-failure-state-check.mjsをマージした際、`pnpm --filter video-shorts lint`がserver/pipeline-runner.mjs:294で`readState`未定義(no-undef)を検出した。原因はG-TESTINFRA-LINTの本PR自身の初回コミットで『呼ばれていない死んだ関数』として readState を削除していたこと(当時は未使用で正しい判断だったが、PR#72が後から readState の新しい呼び出し元を追加したため、削除だけがマージへ残り呼び出し元だけが来て未定義エラーになった＝行単位のdiffでは検出できない意味的な衝突)。origin/main側の実装(state.jsonを読みJSON.parseして返す、無ければnull)をそのまま復元して解消し、tests/job-failure-state-check.mjs(5 PASS)で動作確認した。"
       ]
     },
     "updated": "2026-08-10",
@@ -984,8 +970,8 @@
                   "kind": "state",
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
-                  "detail": "現状プレーンJSでLint未導入（video-shorts/AGENTS.md参照）。導入方式(ESLint等)は別途提案・承認が必要（AGENTS.md「依存ライブラリの追加は勝手にやらない」）。",
-                  "status": "todo",
+                  "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",

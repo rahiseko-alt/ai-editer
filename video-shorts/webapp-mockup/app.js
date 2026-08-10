@@ -122,10 +122,6 @@ function updateVideoArea(btn) {
   }
 }
 
-// 旧関数名エイリアス（呼び出し側の互換維持）
-function updatePhoneAspect(btn) { updateVideoArea(btn); }
-function updateDeviceAspect(btn) { updateVideoArea(btn); }
-
 // リサイズ時は選択中サイズで動画領域を再計算
 window.addEventListener("resize", () => {
   const active = document.querySelector(".size-chip.is-on");
