@@ -1134,7 +1134,7 @@
                   "kind": "state",
                   "theme": "クラウド向け自動導入フックが壊れたら、そのPRはマージできない",
                   "meaning": "この仕組みが壊れても、気づかず配ってしまわない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "hook-session-startジョブがci-green(gate)のneedsに含まれ、失敗時にci-greenも失敗する",
@@ -1142,14 +1142,14 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。"
+                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。\n2026-08-10 PR feature/delivery-ci-gate で対応: gate.needsに hook-session-start を追加し [quality, smoke, hook-session-start] にした。if: always() のため上流のいずれかが失敗/スキップでもgateステップ自体は走り、判定ロジックが needs['hook-session-start'].result も success かを見て非successならexit 1でci-greenを赤くする（GitHub Actionsのneeds+デフォルトの失敗伝播に基づく確認。ジョブIDにハイフンを含むためdot記法 needs.hook-session-start ではハイフンが減算と解釈され式が壊れる点に注意し、ブラケット記法 needs['hook-session-start'] を使った）。実地確認（意図的に失敗させたブランチでのPR作成→ci-green赤の実地観測）は本セッションでは未実施（コードレビューでのロジック確認まで）。"
                 },
                 {
                   "id": "G-DELIVERY-FAILCLEAR",
                   "kind": "state",
                   "theme": "外部ツール導入に失敗しても、原因が分かる形でセッションの状態が伝わる",
                   "meaning": "クラウド起動時の自動インストールが失敗しても、何が起きたか分かる",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "apt-get/pipのインストールが失敗した場合、session-start.shの終了コード・出力が、利用者が原因を把握できる形になっている",
@@ -1157,7 +1157,7 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。"
+                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。\n2026-08-10 PR feature/delivery-ci-gate で対応: .claude/hooks/session-start.sh の apt-get install ffmpeg / pip install requirements.txt の各失敗時に [session-start][ERROR] プレフィックス付きでstderrへ原因(exit code・確認すべき箇所)を出力し、その終了コードでexitするよう修正。修正前は `if ! cmd; then rc=$?` の形で否定(!)後に$?を取っていたため、否定演算で$?が反転し常にexit code 0でexitする不具合があった（実地でモック検証し発見・修正）。修正後は `if cmd; then :; else rc=$?; ...; exit \"$rc\"; fi` の形にし、else節でcmdそのものの終了コードを正しく取得するようにした。apt-get/sudo/python3をモック(/tmp配下)に差し替えたローカル実行で、(1) apt-get install失敗時: stderrに[ERROR]メッセージ+exit code 100(mock)で終了コード100、(2) pip install失敗時: 同様にexit code 1で終了、(3) ローカル(CLAUDE_CODE_REMOTE未設定)は無音no-op、(4) 実ffmpeg/パッケージが揃っている環境ではexit 0で無音、の4パターンを実行し出力・終了コードを確認した。CI側の hook-session-start ジョブはハッピーパス(導入成功)のみを検証しており、失敗パスの実地確認はローカルのモック実行によるもの。"
                 }
               ],
               "detail": "2026-07-28 マスター指示: 配布パターン「Claude Codeあり×PCなし(クラウド上のClaude Codeセッションのみで完結)」をまず完成させる。スタック・アーキテクチャは変更せず(既存のNode/Python/ffmpeg/Claude Code構成のまま)、セッション起動時の環境自動整備で対応する。"
