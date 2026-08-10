@@ -49,8 +49,10 @@ const FPS = 15;
 const VIDEO_W = 320, VIDEO_H = 180;
 const DURATION = 4.0; // 合成素材の全長(秒)
 
-// 尺の許容幅。trim-duration-check.mjs と同じ考え方（コマ周期 1/15=0.067秒 の半分より小さい）。
-const TOL_SEC = 0.06;
+// 尺の許容幅。trim-duration-check.mjs と同じ考え方・同じ値（コマ周期 1/15=0.067秒 の半分=0.033秒
+// より小さい）。0.06 だとコマ周期の半分を超えており、1コマぶんの境界ズレを見逃しうる（コメントの
+// 主張と数値が食い違っていた）。実測ではズレ0秒でPASSすることを確認済み。
+const TOL_SEC = 0.025;
 
 let pass = 0, fail = 0;
 function t(name, fn) {
