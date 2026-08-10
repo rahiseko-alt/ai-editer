@@ -913,7 +913,9 @@ t("P1-2-E: レート制限はウィンドウが変われば再度許可する", 
 
 const SMOKE_SERVER_PORT = 59196; // 他のchild-process系テスト(59179/59191等)と衝突しない専用ポート
 
-/** 実サーバーを起動し、"listening"ログが出たら{child, token}でresolveする(他のcheckファイルと同じ手口)。 */
+/** 実サーバーを起動し、"listening"ログが出たら{child, token}でresolveする(他のcheckファイルと同じ手口)。
+ *  起動タイムアウト/起動失敗のときも、reject前に子プロセスをkillする(呼び出し元はchildを受け取れず
+ *  stopSmokeServerへ渡せないため、ここでやらないとプロセス/ポートが残留する)。 */
 function startSmokeServer() {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [path.join(ROOT, "server", "index.mjs")], {
@@ -921,7 +923,10 @@ function startSmokeServer() {
       env: { ...process.env, PORT: String(SMOKE_SERVER_PORT) },
     });
     let buf = "";
-    const timer = setTimeout(() => reject(new Error("server起動タイムアウト")), 8000);
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("server起動タイムアウト"));
+    }, 8000);
     child.stderr.on("data", (chunk) => {
       buf += chunk.toString();
       const m = buf.match(/startup token[^:]*:\s*([0-9a-f]+)/);
@@ -930,7 +935,7 @@ function startSmokeServer() {
         resolve({ child, token: m[1] });
       }
     });
-    child.on("error", (e) => { clearTimeout(timer); reject(e); });
+    child.on("error", (e) => { clearTimeout(timer); child.kill("SIGTERM"); reject(e); });
   });
 }
 
@@ -986,9 +991,19 @@ async function at(name, fn) {
   }
 }
 
+// 起動に失敗しても(タイムアウト・ポート衝突等)、以降のP1-3〜P1-5等の無関係なテストを
+// 巻き込んで全体をクラッシュさせない(未catchのままだとtop-level awaitが例外を伝播し、
+// このファイルの残り約30件のテストが1件も実行されずに終了してしまう)。
 let smokeServer = null;
 try {
-  const started = await startSmokeServer();
+  let started;
+  try {
+    started = await startSmokeServer();
+  } catch (e) {
+    fail++;
+    console.log(`FAIL P1-2-F/G/H/I: 実サーバーの起動に失敗しました: ${e.message}`);
+  }
+  if (started) {
   smokeServer = started.child;
   const VALID_TOKEN = started.token;
 
@@ -1039,6 +1054,7 @@ try {
       assert.strictEqual(denied.status, 429, `11回目(閾値超)はstatus=${denied.status}のはず`);
     },
   );
+  }
 } finally {
   await stopSmokeServer(smokeServer);
 }
