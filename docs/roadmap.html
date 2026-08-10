@@ -1482,7 +1482,7 @@
                       "kind": "state",
                       "theme": "素顔ファイルが客への納品物に混ざらないことが、仕組みでも防がれている",
                       "meaning": "手順を間違えても、素顔が客に渡らない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
@@ -1490,7 +1490,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。"
+                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
                     }
                   ]
                 },
