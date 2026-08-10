@@ -2508,7 +2508,7 @@
                           "kind": "state",
                           "theme": "claudeの標準出力そのものがJSONとして壊れていても、工程は例外で安全に終わる",
                           "meaning": "AIの応答そのものが壊れていても、変な動画にならず止まる",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "--output-format jsonの封筒自体(claude-run.mjsが直接JSON.parseする最外層)が壊れているとき、runClaudeJsonは例外を投げ、ai-caption-fixステージはそれをそのまま工程の失敗として伝播する",
@@ -2516,14 +2516,14 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。"
+                          "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にclose(code:0)後にJSON.parse(stdoutBuf.trim())を試み、失敗時は`claude stdout JSON parse 失敗`で例外を投げる実装になっており、ai-caption-fix.mjsのaiCaptionFixStageもtranscript.jsonへの書き込みをchunkループ完了後に置いているため、実装変更は不要だった。tests/helpers/fake-claude-main.mjsへ封筒を被せない生テキスト応答を返す`kind:\"raw\"`を追加し、tests/ai-caption-fix-check.mjsにM1の3件（runClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗として伝播すること／失敗後transcript.jsonが入力と完全一致すること）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-M2",
                           "kind": "state",
                           "theme": "claude実行ファイル自体が起動できないときも、工程は同じように失敗として終わる",
                           "meaning": "AIを呼び出す仕組み自体が無いときも、静かに失敗する",
-                          "status": "todo",
+                          "status": "doing",
                           "criteria": [
                             {
                               "text": "PATH上にclaudeという実行ファイルが存在しない（spawnエラーになる）とき、runClaudeJsonは例外を投げ、ai-caption-fixステージは失敗としてtranscript.jsonを一切書き換えない",
@@ -2531,7 +2531,7 @@
                               "evidence": ""
                             }
                           ],
-                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。"
+                          "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にspawnの'error'イベントで`claude spawn エラー: ...`を投げる実装になっており、ai-caption-fix.mjsも書き込みをchunkループ完了後に行うため、実装変更は不要だった。tests/ai-caption-fix-check.mjsにM2の2件（PATHをclaude不在の空ディレクトリへ差し替えてrunClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗しtranscript.json・ai-caption-fixes.json・transcript.raw.jsonのいずれも作られないこと）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。"
                         },
                         {
                           "id": "G-EDIT-CAPTION-AI-L2",
