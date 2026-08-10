@@ -34,6 +34,13 @@
 //     {"kind":"digest","critiqueNeedle":"...","critique":"...","draft":"..."}
 //     {"kind":"digest-model-gate","modelArg":"--model","exit":1,"stderr":"...",
 //      "critiqueNeedle":"...","critique":"...","draft":"..."}
+//     {"kind":"route","rules":[{"needle":"...","answer":"..."}, ...],"fallback":"..."}
+//                                                       stdin に needle を含む最初のルールで
+//                                                       答える（無ければ fallback）。1本の
+//                                                       サーバープロセスの中で「工程ごとに
+//                                                       プロンプトの文言が違う複数の claude
+//                                                       呼び出し」に、呼ばれた順や回数に
+//                                                       依らず答え分けるためのもの。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -94,6 +101,12 @@ const BEHAVIORS = {
 
   /** digest-editor の2種類の呼び出し（台本ドラフト / 講評）に答える。 */
   digest: (cfg, ctx) => digestReply(cfg, ctx.stdin),
+
+  /** stdin に needle を含む最初のルールで答える（無ければ fallback）。 */
+  route: (cfg, ctx) => {
+    const rule = (cfg.rules || []).find((r) => String(ctx.stdin).includes(r.needle));
+    return reply(rule ? rule.answer : cfg.fallback);
+  },
 
   /** --model が付いた呼び出しだけ失敗させ、付いていなければ digest として答える。 */
   "digest-model-gate": (cfg, ctx) =>
