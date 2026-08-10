@@ -1035,8 +1035,8 @@
                   "kind": "state",
                   "theme": "scripts/パッケージ(ロードマップの機械チェック群)にtypecheck/lintが導入されている",
                   "meaning": "ロードマップを守る仕組み自体のコードも、型やLintで機械チェックされている",
-                  "status": "todo",
-                  "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。",
+                  "status": "doing",
+                  "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。2026-08-10、軽い方(tsconfig checkJs)を選択して着手：scripts/tsconfig.json（../tsconfig.base.jsonを継承し、allowJs/checkJs/noEmitを追加）を新設し、scripts/package.jsonに\"typecheck\": \"tsc --noEmit -p tsconfig.json\"を追加。@types/node(^22.10.0)をルートpackage.jsonのdevDependenciesに追加（node:*インポート・process・consoleの型解決に必須）。tsconfig.base.jsonのstrict:true（noUncheckedIndexedAccess含む）は緩めず、scripts/*.mjsの3ファイル（verify-roadmap-evidence.mjs・verify-criteria-freeze.mjs・verify-criteria-freeze.test.mjs）すべてに実際のJSDoc型注釈（@param/@returns/@typedef）を追加して型エラーを解消した。@ts-nocheckは1件も使用していない（段階導入ではなく全ファイル本物のcheckJsを通した）。pnpm --filter scripts typecheckで実行できることを確認し、一時的にhtml.thisMethodDoesNotExist()という存在しないメソッド呼び出しを混入させてtypecheckが非0（exit 2、TS2339）で終了することを確認してから元に戻した（このコミットには含めていない）。pnpm -r --if-present typecheck（ルート）・pnpm --filter scripts test（34 PASS）・node scripts/verify-roadmap-evidence.mjs・BASE_REF=origin/main node scripts/verify-criteria-freeze.mjsがいずれも緑であることを確認済み。",
                   "criteria": [
                     {
                       "text": "scripts/パッケージにtypecheck(またはJSDoc+tsc --checkJs)かLintの少なくとも一方が導入され、pnpm -r --if-presentから実行される",

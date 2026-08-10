@@ -50,23 +50,43 @@ const roadmapAbsPath = resolve(__dirname, "..", ROADMAP_REL_PATH);
 // ---- 純粋関数（テスト対象。git/fsに依存しない） -----------------------------------
 
 /**
+ * @typedef {{ text?: string, verify?: string, evidence?: string, [key: string]: any }} Criterion
+ * @typedef {{
+ *   id?: string,
+ *   kind?: string,
+ *   status?: string,
+ *   criteria?: Criterion[],
+ *   children?: RoadmapNode[],
+ *   [key: string]: any,
+ * }} RoadmapNode
+ * @typedef {{ id: string, criteriaHash: string, at?: string, reason?: string }} BasisChangeEntry
+ * @typedef {{ id: string, baseHash: string, headHash: string, reason: "undeclared" | "not-new" }} FreezeViolation
+ */
+
+/**
  * docs/roadmap.html の HTML 文字列から roadmap JSON を取り出す。
  * verify-roadmap-evidence.mjs の extractRoadmapJson と同じロジック。
+ * @param {string} html
+ * @returns {any}
  */
 export function extractRoadmapJson(html) {
   const m = html.match(
     /<script type="application\/json" id="roadmap-data">([\s\S]*?)<\/script>/,
   );
-  if (!m) throw new Error("roadmap-data script block not found");
+  if (!m || m[1] === undefined) throw new Error("roadmap-data script block not found");
   return JSON.parse(m[1]);
 }
 
 /**
  * ツリー(nodes配列)を id をキーにした Map へフラット化する（子を辿るwalk）。
  * verify-roadmap-evidence.mjs の walk 関数を参考に、id -> node の対応表を作る版。
+ * @param {RoadmapNode[] | undefined | null} nodes
+ * @returns {Map<string, RoadmapNode>}
  */
 export function flattenById(nodes) {
+  /** @type {Map<string, RoadmapNode>} */
   const map = new Map();
+  /** @param {RoadmapNode | undefined | null} node */
   function walk(node) {
     if (node && node.id) map.set(node.id, node);
     if (node && Array.isArray(node.children)) {
@@ -81,6 +101,8 @@ export function flattenById(nodes) {
  * criteria 配列から text/verify だけを取り出し、JSON.stringify で正規化した文字列にする。
  * evidence・status など「達成状況」に関わるフィールドは意図的に含めない
  * （evidence が埋まっただけで「基準が変わった」と誤検知しないため）。
+ * @param {Criterion[] | undefined | null} criteria
+ * @returns {string}
  */
 export function criteriaFingerprint(criteria) {
   const normalized = (criteria || []).map((c) => ({
@@ -90,7 +112,11 @@ export function criteriaFingerprint(criteria) {
   return JSON.stringify(normalized);
 }
 
-/** criteria の {text, verify} 正規化文字列の sha256(hex) を返す。 */
+/**
+ * criteria の {text, verify} 正規化文字列の sha256(hex) を返す。
+ * @param {Criterion[] | undefined | null} criteria
+ * @returns {string}
+ */
 export function hashCriteria(criteria) {
   return createHash("sha256").update(criteriaFingerprint(criteria)).digest("hex");
 }
@@ -98,6 +124,8 @@ export function hashCriteria(criteria) {
 /**
  * ノードが「凍結済みの葉」（＝criteria/verify を書き換えてはいけない対象）かどうかを判定する。
  * 条件：status を持ち、status !== "todo"、かつ子を持たない state ノード。
+ * @param {RoadmapNode | undefined | null} node
+ * @returns {boolean}
  */
 export function isFrozenLeaf(node) {
   if (!node || typeof node !== "object") return false;
@@ -111,11 +139,19 @@ export function isFrozenLeaf(node) {
  * at（日付。空でない文字列）・reason（理由。空でない文字列）も揃っているかを判定する。
  * どちらか欠けている宣言は「理由を明示していない」ので、宣言として認めない
  * （id/criteriaHashだけ一致すれば通ってしまうと、基準変更の理由を明示する目的が骨抜きになる）。
+ * @param {unknown} v
+ * @returns {boolean}
  */
 export function isNonEmptyString(v) {
   return typeof v === "string" && v.trim() !== "";
 }
 
+/**
+ * @param {any} entry
+ * @param {string} id
+ * @param {string} criteriaHash
+ * @returns {boolean}
+ */
 export function isCompleteDeclaration(entry, id, criteriaHash) {
   return (
     !!entry &&
@@ -134,18 +170,24 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
  * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason } の形。
  *   reason: "undeclared"（宣言が無い、またはat/reasonが欠けていて宣言として不完全） |
  *           "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない）
+ * @param {any} baseRoadmap
+ * @param {any} headRoadmap
+ * @returns {FreezeViolation[]}
  */
 export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
   const baseMap = flattenById(baseRoadmap?.nodes || []);
   const headMap = flattenById(headRoadmap?.nodes || []);
 
+  /** @type {BasisChangeEntry[]} */
   const headBasisChanges = Array.isArray(headRoadmap?.meta?.basisChanges)
     ? headRoadmap.meta.basisChanges
     : [];
+  /** @type {BasisChangeEntry[]} */
   const baseBasisChanges = Array.isArray(baseRoadmap?.meta?.basisChanges)
     ? baseRoadmap.meta.basisChanges
     : [];
 
+  /** @type {FreezeViolation[]} */
   const violations = [];
 
   for (const [id, baseNode] of baseMap) {
@@ -153,6 +195,7 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
     if (!isFrozenLeaf(baseNode)) continue; // status:"todo" or 非葉 or 非state は言語化フェーズ＝自由編集可
 
     const headNode = headMap.get(id);
+    if (!headNode) continue; // headMap.has(id)で確認済みだが、TSの型上は念のため防御的に確認する
     const baseHash = hashCriteria(baseNode.criteria);
     const headHash = hashCriteria(headNode.criteria);
     if (baseHash === headHash) continue; // 本文は変わっていない＝問題なし
@@ -177,7 +220,11 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
   return violations;
 }
 
-/** 違反1件を人間可読な日本語メッセージへ整形する。 */
+/**
+ * 違反1件を人間可読な日本語メッセージへ整形する。
+ * @param {FreezeViolation} v
+ * @returns {string}
+ */
 export function formatViolation(v) {
   const base =
     `凍結済みの葉 ${v.id} の criteria/verify 本文が、正当な宣言（meta.basisChanges）なしに` +
@@ -206,12 +253,15 @@ export function formatViolation(v) {
  *   - "fatal: path '<path>' exists on disk, but not in '<ref>'" …ワークツリーにはあるがcommitに無い
  * これに該当しないエラー（refが無効＝invalid object name、gitコマンド自体が無い 等）は
  * 「比較不能」ではなく「壊れている」ので、呼び出し側で再スローして異常終了させる。
+ * @param {any} error
+ * @returns {boolean}
  */
 export function isMissingPathError(error) {
   const text = `${error?.stderr ?? ""}\n${error?.message ?? ""}`;
   return text.includes("does not exist in") || text.includes("exists on disk, but not in");
 }
 
+/** @param {string | undefined} ref */
 function readRoadmapAt(ref) {
   // ref が未指定なら作業ツリーを直接読む（git show を使わない）。
   if (!ref) {
