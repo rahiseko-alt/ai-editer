@@ -120,16 +120,15 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "next": "(並行してP1-10/S-5/S-6のPR feature/dist-hygieneあり) ①(継続)PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。 ②(新規)PR feature/dist-hygiene: CIが緑になったらrun URLをP1-10/S-5/S-6のevidenceへ記録しstatusをdoneへ→マージ。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "P1-10(配布物に開発中のゴミファイルが混ざらない): build-dist.mjsを、既知ディレクトリ名だけを部分削除する方式から、DEST(dist配下)を丸ごとrmSyncしてallowlist(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)のみコピーする「空staging方式」へ変更。",
+        "S-5(軽い版に顔モザイク関連の実ファイルが存在しない)・S-6(標準版・軽量版どちらのSKILL.mdにもmosaic:start/endが残らない): video-shorts/tests/dist-slim-check.mjsに専用テストを追加(P1-10は既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし許可リストとの完全一致を確認/S-5はMOSAIC_FILES4件をfs.existsSyncで確認/S-6は標準版・軽量版のSKILL.md双方でmosaic:start・mosaic:endの4通りを横断確認)。node tests/dist-slim-check.mjsで19 PASS/0 FAILを確認。旧実装(部分削除方式)に戻すとP1-10のテストが正しくFAILすることも確認済み(偽の緑でないことの確認)。P1-10/S-5/S-6を status:doing にしdetailへ実装内容を追記(criteria本文は不変)。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "(REFRAME・継続中/今回は未着手)PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示により修正エージェントを検証完了前にTaskStopで中断。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
+        "(今回新規)pnpm -r testのvideo-shorts全体チェーン(&&連結)は、本PRと無関係なM-5-B(顔モザイク処理の追加時間が60秒動画で30秒以内という性能基準、docs/failures.md既出の既知項目)がこの実行環境で67.6秒/31.4秒差となりFAILしたため、その後段のdist-slim-check.mjsまで到達しなかった。dist-slim-check.mjs単体(node tests/dist-slim-check.mjs)は19 PASS/0 FAILで、本PRの変更による回帰ではない。"
       ]
     },
     "updated": "2026-08-10",
@@ -653,8 +652,8 @@
                   "kind": "state",
                   "theme": "配布物に開発中のゴミファイルが混ざらない",
                   "meaning": "お客様に渡すZIPに、余計な内部ファイルが入っていない",
-                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）",
-                  "status": "todo",
+                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）実装済み・ローカルテスト緑・CI run URL待ち: build-dist.mjsをDESTの部分削除(既知ディレクトリ名だけrmSync)からDEST丸ごとrmSync＋allowlist方式(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)へ変更。tests/dist-slim-check.mjsに、既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし、dist直下が許可リストと完全一致し侵入者が消えている(余剰0件)ことを確認するテストを追加。旧実装に戻すとFAILすることを確認済み(正しく検知できる)。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイル(skill/等)を混入させない",
@@ -1619,7 +1618,7 @@
                   "kind": "state",
                   "theme": "軽い版に、顔モザイク関連の実ファイルが存在しない",
                   "meaning": "軽い版に、使わないはずの顔処理の部品が紛れ込んでいない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "軽い版をビルドしたdistフォルダの中に、モデルファイル・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyのいずれも存在しない",
@@ -1627,14 +1626,14 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。"
+                  "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、slimビルド後にsrc/models・src/apply_mosaic_cli.py・src/face_mosaic.py・src/face_choices.pyそれぞれをfs.existsSyncで確認するテストを追加(node tests/dist-slim-check.mjsで4件ともPASS)。"
                 },
                 {
                   "id": "S-6",
                   "kind": "state",
                   "theme": "配布物の手順書に、ビルド用の内部目印が残っていない（標準版・軽量版とも）",
                   "meaning": "客に渡す手順書に、社内用の作業メモが残っていない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "標準版・軽量版どちらの配布物のSKILL.mdにも mosaic:start / mosaic:end の文字列が含まれない",
@@ -1642,7 +1641,7 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない。"
+                  "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない(S-4側はmosaic:startのみ確認しmosaic:endを見ていなかった)。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、標準版・軽量版両方のSKILL.mdに対してmosaic:start/mosaic:endの両方を横断チェックする専用テストを追加(node tests/dist-slim-check.mjsでPASS)。"
                 }
               ]
             },

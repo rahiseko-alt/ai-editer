@@ -95,22 +95,27 @@ function copyDirFiltered(relDir) {
   }
 }
 
-// 0. 再生成対象（src/tests/skill）をクリーン削除してから作り直す（配布外になった残骸・pyc も消す）。
-//    ui/ install/ は配布廃止のため、過去ビルドの残骸を purge する目的でここでも削除する。
-//    skill/ は video-shorts/skill/ が正本なので DEST 側を毎回パージしてから作り直す。
-for (const d of ["src", "tests", "skill", "ui", "install"]) fs.rmSync(path.join(DEST, d), { recursive: true, force: true });
-// 配布から外したルート直下の旧ファイルも purge（増分ビルド運用で残骸が客に混入しないよう再現性を担保）。
-for (const f of ["setup.html", "README.md", "はじめにお読みください.txt"]) fs.rmSync(path.join(DEST, f), { force: true });
+// 0. 空stagingから作る（allowlist方式・P1-10）。
+//    以前は src/tests/skill 等「決め打ちの名前」だけを部分削除していたため、
+//    それ以外の場所（手動コピーの混入物・リネーム前の旧ディレクトリ名・想定外の残骸）が
+//    積み残り続けても検知できなかった。DEST を丸ごと消してから作り直し、
+//    以降は allowlist（ステップ1・2で列挙する名前）に無いものは「そもそもコピーしない」
+//    ことで、未追跡ファイルの混入を構造的に防ぐ。
+fs.rmSync(DEST, { recursive: true, force: true });
+ensureDir(DEST);
+
+// allowlist（P1-10）: DEST 直下に現れてよい名前はこれだけ（+ ステップ3で書く version.txt）。
+// ここに載っていない名前は、空stagingに対してコピーする処理が無い＝物理的に生成され得ない。
+const ALLOWLIST_ROOT_FILES = ["start-here.md", "pipeline.mjs", "requirements.txt"];
+const ALLOWLIST_DIRS = ["src", "tests", "skill"];
 
 // 1. ルートの配布ファイル（start-here.md = ユーザーが Claude Code に「実行して」と渡すAI向け実行指示書。
 //    旧 setup.html(EULA画面) / README.md(人間向け) は新フロー = start-here.md 内 ⓪同意 + Claude 会話で代替のため配布しない）
-for (const f of ["start-here.md", "pipeline.mjs", "requirements.txt"]) {
+for (const f of ALLOWLIST_ROOT_FILES) {
   if (fs.existsSync(path.join(SRC, f))) copyRel(f);
 }
-// 2. src / tests（pyc・__pycache__ 除外）
-copyDirFiltered("src");
-copyDirFiltered("tests");
-copyDirFiltered("skill");
+// 2. src / tests / skill（pyc・__pycache__ 除外）
+for (const d of ALLOWLIST_DIRS) copyDirFiltered(d);
 // 3. 版刻印（再現性のため git hash を記録・.gitignore で追跡外の dist の出所を明示）
 let ver = "unknown";
 try {
