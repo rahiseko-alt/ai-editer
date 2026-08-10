@@ -56,9 +56,14 @@ function extractMaxWidthMediaBody(css) {
   return css.slice(open + 1, i);
 }
 
+/** 正規表現の特殊文字を全てエスケープする(CodeQL指摘: .# だけでは \ 等が漏れて壊れる)。 */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** mediaブロック本文の中から、指定セレクタの規則本文(宣言部分)を取り出す(単純ネスト対応) */
 function findRuleBody(mediaBody, selectorName) {
-  const re = new RegExp(`${selectorName.replace(/[.#]/g, "\\$&")}\\s*\\{([^{}]*)\\}`);
+  const re = new RegExp(`${escapeRegExp(selectorName)}\\s*\\{([^{}]*)\\}`);
   const m = mediaBody.match(re);
   return m ? m[1] : null;
 }
