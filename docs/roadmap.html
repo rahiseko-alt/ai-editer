@@ -120,16 +120,14 @@
   "meta": {
     "title": "AI-Editer video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】並列着手した24葉（draft PR群）のCI結果を確認し、緑ならdraft解除→マージする\n  ・ブランチ: feature/p1-2-server-wiring, feature/p0-5-pipeline-wiring, feature/p1-9-boundary-fixtures,\n    feature/dist-hygiene, feature/p1-11-audit-evidence(PR #56)、feature/p1-12-tool-pin-consent,\n    feature/testinfra-lint, feature/testinfra-scriptslint, feature/delivery-ci-gate,\n    feature/m1-mosaic-cli-robustness, feature/m4h-delivery-face-scan, feature/trim-hi-asr-robustness,\n    feature/quality-ac-gates。CIが赤いものは診断して直す。マージ後は該当葉のstatusをdoneにしevidence(commit SHA/CI run URL)を記録する。\n\n【2】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認\n  ・本セッション冒頭でbasis-reviewer 2エージェントが出したobjection（葉A/B/D/Eの偽の緑・音声/字幕/横長経路の欠落・\n    素材未凍結のC/F 等、計20件超の指摘）が反映されているか確認する。反映されていなければ、doneになっている\n    葉（A/B/D/D2/E/G/G2/G3/H/H2/H3）でも実質的に凍結不可の可能性がある。docs/failures.mdに経緯を確認できる\n    記録があるか探し、無ければマスターに直接確認する。\n  ・G-EDIT-REFRAME-C/F（素材未凍結）はまだtodoのまま。着手前にD-7（実写素材調達）の方針確認が必要。\n  ・REFRAME実装が有効になったことで、見送っていたG-EDIT-QUALITY-B/D（追跡クロップ込みの処理時間・配布物内容）\n    が着手可能になっている可能性がある。REFRAME実態確認後に着手を検討する。\n\n【3】ブランド名変更（AI-Editer）の残作業\n  ・docs/roadmap.html のdetailフィールド22箇所に残る「kosespark」は、すべて歴史的な監査ファイル名\n    (docs/audits/2026-07-27-kosespark-test-review-proposal.md)への参照であることを確認済み。ファイル名\n    自体は変更しない方針（参照が壊れるため）。将来もし監査ファイルをリネームする場合は、参照側も\n    一括で直すこと。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「完了」の定義は明示指示があった場合、CIへ確認を依頼する（PR作成）ところまでで良い。CIグリーン確認や\n    マージまで自動で進めるかは、その都度の指示に従う。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・並列作業はworktree隔離を使い、docs/roadmap.htmlのような共有ファイルの同時編集による衝突を避ける。",
+    "next": "PR #57(feature/rebrand-ai-editer)をマージする。続けてPR #68(feature/testinfra-lint)の競合解消(wt-lint、branch temp-lint)をマージし、残りのレビュー済みPR(#71,#58,#59,#56,#61,#66)もマージする。\n\nG-EDIT-REFRAME（PR #54でマージ済み）の実態確認は依然未着手：本セッション冒頭でbasis-reviewer 2エージェントが出したobjection（20件超の指摘）が反映されているか確認が必要。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、roadmap-required.ymlにPlaywright/zip未導入、verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）。",
     "handoff": {
       "done": [
-        "マスター指示により、ブランド名をkosespark(KOSEspark)からAI-Editerへ変更した。UI表示・HTTPヘッダー名(X-Kosespark-Token→X-AI-Editer-Token等)・JSトークン変数名(__KOSESPARK_TOKEN__→__AI_EDITOR_TOKEN__)・CI検査マーカー(.github/workflows/ci.yml)・配布フォルダ名(dist/kosespark-video-shorts→ai-editer-video-shorts)・関連ドキュメント(docs/配下のprose)まで一貫して置換した。歴史的な記録(過去のブランチ名kosespark-import・監査ファイル名docs/audits/2026-07-27-kosespark-test-review-proposal.mdなど)は参照が壊れるため意図的に残した。pnpm -r test（video-shorts）を実行し全PASS・0 FAILを確認済み。",
-        "マスター指示により、ロードマップの未着手葉のうちG-EDIT-REFRAME依存分(G-EDIT-QUALITY-B/D)とTRIM-D(基準が測定対象を外していると既に判明・マスター判断待ち)を除いた24葉を13バッチに分け、worktree隔離した並列サブエージェントで実装〜ローカルテスト〜draft PR作成まで着手させた（対象：P0-5-C/D、P1-2-F/G/H/I、P1-9-D/E、P1-10、P1-11、P1-12-A/B、G-TESTINFRA-LINT/SCRIPTSLINT、G-DELIVERY-CIGATE/FAILCLEAR、M-1-E/F、M-4-H、G-EDIT-TRIM-H/I、G-EDIT-QUALITY-A/C）。「完了」の定義はマスター指示によりCIへ確認を依頼する（PR作成）ところまでとし、CIグリーン確認・マージは待たない。",
-        "作業中に、G-EDIT-REFRAME（縦型切り抜き）がPR #54として既にmainへマージ済みであることを検知した（13葉中11葉done）。本セッション冒頭でbasis-reviewer 2エージェントに独立レビューさせた結果は「objection（6葉すべて凍結不可）」で、実装ゼロでもD/Eが合格する・音声/字幕/横長経路に葉が無い等、複数の重大な指摘が出ていたが、その指摘が反映されたかは本セッションでは未確認（別セッションまたはマスターの直接作業による可能性が高い）。"
+        "マスター指示により、ブランド名をkosespark(KOSEspark)からAI-Editerへ変更した(PR #57)。UI表示・HTTPヘッダー名(X-Kosespark-Token→X-AI-Editer-Token等)・JSトークン変数名(__KOSESPARK_TOKEN__→__AI_EDITOR_TOKEN__)・CI検査マーカー・配布フォルダ名・関連ドキュメントまで一貫して置換した。独立レビューでroadmap.html内の表記漏れ2箇所を発見・修正済み。",
+        "PR #57をorigin/main(PR#76の checkDeclaration category修正・PR#65のscripts/typecheck導入等、直近複数PRが反映済み)へマージするための競合解消を行った。docs/roadmap.htmlのmeta.next/handoffのみが競合。"
       ],
       "trouble": [
-        "並列実装バッチのため、各サブエージェントの実際の完了状況（PR番号・CI結果）はタスク通知が届くたびに変わる。この時点のhandoffはキックオフ直後のスナップショットであり、次回チェックイン時は各PRのマージ状況を個別に確認すること。",
-        "PR #54（REFRAME）のマージが、本セッションで検出したbasis-reviewer objectionを解消した上でのマージなのか未確認。次回セッションで docs/failures.md および G-EDIT-REFRAME 配下 detail の反証処理状況を確認すること。"
+        "PR #57のブランチが分岐してからorigin/mainが複数PR分（#60/#64/#67/#75/#76等）先へ進んでおり、マージ時のroadmap.html競合が発生した。中身を精査し履歴を欠落させない形で統合した。"
       ]
     },
     "updated": "2026-08-10",
@@ -1119,7 +1117,7 @@
                   "kind": "state",
                   "theme": "クラウド向け自動導入フックが壊れたら、そのPRはマージできない",
                   "meaning": "この仕組みが壊れても、気づかず配ってしまわない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "hook-session-startジョブがci-green(gate)のneedsに含まれ、失敗時にci-greenも失敗する",
@@ -1127,14 +1125,14 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。"
+                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。\n2026-08-10 PR feature/delivery-ci-gate で対応: gate.needsに hook-session-start を追加し [quality, smoke, hook-session-start] にした。if: always() のため上流のいずれかが失敗/スキップでもgateステップ自体は走り、判定ロジックが needs['hook-session-start'].result も success かを見て非successならexit 1でci-greenを赤くする（GitHub Actionsのneeds+デフォルトの失敗伝播に基づく確認。ジョブIDにハイフンを含むためdot記法 needs.hook-session-start ではハイフンが減算と解釈され式が壊れる点に注意し、ブラケット記法 needs['hook-session-start'] を使った）。実地確認（意図的に失敗させたブランチでのPR作成→ci-green赤の実地観測）は本セッションでは未実施（コードレビューでのロジック確認まで）。"
                 },
                 {
                   "id": "G-DELIVERY-FAILCLEAR",
                   "kind": "state",
                   "theme": "外部ツール導入に失敗しても、原因が分かる形でセッションの状態が伝わる",
                   "meaning": "クラウド起動時の自動インストールが失敗しても、何が起きたか分かる",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "apt-get/pipのインストールが失敗した場合、session-start.shの終了コード・出力が、利用者が原因を把握できる形になっている",
@@ -1142,7 +1140,7 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。"
+                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。\n2026-08-10 PR feature/delivery-ci-gate で対応: .claude/hooks/session-start.sh の apt-get install ffmpeg / pip install requirements.txt の各失敗時に [session-start][ERROR] プレフィックス付きでstderrへ原因(exit code・確認すべき箇所)を出力し、その終了コードでexitするよう修正。修正前は `if ! cmd; then rc=$?` の形で否定(!)後に$?を取っていたため、否定演算で$?が反転し常にexit code 0でexitする不具合があった（実地でモック検証し発見・修正）。修正後は `if cmd; then :; else rc=$?; ...; exit \"$rc\"; fi` の形にし、else節でcmdそのものの終了コードを正しく取得するようにした。apt-get/sudo/python3をモック(/tmp配下)に差し替えたローカル実行で、(1) apt-get install失敗時: stderrに[ERROR]メッセージ+exit code 100(mock)で終了コード100、(2) pip install失敗時: 同様にexit code 1で終了、(3) ローカル(CLAUDE_CODE_REMOTE未設定)は無音no-op、(4) 実ffmpeg/パッケージが揃っている環境ではexit 0で無音、の4パターンを実行し出力・終了コードを確認した。CI側の hook-session-start ジョブはハッピーパス(導入成功)のみを検証しており、失敗パスの実地確認はローカルのモック実行によるもの。"
                 }
               ],
               "detail": "2026-07-28 マスター指示: 配布パターン「Claude Codeあり×PCなし(クラウド上のClaude Codeセッションのみで完結)」をまず完成させる。スタック・アーキテクチャは変更せず(既存のNode/Python/ffmpeg/Claude Code構成のまま)、セッション起動時の環境自動整備で対応する。"
@@ -1246,7 +1244,7 @@
                       "kind": "state",
                       "theme": "壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない",
                       "meaning": "動画ファイルが壊れていたら、気づかず短い動画を渡してしまわない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
@@ -1254,14 +1252,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。"
+                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
                     },
                     {
                       "id": "M-1-F",
                       "kind": "state",
                       "theme": "モデルファイルが無い/壊れていても、分かるメッセージで止まる",
                       "meaning": "内部の部品が欠けていても、意味の分からないエラー画面を客に見せない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
@@ -1269,7 +1267,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。"
+                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
                     }
                   ]
                 },
@@ -1482,7 +1480,7 @@
                       "kind": "state",
                       "theme": "素顔ファイルが客への納品物に混ざらないことが、仕組みでも防がれている",
                       "meaning": "手順を間違えても、素顔が客に渡らない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
@@ -1490,7 +1488,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。"
+                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
                     }
                   ]
                 },
@@ -3059,9 +3057,17 @@
       <h3>受入条件（criteria）の書き方</h3>
       <p class="rule">条件は「動くこと」で書く。「ドキュメントがある／レビューした」で書かない。</p>
       <ul>
-        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝実行可能な手順）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
-        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。</li>
+        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝人が読む手順の説明文）＋ <code>verifyCmd</code>（<code>verify</code> を機械が実行できる形にした具体的な1コマンド。任意だが、<code>done</code>化のゲートに必須）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
+        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。<code>status:"done"</code> なのに <code>evidence</code> が空のままだと <code>scripts/verify-roadmap-evidence.mjs</code> がCIで落とす（自己申告だけで完了扱いにできる穴を機械で塞ぐ）。</li>
         <li>証拠は「◯◯レビュー.md が存在する」を認めない。実物が動いた記録を指す。</li>
+      </ul>
+      <h3>基準を機械で下げさせない仕組み（2026-08-10 追加）</h3>
+      <p class="rule">CIが緑・criteriaが凍結済みでも、それは「実装者が自分で書いたテストに自分の実装が通った」という自己申告の域を出ない。以下の3段で機械が閉じる。</p>
+      <ul>
+        <li><b>①凍結（<code>scripts/verify-criteria-freeze.mjs</code>）</b>：着手前に固定した <code>text</code>/<code>verify</code>/<code>verifyCmd</code> は、その葉が <code>status:"todo"</code> 以外になった瞬間から無断で書き換え禁止。BASE/HEADの<code>docs/roadmap.html</code>を比較し、正当な理由（<code>meta.basisChanges</code>に<code>{id, criteriaHash, at, reason}</code>を新規追加）が無い変更をCIで落とす。<b>本文を書き換えず「葉ごと削除する」「一旦 <code>todo</code> に戻して直してからまた凍結し直す」という迂回路も同じ扱いで塞ぐ</b>（reason: <code>deleted</code> / <code>unfrozen</code>）。</li>
+        <li><b>②実行（<code>scripts/verify-done-gate.mjs</code>）</b>：ある葉が今回のPRで新規に <code>doing</code>/<code>todo</code> → <code>done</code> へ遷移するとき、全 <code>criteria</code> に <code>verifyCmd</code> が設定されていることを必須化し、CIがそのコマンドを<b>今この場で実際に実行</b>して exit code 0 になることを要求する。「テストを書いた」という申告ではなく「このコミットで今まさに実行して合格した」という事実そのものをdoneの条件にする。過去に受理済み（BASEで既に<code>done</code>だった）葉には遡及しない＝既存ツリーは壊さず、新規のdone化から適用が始まる。</li>
+        <li><b>③evidence（<code>scripts/verify-roadmap-evidence.mjs</code>）</b>：①②を通過しても、最終的に<code>evidence</code>へ外部事実（CI run URL等）を記入しない限り<code>done</code>は成立しない。</li>
+        <li><b>正直な限界</b>：①②③は「自己採点そのもの（テストを書かない／書いたが実行しない／実行したら実は落ちる）」を機械で閉じるが、「<code>verifyCmd</code>の中身が<code>criteria.text</code>の要求を本当に厳密に検証しているか（境界値・対照実験の有無等）」までは exit code だけからは判定できない。ここは引き続き人間・独立サブエージェント（<code>basis-reviewer</code>／<code>independent-verifier</code>）の役目。</li>
       </ul>
 
       <h2>分解の規則（不変・自己相似）</h2>
