@@ -859,6 +859,88 @@ await t("F 対照: 正しい返答なら例外にならない", async () => {
   await assert.doesNotReject(() => runStage(dir, installFakeClaude("f0", fixed(ANSWER_FIX13))));
 });
 
+// ── M1: --output-format json の封筒自体(claude-run.mjsが直接JSON.parseする最外層)が壊れる ──
+// F/G の「JSON でない文字列を返す」は fixed() 経由で常に {"result":...} の封筒に包まれており、
+// 壊れているのは内側(fixesの中身)だけ。ここは封筒そのものを被せず、生テキストを終了コード0で
+// そのまま返す偽claude(kind:"raw")を使い、claude-run.mjs の最外層 JSON.parse が壊れる経路を通す。
+const RAW_TEXT = "了解しました、変換ミスを直しておきました（説明のみで JSON は返しません）。";
+
+await t("M1: 封筒が無い生テキストが終了コード0で返ると runClaudeJson は例外を投げる", async () => {
+  const fake = installFakeClaude("m1-run", { kind: "raw", text: RAW_TEXT });
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-m1-cwd-"));
+  await withFakeClaude(fake, () => assert.rejects(
+    () => runClaudeJson({ stdin: "hi", cwd, timeoutMs: 20_000 }),
+    (e) => {
+      assert.match(e.message, /JSON parse 失敗/, `封筒破壊が例外として区別されていない: ${e.message}`);
+      return true;
+    },
+  ));
+});
+
+await t("M1: 封筒が無い生テキストが終了コード0で返ると aiCaptionFixStage は失敗として伝播する", async () => {
+  const dir = freshWork();
+  const fake = installFakeClaude("m1-stage", { kind: "raw", text: RAW_TEXT });
+  await assert.rejects(
+    () => runStage(dir, fake),
+    (e) => {
+      assert.ok(e instanceof Error, "Error 以外で失敗している");
+      assert.match(e.message, /JSON parse 失敗/, `失敗の理由が想定と違う: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+await t("M1: 封筒破壊で失敗したあと transcript.json が入力と完全一致（直しの記録も残らない）", async () => {
+  const dir = freshWork();
+  const fake = installFakeClaude("m1-g", { kind: "raw", text: RAW_TEXT });
+  await runStage(dir, fake).catch(() => {});
+  assert.deepStrictEqual(readTranscript(dir), FIXTURE, "失敗したのに本体が書き換わっている");
+  assert.ok(!fs.existsSync(path.join(dir, AI_FIXES_FILE)), "失敗したのに直しの記録が残っている");
+  assert.ok(!fs.existsSync(path.join(dir, RAW_TRANSCRIPT_FILE)), "失敗したのに退避だけ作られている");
+});
+
+// ── M2: PATH上にclaude実行ファイル自体が存在しない(spawnエラー=ENOENT) ──
+// EXIT_9 は「起動はできたが終了コード9で落ちる」ケースで、spawn自体が失敗する経路(claudeという
+// 実行ファイルがPATH上に無い)は未検証だった。PATHを「claudeを一切置かない空の一時フォルダ」だけに
+// 差し替え、製品コードの子プロセス起動(claude実行ファイル探索)がENOENTで失敗する本物の経路を通す。
+/** PATHを「claudeを置かない空の一時フォルダ」だけに差し替えてfnを実行する（他の実行ファイルも一切見えなくする）。 */
+async function withNoClaude(fn) {
+  const emptyBin = fs.mkdtempSync(path.join(os.tmpdir(), "vs-no-claude-"));
+  const orig = process.env.PATH;
+  process.env.PATH = emptyBin;
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = orig;
+  }
+}
+
+await t("M2: PATH上にclaudeが無いと runClaudeJson は spawn エラーで例外を投げる", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-m2-cwd-"));
+  await withNoClaude(() => assert.rejects(
+    () => runClaudeJson({ stdin: "hi", cwd, timeoutMs: 20_000 }),
+    (e) => {
+      assert.match(e.message, /spawn エラー/, `spawn失敗が例外として区別されていない: ${e.message}`);
+      return true;
+    },
+  ));
+});
+
+await t("M2: PATH上にclaudeが無いと aiCaptionFixStage は失敗し transcript.json を一切書き換えない", async () => {
+  const dir = freshWork();
+  await withNoClaude(() => assert.rejects(
+    () => aiCaptionFixStage({ workDir: dir, runModel: createDefaultRunModel(dir, 20_000) }),
+    (e) => {
+      assert.ok(e instanceof Error, "Error 以外で失敗している");
+      assert.match(e.message, /spawn エラー/, `失敗の理由が想定と違う: ${e.message}`);
+      return true;
+    },
+  ));
+  assert.deepStrictEqual(readTranscript(dir), FIXTURE, "失敗したのに本体が書き換わっている");
+  assert.ok(!fs.existsSync(path.join(dir, AI_FIXES_FILE)), "失敗したのに直しの記録が残っている");
+  assert.ok(!fs.existsSync(path.join(dir, RAW_TRANSCRIPT_FILE)), "失敗したのに退避だけ作られている");
+});
+
 // ── H: 分割して渡す ─────────────────────────────────────────
 await t("H: chunkWords=20 で全98語が漏れなく渡り、最後のかたまりの返答も反映される", async () => {
   const dir = freshWork();
