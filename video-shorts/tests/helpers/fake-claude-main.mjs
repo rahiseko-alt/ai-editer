@@ -31,6 +31,10 @@
 //     {"kind":"exit-before-stdin","code":9}             stdin を1バイトも読まずに即終了する
 //                                                       （親の書き込みが EPIPE になる再現）
 //     {"kind":"fail","exit":1,"stderr":"..."}           stderr を出して終了コード非0で落ちる
+//     {"kind":"raw","text":"...","exit":0}              `--output-format json` の封筒(JSON.stringify)を
+//                                                       一切被せず、生のテキストをそのまま標準出力する
+//                                                       （終了コードは既定0＝「封筒自体が壊れているのに
+//                                                       成功したように見える」経路の再現）
 //     {"kind":"digest","critiqueNeedle":"...","critique":"...","draft":"..."}
 //     {"kind":"digest-model-gate","modelArg":"--model","exit":1,"stderr":"...",
 //      "critiqueNeedle":"...","critique":"...","draft":"..."}
@@ -91,6 +95,14 @@ const BEHAVIORS = {
 
   /** stderr を出して終了コード非0で落ちる。 */
   fail: (cfg) => ({ exit: cfg.exit, stderr: cfg.stderr }),
+
+  /**
+   * `--output-format json` の封筒(`{"result":...}` へ JSON.stringify した形)を被せず、
+   * 生のテキストをそのまま標準出力する。終了コードは既定 0。
+   * 「封筒そのものが壊れているのに、終了コードだけは成功に見える」経路を再現する
+   * （G-EDIT-CAPTION-AI-M1: claude-run.mjs が直接 JSON.parse する最外層が壊れるケース）。
+   */
+  raw: (cfg) => ({ stdout: cfg.text, exit: cfg.exit ?? 0 }),
 
   /** digest-editor の2種類の呼び出し（台本ドラフト / 講評）に答える。 */
   digest: (cfg, ctx) => digestReply(cfg, ctx.stdin),

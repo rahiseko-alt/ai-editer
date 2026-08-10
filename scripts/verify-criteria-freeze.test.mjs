@@ -13,6 +13,7 @@ import {
   extractRoadmapJson,
   findCriteriaFreezeViolations,
   flattenById,
+  formatViolation,
   hashCriteria,
   isCompleteDeclaration,
   isFrozenLeaf,
@@ -21,6 +22,10 @@ import {
 
 let pass = 0;
 let fail = 0;
+/**
+ * @param {string} name
+ * @param {() => void} fn
+ */
 function t(name, fn) {
   try {
     fn();
@@ -28,11 +33,21 @@ function t(name, fn) {
     console.log(`PASS ${name}`);
   } catch (e) {
     fail++;
-    console.log(`FAIL ${name}\n      ${e.message}`);
+    const message = e instanceof Error ? e.message : String(e);
+    console.log(`FAIL ${name}\n      ${message}`);
   }
 }
 
 // ---- ヘルパー：最小限の roadmap JSON（rootノード1つの下に対象の葉ノードを1つ置く） ----
+/**
+ * @param {{
+ *   nodeId?: string,
+ *   status?: string,
+ *   criteria?: Array<{ text: string, verify: string, verifyCmd?: string, evidence: string }>,
+ *   basisChanges?: any[],
+ *   kind?: string,
+ * }} [opts]
+ */
 function roadmap({ nodeId = "G-1", status = "done", criteria = [], basisChanges, kind = "state" } = {}) {
   return {
     meta: {
@@ -89,6 +104,21 @@ t("criteriaFingerprint: evidence/statusは含まず text/verify だけを見る"
   const withEvidence = [{ text: "t", verify: "v", evidence: "abc123abc123a" }];
   const withoutEvidence = [{ text: "t", verify: "v", evidence: "" }];
   assert.strictEqual(criteriaFingerprint(withEvidence), criteriaFingerprint(withoutEvidence));
+});
+
+t("criteriaFingerprint: verifyCmdも凍結対象に含まれる（コマンド差し替えによる骨抜きを防ぐ）", () => {
+  const withCmdA = [{ text: "t", verify: "v", verifyCmd: "node tests/a.mjs", evidence: "" }];
+  const withCmdB = [{ text: "t", verify: "v", verifyCmd: "true", evidence: "" }]; // 常に成功するダミーへ差し替え
+  assert.notStrictEqual(criteriaFingerprint(withCmdA), criteriaFingerprint(withCmdB));
+});
+
+t("verifyCmdの無断差し替えは違反になる（宣言なしでverifyCmdだけ緩くする迂回路を塞ぐ）", () => {
+  const base = roadmap({ status: "done", criteria: [{ text: "t", verify: "v", verifyCmd: "node tests/strict.mjs", evidence: "" }] });
+  const head = roadmap({ status: "done", criteria: [{ text: "t", verify: "v", verifyCmd: "true", evidence: "" }] });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "undeclared");
 });
 
 t("hashCriteria: text/verifyが同じなら同じハッシュ、違えば違うハッシュ", () => {
@@ -154,6 +184,7 @@ t("ケース3(事故の再現): status=doneのノードのcriteriaが変わり�
   const head = roadmap({ nodeId: "G-EDIT-CAPTION-AI-E1", status: "done", criteria: CRIT_B_TAMPERED });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1, "宣言なしの無断書き換えは検知されなければならない");
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].id, "G-EDIT-CAPTION-AI-E1");
   assert.strictEqual(violations[0].reason, "undeclared");
 });
@@ -188,14 +219,140 @@ t("宣言はあるがBASE時点で既に存在していた場合は「今回PR�
   const head = roadmap({ status: "done", criteria: CRIT_B_TAMPERED, basisChanges: [existingEntry] });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "not-new");
 });
 
-t("HEADで削除されたノードは今回のスコープ外(比較不能なので違反として扱わない)", () => {
+t("削除の迂回路: 凍結済みの葉が丸ごと削除されると、宣言なしでは違反になる", () => {
+  // 本文を書き換えずに基準ごと消せば実質的に無効化できてしまう迂回路。
   const base = roadmap({ status: "done", criteria: CRIT_A });
   const head = { meta: {}, nodes: [{ id: "ROOT", kind: "state", children: [] }] };
   const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].id, "G-1");
+  assert.strictEqual(violations[0].reason, "deleted");
+});
+
+t("削除の迂回路 対照: BASE側のハッシュで正当な宣言があれば削除は合格する", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A });
+  const baseHash = hashCriteria(CRIT_A);
+  const head = {
+    meta: { basisChanges: [{ id: "G-1", criteriaHash: baseHash, at: "2026-08-10", reason: "この葉は不要と判断し廃止" }] },
+    nodes: [{ id: "ROOT", kind: "state", children: [] }],
+  };
+  const violations = findCriteriaFreezeViolations(base, head);
   assert.deepStrictEqual(violations, []);
+});
+
+t("todoへ戻す迂回路: 凍結済みの葉のstatusをtodoへ戻すと、宣言なしでは違反になる", () => {
+  // 一旦アンフリーズしてから自由に基準を書き換える迂回路（この時点ではcriteriaは不変でもよい）。
+  const base = roadmap({ status: "doing", criteria: CRIT_A });
+  const head = roadmap({ status: "todo", criteria: CRIT_A.map((c) => ({ ...c })) });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "unfrozen");
+});
+
+t("todoへ戻す迂回路 対照: BASE側のハッシュで正当な宣言があればtodoへ戻すのは合格する", () => {
+  const base = roadmap({ status: "doing", criteria: CRIT_A });
+  const baseHash = hashCriteria(CRIT_A);
+  const head = roadmap({
+    status: "todo",
+    criteria: CRIT_A.map((c) => ({ ...c })),
+    basisChanges: [{ id: "G-1", criteriaHash: baseHash, at: "2026-08-10", reason: "再分解のため一旦差し戻す" }],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.deepStrictEqual(violations, []);
+});
+
+t("非葉化の迂回路: 凍結済みの葉に子を足して非葉化すると、宣言なしでは違反になる", () => {
+  const base = roadmap({ status: "done", criteria: CRIT_A });
+  const head = {
+    meta: { active: "G-1", next: "続き", handoff: { done: "x", trouble: "無し" } },
+    nodes: [
+      { id: "ROOT", kind: "state", children: [
+        { id: "G-1", kind: "state", status: "done", criteria: [], children: [{ id: "G-1-a", kind: "state", status: "todo", criteria: [] }] },
+      ] },
+    ],
+  };
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "unfrozen");
+});
+
+// ---- "not-new" が deleted/unfrozen の文脈で起きた場合のメッセージ整合性 ----
+// 発見した不具合の再現テスト：checkDeclaration が deleted/unfrozen の違反も"not-new"に
+// 一本化してしまうため、category を持たせる前は formatViolation が「本文が書き換えられて
+// います」「criteriaHash: "null"」という誤った（deleted の場合は文字通り null が文字列化された）
+// メッセージを出していた。category フィールドで元の文脈を保持し、正しく分岐することを確認する。
+
+t("削除+not-new: 宣言はあるがBASEに既存 → reason=not-new かつ category=deleted、headHashはnull", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const existingEntry = { id: "G-1", criteriaHash: baseHash, at: "2020-01-01", reason: "過去の別件" };
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [existingEntry] });
+  const head = { meta: { basisChanges: [existingEntry] }, nodes: [{ id: "ROOT", kind: "state", children: [] }] };
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "not-new");
+  assert.strictEqual(violations[0].category, "deleted");
+  assert.strictEqual(violations[0].headHash, null);
+});
+
+t("削除+not-new: formatViolationは削除の文脈で正しいbaseHashを案内する（'criteriaHash: \"null\"'を出さない）", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const existingEntry = { id: "G-1", criteriaHash: baseHash, at: "2020-01-01", reason: "過去の別件" };
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [existingEntry] });
+  const head = { meta: { basisChanges: [existingEntry] }, nodes: [{ id: "ROOT", kind: "state", children: [] }] };
+  const [v] = findCriteriaFreezeViolations(base, head);
+  assert.ok(v);
+  const msg = formatViolation(v);
+  assert.ok(msg.includes("丸ごと削除"), `削除の文脈が説明されているべき: ${msg}`);
+  assert.ok(msg.includes(baseHash), `正しいbaseHashが案内されるべき: ${msg}`);
+  assert.ok(!msg.includes('criteriaHash: "null"'), `null文字列を案内してはいけない: ${msg}`);
+  assert.ok(msg.includes("新規に追加されたものではありません"), "not-newの注記も含むべき");
+});
+
+t("凍結解除+not-new: 宣言はあるがBASEに既存 → reason=not-new かつ category=unfrozen", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const existingEntry = { id: "G-1", criteriaHash: baseHash, at: "2020-01-01", reason: "過去の別件" };
+  const base = roadmap({ status: "doing", criteria: CRIT_A, basisChanges: [existingEntry] });
+  const head = roadmap({
+    status: "todo",
+    criteria: CRIT_A.map((c) => ({ ...c })),
+    basisChanges: [existingEntry],
+  });
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "not-new");
+  assert.strictEqual(violations[0].category, "unfrozen");
+});
+
+t("凍結解除+not-new: formatViolationは凍結解除の文脈で案内する（本文書き換えの文言を出さない）", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const existingEntry = { id: "G-1", criteriaHash: baseHash, at: "2020-01-01", reason: "過去の別件" };
+  const base = roadmap({ status: "doing", criteria: CRIT_A, basisChanges: [existingEntry] });
+  const head = roadmap({
+    status: "todo",
+    criteria: CRIT_A.map((c) => ({ ...c })),
+    basisChanges: [existingEntry],
+  });
+  const [v] = findCriteriaFreezeViolations(base, head);
+  assert.ok(v);
+  const msg = formatViolation(v);
+  assert.ok(msg.includes("凍結が解除"), `凍結解除の文脈が説明されているべき: ${msg}`);
+  assert.ok(!msg.includes("criteria/verify/verifyCmd 本文が"), `本文書き換えの文言を出してはいけない: ${msg}`);
+  assert.ok(msg.includes("新規に追加されたものではありません"), "not-newの注記も含むべき");
+});
+
+t("対照: category未設定(古い形の呼び出し)でも reason で従来通りのメッセージにフォールバックする", () => {
+  // formatViolationの後方互換：categoryが無い呼び出し元があっても reason だけで動くこと。
+  const msg = formatViolation({ id: "G-1", baseHash: "abc", headHash: "def", reason: "undeclared" });
+  assert.ok(msg.includes("本文が"));
 });
 
 // ---- basisChangesの必須フィールド(at/reason)検証（CodeRabbit指摘対応） ----
@@ -237,6 +394,7 @@ t("境界: basisChangesにid+criteriaHashは一致するがatが空文字 → �
   });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1, "atが空文字の宣言は「無い」ものとして扱われるべき");
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "undeclared");
 });
 
@@ -250,6 +408,7 @@ t("境界: basisChangesにid+criteriaHashは一致するがatが欠落 → 違�
   });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1, "atが欠落した宣言は「無い」ものとして扱われるべき");
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "undeclared");
 });
 
@@ -263,6 +422,7 @@ t("境界: basisChangesにid+criteriaHashは一致するがreasonが空文字 �
   });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1, "reasonが空文字の宣言は「無い」ものとして扱われるべき");
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "undeclared");
 });
 
@@ -276,6 +436,7 @@ t("境界: basisChangesにid+criteriaHashは一致するがreasonが欠落 → �
   });
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1, "reasonが欠落した宣言は「無い」ものとして扱われるべき");
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "undeclared");
 });
 
@@ -328,6 +489,7 @@ t("meta.basisChanges未設定(undefined)でも例外にならず、単に宣言0
   const head = { meta: {}, nodes: [{ id: "ROOT", kind: "state", children: [{ id: "G-1", kind: "state", status: "done", criteria: CRIT_B_TAMPERED }] }] };
   const violations = findCriteriaFreezeViolations(base, head);
   assert.strictEqual(violations.length, 1);
+  assert.ok(violations[0]);
   assert.strictEqual(violations[0].reason, "undeclared");
 });
 

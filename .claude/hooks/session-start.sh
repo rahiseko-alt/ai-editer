@@ -17,10 +17,27 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   # 403になり得るが、それらが失敗しても標準リポジトリ由来のffmpeg導入は継続できるべき
   # なので update の非ゼロ終了だけでは止めない。
   sudo apt-get update -y || true
-  sudo apt-get install -y ffmpeg
+  # "if ! cmd; then rc=\$?" は使わない: "!" による否定後は \$? が否定済みの値(=cmdが
+  # 失敗しても0)になり、実際の終了コードを取り違えるため(実地で確認済みのバグ)。
+  # "if cmd; then :; else rc=\$?" の形にし、else節でcmdそのものの終了コードを取る。
+  if sudo apt-get install -y ffmpeg; then
+    :
+  else
+    rc=$?
+    echo "[session-start][ERROR] ffmpeg の apt-get install に失敗しました(exit code: ${rc})。" >&2
+    echo "[session-start][ERROR] ネットワーク到達性(egressポリシー等)か、apt パッケージリポジトリの状態を確認してください。" >&2
+    exit "$rc"
+  fi
 fi
 
 if ! python3 -c "import faster_whisper, groq" >/dev/null 2>&1; then
   echo "[session-start] 文字起こしライブラリ(faster-whisper/groq)が無いため導入します..." >&2
-  python3 -m pip install --break-system-packages -r "$REPO_ROOT/video-shorts/requirements.txt"
+  if python3 -m pip install --break-system-packages -r "$REPO_ROOT/video-shorts/requirements.txt"; then
+    :
+  else
+    rc=$?
+    echo "[session-start][ERROR] pip install (video-shorts/requirements.txt) に失敗しました(exit code: ${rc})。" >&2
+    echo "[session-start][ERROR] requirements.txt の内容・PyPIへのネットワーク到達性を確認してください。" >&2
+    exit "$rc"
+  fi
 fi
