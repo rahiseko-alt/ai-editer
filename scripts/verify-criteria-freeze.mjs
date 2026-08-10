@@ -67,7 +67,7 @@ const roadmapAbsPath = resolve(__dirname, "..", ROADMAP_REL_PATH);
  *   [key: string]: any,
  * }} RoadmapNode
  * @typedef {{ id: string, criteriaHash: string, at?: string, reason?: string }} BasisChangeEntry
- * @typedef {{ id: string, baseHash: string | null, headHash: string | null, reason: "undeclared" | "not-new" | "deleted" | "unfrozen" }} FreezeViolation
+ * @typedef {{ id: string, baseHash: string | null, headHash: string | null, reason: "undeclared" | "not-new" | "deleted" | "unfrozen", category?: "undeclared" | "deleted" | "unfrozen", criteriaHash?: string }} FreezeViolation
  */
 
 /**
@@ -177,6 +177,11 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
  * ある識別子(idとcriteriaHash)について、HEAD側に「今回のPRで新規に追加された」正当な宣言が
  * あるかを判定する。無ければ違反。あるが BASE 時点で既に存在していれば "not-new" として違反。
  * 無ければ null（＝合格）を返す純粋ヘルパー（3つの違反パターンで共有する）。
+ *
+ * category には常に元の違反種別("deleted"/"unfrozen"/"undeclared")を残す。reason が
+ * "not-new" に化けても、formatViolation が「削除／凍結解除の文脈で書かれた"not-new"」を
+ * 正しく判別できるようにするため（category が無いと、削除されたノードの"not-new"メッセージが
+ * 「本文が書き換えられています」「criteriaHash: "null"」という誤った文言になってしまうバグがあった）。
  * @param {{
  *   id: string,
  *   criteriaHash: string,
@@ -184,18 +189,18 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
  *   baseBasisChanges: BasisChangeEntry[],
  *   baseHash: string | null,
  *   headHash: string | null,
- *   undeclaredReason: FreezeViolation["reason"],
+ *   undeclaredReason: "undeclared" | "deleted" | "unfrozen",
  * }} args
  * @returns {FreezeViolation | null}
  */
 function checkDeclaration({ id, criteriaHash, headBasisChanges, baseBasisChanges, baseHash, headHash, undeclaredReason }) {
   const declaredInHead = headBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
   if (!declaredInHead) {
-    return { id, baseHash, headHash, reason: undeclaredReason };
+    return { id, baseHash, headHash, reason: undeclaredReason, category: undeclaredReason };
   }
   const alreadyDeclaredInBase = baseBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
   if (alreadyDeclaredInBase) {
-    return { id, baseHash, headHash, reason: "not-new" };
+    return { id, baseHash, headHash, reason: "not-new", category: undeclaredReason, criteriaHash };
   }
   return null; // 正当な基準変更として合格
 }
@@ -206,11 +211,14 @@ function checkDeclaration({ id, criteriaHash, headBasisChanges, baseBasisChanges
  * および「本文は変えずに削除・凍結解除で基準を骨抜きにしている」違反を検出する。
  * git や fs に一切依存しない純粋関数（テストしやすくするため分離）。
  *
- * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason } の形。
+ * 戻り値：違反の配列。各要素は { id, baseHash, headHash, reason, category } の形。
  *   reason: "undeclared"（宣言が無い、またはat/reasonが欠けていて宣言として不完全） |
  *           "not-new"（宣言はあるがBASE時点で既に存在した＝今回PRの新規宣言でない） |
  *           "deleted"（凍結済み葉が丸ごと削除された） |
  *           "unfrozen"（凍結済み葉が todo に戻された／非葉化された／state でなくなった）
+ *   category: reason が "not-new" のときに、元の違反文脈（"deleted"/"unfrozen"/"undeclared"）を
+ *     保持するフィールド（formatViolation が正しいメッセージを組み立てるために使う）。
+ *     reason が "not-new" 以外のときは category === reason になる。
  * @param {any} baseRoadmap
  * @param {any} headRoadmap
  * @returns {FreezeViolation[]}
@@ -274,43 +282,52 @@ export function findCriteriaFreezeViolations(baseRoadmap, headRoadmap) {
   return violations;
 }
 
+const NOT_NEW_SUFFIX =
+  `\n    （meta.basisChanges に id/criteriaHash が一致する宣言はありましたが、` +
+  `BASE側に既に存在しており今回のPRで新規に追加されたものではありません。今回のPRで新規追加してください）`;
+
 /**
  * 違反1件を人間可読な日本語メッセージへ整形する。
+ *
+ * v.reason は "deleted"/"unfrozen"/"undeclared"/"not-new" の4種類だが、"not-new" は
+ * どの文脈（削除／凍結解除／本文書き換え）で起きたかを reason だけでは判別できない
+ * （checkDeclaration が "not-new" に一本化して潰すため）。v.category に元の文脈
+ * （"deleted"/"unfrozen"/"undeclared"）が残っているので、まず category を見てから
+ * reason で「宣言そのものが無い」か「宣言はあるがBASEで既出（not-new）」かを分ける。
+ * こうしないと、削除された葉の"not-new"メッセージが「本文が書き換えられています」
+ * 「criteriaHash: "null"」という誤った文言になってしまう（実際に発生した不具合）。
  * @param {FreezeViolation} v
  * @returns {string}
  */
 export function formatViolation(v) {
-  if (v.reason === "deleted") {
-    return (
+  const category = v.category ?? v.reason;
+
+  if (category === "deleted") {
+    const msg =
       `凍結済みの葉 ${v.id} が docs/roadmap.html から丸ごと削除されています。` +
       `本文を書き換えずに基準ごと消す迂回路も無断変更と同じ扱いです。` +
       `正当な削除なら meta.basisChanges に ` +
       `{id: "${v.id}", criteriaHash: "${v.baseHash}", at, reason} を追加すること` +
-      `（criteriaHash は削除される直前のcriteria本文のsha256(hex)）。`
-    );
+      `（criteriaHash は削除される直前のcriteria本文のsha256(hex)）。`;
+    return v.reason === "not-new" ? `${msg}${NOT_NEW_SUFFIX}` : msg;
   }
-  if (v.reason === "unfrozen") {
-    return (
+
+  if (category === "unfrozen") {
+    const msg =
       `凍結済みの葉 ${v.id} の凍結が解除されています（status を "todo" に戻す／子を足して` +
       `非葉化する／kind を変える、のいずれか）。一旦アンフリーズしてから自由に基準を書き換える` +
       `迂回路も無断変更と同じ扱いです。正当な理由があるなら meta.basisChanges に ` +
       `{id: "${v.id}", criteriaHash: "${v.baseHash}", at, reason} を追加すること` +
-      `（criteriaHash は凍結解除される直前のcriteria本文のsha256(hex)）。`
-    );
+      `（criteriaHash は凍結解除される直前のcriteria本文のsha256(hex)）。`;
+    return v.reason === "not-new" ? `${msg}${NOT_NEW_SUFFIX}` : msg;
   }
+
   const base =
     `凍結済みの葉 ${v.id} の criteria/verify/verifyCmd 本文が、正当な宣言（meta.basisChanges）なしに` +
     `書き換えられています。正当な変更なら meta.basisChanges に ` +
     `{id: "${v.id}", criteriaHash: "${v.headHash}", at, reason} を追加すること。` +
     `criteriaHash は新しいcriteria本文のsha256(hex)。`;
-  if (v.reason === "not-new") {
-    return (
-      `${base}\n` +
-      `    （meta.basisChanges に id/criteriaHash が一致する宣言はありましたが、` +
-      `BASE側に既に存在しており今回のPRで新規に追加されたものではありません。今回のPRで新規追加してください）`
-    );
-  }
-  return base;
+  return v.reason === "not-new" ? `${base}${NOT_NEW_SUFFIX}` : base;
 }
 
 // ---- git/fs 依存の入出力（CLI実行時のみ使う） --------------------------------------

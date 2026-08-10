@@ -119,17 +119,20 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #65をマージし、続けてPR #68(feature/testinfra-lint)の競合解消(wt-lint、branch temp-lint)を同様に行う。その後、残りのレビュー済みPR(#71,#58,#59,#56,#61,#66)をマージし、PR #76(done-gateのcheckDeclaration category修正)のCIを確認してマージする。",
+    "next": "PR #65(feature/testinfra-scriptslint)をマージする。続けてPR #68(feature/testinfra-lint)の競合解消(wt-lint、branch temp-lint)を同様に行いマージする。その後、残りのレビュー済みPR(#71,#58,#59,#56,#61,#66)をマージする。\n\n判断待ちの設計上の懸念（マスター判断、PR#76のレビューで指摘・未修正）：\n  ・「BASEで既にdoneだった葉のcriteria/verifyCmdを、basisChanges宣言つきで書き換えても、done-gateはその新しい\n    verifyCmdを一度も実行しない」というギャップがある（再現済み）。意図的な移行措置の範囲内か、追加のゲートが要るかは判断が必要。\n  ・roadmap-required.ymlの環境構築（pnpm/ffmpeg/opencv）はPlaywright/zipを入れていない。verifyCmdがそれらを要求する場合は失敗する。\n  ・verify-done-gate.mjsのrealRunCmdはverifyCmd文字列をexecSyncでそのままシェル実行する。fork PRでもこのジョブが動く点は認識しておくこと。",
     "handoff": {
       "done": [
-        "PR #65 (feature/testinfra-scriptslint) をorigin/mainへマージするための競合解消を行った。",
+        "PR #76(checkDeclaration()のcategoryフィールド追加によるnot-newメッセージ誤表示バグ修正)をCI緑確認のうえマージした。",
+        "続けてPR #65 (feature/testinfra-scriptslint) をorigin/main(PR#76反映後)へマージするための競合解消を行った。",
         "PR#75由来の新規ファイル(verify-done-gate.mjs等)にはPR#65が要求するstrict TypeScript(JSDoc+tsc --checkJs)の",
         "型注釈が存在しなかったため、checkDeclaration()・findNewlyDoneLeaves()・runVerifyCommands()等の全関数に",
         "JSDocを追加し、noUncheckedIndexedAccess対応のassert.ok()ガードをテストに追加した。",
-        "pnpm --filter scripts typecheck / test とも緑（64テストPASS）を確認した。"
+        "PR#76由来のcategoryフィールド・formatViolation()のcategory優先分岐・再現テスト4件も合わせてマージし、",
+        "pnpm --filter scripts typecheck / test とも緑（69テストPASS）を確認した。"
       ],
       "trouble": [
-        "無し"
+        "PR#65の作業中にorigin/mainがPR#76分先へ進んだため、一度目のマージ結果を破棄せず再度origin/mainを取り込み、",
+        "checkDeclaration()のJSDocとcategoryフィールドの両方を保持する形で再解消した。"
       ]
     },
     "updated": "2026-08-10",
