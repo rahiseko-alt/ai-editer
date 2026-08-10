@@ -49,11 +49,14 @@ jobs:
       - name: Install ffmpeg / zip (成果物まで検証するテストで使う)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg zip
+          # roadmap P1-12「外部ツールのバージョン固定」: ubuntu-24.04 の apt で
+          # 実際に配布されている版番号を明示指定する(無指定だとミラー側の更新で
+          # 黙って違う版が入りうる)。版が更新されて入手不能になったら、CIが赤くなって
+          # 気づける状態が意図どおり(黙って新版へドリフトしない)。
+          sudo apt-get install -y -qq ffmpeg=7:6.1.1-3ubuntu5 zip=3.0-13ubuntu0.2
           # ランナーを ubuntu-24.04 に固定してあるので、apt が入れる ffmpeg も
           # そのリリースのもの(6.1.1)に定まる。G-EDIT-MOSAIC-UI-C の合格ライン
           # (ノイズの床＝5)はこの版で実測した値なので、実際に使われた版を記録に残す。
-          # 完全なピン留め(版番号の明示)は roadmap P1-12「外部ツールのバージョン固定」で扱う。
           ffmpeg -version | head -1
           zip --version | head -2 | tail -1
 
@@ -167,14 +170,17 @@ jobs:
   # scripts/setup.sh はこの 'ci-green' と 'roadmap-required' だけを必須指定する。
   gate:
     name: ci-green
-    needs: [quality, smoke]
+    needs: [quality, smoke, hook-session-start]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: 上流ジョブが全て success か検査（1つでも失敗/スキップなら赤）
+        # ジョブID(hook-session-start)にハイフンを含むため、式では needs.hook-session-start
+        # のドット記法は使えない(ハイフンが減算と解釈され式が壊れる)。needs['...'] の
+        # ブラケット記法を使う。
         run: |
-          if [ "${{ needs.quality.result }}" != "success" ] || [ "${{ needs.smoke.result }}" != "success" ]; then
-            echo "ci-green: FAIL (quality=${{ needs.quality.result }} smoke=${{ needs.smoke.result }})"
+          if [ "${{ needs.quality.result }}" != "success" ] || [ "${{ needs.smoke.result }}" != "success" ] || [ "${{ needs['hook-session-start'].result }}" != "success" ]; then
+            echo "ci-green: FAIL (quality=${{ needs.quality.result }} smoke=${{ needs.smoke.result }} hook-session-start=${{ needs['hook-session-start'].result }})"
             exit 1
           fi
-          echo "ci-green: OK（quality / smoke ともに success）"
+          echo "ci-green: OK（quality / smoke / hook-session-start ともに success）"

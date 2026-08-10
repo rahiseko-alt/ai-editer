@@ -43,7 +43,8 @@ jobs:
       - name: Install ffmpeg
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          # roadmap P1-12: ci.yml と同じ ubuntu-24.04 の apt 版を明示指定する。
+          sudo apt-get install -y -qq ffmpeg=7:6.1.1-3ubuntu5
           ffmpeg -version | head -1
 
       # 版の指定は requirements.txt を唯一の正とする（CI 本体と同じやり方）

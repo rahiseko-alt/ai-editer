@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -195,7 +196,10 @@ def main(argv):
 
     try:
         n = run(input_path, output_path, target=target, strength=strength)
-    except (OSError, RuntimeError, ValueError) as e:
+    except (OSError, RuntimeError, ValueError, cv2.error) as e:
+        # cv2.error は OSError/RuntimeError/ValueError のどれの派生でもないため、
+        # 捕捉リストに無いとモデル破損時に生のトレースバックが客に出る（M-1-F）。
+        # 例: cv2.FaceDetectorYN.create() は壊れたonnxファイルに対してこれを投げる。
         sys.stderr.write(f"[ERROR] {e}\n")
         return 1
 
