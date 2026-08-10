@@ -120,16 +120,18 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "next": "①主筋: PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。 ②並行: G-EDIT-MOSAIC-UI-O-1/O-2の凍結verifyを満たすには、VS_FIXTURE_MANIFESTによる文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs)・区間選定(server/claude-select.mjs)3箇所の差し替え機構を実装する必要がある(未着手)。それが出来て初めて/api/jobs経由の実サーバー検証(モザイク工程だけ失敗させる)ができ、O-1/O-2をdoingへ進められる。",
     "handoff": {
       "done": [
         "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
         "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
         "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。",
+        "(並行セッション) G-EDIT-MOSAIC-UI-O-1/O-2を確認: VS_FIXTURE_MANIFESTはリポジトリ全体を検索しても未実装(roadmap.htmlの本文のみに登場)であることを確認。葉J-1のtests/mosaic-ui-check.pyはapply-mosaic-stage.mjsを直接叩いており、/api/jobs・SSEを経由しないため本葉の検証には流用できないことも確認。server/pipeline-runner.mjsのstartJob()のcatchが、失敗時にメモリ上のjob.stageしか更新せずstate.jsonへ書き戻していない実装欠陥(roadmap detailが元々診断していた内容)をコード読解で裏付け、readState/writeStateで失敗をstate.jsonへ書き戻すよう修正した。回帰テストtests/job-failure-state-check.mjs(GROQ/claude不要・文字起こし入力欠如による決定的な数秒失敗経路で state.json の stage=error 化とSSE error リプレイの両方を確認、5 PASS)を追加しvideo-shorts/package.jsonのtestスクリプトへ組み込んだ。pnpm --filter video-shorts test 全体・typecheck・lint・build(該当なし)・pnpm audit・verify-roadmap-evidence.mjs・verify-criteria-freeze.mjsをすべて緑で確認。凍結verifyが要求する/api/jobs経由の実サーバー検証(実文字起こし・実区間選定を通した上でモザイク工程だけ失敗させる)は未実施のため、O-1/O-2のstatusはtodoのまま据え置いた(criteria/verify本文は無変更)。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
+        "(並行セッション) 無し。O-1/O-2はVS_FIXTURE_MANIFESTが無いと凍結verifyを満たせないと判明したため、範囲を「state.json未書き戻しの実装欠陥修正+回帰テスト追加」に限定し、無理にPR未作成のまま終える判断はせず、コード変更ありとしてPRを作成した。"
       ]
     },
     "updated": "2026-08-10",
@@ -1942,7 +1944,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、画面に失敗として出る",
                       "meaning": "顔を隠せなかったことが画面に出ないまま「終わりました」と見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n本PRでは実装しない。ジョブの状態の扱いはモザイク以外の工程の失敗にも共通するため、マスターの承認を得てから着手する。",
+                      "detail": "2026-08-08 の basis-reviewer 8巡目の指摘で追加し、9巡目で O-1 / O-2 に分割した。葉Kは「モザイク工程が失敗として終わる」ことを測っているが、それが画面まで届くかは誰も測っていない。画面への通知と、保存された記録への反映は別の仕組みで別々に落ちる(実装では runJob の catch がメモリ上の job.stage だけを更新し、state.json は rendered のまま残る＝片方だけ満たされた状態が現にある)。\n\n2026-08-10 マスターの承認を得て着手・確認した(未doing・確認内容のみ記録)。(1) VS_FIXTURE_MANIFEST はリポジトリ全体を grep しても docs/roadmap.html の本verify文言以外に一切存在せず、未実装であることを確認した(video-shorts/server, video-shorts/src 配下に該当コードなし)。(2) 葉J-1(video-shorts/tests/mosaic-ui-check.py)は video-shorts/src/apply-mosaic-stage.mjs を直接呼んでモザイク工程だけを検証しており、/api/jobs 経由でもSSE経由でもない。本葉が要求する実サーバー経路の検証には使えない。(3) server/pipeline-runner.mjs を読んだところ、startJob() の exec().catch() は既に broadcast(jobId,...,\"error\") でSSE\"error\"イベントを配信しており、後から subscribeJob() した購読者にもリプレイされる(既存コード、今回の変更ではない)。つまりSSE配信自体の骨格は既にある。(4) ただし本criteriaの凍結verifyは「文字起こし・区間選定を通し、/api/jobsから実サーバーへ流し、モザイク工程だけを失敗させる」ことを要求しており、これには文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs、claude -p 呼び出し)・区間選定(server/claude-select.mjs、claude -p 呼び出し)の3箇所を差し替えるVS_FIXTURE_MANIFEST機構が要る。この3箇所の差し替えは今回のセッションでは実装していない(範囲が大きく、既存の凍結済みcriteria群(transcribe/caption-fix/select系の多数の葉)に影響しうる改修のため、拙速な実装を避けた)。(5) 代わりに、O-2で見つかったstate.json未書き戻しの実装欠陥を直接コードで修正し(server/pipeline-runner.mjs)、その状態永続化ロジック自体の回帰テスト(tests/job-failure-state-check.mjs、GROQ/claude不要・文字起こし入力欠如で決定的に数秒で失敗させる経路)を追加した。このテストはSSEのリプレイ(O-1相当)とstate.jsonへのerror書き戻し(O-2相当)の両方を機械的に確認するが、/api/jobsからの実投入・実文字起こし・実区間選定を経由しないため、本葉の凍結verifyそのものの代替にはならない(status は todo のまま据え置く)。次にやるなら、VS_FIXTURE_MANIFEST(transcribe.py・ai-caption-fix.mjs・claude-select.mjsの3差し替え点)の実装が要る。",
                       "status": "todo",
                       "criteria": [
                         {
@@ -1957,7 +1959,7 @@
                       "kind": "state",
                       "theme": "モザイクが失敗したら、保存された記録にも失敗が残る",
                       "meaning": "サーバーを再起動したときに、失敗したジョブが成功したように見えるのを防ぐ",
-                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n本PRでは実装しない(O-1 と同じ理由)。",
+                      "detail": "2026-08-08 の basis-reviewer 9巡目の指摘で O から分割。実装では失敗がメモリ上の状態にしか反映されず、state.json は成功を表す値のまま残る。サーバーを再起動すると成功したジョブに見える。画面への通知(O-1)が動いていても、こちらは独立に落ちる。\n\n2026-08-10 マスターの承認を得て着手。診断どおり、server/pipeline-runner.mjs の startJob() の catch はメモリ上の job.stage だけを更新し state.json を書き戻していないことをコード読解で確認した(修正前)。この欠陥そのものは修正済み: catch 内で readState()/writeState() により state.json の stage を \"error\" へ、error/errorCode を書き戻すよう server/pipeline-runner.mjs を変更した(既存フィールドはスプレッドで保持し丸ごと上書きしない)。tests/job-failure-state-check.mjs で「失敗後に work/<id>/state.json の stage が error になる」「失敗理由が残る」「他フィールドが失われない」ことを回帰確認済み(5/5 PASS、ローカル実行)。ただし本criteriaの凍結verifyが要求する経路(O-1と同じジョブ＝/api/jobsから実サーバーへ、実文字起こし・実区間選定・実レンダリングを経て、モザイク工程だけを葉J-1の「2本目が動画として読めない」パターンで失敗させ、サーバー再起動後に読み直す)は、VS_FIXTURE_MANIFEST(O-1のdetail参照、未実装)が無いと再現できないため未実施。したがって status は todo のまま据え置き、コード修正の事実だけをここに記録する(evidenceは外部事実のみなので、ここに書く自己申告は証拠として扱わない)。",
                       "status": "todo",
                       "criteria": [
                         {
