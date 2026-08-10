@@ -657,8 +657,8 @@
                   "kind": "state",
                   "theme": "配布物に開発中のゴミファイルが混ざらない",
                   "meaning": "お客様に渡すZIPに、余計な内部ファイルが入っていない",
-                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）",
-                  "status": "todo",
+                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）実装済み・ローカルテスト緑・CI run URL待ち: build-dist.mjsをDESTの部分削除(既知ディレクトリ名だけrmSync)からDEST丸ごとrmSync＋allowlist方式(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)へ変更。tests/dist-slim-check.mjsに、既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし、dist直下が許可リストと完全一致し侵入者が消えている(余剰0件)ことを確認するテストを追加。旧実装に戻すとFAILすることを確認済み(正しく検知できる)。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイル(skill/等)を混入させない",
@@ -1623,7 +1623,7 @@
                   "kind": "state",
                   "theme": "軽い版に、顔モザイク関連の実ファイルが存在しない",
                   "meaning": "軽い版に、使わないはずの顔処理の部品が紛れ込んでいない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "軽い版をビルドしたdistフォルダの中に、モデルファイル・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyのいずれも存在しない",
@@ -1631,14 +1631,14 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。"
+                  "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、slimビルド後にsrc/models・src/apply_mosaic_cli.py・src/face_mosaic.py・src/face_choices.pyそれぞれをfs.existsSyncで確認するテストを追加(node tests/dist-slim-check.mjsで4件ともPASS)。"
                 },
                 {
                   "id": "S-6",
                   "kind": "state",
                   "theme": "配布物の手順書に、ビルド用の内部目印が残っていない（標準版・軽量版とも）",
                   "meaning": "客に渡す手順書に、社内用の作業メモが残っていない",
-                  "status": "todo",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "標準版・軽量版どちらの配布物のSKILL.mdにも mosaic:start / mosaic:end の文字列が含まれない",
@@ -1646,7 +1646,7 @@
                       "evidence": ""
                     }
                   ],
-                  "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない。"
+                  "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない(S-4側はmosaic:startのみ確認しmosaic:endを見ていなかった)。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、標準版・軽量版両方のSKILL.mdに対してmosaic:start/mosaic:endの両方を横断チェックする専用テストを追加(node tests/dist-slim-check.mjsでPASS)。"
                 }
               ]
             },
