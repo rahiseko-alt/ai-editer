@@ -120,18 +120,33 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "①主筋: PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。 ②並行: G-EDIT-MOSAIC-UI-O-1/O-2の凍結verifyを満たすには、VS_FIXTURE_MANIFESTによる文字起こし(src/transcribe.py)・AI字幕直し(src/ai-caption-fix.mjs)・区間選定(server/claude-select.mjs)3箇所の差し替え機構を実装する必要がある(未着手)。それが出来て初めて/api/jobs経由の実サーバー検証(モザイク工程だけ失敗させる)ができ、O-1/O-2をdoingへ進められる。",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】今回追加した3段の機械ゲート（criteria-freeze拡張／done-gate新設／evidence拡張）をPRとして出し、CIで実地確認する\n  ・特にverify-done-gate.mjsをroadmap-requiredワークフローに追加したことで実行時間が伸びる（pnpm install/ffmpeg/opencv\n    のセットアップが増えるため）。実際のCI所要時間を確認し、長すぎるようなら環境構築の要否を見直す。\n\n【2】現在doingのまま止まっている葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, M-1-E/F, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmd（今回新設したフィールド。CIが実際に実行するコマンド）を追記すること。\n  無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。M-4-HとG-EDIT-MOSAIC-UI-O-1/O-2はマージ済み。\n\n【3】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認は未着手のまま。前回セッションのbasis-reviewer 2エージェントが\n  出したobjection（20件超の指摘）が反映されているか、引き続き確認が必要。\n\n【4】G-EDIT-MOSAIC-UI-O-1/O-2の凍結verifyを満たすには、VS_FIXTURE_MANIFESTによる文字起こし(src/transcribe.py)・\n  AI字幕直し(src/ai-caption-fix.mjs)・区間選定(server/claude-select.mjs)3箇所の差し替え機構を実装する必要がある\n  （未着手）。それが出来て初めて/api/jobs経由の実サーバー検証(モザイク工程だけ失敗させる)ができ、O-1/O-2をdoingへ\n  進められる。現状は「state.json未書き戻しの実装欠陥修正+回帰テスト」のみ完了し、statusはtodoのまま据え置いている。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。",
-        "(並行セッション) G-EDIT-MOSAIC-UI-O-1/O-2を確認: VS_FIXTURE_MANIFESTはリポジトリ全体を検索しても未実装(roadmap.htmlの本文のみに登場)であることを確認。葉J-1のtests/mosaic-ui-check.pyはapply-mosaic-stage.mjsを直接叩いており、/api/jobs・SSEを経由しないため本葉の検証には流用できないことも確認。server/pipeline-runner.mjsのstartJob()のcatchが、失敗時にメモリ上のjob.stageしか更新せずstate.jsonへ書き戻していない実装欠陥(roadmap detailが元々診断していた内容)をコード読解で裏付け、readState/writeStateで失敗をstate.jsonへ書き戻すよう修正した。回帰テストtests/job-failure-state-check.mjs(GROQ/claude不要・文字起こし入力欠如による決定的な数秒失敗経路で state.json の stage=error 化とSSE error リプレイの両方を確認、5 PASS)を追加しvideo-shorts/package.jsonのtestスクリプトへ組み込んだ。pnpm --filter video-shorts test 全体・typecheck・lint・build(該当なし)・pnpm audit・verify-roadmap-evidence.mjs・verify-criteria-freeze.mjsをすべて緑で確認。凍結verifyが要求する/api/jobs経由の実サーバー検証(実文字起こし・実区間選定を通した上でモザイク工程だけ失敗させる)は未実施のため、O-1/O-2のstatusはtodoのまま据え置いた(criteria/verify本文は無変更)。"
+        "マスター指摘「CI緑だけではAIがハードルを下げているだけでは？機械ブロックされているのか」を受け、",
+        "基準の凍結を機械で強制する3段のゲートを実装しmainへマージした（PR #75）。",
+        "①scripts/verify-criteria-freeze.mjs を拡張：凍結済み葉のtext/verifyだけでなくverifyCmd（新設）も凍結対象にし、",
+        "  本文を書き換えずに「葉を削除する」「statusをtodoへ戻して直してから再凍結する」という迂回路も、",
+        "  正当な宣言(meta.basisChanges)なしには機械が違反として検知するようにした（reason: deleted / unfrozen を追加）。",
+        "②scripts/verify-done-gate.mjs を新設：今回のPRで新規にdoneへ遷移した葉について、全criteriaにverifyCmdが",
+        "  設定されていることを必須化し、CIがそのコマンドを実際に実行してexit 0になることを要求する。",
+        "  過去に受理済み(BASEで既にdoneだった)葉には遡及しない移行措置とした。",
+        "③scripts/verify-roadmap-evidence.mjs を拡張：status:doneなのにevidenceが空のままの葉を違反として検知するようにした",
+        "  （自己申告だけで完了扱いにできる穴を閉じる）。同スクリプトをfindRoadmapViolations()として純粋関数へ分離しテスト可能にした。",
+        "branch protectionのルールセットに roadmap-required を必須チェックとして追加し、上記3段に実効力を持たせた。",
+        "M-4-H（納品フォルダの素顔混入検知）・M-1-E/F（apply_mosaic_cli.pyのcv2.error捕捉漏れ修正）をmainへマージ済み。",
+        "G-EDIT-MOSAIC-UI-O-1/O-2: VS_FIXTURE_MANIFESTが未実装であることを確認。server/pipeline-runner.mjsのstartJob()が",
+        "  失敗時にstate.jsonへ書き戻していない実装欠陥を修正し、回帰テストtests/job-failure-state-check.mjs(5 PASS)を追加してmainへマージ済み。",
+        "  凍結verifyが要求する/api/jobs経由の実サーバー検証はVS_FIXTURE_MANIFESTが無いと実施できないため、statusはtodoのまま据え置いた。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。",
-        "(並行セッション) 無し。O-1/O-2はVS_FIXTURE_MANIFESTが無いと凍結verifyを満たせないと判明したため、範囲を「state.json未書き戻しの実装欠陥修正+回帰テスト追加」に限定し、無理にPR未作成のまま終える判断はせず、コード変更ありとしてPRを作成した。"
+        "既存の「HEADで削除されたノードは今回のスコープ外」という旧テストケースは、今回閉じた抜け穴そのものだったため、",
+        "挙動を反転させて書き直した（意図的な仕様変更であり後退ではない）。",
+        "新設のverifyCmdフィールドは、今回の作業葉（G-EDIT-CAPTION-AI-*等、doingのまま）には遡及的に付与していない。",
+        "次にこれらをdoneへ進める際、verify-done-gate.mjsによりverifyCmd未設定では機械的にブロックされる",
+        "（想定どおりの強制だが、次回作業者は驚かないよう申し送る）。",
+        "PR#72（G-EDIT-MOSAIC-UI-O-1/O-2）はmainとdocs/roadmap.html・video-shorts/package.jsonでコンフリクトしたため、",
+        "手動でマージ解消した（meta.next/handoffはPR#75由来の内容を基本に、O-1/O-2固有の申し送りを統合）。"
       ]
     },
     "updated": "2026-08-10",
@@ -1248,7 +1263,7 @@
                       "kind": "state",
                       "theme": "壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない",
                       "meaning": "動画ファイルが壊れていたら、気づかず短い動画を渡してしまわない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
@@ -1256,14 +1271,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。"
+                      "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
                     },
                     {
                       "id": "M-1-F",
                       "kind": "state",
                       "theme": "モデルファイルが無い/壊れていても、分かるメッセージで止まる",
                       "meaning": "内部の部品が欠けていても、意味の分からないエラー画面を客に見せない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
@@ -1271,7 +1286,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。"
+                      "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
                     }
                   ]
                 },
@@ -1484,7 +1499,7 @@
                       "kind": "state",
                       "theme": "素顔ファイルが客への納品物に混ざらないことが、仕組みでも防がれている",
                       "meaning": "手順を間違えても、素顔が客に渡らない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
@@ -1492,7 +1507,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。"
+                      "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
                     }
                   ]
                 },
@@ -3061,9 +3076,17 @@
       <h3>受入条件（criteria）の書き方</h3>
       <p class="rule">条件は「動くこと」で書く。「ドキュメントがある／レビューした」で書かない。</p>
       <ul>
-        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝実行可能な手順）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
-        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。</li>
+        <li>各条件は <code>text</code>（満たすべき状態）＋ <code>verify</code>（どう確かめるか＝人が読む手順の説明文）＋ <code>verifyCmd</code>（<code>verify</code> を機械が実行できる形にした具体的な1コマンド。任意だが、<code>done</code>化のゲートに必須）＋ <code>evidence</code>（結果の証拠＝commit SHA・CI run URL・デプロイID・公開URL 等の外部事実。スクショ等の自己申告は不可）。</li>
+        <li><code>evidence</code> が空＝未検証（☐）。埋まって初めて充足（☑）。図の <code>受入 n/m</code> バッジで進捗が見える。<code>status:"done"</code> なのに <code>evidence</code> が空のままだと <code>scripts/verify-roadmap-evidence.mjs</code> がCIで落とす（自己申告だけで完了扱いにできる穴を機械で塞ぐ）。</li>
         <li>証拠は「◯◯レビュー.md が存在する」を認めない。実物が動いた記録を指す。</li>
+      </ul>
+      <h3>基準を機械で下げさせない仕組み（2026-08-10 追加）</h3>
+      <p class="rule">CIが緑・criteriaが凍結済みでも、それは「実装者が自分で書いたテストに自分の実装が通った」という自己申告の域を出ない。以下の3段で機械が閉じる。</p>
+      <ul>
+        <li><b>①凍結（<code>scripts/verify-criteria-freeze.mjs</code>）</b>：着手前に固定した <code>text</code>/<code>verify</code>/<code>verifyCmd</code> は、その葉が <code>status:"todo"</code> 以外になった瞬間から無断で書き換え禁止。BASE/HEADの<code>docs/roadmap.html</code>を比較し、正当な理由（<code>meta.basisChanges</code>に<code>{id, criteriaHash, at, reason}</code>を新規追加）が無い変更をCIで落とす。<b>本文を書き換えず「葉ごと削除する」「一旦 <code>todo</code> に戻して直してからまた凍結し直す」という迂回路も同じ扱いで塞ぐ</b>（reason: <code>deleted</code> / <code>unfrozen</code>）。</li>
+        <li><b>②実行（<code>scripts/verify-done-gate.mjs</code>）</b>：ある葉が今回のPRで新規に <code>doing</code>/<code>todo</code> → <code>done</code> へ遷移するとき、全 <code>criteria</code> に <code>verifyCmd</code> が設定されていることを必須化し、CIがそのコマンドを<b>今この場で実際に実行</b>して exit code 0 になることを要求する。「テストを書いた」という申告ではなく「このコミットで今まさに実行して合格した」という事実そのものをdoneの条件にする。過去に受理済み（BASEで既に<code>done</code>だった）葉には遡及しない＝既存ツリーは壊さず、新規のdone化から適用が始まる。</li>
+        <li><b>③evidence（<code>scripts/verify-roadmap-evidence.mjs</code>）</b>：①②を通過しても、最終的に<code>evidence</code>へ外部事実（CI run URL等）を記入しない限り<code>done</code>は成立しない。</li>
+        <li><b>正直な限界</b>：①②③は「自己採点そのもの（テストを書かない／書いたが実行しない／実行したら実は落ちる）」を機械で閉じるが、「<code>verifyCmd</code>の中身が<code>criteria.text</code>の要求を本当に厳密に検証しているか（境界値・対照実験の有無等）」までは exit code だけからは判定できない。ここは引き続き人間・独立サブエージェント（<code>basis-reviewer</code>／<code>independent-verifier</code>）の役目。</li>
       </ul>
 
       <h2>分解の規則（不変・自己相似）</h2>

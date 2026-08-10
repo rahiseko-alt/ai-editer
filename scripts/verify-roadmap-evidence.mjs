@@ -36,7 +36,7 @@ const EVIDENCE_PATTERNS = [
   /^dpl_[A-Za-z0-9]+$/, // Vercel デプロイID
 ];
 
-function extractRoadmapJson(html) {
+export function extractRoadmapJson(html) {
   const m = html.match(
     /<script type="application\/json" id="roadmap-data">([\s\S]*?)<\/script>/,
   );
@@ -51,10 +51,12 @@ function walk(node, visit) {
   }
 }
 
-function main() {
-  const html = readFileSync(roadmapPath, "utf8");
-  const data = extractRoadmapJson(html);
-
+/**
+ * parse済みの roadmap JSON（{nodes, meta}）を検査し、違反メッセージの配列と
+ * 実在ノードID数を返す純粋関数。fs/process に一切依存しないためテストしやすい
+ * （main() はこの結果を読んで exit code に変換するだけの薄いI/O層にする）。
+ */
+export function findRoadmapViolations(data) {
   const ids = new Set();
   const violations = [];
   const depsMap = new Map(); // id -> [依存先id...]（道順/依存。時系列は背骨でなくここで表す）
@@ -107,7 +109,17 @@ function main() {
 
       for (const c of node.criteria || []) {
         const ev = (c.evidence ?? "").trim();
-        if (ev === "") continue; // 未充足は対象外（☐ のまま）
+        if (ev === "") {
+          // 未充足の evidence 自体は「まだ検証待ち」として許容する（doing 等）。
+          // ただし status:"done"（＝「達成した」と宣言している）のに evidence が空のままなのは、
+          // 本人の自己申告だけで完了扱いにできる穴になるため、ここだけは禁止する。
+          if (node.status === "done") {
+            violations.push(
+              `${node.id}: status が "done" なのに evidence が空です（自己申告だけで完了扱いにできてしまう。外部事実（CI run URL 等）を記入してから done にすること）`,
+            );
+          }
+          continue;
+        }
         const ok = EVIDENCE_PATTERNS.some((re) => re.test(ev));
         if (!ok) {
           violations.push(
@@ -217,6 +229,14 @@ function main() {
     }
   }
 
+  return { violations, idCount: ids.size };
+}
+
+function main() {
+  const html = readFileSync(roadmapPath, "utf8");
+  const data = extractRoadmapJson(html);
+  const { violations, idCount } = findRoadmapViolations(data);
+
   if (violations.length > 0) {
     console.error("✗ roadmap evidence リンタ: 不正を検出");
     for (const v of violations) console.error("  - " + v);
@@ -224,8 +244,11 @@ function main() {
   }
 
   console.log(
-    `✓ roadmap evidence リンタ: OK（ノード ${ids.size} 件、不正 evidence なし）`,
+    `✓ roadmap evidence リンタ: OK（ノード ${idCount} 件、不正 evidence なし）`,
   );
 }
 
-main();
+// このファイルが直接実行された時だけ main() を走らせる（テストからの import 時は走らせない）。
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
