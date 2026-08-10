@@ -669,8 +669,8 @@
                   "kind": "state",
                   "theme": "依存ライブラリに既知の重大な脆弱性が無い",
                   "meaning": "使っている部品(ライブラリ)に、既に知られている危険な穴が無い",
-                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）",
-                  "status": "todo",
+                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）。pnpm audit --audit-level moderateが既にCI(quality→gate)に組み込まれ、脆弱性0件であることを確認済み。",
+                  "status": "doing",
                   "criteria": [
                     {
                       "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
