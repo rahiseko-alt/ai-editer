@@ -120,17 +120,16 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "REFRAME: 葉C(話者切替。実写素材の調達=D-7がマスター判断待ち)と葉F(滑らかさ)は今回スコープ外のまま未着手。PR #54はCodeRabbitレビュー待ち・マージ待ち(draftを解除して回す)。独立検証で見つかった葉Bの参照切れ(親detail参照。実害無し・backlog)は次回basis-reviewer通過時に是正する。",
+    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
     "handoff": {
       "done": [
         "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンド(round1〜3は既存の分解不備・原子性違反の是正、round4はG2/H2がE側フォールバック(3人以上)の音声保持を検証していなかった十分性の穴を発見しG3/H3を新設、round5でno_objection)を経て基準凍結した。",
-        "凍結した基準に対し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と、11葉のverify手順+対照実装を自動検証するテスト(tests/reframe-verify-check.py、34 PASS)を行い、pnpm -r testを674 PASS/0 FAILで確認した。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりに測っているかの突合、3種の敵対的破壊(letterbox固定・中央固定クロップ・音声map除去・チャンネル入替え)が正しく検出されるかの実地確認、独立手法(ffmpeg cropdetect・rawvideo再計算)での数値一致、3回再実行での再現性、非フィクスチャ入力でのオーバーフィット無し)を実施し、11葉すべて合格を確認した。",
-        "PR #54を作成しCI(ci-green含む全チェック)緑を確認、CI run URLをevidenceとして11葉をdoneにした。"
+        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
+        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
+        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
       ],
       "trouble": [
-        "無し"
+        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
       ]
     },
     "updated": "2026-08-10",
