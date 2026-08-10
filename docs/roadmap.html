@@ -120,31 +120,26 @@
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
-    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】今回追加した3段の機械ゲート（criteria-freeze拡張／done-gate新設／evidence拡張）をPRとして出し、CIで実地確認する\n  ・特にverify-done-gate.mjsをroadmap-requiredワークフローに追加したことで実行時間が伸びる（pnpm install/ffmpeg/opencv\n    のセットアップが増えるため）。実際のCI所要時間を確認し、長すぎるようなら環境構築の要否を見直す。\n\n【2】現在doingのまま止まっている24葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, M-1-E/F, M-4-H, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmd（今回新設したフィールド。CIが実際に実行するコマンド）を追記すること。\n  無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。\n\n【3】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認は未着手のまま。前回セッションのbasis-reviewer 2エージェントが\n  出したobjection（20件超の指摘）が反映されているか、引き続き確認が必要。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
+    "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】PR fix/criteria-freeze-hardening-review（91944c9のformatViolation not-newバグ修正）をCI緑確認のうえマージする。\n\n【2】判断待ちの設計上の懸念（マスター判断）：\n  ・「BASEで既にdoneだった葉のcriteria/verifyCmdを、basisChanges宣言つきで書き換えても、done-gateはその新しい\n    verifyCmdを一度も実行しない」というギャップを確認した（再現済み）。criteria-freezeは文言変更を宣言必須にする\n    だけで、done-gateは『今回のPRで新規にdoneへ遷移した葉』だけを実行対象にするため、既にdoneの葉の改訂は\n    実行検証をすり抜ける。意図的な移行措置の範囲内か、追加のゲートが要るかは判断が必要。\n  ・roadmap-required.ymlの環境構築（pnpm/ffmpeg/opencv）はqualityジョブと版は揃っているが、Playwright/zipは\n    入れていない。verifyCmdがそれらを要求する場合は失敗する（現状は使用例なし。将来verifyCmdを書くときの注意点）。\n  ・verify-done-gate.mjsのrealRunCmdはverifyCmd文字列をexecSyncでそのままシェル実行する。roadmap.htmlの編集者が\n    リポジトリ内部の信頼できる人（またはcriteria-freezeで宣言必須化されたPR経由）に限られる前提なら許容範囲だが、\n    fork PRでもpull_requestイベントでこのジョブが動く点は認識しておくこと（secretsは露出しないがCIリソースは使う）。\n\n【3】現在doingのまま止まっている葉（P0-5-C/D, P1-2-F/G/H/I, P1-9-D/E, P1-10/S-5/S-6, P1-11, P1-12-A/B,\n  G-TESTINFRA-LINT/SCRIPTSLINT, G-DELIVERY-CIGATE/FAILCLEAR, G-EDIT-TRIM-H/I,\n  G-EDIT-QUALITY-A/C, G-EDIT-CAPTION-AI-A3/D2/M1/M2/K1/K2/F2/L2）をdoneへ進める際は、\n  各criteriaにverifyCmdを追記すること。無いとverify-done-gate.mjsがdone化をブロックする（想定どおりの挙動）。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「最初に決めたハードルを、AIが下げるのを機械ブロックさせろ」＝criteria/verify/verifyCmdの凍結・\n    done化時のverifyCmd実行・evidence必須化の3段は、今後もAI裁量で緩めてはならない。緩める場合は\n    必ずmeta.basisChangesに理由を明示した宣言を新規追加すること。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。",
     "handoff": {
       "done": [
-        "マスター指摘「CI緑だけではAIがハードルを下げているだけでは？機械ブロックされているのか」を受け、",
-        "基準の凍結を機械で強制する3段のゲートを実装した。",
-        "①scripts/verify-criteria-freeze.mjs を拡張：凍結済み葉のtext/verifyだけでなくverifyCmd（新設）も凍結対象にし、",
-        "  本文を書き換えずに「葉を削除する」「statusをtodoへ戻して直してから再凍結する」という迂回路も、",
-        "  正当な宣言(meta.basisChanges)なしには機械が違反として検知するようにした（reason: deleted / unfrozen を追加）。",
-        "②scripts/verify-done-gate.mjs を新設：今回のPRで新規にdoneへ遷移した葉について、全criteriaにverifyCmdが",
-        "  設定されていることを必須化し、CIがそのコマンドを実際に実行してexit 0になることを要求する。",
-        "  過去に受理済み(BASEで既にdoneだった)葉には遡及しない移行措置とした。",
-        "③scripts/verify-roadmap-evidence.mjs を拡張：status:doneなのにevidenceが空のままの葉を違反として検知するようにした",
-        "  （自己申告だけで完了扱いにできる穴を閉じる）。同スクリプトをfindRoadmapViolations()として純粋関数へ分離しテスト可能にした。",
-        ".github/workflows/roadmap-required.yml に verify-done-gate.mjs の実行ステップを追加し、ランナーをubuntu-24.04に固定した",
-        "（verifyCmdがffmpeg実機を使う場合に測定条件をqualityジョブと揃えるため）。",
-        "docs/roadmap.html のREADMEシートに「基準を機械で下げさせない仕組み」節を追加し、3段の仕組みと正直な限界",
-        "（verifyCmdの中身が厳密に検証しているかまでは機械では判定できず、そこは引き続きbasis-reviewer/independent-verifierの役目）を明記した。",
-        "合計3新規/拡張テストファイル・64件のテストを追加し全PASSを確認、既存の206ノードに対して3ゲートとも偽陽性ゼロを確認した。"
+        "マスター指示により、91944c9(3段ゲート追加。既にmainへマージ・branch protection必須チェックに組込み済み)を",
+        "独立した目で厳密にコードレビューした。",
+        "isFrozenLeaf/checkDeclaration/findNewlyDoneLeaves/findRoadmapViolationsの分離リファクタ等、主要ロジックは",
+        "正しく機能していることを確認（既存64件のテストは全PASS、意図的に用意した境界ケース再現でも期待どおりの挙動）。",
+        "見つけたバグ（高確信度）を1件その場で修正：checkDeclaration()が削除(deleted)/凍結解除(unfrozen)/本文書き換え",
+        "(undeclared)いずれの場合も、宣言はあるがBASE時点で既出だった場合にreasonを一律\"not-new\"へ潰していたため、",
+        "formatViolation()が削除された葉の\"not-new\"違反を「本文が書き換えられています」「criteriaHash: \"null\"」という",
+        "誤ったメッセージで表示していた（検知自体は正しくexit 1になるが、修正すべき箇所を誤誘導する不具合）。",
+        "checkDeclaration()の戻り値にcategoryフィールド(元の違反文脈)を追加し、formatViolation()をcategory優先で",
+        "分岐するよう修正。再現テスト4件を追加し、pnpm --filter scripts testで69件全PASS、",
+        "BASE_REF=origin/mainでのverify-criteria-freeze.mjs/verify-done-gate.mjsも緑を確認した。",
+        "PR fix/criteria-freeze-hardening-review を作成した（91944c9はmain直マージ済みのため直push禁止・PR経由）。"
       ],
       "trouble": [
-        "既存の「HEADで削除されたノードは今回のスコープ外」という旧テストケースは、今回閉じた抜け穴そのものだったため、",
-        "挙動を反転させて書き直した（意図的な仕様変更であり後退ではない）。",
-        "新設のverifyCmdフィールドは、今回の24葉（G-EDIT-CAPTION-AI-*/G-EDIT-MOSAIC-UI-*等、doingのまま）には",
-        "遡及的に付与していない。次にこれらをdoneへ進める際、verify-done-gate.mjsにより",
-        "verifyCmd未設定では機械的にブロックされる（想定どおりの強制だが、次回作業者は驚かないよう申し送る）。"
+        "無し。ただしレビュー中、origin/mainが作業中に3PR(#60/#67/#64)分先へ進んでおり(M-1-E/F, M-4-H関連)、",
+        "一度BASE_REF比較が誤検知した。作業ブランチをorigin/mainへrebaseして解消した。",
+        "設計上の懸念（done-gateが既にdoneの葉の改訂検証を実行しない件）は修正せず、meta.nextに判断依頼として記録した。"
       ]
     },
     "updated": "2026-08-10",
