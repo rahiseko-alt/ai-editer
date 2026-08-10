@@ -119,17 +119,15 @@
 {
   "meta": {
     "title": "kosespark video-shorts ロードマップ",
-    "active": "G-EDIT-REFRAME",
-    "next": "PR #54(claude/reframe): git stash popしてCodeRabbit指摘7件の修正を復元 → pnpm --filter video-shorts testで実測値(黒帯%・平均絶対差・周波数)が既存evidenceと変わっていないことを確認 → commit・push → CI緑確認 → マージ。マージ後、葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
+    "active": "G-EDIT-TRIM-H",
+    "next": "G-EDIT-TRIM-H/Iをdoneにするには、feature/trim-hi-asr-robustnessのPRがマージされCI run URLが取れてからevidenceを追記する。あわせて、別枝で退避中のPR #54(claude/reframe)のCodeRabbit指摘7件修正(git stash: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')の再開が引き続き残っている。葉C(実写素材調達=D-7待ち)・葉F(滑らかさ)は引き続きスコープ外。",
     "handoff": {
       "done": [
-        "UI(G-P2、13葉)はPR #53でmainへマージ済み(CI緑・evidence記録済み)。",
-        "縦型切り抜き(G-EDIT-REFRAME)の葉A/B/D/D2/E/G/G2/G3/H/H2/H3を、basis-reviewer 5ラウンドを経て基準凍結し、顔追跡クロップの実装(video-shorts/src/reframe.py・reframe_cli.py)と自動検証テスト(tests/reframe-verify-check.py、34 PASS)を行った。",
-        "independent-verifierによる独立検証(criteria/verify本文どおりの測定・3種の敵対的破壊テスト・独立手法での数値再計算・再現性・オーバーフィット無しの確認)を完了し、11葉すべてdoneにしCI run URL(https://github.com/rahiseko-alt/ai-editer/actions/runs/31361913054)をevidenceとして記録した。",
-        "PR #54を作成しCI緑を確認。draftを解除しCodeRabbitのレビューを受けたところ、6件のactionable指摘(reframe.pyのread_frames()が全フレームをメモリに溜め込む/_crop_x_expr()のffmpegフィルタ式が長尺クロップ区間でネスト上限100を超えうる/テスト側の見逃し穴3件)+quick winのnitpick1件が出た。"
+        "G-EDIT-TRIM-H: transcribe呼び出し(ASR)が例外・タイムアウト・空配列を返した場合のロバスト性を検証するテスト tests/trim-hi-asr-robustness-check.mjs を新設し、video-shorts/package.json の test チェーンへ登録した。モック注入点は pipeline.mjs の renderSegment(words引数)。(a)タイムアウト(b)不正JSON(c)空words配列の3パターンでrenderSegmentが例外を投げず出力尺が入力尺と一致することを実測(ffprobe)し、対照として本物のwordsを渡すと尺が縮むことも確認(12 PASS/0 FAIL)。本体コード(trim-plan.mjs等)は既にロバストだったため変更不要、テスト追加のみでstatusをdoingへ。",
+        "G-EDIT-TRIM-I: 対応する葉が既に存在するtests/trim-plan-check.mjsの該当テスト「時刻が壊れた語は無視する（落ちない）」がPASSであることを確認(20 PASS/0 FAIL)。追加実装・追加テストは不要と判断し、statusをdoingへ。"
       ],
       "trouble": [
-        "PR #54のCodeRabbit指摘7件の修正を委任したが、マスターの終了指示(「遅すぎる。終わり」「実害があっても終わり」)により、修正エージェントを検証完了前にTaskStopで中断した。未検証の変更(約91行)はcommitせずgit stashへ退避済み(stash message: 'REFRAME: CodeRabbit指摘7件の修正(未検証・中断)')。詳細はdocs/failures.md 2026-08-10参照。"
+        "無し"
       ]
     },
     "updated": "2026-08-10",
@@ -2666,7 +2664,7 @@
                       "kind": "state",
                       "theme": "文字起こしが失敗・空応答でも、詰め処理がクラッシュせず元動画相当の出力を返す",
                       "meaning": "音声認識がうまくいかなくても、動画が壊れずに出てくる",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "ASR呼び出しが例外・タイムアウト・空配列を返した場合、trimパイプラインが例外を投げずに「無音・言い淀みを切らない」出力を生成する",
@@ -2674,14 +2672,14 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。G-EDIT-TRIM-A〜Gは全てplantrimへ渡すwordsをcalibration.jsonの設計値で固定注入しており、実際の音声認識を一度も通していない。パイプライン入口(ASR呼び出し)区間に葉が無い。"
+                      "detail": "ツリー見直しで検出。G-EDIT-TRIM-A〜Gは全てplantrimへ渡すwordsをcalibration.jsonの設計値で固定注入しており、実際の音声認識を一度も通していない。パイプライン入口(ASR呼び出し)区間に葉が無い。\n\n【2026-08-10 実装・検査を追加】tests/trim-hi-asr-robustness-check.mjs を新設し pnpm test（video-shorts）へ登録した。モック注入点は pipeline.mjs の export renderSegment の words 引数（cmdRender は transcript.json を読んだ結果を `transcript.words || []` として渡すだけで、実際の ASR は別プロセス src/transcribe.py が事前に書く出荷経路のため、render 段へ渡ってくる「使える words が無い」という結果そのものをモックする）。mockTranscribe(scenario) で (a) タイムアウト(reject) (b) 不正JSON(JSON.parse不可の文字列) (c) 空words配列 を模し、resolveWordsFromAsr() が例外を投げずに [] へ落とすことを確認したうえで renderSegment を実行、(1) 例外を投げない (2) 出力(a:0)の実測尺が入力尺と一致する、の2点を ffprobe で実測した。対照として、無音2.0秒を含む本物の words を同じ経路へ渡すと出力尺が明確に縮む（測り方が『詰めた／詰めていない』を区別できる）ことも確認した。実行結果: 12 PASS / 0 FAIL（既存の trim-plan.mjs / renderSegment 側は元々このロバスト性を満たしていたため、本体コードの変更は不要だった。テスト追加のみ）。既存の tests/trim-plan-check.mjs（20 PASS）・tests/trim-duration-check.mjs も影響なくPASSのまま。CI run URLが得られ次第 done + evidence を追記する。"
                     },
                     {
                       "id": "G-EDIT-TRIM-I",
                       "kind": "state",
                       "theme": "文字起こしの語データが壊れていても、詰め処理が落ちない",
                       "meaning": "認識結果の時刻がおかしくても、処理が止まらない",
-                      "status": "todo",
+                      "status": "doing",
                       "criteria": [
                         {
                           "text": "開始・終了時刻が不正な語（start>end、null、非数値）を含む語配列を渡しても例外を投げず、正常な語だけを使って計画を返す",
@@ -2689,7 +2687,7 @@
                           "evidence": ""
                         }
                       ],
-                      "detail": "ツリー見直しで検出。trim-plan.mjsには既に防御コード（時刻が壊れた語は無視する）とテストが存在するが、対応する葉がroadmapに無かった。CI run URLが得られ次第 done + evidence を追記する。"
+                      "detail": "ツリー見直しで検出。trim-plan.mjsには既に防御コード（時刻が壊れた語は無視する）とテストが存在するが、対応する葉がroadmapに無かった。CI run URLが得られ次第 done + evidence を追記する。\n\n【2026-08-10 確認】tests/trim-plan-check.mjs の該当テスト「時刻が壊れた語は無視する（落ちない）」（start>end の語・w:nullの語を含む配列を planTrim へ渡し、例外を投げず keptSeconds>0 を返すことを確認）が既に存在し、`node video-shorts/tests/trim-plan-check.mjs` で 20 PASS / 0 FAIL（当該テスト含め全件PASS）であることを確認した。追加実装・追加テストは不要と判断。"
                     }
                   ]
                 },
