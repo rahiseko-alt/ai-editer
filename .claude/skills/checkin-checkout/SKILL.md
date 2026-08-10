@@ -39,7 +39,8 @@ handoff は独立ファイルではなく **`docs/roadmap.html` の `meta.handof
 
 ## ② チェックアウト（ロードマップJSONを更新する瞬間 = 書く）
 
-作業ノードを閉じてロードマップ JSON を編集する、その同じ瞬間に handoff も更新する。
+作業ノードを閉じてロードマップ JSON を編集する、その同じ瞬間に handoff も更新する
+（下記「並列バッチ中の個々の葉PR」の例外を除く）。
 
 **例外＝並列バッチ中の個々の葉PR**：`meta.next`/`meta.handoff` は触らない。担当葉の
 `status`/`detail`/`criteria[].evidence` 更新のみで `roadmap-required` を満たす（AGENTS.md「PR
@@ -54,7 +55,8 @@ instructions」、`docs/failures.md` 2026-08-10）。`meta.next`/`meta.handoff` 
      false（または削除）にし、`meta.handoff.nav` を削除する。以降 CI が本物の原子ツリーを機械強制する。
 2. **失敗があれば `docs/failures.md` に1件 append**（日付＋事象＋根因＋教訓）。ここは消さない。
 3. `docs/roadmap.html`（＋あれば `docs/failures.md`）を保存し、**commit & push** する。
-   - 全PRは `roadmap-required` により roadmap 差分が必須。②③は毎回書けるので diff 0 はあり得ない（例外なし）。
+   - 全PRは `roadmap-required` により roadmap 差分が必須。②③は毎回書けるので diff 0 はあり得ない
+     （並列バッチ中の個々の葉PRは②③を書かず、担当葉の差分のみで足りる。上記例外を参照）。
 4. **PRを出す／既存PRへの反映を確認する**。このブランチに対応するPRが無ければ新規作成する（テンプレがあれば従う）。
    既にPRがある場合は、今回のpushがそのPRに乗ったことを確認する。
 5. **CIの完走を確認し、緑ならマージまで実行する**。AGENTS.md の運用（「変更はPRを出せば誰でもレビュー/承認して
