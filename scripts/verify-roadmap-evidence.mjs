@@ -36,14 +36,23 @@ const EVIDENCE_PATTERNS = [
   /^dpl_[A-Za-z0-9]+$/, // Vercel デプロイID
 ];
 
+/**
+ * @param {string} html
+ * @returns {any}
+ */
 export function extractRoadmapJson(html) {
   const m = html.match(
     /<script type="application\/json" id="roadmap-data">([\s\S]*?)<\/script>/,
   );
-  if (!m) throw new Error("roadmap-data script block not found");
+  if (!m || m[1] === undefined) throw new Error("roadmap-data script block not found");
   return JSON.parse(m[1]);
 }
 
+/**
+ * @param {any} node
+ * @param {(node: any) => void} visit
+ * @returns {void}
+ */
 function walk(node, visit) {
   visit(node);
   if (Array.isArray(node.children)) {
@@ -55,6 +64,8 @@ function walk(node, visit) {
  * parse済みの roadmap JSON（{nodes, meta}）を検査し、違反メッセージの配列と
  * 実在ノードID数を返す純粋関数。fs/process に一切依存しないためテストしやすい
  * （main() はこの結果を読んで exit code に変換するだけの薄いI/O層にする）。
+ * @param {any} data
+ * @returns {{ violations: string[], idCount: number }}
  */
 export function findRoadmapViolations(data) {
   const ids = new Set();
@@ -149,7 +160,13 @@ export function findRoadmapViolations(data) {
     const WHITE = 0, GRAY = 1, BLACK = 2;
     const color = new Map();
     const cyclePath = [];
+    /** @type {string[] | null} */
     let cycleFound = null;
+    /**
+     * @param {string} id
+     * @param {string[]} stack
+     * @returns {void}
+     */
     const dfs = (id, stack) => {
       if (cycleFound) return;
       color.set(id, GRAY);
@@ -169,9 +186,10 @@ export function findRoadmapViolations(data) {
       if ((color.get(id) ?? WHITE) === WHITE) dfs(id, []);
       if (cycleFound) break;
     }
-    if (cycleFound) {
+    if (cycleFound !== null) {
+      const path = /** @type {string[]} */ (cycleFound);
       violations.push(
-        `deps に循環があります（依存は道順であって循環してはいけない）: ${cycleFound.join(" → ")}`,
+        `deps に循環があります（依存は道順であって循環してはいけない）: ${path.join(" → ")}`,
       );
     }
   }

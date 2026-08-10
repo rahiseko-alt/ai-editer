@@ -2,6 +2,7 @@
   "name": "scripts",
   "private": true,
   "scripts": {
-    "test": "node verify-criteria-freeze.test.mjs && node verify-roadmap-evidence.test.mjs && node verify-done-gate.test.mjs"
+    "test": "node verify-criteria-freeze.test.mjs && node verify-roadmap-evidence.test.mjs && node verify-done-gate.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }
