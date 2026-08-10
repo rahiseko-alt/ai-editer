@@ -118,7 +118,7 @@
 <script type="application/json" id="roadmap-data">
 {
   "meta": {
-    "title": "kosespark video-shorts ロードマップ",
+    "title": "AI-Editer video-shorts ロードマップ",
     "active": "G-EDIT-REFRAME",
     "next": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 次のセッションでやること\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n【1】並列着手した24葉（draft PR群）のCI結果を確認し、緑ならdraft解除→マージする\n  ・ブランチ: feature/p1-2-server-wiring, feature/p0-5-pipeline-wiring, feature/p1-9-boundary-fixtures,\n    feature/dist-hygiene, feature/p1-11-audit-evidence(PR #56)、feature/p1-12-tool-pin-consent,\n    feature/testinfra-lint, feature/testinfra-scriptslint, feature/delivery-ci-gate,\n    feature/m1-mosaic-cli-robustness, feature/m4h-delivery-face-scan, feature/trim-hi-asr-robustness,\n    feature/quality-ac-gates。CIが赤いものは診断して直す。マージ後は該当葉のstatusをdoneにしevidence(commit SHA/CI run URL)を記録する。\n\n【2】G-EDIT-REFRAME（PR #54でマージ済み）の実態確認\n  ・本セッション冒頭でbasis-reviewer 2エージェントが出したobjection（葉A/B/D/Eの偽の緑・音声/字幕/横長経路の欠落・\n    素材未凍結のC/F 等、計20件超の指摘）が反映されているか確認する。反映されていなければ、doneになっている\n    葉（A/B/D/D2/E/G/G2/G3/H/H2/H3）でも実質的に凍結不可の可能性がある。docs/failures.mdに経緯を確認できる\n    記録があるか探し、無ければマスターに直接確認する。\n  ・G-EDIT-REFRAME-C/F（素材未凍結）はまだtodoのまま。着手前にD-7（実写素材調達）の方針確認が必要。\n  ・REFRAME実装が有効になったことで、見送っていたG-EDIT-QUALITY-B/D（追跡クロップ込みの処理時間・配布物内容）\n    が着手可能になっている可能性がある。REFRAME実態確認後に着手を検討する。\n\n【3】ブランド名変更（AI-Editer）の残作業\n  ・docs/roadmap.html のdetailフィールド22箇所に残る「kosespark」は、すべて歴史的な監査ファイル名\n    (docs/audits/2026-07-27-kosespark-test-review-proposal.md)への参照であることを確認済み。ファイル名\n    自体は変更しない方針（参照が壊れるため）。将来もし監査ファイルをリネームする場合は、参照側も\n    一括で直すこと。\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n■ 進め方（マスターの指示。守ること）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n  ・CodeRabbit は無視する。マスターの明示があるときだけ無視しない（AGENTS.md 最優先ルール）。\n  ・「完了」の定義は明示指示があった場合、CIへ確認を依頼する（PR作成）ところまでで良い。CIグリーン確認や\n    マージまで自動で進めるかは、その都度の指示に従う。\n  ・実装も検査もサブエージェントに書かせる。自分で書かない。\n  ・並列作業はworktree隔離を使い、docs/roadmap.htmlのような共有ファイルの同時編集による衝突を避ける。",
     "handoff": {
@@ -332,7 +332,7 @@
                       "kind": "state",
                       "theme": "起動ごとの合言葉(トークン)で守る",
                       "meaning": "サーバー起動時に発行される合言葉を知らないと操作できない",
-                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__KOSESPARK_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
+                      "detail": "起動時トークンによる認可を追加する。server/security.mjsのgenerateStartupToken()(起動ごとにランダム生成)をserver/index.mjsで保持し、index.html配信時にwindow.__AI_EDITOR_TOKEN__として埋め込む(別オリジンはレスポンス本文を読めないため盗めない)。全/api/*エンドポイントでisValidToken()による検証を必須化(PR)。",
                       "status": "done",
                       "criteria": [
                         {
