@@ -344,7 +344,7 @@
                           "text": "sub=noneを選んだジョブの出力動画に字幕が焼き込まれていない",
                           "verify": "ffmpeg実機環境でsub:\"none\"を指定してrenderを実行し、字幕なし基準フレームとのフレーム差分比較で出力フレームが一致する（＝字幕が焼かれていない）ことを確認する",
                           "verifyCmd": "node video-shorts/tests/sub-none-render-check.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
                       "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
@@ -360,7 +360,7 @@
                           "text": "mosaic=onを選んだジョブの成果物に、選んだときだけモザイク処理が適用される",
                           "verify": "実際にmosaic:\"on\"を指定したジョブを流し、applyMosaicStageが呼ばれcandidates.jsonが更新されることを確認する（既存のface-mosaic-check.py等との重複が無いかを確認した上で追加する）",
                           "verifyCmd": "node video-shorts/tests/mosaic-job-wiring-check.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
                       "detail": "実装済み・ローカルテスト緑：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
@@ -769,7 +769,7 @@
                           "text": "頭尾の間隔がちょうどMAX_MATCH_GAP_SECのときは結合され、僅かに超えるときは結合されない",
                           "verify": "gap=10.0秒ちょうど、gap=10.001秒のtranscript fixtureをそれぞれ与え、前者は結合・後者は非結合になることを確認する",
                           "verifyCmd": "node video-shorts/tests/smoke.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
                       "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。実装済み・ローカルテスト緑：video-shorts/tests/smoke.mjsにP1-9-D用の2テスト（gap=ちょうどMAX_MATCH_GAP_SEC→結合／gap=+0.001秒→非結合）を追加し、node tests/smoke.mjsで96 PASS/0 FAILを確認済み。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
@@ -785,7 +785,7 @@
                           "text": "カバー率がちょうどMIN_MATCH_COVERAGEのときは採用され、僅かに下回るときは採用されない",
                           "verify": "coverage=0.5ちょうど、coverage=0.49のfixtureをそれぞれ用意し、採否が分かれることを確認する",
                           "verifyCmd": "node video-shorts/tests/smoke.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
                       "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。実装済み・ローカルテスト緑：video-shorts/tests/smoke.mjsにP1-9-E用の2テスト（coverage=ちょうどMIN_MATCH_COVERAGE→採用／coverage=0.49→非採用）を追加し、node tests/smoke.mjsで96 PASS/0 FAILを確認済み。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
@@ -805,7 +805,7 @@
                       "text": "配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイル(skill/等)を混入させない",
                       "verify": "build-dist.mjsを実行し、生成されたdist/ZIPの内容が許可リストと完全一致し余剰ファイルが0件であることを確認する",
                       "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
-                      "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                     }
                   ]
                 },
@@ -821,7 +821,7 @@
                       "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
                       "verify": "pnpm audit --audit-level moderate（または npm audit）を実行し、High/Critical脆弱性が0件であることを確認する",
                       "verifyCmd": "pnpm audit --audit-level moderate",
-                      "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                     }
                   ]
                 },
@@ -843,7 +843,7 @@
                           "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
                           "verify": "呼び出しコマンドにバージョン/hash指定があることをコードレビューし、固定前後で実行結果が再現することを確認する",
                           "verifyCmd": "node video-shorts/tests/external-tool-version-pin-check.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ]
                     },
@@ -859,7 +859,7 @@
                           "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
                           "verify": "初回セットアップ手順を実行し、外部ツール実行前に同意確認が挟まることを確認する",
                           "verifyCmd": "node video-shorts/tests/consent-before-tool-install-check.mjs",
-                          "evidence": "e924c73466fe0790f6b1be3022a207927b8b007a"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ]
                     }
