@@ -8,6 +8,7 @@
 //   S-4 標準版は従来どおり顔を隠せる
 //   S-5 軽い版に、顔モザイク関連の実ファイルが存在しない
 //   S-6 標準版・軽量版どちらのSKILL.mdにも、ビルド用の内部目印(mosaic:start/end)が残っていない
+//   S-7 配布物に ffmpeg/ffprobe の実行バイナリが同梱されていない（軌道修正 C-11）
 //   P1-10 配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイルを混入させない
 
 import fs from "node:fs";
@@ -208,6 +209,49 @@ check(
   leftoverMarkers.length === 0,
   `残っている目印: ${JSON.stringify(leftoverMarkers)}`,
 );
+
+// ---------------------------------------------------------------- S-7（軌道修正 C-11）
+// ffmpeg/ffprobe はホストにある前提(M-4-C系の制約)で、配布物には絶対に同梱しない。
+// 同梱した瞬間、手元の GPL 版(--enable-gpl)や客が入れる gyan.dev ビルド(GPLv3)の
+// 再配布者になってしまうため、dist を実際に歩いて実行バイナリが混ざっていないことを検査する。
+// ファイル名の完全一致(大小文字を区別しない)と、拡張子違い(.exe 等)の両方を見る。
+function walkFiles(dir) {
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    const p = path.join(dir, name);
+    const st = fs.statSync(p);
+    if (st.isDirectory()) out.push(...walkFiles(p));
+    else out.push(p);
+  }
+  return out;
+}
+const BANNED_BASENAMES = new Set(["ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"]);
+function findBundledFfmpeg(dir) {
+  return walkFiles(dir).filter((p) => BANNED_BASENAMES.has(path.basename(p).toLowerCase()));
+}
+for (const [label, dir] of [["軽い版", SLIM], ["標準版", FULL]]) {
+  const found = findBundledFfmpeg(dir);
+  check(
+    `S-7: ${label}の配布物に ffmpeg/ffprobe の実行バイナリが同梱されていない`,
+    found.length === 0,
+    `見つかったファイル=${JSON.stringify(found.map((p) => path.relative(dir, p)))}`,
+  );
+}
+// 対照(有るときに有ると言えること): 実際に偽のバイナリを1つ仕込み、検出できることを自己検証する。
+// 合成物はコミットしない(テスト内で作って消す)。
+const probeDir = path.join(FULL, "src");
+const probePath = path.join(probeDir, "ffmpeg");
+fs.writeFileSync(probePath, "#!/bin/sh\necho fake\n", { mode: 0o755 });
+try {
+  const detected = findBundledFfmpeg(FULL);
+  check(
+    "S-7 対照: dist に ffmpeg という名前のファイルを1つ仕込むと、検査が実際にそれを検出する",
+    detected.length === 1 && path.basename(detected[0]) === "ffmpeg",
+    `検出=${JSON.stringify(detected.map((p) => path.relative(FULL, p)))}`,
+  );
+} finally {
+  fs.rmSync(probePath, { force: true });
+}
 
 console.log(`\n--- ${passed} PASS / ${failed} FAIL ---`);
 process.exit(failed ? 1 : 0);
