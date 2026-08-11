@@ -619,7 +619,19 @@ build = subprocess.run(
 check("M-4-A: 配布物のビルドが成功する（前提の確認）", build.returncode == 0,
       (build.stderr or build.stdout)[-300:])
 
-MODELS = ["face_detection_yunet_2023mar.onnx", "face_recognition_sface_2021dec.onnx"]
+# 第三者部品の一覧は正本(video-shorts/src/models/THIRD_PARTY.json)を読む。
+# ここへハードコードした配列にすると、部品を dist へ足しても一覧を更新し忘れた場合に
+# 永久に検出できない(軌道修正 C-9。実測: 一覧駆動の旧実装は fonts/NotoSansJP.ttf を
+# 無登録のまま置いても PASS した)。正の側から読み、検査は dist 側を実際に歩いて
+# 「一覧に無いファイルが無いか」を見る(一覧に有るものが有るかだけを見ない)。
+import json  # noqa: E402
+
+MANIFEST_PATH = os.path.join(PKG, "src", "models", "THIRD_PARTY.json")
+with open(MANIFEST_PATH, encoding="utf-8") as f:
+    THIRD_PARTY_MANIFEST = json.load(f)
+MANIFEST_ENTRIES = {k: v for k, v in THIRD_PARTY_MANIFEST.items() if not k.startswith("_")}
+
+MODELS = list(MANIFEST_ENTRIES.keys())
 missing_models = [m for m in MODELS
                   if not os.path.exists(os.path.join(DIST, "src", "models", m))]
 check(
@@ -628,7 +640,7 @@ check(
     f"見つからなかったモデル={missing_models}",
 )
 
-LICENSES = ["LICENSE-yunet.txt", "LICENSE-sface.txt"]
+LICENSES = sorted({v["license"] for v in MANIFEST_ENTRIES.values()})
 bad_licenses = []
 for name in LICENSES:
     path = os.path.join(DIST, "src", "models", name)
@@ -640,6 +652,49 @@ check(
     not bad_licenses,
     f"欠けている/空のライセンス={bad_licenses}",
 )
+
+# ---------------------------------------------------------------- M-4-I (軌道修正 C-9)
+# 「一覧に部品を1件足したら落ちる」ではなく「dist に一覧未登録のファイルを1件置いたら落ちる」
+# ことを機械強制する。src/models/ は第三者部品(モデル本体・ライセンス本文)専用のディレクトリと
+# 定め、その中に MANIFEST_ENTRIES にも THIRD_PARTY.json 自身にも LICENSES にも無いファイルが
+# 1つでもあれば不合格にする。
+MODELS_DIR = os.path.join(DIST, "src", "models")
+if os.path.isdir(MODELS_DIR):
+    known = set(MANIFEST_ENTRIES.keys()) | set(LICENSES) | {"THIRD_PARTY.json"}
+    actual = set(os.listdir(MODELS_DIR))
+    unregistered = sorted(actual - known)
+    check(
+        "M-4-I: dist の src/models に、一覧(THIRD_PARTY.json)へ未登録のファイルが無い",
+        not unregistered,
+        f"未登録のファイル={unregistered}",
+    )
+
+    # 対照(有るときに有ると言えること): 未登録ファイルを実際に1つ置いて、
+    # 上と同じ検出ロジックが実際に検出できることを自己検証する。合成物はコミットしない。
+    probe_name = "PROBE-unregistered-third-party-file.bin"
+    probe_path = os.path.join(MODELS_DIR, probe_name)
+    with open(probe_path, "wb") as f:
+        f.write(b"\x00")
+    try:
+        actual_with_probe = set(os.listdir(MODELS_DIR))
+        detected = sorted(actual_with_probe - known)
+        check(
+            "M-4-I 対照: 未登録ファイルを1つ置くと、検査が実際にそれを検出する",
+            detected == [probe_name],
+            f"検出={detected}",
+        )
+    finally:
+        os.remove(probe_path)
+
+    # 逆方向の対照: 一覧に登録されているものは、全部 dist に実在する
+    # (登録だけして中身を配布し忘れる事故を防ぐ。既に M-4-A/B が見ているが、
+    #  ここでは manifest 主導になったことで生じうる別の壊れ方=幽霊エントリを見る)。
+    phantom = sorted(set(MANIFEST_ENTRIES.keys()) - actual)
+    check(
+        "M-4-I: 一覧(THIRD_PARTY.json)に登録された部品が、すべて実際に dist にある",
+        not phantom,
+        f"一覧にあるが実在しない部品={phantom}",
+    )
 
 # ---------------------------------------------------------------- M-4-C
 req = open(os.path.join(PKG, "requirements.txt"), encoding="utf-8").read()

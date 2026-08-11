@@ -1,0 +1,13 @@
+{
+  "_comment": "顔モザイクが同梱する第三者部品の一覧（正）。ここに無いファイルが dist/…/src/models に見つかると tests/face-mosaic-check.py の C-9 検査が落ちる（一覧を歩くのではなく dist を歩いて未登録を見つける方式）。新しい第三者部品をこのディレクトリへ追加するときは、対応するライセンス本文ファイルとあわせてここへ登録すること。",
+  "face_detection_yunet_2023mar.onnx": {
+    "license": "LICENSE-yunet.txt",
+    "source": "OpenCV Zoo (YuNet)",
+    "spdx": "MIT"
+  },
+  "face_recognition_sface_2021dec.onnx": {
+    "license": "LICENSE-sface.txt",
+    "source": "OpenCV Zoo (SFace)",
+    "spdx": "Apache-2.0"
+  }
+}
