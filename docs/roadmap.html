@@ -143,6 +143,12 @@
         "criteriaHash": "2c57e4db86f575c4f5687855d3353f922aae0ef3e3f4451261d74b5a8f2ede21",
         "at": "2026-08-09",
         "reason": "verify文言がG-EDIT-TRIM-Aで是正済みの実物の既定(server/job-params.mjs:21、既定はtrim:\"none\")と食い違ったまま残っていた（横展開漏れ）。受入基準の中身(測る対象・許容誤差)は変えず、前提とする既定の表現だけをTRIM-Aに揃えて是正。ツリー見直し(basis-reviewer相当のサブエージェント)で検出。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-K1",
+        "criteriaHash": "245f63064725a6dd2fe305307b7bfd452e167e117690a6b1b3446eb76b7f2e61",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs導入（本セッション以前のPRで追加済み）により、doneへ遷移する葉はcriteria[].verifyCmdが必須になった。この葉のtext/verifyは着手前の凍結内容から変更していない。independent-verifierが実サーバーで検証した手順をvideo-shorts/tests/caption-ai-fix-served-check.mjsとして永続化したため、そのコマンドをverifyCmdへ追記した（受入基準の中身は変えていない）。"
       }
     ]
   },
@@ -2457,6 +2463,7 @@
                             {
                               "text": "サーバでジョブを処理すると、文字起こしのあとに AI の点検が走り、その結果が焼き込みに使う字幕ファイル(.ass)へ載る",
                               "verify": "判定は independent-verifier が自分で実行して行う（作業した本人の報告を根拠にしない）。PATH に、受け取った語のうち固定素材の添字13（以上）を「異常」へ直す1件だけを返す偽 claude を置き、サーバを起動して固定素材を transcript.json として置いたジョブを最後まで処理させる。(a) work/<id>/ai-caption-fixes.json が1件以上残っていること、(b) 焼き込みに使われた .ass ファイルの中に「異常」が入っており、その箇所に「以上」が入っていないこと、を確認する。対照として、直し0件を返す偽 claude に差し替えると同じ .ass に「以上」が残ることを確認する（これが無いと、AI を呼ばずに空の一覧を書くだけの工程でも合格する）。",
+                              "verifyCmd": "node video-shorts/tests/caption-ai-fix-served-check.mjs",
                               "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31447742514/job/93645472529"
                             }
                           ]
