@@ -275,6 +275,48 @@
         "criteriaHash": "3a48e29e902439c0fb7b2ab99c92834c67aa0117a15a248366209a733ad89159",
         "at": "2026-08-11",
         "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/consent-before-tool-install-check.mjsとして機械化し9 PASS/0 FAILを確認済み。文言除去した変異テキストに対する対照実験を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-TESTINFRA-LINT",
+        "criteriaHash": "df2b7eaca8e1950e7f245d3dabdb787e0ef7f7bffac59eec36e3bdae0406b177",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のvideo-shorts/eslint.config.mjs+pnpm --filter video-shorts lintをローカル再実行しexit 0を確認、かつ意図的にno-unused-varsエラーを混入させるとexit 1になる検出力も確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-TESTINFRA-SCRIPTSLINT",
+        "criteriaHash": "ced5722dfd321fc0ff52be2c1fe15f5684526691682c0dc5452b6584eccda196",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のscripts/tsconfig.json+pnpm --filter scripts typecheckをローカル再実行しexit 0を確認、かつ意図的に未定義メソッド呼び出しを混入させるとTS2304でexit非0になる検出力も確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-1-E",
+        "criteriaHash": "91ab956372867e559536cd945c5d43f79059a4ac8b59296f61f1d80e6f5a949a",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Eの回帰テスト（末尾切り詰めmp4の対照実験含む）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-1-F",
+        "criteriaHash": "8e2e4f6c0597393ab436a02877750ca79619d7136e906428938a8e2a601f4239",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Fの回帰テスト（モデル退避/破損の両パターン×検出/識別モデル）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-4-H",
+        "criteriaHash": "ee1e6423b51f572adbe648625612627bca6a55298954680330225d939fc5870d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/delivery-face-scan-check.pyをopencv実機環境でローカル再実行し12 PASS/0 FAILを確認済み。混入ケースの検出(FAIL判定+終了コード1)と対照ケースの通過(PASS判定+終了コード0)、ファイル名でなく画素で判定する回帰防止も含む。criteria.verify文言自体はindependent-verifier必須を要求していないため、既存テストの再実行結果をそのままverifyCmdへ配線した）。text/verifyは変更していない。"
+      },
+      {
+        "id": "S-5",
+        "criteriaHash": "9badb8e37a7010caefe506c1e07308f4b778217ef225f5197888132e501aca6c",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。S-5該当のsrc/models・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyそれぞれの不在確認を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "S-6",
+        "criteriaHash": "d27b8eaa1b9c648a3b9ca1cc8d0eb1da9a0bc3f6409f3d89fb640c08498cf78d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。標準版・軽量版両方のSKILL.mdでmosaic:start/mosaic:endの不在を横断確認する検査を含む）。text/verifyは変更していない。"
       }
     ]
   },
@@ -1116,12 +1158,13 @@
                   "theme": "video-shortsにLintが導入されている",
                   "meaning": "書き方のばらつきや単純ミスを機械が指摘してくれる",
                   "detail": "2026-08-10 feature/testinfra-lint で着手。ESLint 9系(flat config)をvideo-shortsのdevDependenciesへ追加し（eslint/@eslint/js/globals）、video-shorts/eslint.config.mjsを新設。対象は`**/*.mjs`（Node/ESM。一部Playwrightのpage.evaluate()コールバックはブラウザグローバルも混在するためnode+browser両方のglobalsを許容）と、ui/app.js・webapp-mockup/app.js・install/consent.jsのブラウザ非モジュールスクリプト。ルールはno-unused-vars（catch束縛含む。`_`始まりは意図的破棄として許容）・no-use-before-define・no-empty（allowEmptyCatch）・no-irregular-whitespace（文字列/コメント/正規表現の全角スペースは日本語処理で意図的なため対象外、識別子等の実コードのみ検査）に加えeslint:recommendedのベースルールを適用。package.jsonへ`\"lint\": \"eslint .\"`を追加。既存コードの実エラー（未使用のimport/変数・死んだ関数）は最小修正で解消（大規模リファクタはせず）。pnpm --filter video-shorts lint がexit 0で通ることを確認済み。実際に検査していることの確認として、一時的に構文エラー(不正な括弧)とuse-before-define違反を混入させ、それぞれlintがexit 1で落ちることを確認した上で元のコードへ復元済み（echoによる偽の緑でないことを自己確認）。",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
                       "verify": "pnpm --filter video-shorts lintを実行し、実際にコード内容を検査した上でexit 0になることを確認する（echoやプレースホルダでの緑ではない）",
-                      "evidence": ""
+                      "verifyCmd": "pnpm --filter video-shorts lint",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ]
                 },
@@ -1184,13 +1227,14 @@
                   "kind": "state",
                   "theme": "scripts/パッケージ(ロードマップの機械チェック群)にtypecheck/lintが導入されている",
                   "meaning": "ロードマップを守る仕組み自体のコードも、型やLintで機械チェックされている",
-                  "status": "doing",
+                  "status": "done",
                   "detail": "2026-08-09、CodeRabbitがPR #50で指摘（scripts/package.jsonにtestしか無く、typecheck/lint/buildが未導入）。AGENTS.mdは「新しいパッケージを追加したら実テストと標準の検証スクリプトを用意する」「未導入ならroadmapのbacklogとして明記し放置しない」と定めており、echoによる見かけの合格は禁止。この葉はその明記にあたる。scripts/verify-criteria-freeze.mjs等は現状JSDoc型注釈もLint設定も無い素のNode ESMなので、tsconfig(checkJs)またはESLint導入のどちらか軽い方から着手する。2026-08-10、軽い方(tsconfig checkJs)を選択して着手：scripts/tsconfig.json（../tsconfig.base.jsonを継承し、allowJs/checkJs/noEmitを追加）を新設し、scripts/package.jsonに\"typecheck\": \"tsc --noEmit -p tsconfig.json\"を追加。@types/node(^22.10.0)をルートpackage.jsonのdevDependenciesに追加（node:*インポート・process・consoleの型解決に必須）。tsconfig.base.jsonのstrict:true（noUncheckedIndexedAccess含む）は緩めず、scripts/*.mjsの3ファイル（verify-roadmap-evidence.mjs・verify-criteria-freeze.mjs・verify-criteria-freeze.test.mjs）すべてに実際のJSDoc型注釈（@param/@returns/@typedef）を追加して型エラーを解消した。@ts-nocheckは1件も使用していない（段階導入ではなく全ファイル本物のcheckJsを通した）。pnpm --filter scripts typecheckで実行できることを確認し、一時的にhtml.thisMethodDoesNotExist()という存在しないメソッド呼び出しを混入させてtypecheckが非0（exit 2、TS2339）で終了することを確認してから元に戻した（このコミットには含めていない）。pnpm -r --if-present typecheck（ルート）・pnpm --filter scripts test（34 PASS）・node scripts/verify-roadmap-evidence.mjs・BASE_REF=origin/main node scripts/verify-criteria-freeze.mjsがいずれも緑であることを確認済み。",
                   "criteria": [
                     {
                       "text": "scripts/パッケージにtypecheck(またはJSDoc+tsc --checkJs)かLintの少なくとも一方が導入され、pnpm -r --if-presentから実行される",
                       "verify": "scripts/package.jsonにtypecheckまたはlintスクリプトが追加され、実際に型/構文上の誤りを1件意図的に混入させたときに当該コマンドが非0で終了することを確認する",
-                      "evidence": ""
+                      "verifyCmd": "pnpm --filter scripts typecheck",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ]
                 }
@@ -1397,12 +1441,13 @@
                       "kind": "state",
                       "theme": "壊れた/途中で切れた動画を渡しても、短い動画を黙って成功として納品しない",
                       "meaning": "動画ファイルが壊れていたら、気づかず短い動画を渡してしまわない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
                           "verify": "末尾を切り詰めたmp4(対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めない状態であることを先に確認)を入力として実行し、終了コードが0以外であることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "python3 video-shorts/tests/face-mosaic-check.py",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
@@ -1412,12 +1457,13 @@
                       "kind": "state",
                       "theme": "モデルファイルが無い/壊れていても、分かるメッセージで止まる",
                       "meaning": "内部の部品が欠けていても、意味の分からないエラー画面を客に見せない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
                           "verify": "src/models/*.onnxを一時的にリネームした状態、および中身を壊した状態のそれぞれでCLIを実行し、いずれも0以外の終了コードかつTracebackを含まない出力になることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "python3 video-shorts/tests/face-mosaic-check.py",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
@@ -1633,12 +1679,13 @@
                       "kind": "state",
                       "theme": "素顔ファイルが客への納品物に混ざらないことが、仕組みでも防がれている",
                       "meaning": "手順を間違えても、素顔が客に渡らない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
                           "verify": "納品手順(SKILL.md記載の操作)をスクリプト化して再現し、最終的に納品フォルダに置かれた全ファイルに顔検出を掛け直して、検出される場合は失敗として報告する検査を用意し、それが実際に「間違えて素顔をコピーしたケース」を検出できることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "python3 video-shorts/tests/delivery-face-scan-check.py",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
@@ -1770,12 +1817,13 @@
                   "kind": "state",
                   "theme": "軽い版に、顔モザイク関連の実ファイルが存在しない",
                   "meaning": "軽い版に、使わないはずの顔処理の部品が紛れ込んでいない",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "軽い版をビルドしたdistフォルダの中に、モデルファイル・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyのいずれも存在しない",
                       "verify": "slimビルド後、これらのパスそれぞれに対してfs.existsSyncがfalseであることを確認する",
-                      "evidence": ""
+                      "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ],
                   "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、slimビルド後にsrc/models・src/apply_mosaic_cli.py・src/face_mosaic.py・src/face_choices.pyそれぞれをfs.existsSyncで確認するテストを追加(node tests/dist-slim-check.mjsで4件ともPASS)。"
@@ -1785,12 +1833,13 @@
                   "kind": "state",
                   "theme": "配布物の手順書に、ビルド用の内部目印が残っていない（標準版・軽量版とも）",
                   "meaning": "客に渡す手順書に、社内用の作業メモが残っていない",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "標準版・軽量版どちらの配布物のSKILL.mdにも mosaic:start / mosaic:end の文字列が含まれない",
                       "verify": "両方のdistをビルドし、それぞれのSKILL.mdを読んで該当文字列が含まれないことを確認する",
-                      "evidence": ""
+                      "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ],
                   "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない(S-4側はmosaic:startのみ確認しmosaic:endを見ていなかった)。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、標準版・軽量版両方のSKILL.mdに対してmosaic:start/mosaic:endの両方を横断チェックする専用テストを追加(node tests/dist-slim-check.mjsでPASS)。"
