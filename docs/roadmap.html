@@ -139,6 +139,42 @@
     "updated": "2026-08-10",
     "basisChanges": [
       {
+        "id": "P1-2-F",
+        "criteriaHash": "d6bc4a8e0729036582efe0c619d84d210e18bee37863babbc2ab8e050b8eb1f3",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-G",
+        "criteriaHash": "b1f79d8116f0efc7e89d61bcb3bf1b23b754f62664ae2e0d78eed0eed9ce6925",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-H",
+        "criteriaHash": "49a0ecfabf8a3bfaaa60db83a85107bca83a025dca77afbd6b2397675b4efcbd",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-I",
+        "criteriaHash": "032e6fb0c9bc8adf9f827d18a0638ec97cc5ec9aa4f7d3d9d9c8b7fcfe720c6b",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-DELIVERY-CIGATE",
+        "criteriaHash": "235cdd6f58ec33b5b8270cb8ab579a6599bbabaffdf95ccb5d54ff961c405ccb",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（ci.ymlのgateステップを実物から抽出して実行する新規永続テストvideo-shorts/tests/ci-gate-hook-propagation-check.mjsを追加し6 PASSを確認、意図的に壊した版のci.ymlに対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-DELIVERY-FAILCLEAR",
+        "criteriaHash": "3f6c17356c6261128d3e6c474d0477a37e6e65fecc5b1884732e2dae9470dde0",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（session-start.shの失敗パスをモック環境で検証する新規永続テストvideo-shorts/tests/session-start-failure-visibility-check.mjsを追加し7 PASSを確認、修正前の既知の不具合(否定後の$?反転)を再現した版に対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
+      },
+      {
         "id": "G-EDIT-TRIM-E",
         "criteriaHash": "2c57e4db86f575c4f5687855d3353f922aae0ef3e3f4451261d74b5a8f2ede21",
         "at": "2026-08-09",
@@ -460,60 +496,64 @@
                       "kind": "state",
                       "theme": "起動時トークンなしのAPI呼び出しが実サーバーで拒否される",
                       "meaning": "トークンを持たない人が動画データにアクセスできない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、POST /api/jobs にトークン無し/誤トークンでリクエストすると401/403が返る",
                           "verify": "子プロセスで実サーバーを起動し、/api/jobs へ実HTTPリクエストを送って確認する自動テストを追加する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
+                      "detail": "ツリー見直しで検出。P1-2-AのテストはisValidToken()を直接呼ぶ単体テストのみで、実サーバーのハンドラが実際にこの関数を配線しているかは未検証だった（P1-2-C/P1-4-Bとは検証の厚みが非対称）。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）\n\n【2026-08-11 再検証】チェックアウト作業として、tests/smoke.mjs内の「P1-2-F: 実サーバーへトークン無しでPOST /api/jobsすると401/403が返る」「P1-2-F: 実サーバーへ誤トークンでPOST /api/jobsすると401/403が返る」の2テストを、既存コードを一切変更せずローカルで再実行し、実サーバー(server/index.mjs)を子プロセスとして起動したうえで実HTTPリクエストにより両方PASSすることを確認した(node video-shorts/tests/smoke.mjs 96 PASS/0 FAIL)。verify-done-gate.mjs対応でverifyCmdを追加。"
                     },
                     {
                       "id": "P1-2-G",
                       "kind": "state",
                       "theme": "許可外Originからの呼び出しが実サーバーで拒否される",
                       "meaning": "他所のサイトから裏でアクセスされない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "実サーバーを起動し、許可外Originヘッダを付けたリクエストが拒否される",
                           "verify": "子プロセスで実サーバーを起動し、許可外Originで/api/jobsを叩いて拒否されることを確認する自動テストを追加する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
+                      "detail": "ツリー見直しで検出。P1-2-BはisAllowedOrigin()の単体テストのみ。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）\n\n【2026-08-11 再検証】チェックアウト作業として、tests/smoke.mjs内の「P1-2-G: 実サーバーへ許可外Originを付けてPOST /api/jobsすると拒否される」を、既存コードを一切変更せずローカルで再実行し、実サーバーを起動したうえで実HTTPリクエストによりPASSすることを確認した(node video-shorts/tests/smoke.mjs 96 PASS/0 FAIL)。verify-done-gate.mjs対応でverifyCmdを追加。"
                     },
                     {
                       "id": "P1-2-H",
                       "kind": "state",
                       "theme": "宣言Content-Lengthが上限超のアップロードが実サーバーで413を返す",
                       "meaning": "大きすぎるファイルは早い段階で断られる",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "宣言Content-Lengthが上限を超えるリクエストへ、実サーバーが413相当で早期拒否する",
                           "verify": "大容量ボディを実際には送らず、Content-Lengthヘッダのみ上限超で送り、早期拒否(413)されることを確認する自動テストを追加する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
+                      "detail": "ツリー見直しで検出。P1-2-DはMAX_UPLOAD_BYTESの値域チェックのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）\n\n【2026-08-11 再検証】チェックアウト作業として、tests/smoke.mjs内の「P1-2-H: 宣言Content-Lengthが上限超のリクエストへ、実サーバーが実ボディを受け取らず早期に413を返す」を、既存コードを一切変更せずローカルで再実行し、実サーバーを起動したうえで実HTTPリクエスト(宣言Content-Lengthのみ上限超・実体は送らない)によりPASSすることを確認した(node video-shorts/tests/smoke.mjs 96 PASS/0 FAIL)。verify-done-gate.mjs対応でverifyCmdを追加。"
                     },
                     {
                       "id": "P1-2-I",
                       "kind": "state",
                       "theme": "短時間に閾値超のリクエストで実サーバーが429を返す",
                       "meaning": "短時間に押し寄せても実際にブロックされる",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "短時間に閾値を超えるリクエストを送ると、実サーバーが429を返す",
                           "verify": "実サーバーへ閾値を超える頻度でリクエストを送り、429が返ることを確認する自動テストを追加する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）"
+                      "detail": "ツリー見直しで検出。P1-2-EはcreateRateLimiter()の単体テストのみで、実サーバーへの配線は未検証。（実装済み・ローカルテスト緑（node tests/smoke.mjs 92 PASS）・CI run URL待ち）\n\n【2026-08-11 再検証】チェックアウト作業として、tests/smoke.mjs内の「P1-2-I: 短時間に閾値(10回/60秒)を超える頻度でPOST /api/jobsすると実サーバーが429を返す」を、既存コードを一切変更せずローカルで再実行し、実サーバーを起動したうえで実HTTPリクエストの連続送信によりPASSすることを確認した(node video-shorts/tests/smoke.mjs 96 PASS/0 FAIL)。verify-done-gate.mjs対応でverifyCmdを追加。"
                     }
                   ],
                   "detail": "根拠: localhost APIがOrigin/Host/CSRF、容量、形式、レート制限なしで保存と子プロセス起動を許している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-2）"
@@ -1172,30 +1212,32 @@
                   "kind": "state",
                   "theme": "クラウド向け自動導入フックが壊れたら、そのPRはマージできない",
                   "meaning": "この仕組みが壊れても、気づかず配ってしまわない",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "hook-session-startジョブがci-green(gate)のneedsに含まれ、失敗時にci-greenも失敗する",
                       "verify": ".github/workflows/ci.ymlのgate.needsにhook-session-startが含まれることを確認し、意図的にsession-start.shを失敗させたブランチでPRを作成してci-greenが赤くなることを実地確認する",
-                      "evidence": ""
+                      "verifyCmd": "node video-shorts/tests/ci-gate-hook-propagation-check.mjs",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。\n2026-08-10 PR feature/delivery-ci-gate で対応: gate.needsに hook-session-start を追加し [quality, smoke, hook-session-start] にした。if: always() のため上流のいずれかが失敗/スキップでもgateステップ自体は走り、判定ロジックが needs['hook-session-start'].result も success かを見て非successならexit 1でci-greenを赤くする（GitHub Actionsのneeds+デフォルトの失敗伝播に基づく確認。ジョブIDにハイフンを含むためdot記法 needs.hook-session-start ではハイフンが減算と解釈され式が壊れる点に注意し、ブラケット記法 needs['hook-session-start'] を使った）。実地確認（意図的に失敗させたブランチでのPR作成→ci-green赤の実地観測）は本セッションでは未実施（コードレビューでのロジック確認まで）。"
+                  "detail": "ツリー見直しで検出。現状ci.ymlのgateはneeds:[quality,smoke]のみで、hook-session-startを含んでいない＝このジョブが赤くてもマージをブロックしない。\n2026-08-10 PR feature/delivery-ci-gate で対応: gate.needsに hook-session-start を追加し [quality, smoke, hook-session-start] にした。if: always() のため上流のいずれかが失敗/スキップでもgateステップ自体は走り、判定ロジックが needs['hook-session-start'].result も success かを見て非successならexit 1でci-greenを赤くする（GitHub Actionsのneeds+デフォルトの失敗伝播に基づく確認。ジョブIDにハイフンを含むためdot記法 needs.hook-session-start ではハイフンが減算と解釈され式が壊れる点に注意し、ブラケット記法 needs['hook-session-start'] を使った）。実地確認（意図的に失敗させたブランチでのPR作成→ci-green赤の実地観測）は本セッションでは未実施（コードレビューでのロジック確認まで）。\n\n【2026-08-11 チェックアウト作業での追加検証】「意図的にPRを作成してci-green赤を観測する」という運用試験の代わりに、.github/workflows/ci.ymlのgateステップから今まさに書かれているneeds配列とrun:スクリプト本文をプログラムで抽出し(ハードコードした期待値との比較ではなく実物のci.ymlを読む)、(a) needsにhook-session-startが含まれること、(b) 抽出したスクリプトへ(quality,smoke,hook-session-start)の3つのneeds.result値を実際に差し替えてbashで実行し、hook-session-startがfailure/skippedのときexit 1になる(=ci-greenが赤くなる)ことを確認する自動テストvideo-shorts/tests/ci-gate-hook-propagation-check.mjsを新設した。このテストが本物の検出力を持つことは、gate.needsから一時的にhook-session-startを取り除いた壊れた版のci.ymlに対して実際にこのテストを実行しFAILすることを確認して裏付けた(検証後は元に戻し、git diffが無いことを確認済み)。node video-shorts/tests/ci-gate-hook-propagation-check.mjs で6/6 PASS。"
                 },
                 {
                   "id": "G-DELIVERY-FAILCLEAR",
                   "kind": "state",
                   "theme": "外部ツール導入に失敗しても、原因が分かる形でセッションの状態が伝わる",
                   "meaning": "クラウド起動時の自動インストールが失敗しても、何が起きたか分かる",
-                  "status": "doing",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "apt-get/pipのインストールが失敗した場合、session-start.shの終了コード・出力が、利用者が原因を把握できる形になっている",
                       "verify": "apt-get/pipを失敗させるモック環境でsession-start.shを実行し、終了コード・stderrメッセージの内容を確認する",
-                      "evidence": ""
+                      "verifyCmd": "node video-shorts/tests/session-start-failure-visibility-check.mjs",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/commit/78dc26445afbd19f35e8c24e71b6a2475c9551f5"
                     }
                   ],
-                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。\n2026-08-10 PR feature/delivery-ci-gate で対応: .claude/hooks/session-start.sh の apt-get install ffmpeg / pip install requirements.txt の各失敗時に [session-start][ERROR] プレフィックス付きでstderrへ原因(exit code・確認すべき箇所)を出力し、その終了コードでexitするよう修正。修正前は `if ! cmd; then rc=$?` の形で否定(!)後に$?を取っていたため、否定演算で$?が反転し常にexit code 0でexitする不具合があった（実地でモック検証し発見・修正）。修正後は `if cmd; then :; else rc=$?; ...; exit \"$rc\"; fi` の形にし、else節でcmdそのものの終了コードを正しく取得するようにした。apt-get/sudo/python3をモック(/tmp配下)に差し替えたローカル実行で、(1) apt-get install失敗時: stderrに[ERROR]メッセージ+exit code 100(mock)で終了コード100、(2) pip install失敗時: 同様にexit code 1で終了、(3) ローカル(CLAUDE_CODE_REMOTE未設定)は無音no-op、(4) 実ffmpeg/パッケージが揃っている環境ではexit 0で無音、の4パターンを実行し出力・終了コードを確認した。CI側の hook-session-start ジョブはハッピーパス(導入成功)のみを検証しており、失敗パスの実地確認はローカルのモック実行によるもの。"
+                  "detail": "ツリー見直しで検出。現状のCIはインストール成功のハッピーパスのみを確認しており、失敗時の挙動(セッション起動自体が止まるか等)は未定義。\n2026-08-10 PR feature/delivery-ci-gate で対応: .claude/hooks/session-start.sh の apt-get install ffmpeg / pip install requirements.txt の各失敗時に [session-start][ERROR] プレフィックス付きでstderrへ原因(exit code・確認すべき箇所)を出力し、その終了コードでexitするよう修正。修正前は `if ! cmd; then rc=$?` の形で否定(!)後に$?を取っていたため、否定演算で$?が反転し常にexit code 0でexitする不具合があった（実地でモック検証し発見・修正）。修正後は `if cmd; then :; else rc=$?; ...; exit \"$rc\"; fi` の形にし、else節でcmdそのものの終了コードを正しく取得するようにした。apt-get/sudo/python3をモック(/tmp配下)に差し替えたローカル実行で、(1) apt-get install失敗時: stderrに[ERROR]メッセージ+exit code 100(mock)で終了コード100、(2) pip install失敗時: 同様にexit code 1で終了、(3) ローカル(CLAUDE_CODE_REMOTE未設定)は無音no-op、(4) 実ffmpeg/パッケージが揃っている環境ではexit 0で無音、の4パターンを実行し出力・終了コードを確認した。CI側の hook-session-start ジョブはハッピーパス(導入成功)のみを検証しており、失敗パスの実地確認はローカルのモック実行によるもの。\n\n【2026-08-11 チェックアウト作業での追加検証】上記のローカルモック実行を使い捨てではなく永続テストvideo-shorts/tests/session-start-failure-visibility-check.mjsとして固定した。apt-get/sudo/python3のみをモックに差し替えたPATHで.claude/hooks/session-start.shを実際に子プロセス実行し、(a) apt-get install失敗時・pip install失敗時とも終了コードがモックの失敗コードと一致すること(0に潰されない)、(b) stderrに[session-start][ERROR]の原因メッセージが出ること、(c) 対照として両方成功すればexit 0かつ[ERROR]出力が無いこと、(d) CLAUDE_CODE_REMOTE未設定はローカル扱いで無音no-opであること、を確認する。このテストが本物の検出力を持つことは、修正前の(否定後に$?を取る)バグを再現した一時的な壊れ版のsession-start.shに対して実際にこのテストを実行しFAILすることを確認して裏付けた(検証後は元に戻し、git diffが無いことを確認済み)。node video-shorts/tests/session-start-failure-visibility-check.mjs で7/7 PASS。"
                 }
               ],
               "detail": "2026-07-28 マスター指示: 配布パターン「Claude Codeあり×PCなし(クラウド上のClaude Codeセッションのみで完結)」をまず完成させる。スタック・アーキテクチャは変更せず(既存のNode/Python/ffmpeg/Claude Code構成のまま)、セッション起動時の環境自動整備で対応する。"
