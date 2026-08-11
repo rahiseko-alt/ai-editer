@@ -188,7 +188,7 @@ async function installHooks(page) {
       get() { return desc.get.call(this); },
       set(v) {
         window.__capLog.push({ fn: "editing-status", text: v });
-        return desc.set.call(this, v);
+        desc.set.call(this, v);
       },
     });
 
@@ -259,7 +259,15 @@ try {
   await page.waitForSelector("#result-overlay:not(.hidden)", { timeout: 90_000 });
 
   // 完了直後にjobIdを控え、後始末で使う
-  createdJobId = await page.evaluate(() => (window.jobs && window.jobs[0] && window.jobs[0].jobId) || null);
+  // app.js の jobs は非モジュールscript直下の `let jobs = []`（トップレベルlet/constは
+  // windowのプロパティにならない）。window.jobs 経由では取れないため、素の識別子として参照する
+  // （ページのグローバルレキシカル環境の一部として見える）。この関数はNode側ではなく
+  // ブラウザページ内で評価されるので、`jobs` はこのファイルのモジュールスコープには存在しない
+  // （ESLintの静的解析には分からないため /* global jobs */ で明示する）。
+  createdJobId = await page.evaluate(() => {
+    /* global jobs */
+    return (typeof jobs !== "undefined" && jobs[0] && jobs[0].jobId) || null;
+  });
 
   const log = await page.evaluate(() => window.__capLog);
 
