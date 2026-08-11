@@ -73,6 +73,8 @@ jobs:
         run: |
           spec=$(grep -E '^opencv-python-headless' video-shorts/requirements.txt)
           python -m pip install "$spec"
+      - name: Install Playwright Chromium (verifyCmdが実ブラウザ検証テストを使う場合に備える)
+        run: pnpm --filter video-shorts exec playwright install --with-deps chromium
       - name: done化する葉のverifyCmdを実際に実行して合否を判定
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
