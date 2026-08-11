@@ -119,25 +119,27 @@
   "meta": {
     "title": "AI-Editer video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "今回セッションで、status:doingだった29葉のうち21葉をdone化した（PR #84/#86/#87の3本）。G-P1（重大なセキュリティ・正しさの欠陥、10葉）は全done、G-P0（致命的な欠陥、3葉）は2/3done。\n\n残るstatus:doing葉は29件（21件done化したので実質2件+G-EDITOR配下27件）。うち2件は構造的にブロック中でマスター判断待ち：\n①P0-5-A：実出力解像度の一致まで含む葉。ffmpeg実出力検証インフラが未整備。\n②G-TESTINFRA-ESCAPEPATH-B：CodeQLアラートのfixed確認が必要だが、code-scanning/alerts APIがセッション権限で403（実際に確認済み）。人手でのアラート確認が必要。\n\n残り27葉はすべてG-EDITOR配下（G-EDIT-MOSAIC-UI系16・G-EDIT-CAPTION系5・G-EDIT-TRIM系6[A/B/C/E/F/G]・G-EDIT-QUALITY系2）で、この段階では意図的に対象外とした。理由：サブエージェントによる独立検証で「GOAL/STAGE-1の受入定義（直下の子が全てdone）に対してG-EDITOR配下は必須ではなく、GOAL.detailの『軌道修正チェックリスト』自体が『全項目[x]になったら改めてゴールへ向かう作戦会議』と明記している」と確認した。次回はこの軌道修正チェックリストの残項目（D-4: TRIM-Aの合格ライン5.203秒が実測上限4.703秒で達成不可能／D-5: TRIM-Dの測定方法が正誤を区別できない／C-3: 継ぎ目での映像音声ずれの実製品バグ未修正／C-13: verify前提の既定値が矛盾 等）をマスターと相談し、作戦会議を行うか、個別に着手するかを決める。\n\n次の一手（マスター判断待ち・持ち越し）：①done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、②verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）、③GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可（Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針）。",
+    "next": "今回セッションでP0-5-A（画面選択→state→CLI引数→実出力解像度の一致）をdone化した。従来『ffmpeg未導入で保留』とされていたブロッカーは、この環境ではffmpegが実際に使用可能であることが判明したため解消し、video-shorts/tests/orient-render-check.mjsで実機検証した。これによりG-P0（致命的な欠陥、3葉）が3/3全done、G-P1（重大なセキュリティ・正しさの欠陥、10葉）も全done。\n\n残るstatus:doing葉は28件。うち1件は構造的にブロック中でマスター判断待ち：\n①G-TESTINFRA-ESCAPEPATH-B：CodeQLアラートのfixed確認が必要だが、code-scanning/alerts APIがセッション権限で403（実際に確認済み）。人手でのアラート確認が必要。\n\n残り27葉はすべてG-EDITOR配下（G-EDIT-MOSAIC-UI系16・G-EDIT-CAPTION系5・G-EDIT-TRIM系6[A/B/C/E/F/G]・G-EDIT-QUALITY系2）で、前回セッションの独立検証によりGOAL/STAGE-1の受入定義上は非必須と確認済み。GOAL.detailの『軌道修正チェックリスト』が片付くまで作戦会議を保留している。次回はこの軌道修正チェックリストの残項目（D-4: TRIM-Aの合格ライン5.203秒が実測上限4.703秒で達成不可能／D-5: TRIM-Dの測定方法が正誤を区別できない／C-3: 継ぎ目での映像音声ずれの実製品バグ未修正／C-13: verify前提の既定値が矛盾 等）をマスターと相談し、作戦会議を行うか、個別に着手するかを決める。\n\n次の一手（マスター判断待ち・持ち越し）：①done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、②verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）、③GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可（Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針）。",
     "handoff": {
       "done": [
-        "PR #63（G-EDIT-TRIM-H/I、ASR呼び出し失敗時の頑健性）を調査した結果、凍結済みverify文言が前提とするresolveWordsFromAsr()は本番コードに存在せず、ASRはレンダリング前の別プロセスでpipeline.mjs側に呼び出し自体が無いというアーキテクチャと食い違っていた（実装漏れでも誤記でもなく着手前の言語化ミス）と判明。独立検証で「GOAL達成に不要」「削除しても実害発生確率は極めて低い（既存のtrim-plan.mjsの防御コードで実質カバー済み）」と確認したうえで、マスターの明示的な決定（『必要性の低い葉は存在がデメリット。削除しろ』）によりG-EDIT-TRIM-H/Iの2葉を削除し（PR #85）、PR #63はクローズした。",
-        "ロードマップ全体（G-EDITOR配下・G-P2・G-PENDING・G-MOSAIC(CLI)・G-TESTINFRA・G-SLIM・G-DELIVERY、約150葉）をサブエージェントで横断監査し、TRIM-H/Iと同型の欠陥（凍結verifyが実装に存在しない仕組みを前提にしている）を持つ他の葉が無いことを確認した。",
-        "PR #84：P1-2-F/G/H/I（起動時トークン/Origin/Content-Length/レート制限）とG-DELIVERY-CIGATE/FAILCLEARの6葉を、自分の目で再検証したうえでdone化。G-DELIVERY 2葉は永続テストを新規作成して検証を機械化した。",
-        "PR #86：P0-5-C/D、P1-9-D/E、P1-10、P1-11、P1-12-A/Bの8葉をdone化。P1-12-A/Bはこれまでコードレビューのみだった検証を永続テスト化した。P0-5-Aはffmpeg実出力検証インフラ未整備で構造的にブロック中と確認し、doingのまま維持。",
-        "PR #87：G-TESTINFRA-LINT/SCRIPTSLINT、M-1-E/F、M-4-H、S-5/S-6の7葉をdone化。G-TESTINFRA-ESCAPEPATH-BはCodeQLアラートAPIが403で確認不能なためdoingのまま維持。",
-        "以上でG-P1（重大なセキュリティ・正しさの欠陥、10葉）を全done化、G-P0（致命的な欠陥、3葉）を2/3done化した。合計21葉done化（6+8+7）。",
-        "GOAL/STAGE-1の受入定義に照らし、残るstatus:doing葉のうちG-EDITOR配下27葉はGOAL達成に非必須（GOAL.detail自身が『軌道修正チェックリストが全て片付くまで作戦会議を保留』と明記）と独立検証で確認し、意図的に今回のスコープ外とした。"
+        "P0-5-A（画面で選んだ設定=向きが、そのまま実出力解像度に反映される）に着手。従来『ffmpeg未導入で保留』とされていたブロッカーを確認したところ、この環境ではffmpegが実際に使用可能（P0-5-C/D等の既存検証と同じ）であり、CI側のG-TESTINFRA-RENDERCHECK（サンプルmp4常設化）を待たずに検証可能と判明した。",
+        "video-shorts/tests/orient-render-check.mjsを新設。startJob()経由でopts.size=\"16:9\"/\"9:16\"それぞれの実ジョブを流し（t/s段はPATH差し込みの身代わり、r段=render段は本物のffmpeg）、ffprobeで実出力ファイルの解像度を確認。入力素材を縮小ガード(computeCanvas)が発動しない1920x1080に選ぶことで、size=16:9→実出力1920x1080、size=9:16→実出力1080x1920とORIENT定数にちょうど一致することを確認した。",
+        "検出力の確認として、server/pipeline-runner.mjsのresolveJobSettings()のorient分岐を意図的に壊した版（常にportraitを返すよう変更）でこのテストを実行し、実際に4件FAILすることを確認した上でファイルを元に戻した（git diffが空であることを確認済み）。",
+        "P0-5-Aをdone化し、criteria[].verifyCmdを追加、meta.basisChangesへ正当化宣言（text/verifyは無変更）を追加。これでG-P0（致命的な欠陥、3葉）が3/3全done化した。",
+        "package.jsonのtestスクリプトへorient-render-check.mjsを配線（sub-none-render-check.mjs / mosaic-job-wiring-check.mjsの並びに追加）。"
       ],
       "trouble": [
-        "CI待ち〜マージを1体のサブエージェントに委任する際、『Monitorツールでバックグラウンド待機を仕掛けて自分は完了扱いで終了する』という振る舞いが2回（PR #84・PR #86）連続で発生し、両方とも後続の引き継ぎエージェントで完成させる必要があった。3回目（PR #87）以降『Monitorに頼らず自分で直接30〜60秒間隔でポーリングし続けよ、CIの完走・マージまで1回のエージェント呼び出し内で完結させよ』と明記したところ解消した。docs/failures.mdに教訓を追記済み。",
-        "PR #84のCI実行で、通常5〜6分のtypecheck/lint/test/buildジョブが約52分間停滞するという異常が発生した（原因不明、キャンセル不要で自然に完走・成功）。再発時はdocs/failures.mdへの追記を検討。",
-        "GitHubのリポジトリ設定でPRマージ後に対象ブランチが自動削除される仕様のため、セッション指定ブランチ(claude/checkin-gqpudr)をマージ後に最新mainから作り直すたびに、pushし直すまでstop hookが『未pushコミットあり』を繰り返し検知した。バグではなく想定内の挙動（force-with-lease pushで都度解消）。"
+        "特筆すべき事項は無し。前回セッションのhandoffが指すPR #88は既にマージ済みだったため、セッション開始時にブランチclaude/checkin-gqpudrを最新mainから作り直した（force-with-lease push、AGENTS.mdの既定手順どおり）。"
       ]
     },
-    "updated": "2026-08-10",
+    "updated": "2026-08-11",
     "basisChanges": [
+      {
+        "id": "P0-5-A",
+        "criteriaHash": "f66488d2b4f6ac98bd4cb4bd84f8119fe0d4d894e2de312cd72a696f26f5c2cd",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（新規の永続テストvideo-shorts/tests/orient-render-check.mjsを追加し、startJob()経由でsize=16:9/9:16それぞれの実ジョブを流しffprobeで実出力解像度がORIENT定数と一致することを確認。resolveJobSettings()のorient分岐を意図的に壊した版に対してこのテストが実際にFAILすることも確認済み）。text/verifyは変更していない。"
+      },
       {
         "id": "P1-2-F",
         "criteriaHash": "d6bc4a8e0729036582efe0c619d84d210e18bee37863babbc2ab8e050b8eb1f3",
@@ -350,13 +352,14 @@
                       "kind": "state",
                       "theme": "画面で選んだ設定が、そのまま動画に反映される",
                       "meaning": "「16:9を選んだのに9:16で出てくる」が起きない",
-                      "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。resolveJobSettings()でUIのcut/size/cutMinをmode/orient/targetMinutesへ変換し、state.json初期作成時に書き込み(targetMinutesも含む)、select/renderサブプロセスへ--modeを明示的に渡すよう修正済み(PR #11)。ただし本criteriaは「実出力解像度が一致する」まで含むため、実ffmpeg出力での確認(G-TESTINFRA-RENDERCHECK、ffmpeg未導入で保留)ができるまではdoneにしない(2026-07-28 independent-verifier相当の指摘により是正: contract testはUI→mode/orient/targetMinutes変換とサブプロセス引数伝播までしか担保せず、実出力解像度の一致は未確認だった)。",
-                      "status": "doing",
+                      "detail": "対応するサポート対象設定(mode/sub/orient等)をstate・CLI引数・実出力解像度まで一貫させる。resolveJobSettings()でUIのcut/size/cutMinをmode/orient/targetMinutesへ変換し、state.json初期作成時に書き込み(targetMinutesも含む)、select/renderサブプロセスへ--modeを明示的に渡すよう修正済み(PR #11)。2026-08-11: 本セッションの環境ではffmpegが実際に使用可能であることを確認した(P0-5-C/D等が既に実機ffmpegで検証済み)ため、G-TESTINFRA-RENDERCHECK(CI側の別サンプルmp4常設化、未着手)を待たずにvideo-shorts/tests/orient-render-check.mjsを新設し、startJob()経由でopts.size=\"16:9\"/\"9:16\"それぞれの実ジョブを流し、実出力ファイルの解像度をffprobeで確認した。入力素材を縮小ガード(computeCanvas)が発動しない1920x1080に選ぶことで、size=\"16:9\"→実出力1920x1080、size=\"9:16\"→実出力1080x1920とORIENT定数にちょうど一致することを確認(対照としてresolveJobSettings()の分岐を壊した版でこのテストが実際にFAILすることも確認済み)。これにより「実出力解像度が一致する」まで含む本criteriaを検証できた。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "画面選択→state→CLI引数→実出力解像度が一致する",
                           "verify": "画面操作(または contract test)で選択値と実出力ファイルの解像度/向きを1対1照合し一致することを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/orient-render-check.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31464277080/job/93693804369"
                         }
                       ]
                     },
