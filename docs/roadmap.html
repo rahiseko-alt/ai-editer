@@ -2412,13 +2412,13 @@
                           "theme": "AI の点検に失敗したら、そのジョブが失敗として終わる",
                           "meaning": "AI が失敗したのに、画面には成功と出て、直っていない動画が納品される、が起きない",
                           "detail": "basis-reviewer の反証で追加。工程の関数が例外を投げても、呼び出し側（server/pipeline-runner.mjs）が握りつぶして次の工程へ進めば、画面には成功として出る。既存の区間選定は『一部失敗でも続行し incomplete:true を返す』方式を採っているので、この工程でどちらを採るかを決めておかないと実装後に選べる。**この工程はジョブ全体を失敗にする**（直っていない字幕を黙って納品する方が害が大きいため）。\n\n2026-08-10 実装者による実地確認。server/pipeline-runner.mjs の runJob() は stage c(aiCaptionFixStage) の例外を try/catch で握りつぶさず、そのまま startJob() の呼び出し側 catch まで伝播させ job.stage を \"error\" にして event: error を broadcast する（後続の stage s/r は一度も呼ばれない）構造に既になっていたため、コード変更は不要だった。この構造を実サーバー2プロセス(server/index.mjs本体・PATH上の偽claude)で検証する自動テスト tests/caption-ai-fail-halts-job-check.mjs を新設し、node --test相当の手動ランナーで実行: (1)必ず失敗する偽claude(kind:fail)では POST /api/jobs → SSEが event: error で終わり、work/<job>/llm-response.json も output/<job>/candidates.json も *.mp4 クリップも1つも作られないこと、偽claudeが実際に1回以上呼ばれたこと(空振り検査でないこと)、を確認。(2)対照として正しく答える偽claude(kind:route、文字起こし直し用と区間選定用のプロンプト文言で答えを出し分け)では同じ手順が event: done まで進み、llm-response.json・candidates.json・実クリップ(実ffmpeg合成mp4)が実際に生成されることを確認。文字起こし段(stage t)は重い実ASRを避けるため、同じくPATH差し替え方式(tests/helpers/fake-transcribe-main.mjs、固定・データ駆動)で「文字起こし済み」を模した。12/12 PASS。\n\n【2026-08-11 independent-verifierの判定】PASS。tests/caption-ai-fail-halts-job-check.mjsの中身を読み、独立に node tests/caption-ai-fail-halts-job-check.mjs を実行し12/12 PASSを自ら確認。偽claudeの呼び出しログで空振り検査でないことも裏付け、対照実験（正しく返す偽claudeでは最後まで進む）も実測。抜け穴なし。",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "AI の点検が失敗したとき、そのジョブが失敗として終わり、次の工程（区間選定・レンダリング）へ進まない",
                               "verify": "判定は independent-verifier が自分で実行して行う（作業した本人の報告を根拠にしない）。PATH に必ず失敗する偽 claude を置いた状態でサーバを起動し、文字起こし済みのジョブに対して処理を走らせ、(a) 進捗の通知が error で終わること、(b) 区間選定の成果物（llm-response.json）とクリップが1つも作られていないこと、を確認する。対照として、正しく返す偽 claude に差し替えると同じ手順で最後まで進むことを確認する。",
                               "verifyCmd": "node video-shorts/tests/caption-ai-fail-halts-job-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ]
                         },
@@ -2517,13 +2517,13 @@
                           "theme": "AI が字幕を点検していることが、画面の進み具合で分かる",
                           "meaning": "止まっているのか動いているのか分からない時間が生まれない",
                           "detail": "【2026-08-10 実装者によるコードレビュー確認】webapp-mockup/app.jsのEDITING_LABEL['c']=\"AIが字幕の間違いを直しています\"、STEP_ORDER=[\"t\",\"c\",\"s\",\"r\",\"m\"]でtとsの間に既に入っている。webapp-mockup/index.htmlの#progress・#editing-stepsの両方に<... data-k=\"c\">の行/要素が既にある(t/c/s/r/mの5段が並ぶ)。既存のtests/smoke.mjsに「字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている」「UI: 字幕直し段(c)の進捗表示の受け皿がある」の2テストが既にあり(STEP_ORDER/EDITING_LABEL/data-k=\"c\"の3点を機械で検査)、node tests/smoke.mjsは87 PASS / 0 FAILで緑。ブラウザでの実地確認(実行中→完了の表示遷移そのものを目で見る)はこのセッションでは行っておらず、独立検証の工程に委ねる(タスク指示どおり、コードレビューでの確認で代替)。\n\n【2026-08-11 independent-verifierの判定】PASS。実サーバー(server/index.mjs)+実ブラウザ(Playwright/Chromium)でファイル選択→実行確認→ジョブ完了までを流し、window.setStage/setEditingStep/#editing-statusへの代入を同期フックしてDOM状態遷移を実測した。(a) #progress側でt(done)の後にc(active)→c(done)の後にs(active)という順序、(b) #editing-steps側でも同じ順序、(c) 編集中オーバーレイの文言「AIが字幕の間違いを直しています」の表示、(d) ジョブが実際にevent:doneまで完走し候補が生成されていること(見せかけの表示でないこと)、(e) ブラウザ側pageerrorが0件、を確認。永続テストvideo-shorts/tests/webapp-ai-caption-progress-check.mjsとして固定し、package.jsonのtestへ組み込み。node video-shorts/tests/webapp-ai-caption-progress-check.mjs で8 PASS/0 FAIL。",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "画面の進捗表示に、AI が字幕を点検している工程が独立した段として現れ、終わると完了として表示される",
                               "verify": "画面を操作する手順を含むため、判定は independent-verifier が verify を自分で再実行し、その場で観察して行う（作業した本人の報告を根拠にしない）。PATH に偽 claude を置いた状態でサーバを起動し、ブラウザで処理を流して、文字起こしと区間選定の間に AI の点検の段が現れ、実行中と完了が既存の段（文字起こし・場面選び・書き出し）と同じ形で表示されることを確認する。",
                               "verifyCmd": "node video-shorts/tests/webapp-ai-caption-progress-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ]
                         },
@@ -2532,13 +2532,13 @@
                           "kind": "state",
                           "theme": "同じ語が同じ段落に複数回出ても、直した語自身の位置だけが変わる",
                           "meaning": "同じ言葉が2回出てきても、直すべき方だけが直る",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "段落の文章に同じ語が2回以上出るとき、モデルが指した1語だけが書き換わり、同じ段落内の他の同じ文字列は変わらない",
                               "verify": "tests/ai-caption-fix-check.mjsの「段落: 同じ語が3回ある段落で…」一連（後ろ/前/真ん中/2件同時/工程通し）がPASSであることを確認する",
                               "verifyCmd": "node video-shorts/tests/ai-caption-fix-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ],
                           "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（段落置換が最初の1件に固定されていた欠陥）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。実装は既存（docs/failures.md 2026-08-09参照）。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのapplyFixesToSegmentsは段落内の語オフセットを1語ずつ走査して求め、置換をオフセット降順で当てるため、同じ語が複数回出ても対象語の位置だけが変わる実装になっている。verifyが指す「後ろ/前/真ん中/2件同時/工程通し」の5ケースはtests/ai-caption-fix-check.mjsに既存（実装追加なし）。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#（後述）のCIが緑になり次第追記する。\n\n【2026-08-11】verify-done-gate.mjs対応でverifyCmdを追加。node video-shorts/tests/ai-caption-fix-check.mjs を再実行し71 PASS/0 FAILを確認（該当の「段落: 同じ語が3回ある段落で…」一連含む）。"
@@ -2548,13 +2548,13 @@
                           "kind": "state",
                           "theme": "そのかたまりに出していない添字は、beforeが正しくても書き換わらない",
                           "meaning": "AIが今回見ていない場所を、勝手に書き換えない",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "あるかたまりの返答が、そのかたまりに含まれない添字を指しているとき、beforeが実際の語と一致していても採用されない",
                               "verify": "tests/ai-caption-fix-check.mjsの「かたまり外: そのかたまりに出していない添字は…」および対照がPASSであることを確認する",
                               "verifyCmd": "node video-shorts/tests/ai-caption-fix-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ],
                           "detail": "ツリー見直しで検出。2026-08-09にマージ後発覚した実害4件のうちの1件（かたまり外添字の受付）の修正はテストとして既に実装・合格済みだが、対応する葉がroadmapに存在しなかった。CI run URLが得られ次第 done + evidence を追記する。2026-08-10 再確認: src/ai-caption-fix.mjsのparseFixResponseはrange(offset/length)を受け取り、採用する添字をoffset<=index<offset+lengthに絞っているため、そのかたまりに出していない添字はbeforeが実際の語と一致していても採用されない実装になっている。verifyが指す「かたまり外」およびその対照のテストケースはtests/ai-caption-fix-check.mjsに既存(実装追加なし)。node video-shorts/tests/ai-caption-fix-check.mjs で66件全PASSを確認。evidenceのCI run URLはこのPR#(後述)のCIが緑になり次第追記する。\n\n【2026-08-11】verify-done-gate.mjs対応でverifyCmdを追加。node video-shorts/tests/ai-caption-fix-check.mjs を再実行し71 PASS/0 FAILを確認（該当の「かたまり外」一連含む）。"
@@ -2564,13 +2564,13 @@
                           "kind": "state",
                           "theme": "claudeの標準出力そのものがJSONとして壊れていても、工程は例外で安全に終わる",
                           "meaning": "AIの応答そのものが壊れていても、変な動画にならず止まる",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "--output-format jsonの封筒自体(claude-run.mjsが直接JSON.parseする最外層)が壊れているとき、runClaudeJsonは例外を投げ、ai-caption-fixステージはそれをそのまま工程の失敗として伝播する",
                               "verify": "PATHの偽claudeに、封筒の形を取らない生テキストを終了コード0でそのまま標準出力させ、runClaudeJsonが例外を投げること、aiCaptionFixStageを通した場合にtranscript.jsonが入力と完全一致したまま残ることを確認する",
                               "verifyCmd": "node video-shorts/tests/ai-caption-fix-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ],
                           "detail": "ツリー見直しで検出。現行テストは内側のJSON(fixesの中身)を壊すケースのみで、外側の封筒自体が壊れるケースは一度もテストされていない。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にclose(code:0)後にJSON.parse(stdoutBuf.trim())を試み、失敗時は`claude stdout JSON parse 失敗`で例外を投げる実装になっており、ai-caption-fix.mjsのaiCaptionFixStageもtranscript.jsonへの書き込みをchunkループ完了後に置いているため、実装変更は不要だった。tests/helpers/fake-claude-main.mjsへ封筒を被せない生テキスト応答を返す`kind:\"raw\"`を追加し、tests/ai-caption-fix-check.mjsにM1の3件（runClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗として伝播すること／失敗後transcript.jsonが入力と完全一致すること）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。\n\n【2026-08-11】verify-done-gate.mjs対応でverifyCmdを追加。node video-shorts/tests/ai-caption-fix-check.mjs を再実行し71 PASS/0 FAILを確認（該当のM1の3件含む）。"
@@ -2580,13 +2580,13 @@
                           "kind": "state",
                           "theme": "claude実行ファイル自体が起動できないときも、工程は同じように失敗として終わる",
                           "meaning": "AIを呼び出す仕組み自体が無いときも、静かに失敗する",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "PATH上にclaudeという実行ファイルが存在しない（spawnエラーになる）とき、runClaudeJsonは例外を投げ、ai-caption-fixステージは失敗としてtranscript.jsonを一切書き換えない",
                               "verify": "一時ディレクトリをPATHに加えるがclaude実行ファイルを置かない状態でrunClaudeJson/aiCaptionFixStageを呼び、例外が投げられること、transcript.jsonが変わらないことを確認する",
                               "verifyCmd": "node video-shorts/tests/ai-caption-fix-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ],
                           "detail": "ツリー見直しで検出。既存の「起動に失敗する」ケースはEXIT_9(spawnはできたが終了コード9で落ちる)のみを検証しており、spawn自体が失敗する経路(ENOENT等)は未検証。 / 2026-08-10: 調査の結果、claude-run.mjsのrunClaudeJsonは既にspawnの'error'イベントで`claude spawn エラー: ...`を投げる実装になっており、ai-caption-fix.mjsも書き込みをchunkループ完了後に行うため、実装変更は不要だった。tests/ai-caption-fix-check.mjsにM2の2件（PATHをclaude不在の空ディレクトリへ差し替えてrunClaudeJson単体が例外を投げること／aiCaptionFixStageが失敗しtranscript.json・ai-caption-fixes.json・transcript.raw.jsonのいずれも作られないこと）を追加、ローカル実行で緑を確認（PR作成後、CI run URLが得られ次第evidenceへ追記する）。\n\n【2026-08-11】verify-done-gate.mjs対応でverifyCmdを追加。node video-shorts/tests/ai-caption-fix-check.mjs を再実行し71 PASS/0 FAILを確認（該当のM2の2件含む）。"
@@ -2596,13 +2596,13 @@
                           "kind": "state",
                           "theme": "画面から焼き直しを実行すると、AIが直した語より人が直した語が優先される",
                           "meaning": "実際の画面操作でも、人の直しが最後に勝つ",
-                          "status": "doing",
+                          "status": "done",
                           "criteria": [
                             {
                               "text": "文字起こしにAIの直しが適用された状態のジョブで、画面（または実HTTPのPOST /api/jobs/:id/recaption）から焼き直しを実行すると、AIが直した語のうち人がさらに直した語は人の文字で焼かれ、人が触れていない語はAIの直しのまま焼かれる",
                               "verify": "independent-verifierが実行する。固定文字起こしにAIの直しを適用済みの作業フォルダを用意し、caption-edits.jsonで該当添字を別の文字へ上書きしたうえで実際にrecaptionStage（またはHTTP経由）で焼き直し、生成された.ass/出力動画に人の文字が入り、AIの文字も元の文字も入っていないことを確認する。対照として、人が触れていない語はAIの直しがそのまま焼かれることを確認する",
                               "verifyCmd": "node video-shorts/tests/recaption-human-vs-ai-check.mjs",
-                              "evidence": ""
+                              "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31451049488/job/93655307115"
                             }
                           ],
                           "detail": "ツリー見直しで検出。既存のG-EDIT-CAPTION-AI-Lはcaption-store.mjsのreadEdits/applyEditsを直接呼ぶだけで、本番の焼き直し経路(src/recaption-stage.mjs)を一度も通していない。ツリー自身が既に自覚している失敗パターン（関数を差し替える方式は本番だけ壊れていても緑になる）と同型の穴。\n\n2026-08-10 実装者による実地確認。src/recaption-stage.mjsは transcript.json(=AI直し適用後に上書きされた本体)を読み、その words[] へ caption-store.mjs の applyEdits(readEdits(workDir)) を重ねてから焼く構造に既になっており(AIの直し→人の直しの順で重なる)、コード変更は不要だった。この結線を実HTTP経由で検証する自動テスト tests/recaption-human-vs-ai-check.mjs を新設: 4語のtranscriptに対し(1)実際にaiCaptionFixStageを偽claude経由で走らせ2語(index1,2)をAI直し済みにし、(2)実サーバーへ PUT /api/jobs/:id/captions でindex1だけ人の直しを追加で重ね(index2は人は触れない)、(3)実サーバーへ POST /api/jobs/:id/recaption で焼き直しを実行、(4)生成された recaption-1.ass を読み、index1は人の文字のみ(AIの文字・元の文字は不在)、index2はAIの文字のみ(元の文字は不在)、誰も触れていない2語はそのまま、を確認。出力クリップ実ファイルが事前に置いたダミーから実際に置き換わったことも確認。16/16 PASS。\n\n【2026-08-11 independent-verifierの判定】PASS。tests/recaption-human-vs-ai-check.mjsが本番の焼き直し経路(src/recaption-stage.mjs)を関数差し替えなしで実際に通していることをソース直読で確認し、独立に node tests/recaption-human-vs-ai-check.mjs を実行し16/16 PASSを自ら確認。抜け穴なし。"
