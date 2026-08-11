@@ -1164,7 +1164,7 @@
                       "text": "video-shortsパッケージにLintが導入され、pnpm --filter video-shorts lintが実コードを検査する",
                       "verify": "pnpm --filter video-shorts lintを実行し、実際にコード内容を検査した上でexit 0になることを確認する（echoやプレースホルダでの緑ではない）",
                       "verifyCmd": "pnpm --filter video-shorts lint",
-                      "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ]
                 },
@@ -1234,7 +1234,7 @@
                       "text": "scripts/パッケージにtypecheck(またはJSDoc+tsc --checkJs)かLintの少なくとも一方が導入され、pnpm -r --if-presentから実行される",
                       "verify": "scripts/package.jsonにtypecheckまたはlintスクリプトが追加され、実際に型/構文上の誤りを1件意図的に混入させたときに当該コマンドが非0で終了することを確認する",
                       "verifyCmd": "pnpm --filter scripts typecheck",
-                      "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ]
                 }
@@ -1447,7 +1447,7 @@
                           "text": "正常なmp4の末尾を意図的に切り詰めた壊れたファイルをapply_mosaic_cli.pyに渡すと、0以外の終了コードでエラーメッセージを出して失敗する",
                           "verify": "末尾を切り詰めたmp4(対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めない状態であることを先に確認)を入力として実行し、終了コードが0以外であることを確認する",
                           "verifyCmd": "python3 video-shorts/tests/face-mosaic-check.py",
-                          "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。apply_mosaic_cli.pyには対策コード(dec_msgチェック)が存在するが、これを発火させる回帰テストが無い。配布対象外のWeb UI経路(apply-mosaic-stage.mjs)には同種のテストが既に存在する（tests/mosaic-ui-check.py:765-804）のに、配布対象のCLI経路には無いという逆転が起きている。 2026-08-10: video-shorts/tests/face-mosaic-check.pyに回帰テストを追加（末尾5%切り詰めmp4を作り、対照実験で読み出し側ffmpegが終了コード0のまま最後まで読めないことを先に確認したうえで、apply_mosaic_cli.pyに渡すと0以外の終了コードでエラーメッセージを出して失敗することを確認）。criteria本文は不変。"
@@ -1463,7 +1463,7 @@
                           "text": "モデルファイルを一時的に退避/破損させた状態で実行すると、[ERROR]で始まる分かるメッセージを出して終了し、Pythonの生スタックトレースが標準エラーに出ない",
                           "verify": "src/models/*.onnxを一時的にリネームした状態、および中身を壊した状態のそれぞれでCLIを実行し、いずれも0以外の終了コードかつTracebackを含まない出力になることを確認する",
                           "verifyCmd": "python3 video-shorts/tests/face-mosaic-check.py",
-                          "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。モデル欠損はFileNotFoundErrorで分かるメッセージになるが、モデル破損時にcv2.FaceDetectorYN.create()が送出するcv2.errorはapply_mosaic_cli.pyのmain()が捕捉する例外リストに含まれていない。 2026-08-10: apply_mosaic_cli.pyのmain()のexcept節にcv2.errorを追加（cv2.FaceDetectorYN.create()はOSError/RuntimeError/ValueErrorのどの派生でもなく、モデル破損時に生のトレースバックが出ていた）。video-shorts/tests/face-mosaic-check.pyに、顔検出/顔識別の両モデルをそれぞれ退避(リネーム相当)・中身破損の両パターンで実行し、0以外の終了コード・[ERROR]メッセージ・トレースバック無しを確認する回帰テストを追加。criteria本文は不変。"
@@ -1685,7 +1685,7 @@
                           "text": "モザイクを焼いた後、納品用フォルダにコピーされたファイル群に対して顔検出を再実行しても、想定どおり全て検出0件になる（素顔ファイルが紛れ込んでいない）ことを機械的に検知できる",
                           "verify": "納品手順(SKILL.md記載の操作)をスクリプト化して再現し、最終的に納品フォルダに置かれた全ファイルに顔検出を掛け直して、検出される場合は失敗として報告する検査を用意し、それが実際に「間違えて素顔をコピーしたケース」を検出できることを確認する",
                           "verifyCmd": "python3 video-shorts/tests/delivery-face-scan-check.py",
-                          "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                         }
                       ],
                       "detail": "ツリー見直しで検出。M-4-GはSKILL.mdの文言に-mosaic.mp4という記述があるかのみを検査しており、実際の納品経路(CLI)は素顔とモザイク版が同一フォルダに常時併存し、取り違えが手順の遵守だけに依存している。Web UI経路(apply-mosaic-stage.mjs)は素顔を成果物フォルダの外へ実際に退避する構造的な隔離を持つが、CLI経路には無い。 / 2026-08-10 着手: video-shorts/tests/delivery-face-scan-check.py を新規追加。(1) scan_delivery_folder()/main_cli() が検査ツール本体で、face_mosaic.py の create_detector/detect_faces をそのまま再利用し、納品フォルダ直下の動画ファイル全コマへ顔検出を掛け直す（単体でも `python3 delivery-face-scan-check.py <フォルダ>` として実フォルダを検査できる）。(2) deliver_clip() が SKILL.md 手順9のコピー操作（-mosaic版 or 無加工版のどちらをコピーするか）をそのまま再現する。(3) セルフテストで、apply_mosaic_cli.py で実際に素顔版/モザイク版の動画を作った上で、A=モザイク版へ読み替えるのを忘れて素顔版をコピーした混入ケース→検査がFAIL判定・CLI終了コード1を返すこと、B=モザイク版だけを置いた対照ケース→検査がPASS判定・CLI終了コード0を返すこと、の両方を確認（12/12 PASS）。ファイル名ではなく中身（画素）で判定していることの回帰テスト（-mosaic.mp4という名前でも中身が素顔なら落ちる）も追加。package.json の test スクリプトへ追加済み。まだ独立検証(independent-verifier)・PRのCI緑確認・basis-reviewerは未実施のため status は doing のまま（evidence未記入）。"
@@ -1823,7 +1823,7 @@
                       "text": "軽い版をビルドしたdistフォルダの中に、モデルファイル・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyのいずれも存在しない",
                       "verify": "slimビルド後、これらのパスそれぞれに対してfs.existsSyncがfalseであることを確認する",
                       "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
-                      "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ],
                   "detail": "ツリー見直しで検出。build-dist.mjsのMOSAIC_FILES除外は実装済みだが、これを直接検証するテストが無く、将来の除外リスト更新漏れを検知できない。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、slimビルド後にsrc/models・src/apply_mosaic_cli.py・src/face_mosaic.py・src/face_choices.pyそれぞれをfs.existsSyncで確認するテストを追加(node tests/dist-slim-check.mjsで4件ともPASS)。"
@@ -1839,7 +1839,7 @@
                       "text": "標準版・軽量版どちらの配布物のSKILL.mdにも mosaic:start / mosaic:end の文字列が含まれない",
                       "verify": "両方のdistをビルドし、それぞれのSKILL.mdを読んで該当文字列が含まれないことを確認する",
                       "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
-                      "evidence": "2bca171c148a268ec959bcce30db5fa4dbf759f4"
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31460039922/job/93681566873"
                     }
                   ],
                   "detail": "ツリー見直しで検出。dist-slim-check.mjsには既にこのチェック実装があるが、roadmap上のS-2/S-4のcriteriaはこの事実を対象にしていない(S-4側はmosaic:startのみ確認しmosaic:endを見ていなかった)。実装済み・ローカルテスト緑・CI run URL待ち: tests/dist-slim-check.mjsに、標準版・軽量版両方のSKILL.mdに対してmosaic:start/mosaic:endの両方を横断チェックする専用テストを追加(node tests/dist-slim-check.mjsでPASS)。"
