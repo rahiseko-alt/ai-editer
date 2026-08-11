@@ -2362,7 +2362,7 @@
                           "text": "保存した字幕で焼き直した出力に、書き換え後の文字が写っており、かつ書き換え前の文字が写っていない",
                           "verify": "実サーバー・実ffmpegで、書き換え前後で文字が明確に異なる字幕を用いて実際に(1)編集なしでの焼き直し(対照)、(2)人の編集(PUT /api/jobs/:id/captions)、(3)編集後の焼き直し(POST /api/jobs/:id/recaption)を行い、焼き直した出力から、その字幕が表示される時刻から等間隔に3フレームを抜く。各フレームにtesseract-ocr(jpn言語パック、--psm 7、negate+下部帯切り出し+2倍拡大の前処理)を掛け、(1)の出力では書き換え前の文字が読み取れ書き換え後の文字は読み取れないこと、(3)の出力では書き換え後の文字が読み取れ書き換え前の文字は読み取れないことを、3フレームすべてで確認する。",
                           "verifyCmd": "node video-shorts/tests/caption-recaption-ocr-check.mjs",
-                          "evidence": ""
+                          "evidence": "75c1822d285fd39abe89c085b2c3d5011cee3de2"
                         }
                       ]
                     },
@@ -2408,7 +2408,7 @@
                           "text": "辞書に対が入っているときだけ、字幕の元になる words[].w に修正後の語が現れる",
                           "verify": "同じ音声・同じ手順で2本流す。(a)辞書に対を入れた状態では transcript.json の words[].w に修正後の語が現れること、(b)対照として辞書から同じ対を外した状態では words[].w に修正前の語が現れること、の両方を確認する。(b)が無いと、音声認識が元々正しく書き起こしただけでも合格してしまう。segments[].text だけが直っている状態は不合格とする(焼かれる字幕は words[].w から作られるため)。",
                           "verifyCmd": "python3 video-shorts/tests/term-apply-check.py",
-                          "evidence": ""
+                          "evidence": "75c1822d285fd39abe89c085b2c3d5011cee3de2"
                         }
                       ]
                     },
