@@ -119,21 +119,21 @@
   "meta": {
     "title": "AI-Editer video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "前回のnextにあった「status:doingのまま残っている葉（G-EDIT-CAPTION-AI-K1/K2/F2/L2/A3/D2/M1/M2）にindependent-verifierを通してdoneへ更新する」を完了した。8葉すべてdone化済み・PR #81・#82ともmain統合済み。\n\n次の一手：#63（TRIM-H/I）の判断待ちが依然未解消（「検証対象のresolveWordsFromAsr()が実装に存在しない」という指摘）。マスター判断が必要。\n\n未対応（マスター判断待ち・前回セッションから持ち越し）：①done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、②verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）、③roadmap-required.ymlにzip未導入（Playwright側は本セッションで解消済み）。\n\n未対応（マスター判断）：GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可（Organization所有public repoまたはEnterprise Cloudのみ対応）。Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針。\n\nロードマップ全体では他にもstatus:doingの葉が多数残っている（P0-5系、P1-2系、G-EDIT-MOSAIC-UI系等）。次にどの葉へ着手するかはマスターと相談して決める。",
+    "next": "今回セッションで、status:doingだった29葉のうち21葉をdone化した（PR #84/#86/#87の3本）。G-P1（重大なセキュリティ・正しさの欠陥、10葉）は全done、G-P0（致命的な欠陥、3葉）は2/3done。\n\n残るstatus:doing葉は29件（21件done化したので実質2件+G-EDITOR配下27件）。うち2件は構造的にブロック中でマスター判断待ち：\n①P0-5-A：実出力解像度の一致まで含む葉。ffmpeg実出力検証インフラが未整備。\n②G-TESTINFRA-ESCAPEPATH-B：CodeQLアラートのfixed確認が必要だが、code-scanning/alerts APIがセッション権限で403（実際に確認済み）。人手でのアラート確認が必要。\n\n残り27葉はすべてG-EDITOR配下（G-EDIT-MOSAIC-UI系16・G-EDIT-CAPTION系5・G-EDIT-TRIM系6[A/B/C/E/F/G]・G-EDIT-QUALITY系2）で、この段階では意図的に対象外とした。理由：サブエージェントによる独立検証で「GOAL/STAGE-1の受入定義（直下の子が全てdone）に対してG-EDITOR配下は必須ではなく、GOAL.detailの『軌道修正チェックリスト』自体が『全項目[x]になったら改めてゴールへ向かう作戦会議』と明記している」と確認した。次回はこの軌道修正チェックリストの残項目（D-4: TRIM-Aの合格ライン5.203秒が実測上限4.703秒で達成不可能／D-5: TRIM-Dの測定方法が正誤を区別できない／C-3: 継ぎ目での映像音声ずれの実製品バグ未修正／C-13: verify前提の既定値が矛盾 等）をマスターと相談し、作戦会議を行うか、個別に着手するかを決める。\n\n次の一手（マスター判断待ち・持ち越し）：①done-gateがBASEで既にdoneだった葉の改訂を実行検証しない、②verify-done-gate.mjsのrealRunCmdがverifyCmdをexecSyncでそのまま実行（fork PRリスク）、③GitHub純正merge queueは個人アカウント所有リポジトリでは使用不可（Organizationへの移管は保留、現状はAGENTS.md/スキルの例外規定のみで運用する方針）。",
     "handoff": {
       "done": [
-        "前回セッションのnextにあった8葉（G-EDIT-CAPTION-AI-K1/K2/F2/L2/A3/D2/M1/M2）を全てstatus:doneへ更新した。PR #81（K1単独）とPR #82（K2/F2/L2/A3/D2/M1/M2の7葉一括）の2本で対応、両方main統合済み・CI緑。",
-        "前回バッチで発覚したmeta.next/meta.handoff共有によるPR再衝突と同型の問題が、今回はmeta.basisChanges（verify-done-gate.mjsが要求する共有配列）でも起こりうると事前に気づき、複数PRを並列に開かず単一PR・単一セッション内で処理する方式へ切り替えた（マスター指摘を受けて方針転換）。",
-        "K1: independent-verifierが実サーバー2プロセス（server/index.mjs+PATH注入の偽claude/偽python）でfix/nofix両シナリオを実測しPASS。手順をvideo-shorts/tests/caption-ai-fix-served-check.mjsとして永続化しpackage.jsonへ組込み。その後basis-reviewerによる敵対的レビューでno_objectionを確認。",
-        "K2/F2/L2: independent-verifierを3並列で起動。F2/L2は既存の永続テスト(caption-ai-fail-halts-job-check.mjs/recaption-human-vs-ai-check.mjs)を独立に読み・実行しPASSと判定。K2はブラウザでの実地観察が必須のため、実サーバー+Playwright/Chromiumで新規に永続テスト(webapp-ai-caption-progress-check.mjs)を作成し、進捗表示の段階遷移(t→c→s、#progress・#editing-steps両方)を実測して8 PASSを確認。",
-        "A3/D2/M1/M2: 既存のtests/ai-caption-fix-check.mjs（71 PASS/0 FAIL）が該当ケースを全て含むことを確認し、独立検証エージェントを新規に立てずverifyCmdを直接配線した（criteria.verify文言自体がindependent-verifier必須を要求していなかったため）。",
-        "8葉すべてにverify-done-gate.mjsが要求するcriteria[].verifyCmdを追加し、meta.basisChangesへ正当化宣言（text/verifyは無変更であることを明記）を追加。ローカルで事前にdone-gateを実行し合格を確認してからpushした。",
-        "roadmap-required.ymlにPlaywright Chromiumのインストール手順が無く、K2のverifyCmdがCIで「browserType.launch: Executable doesn't exist」で失敗する不具合を発見。ci.ymlのqualityジョブと同じ手順を追加して解消した（前回セッションのnextに記録されていた既知の未対応事項の一部）。"
+        "PR #63（G-EDIT-TRIM-H/I、ASR呼び出し失敗時の頑健性）を調査した結果、凍結済みverify文言が前提とするresolveWordsFromAsr()は本番コードに存在せず、ASRはレンダリング前の別プロセスでpipeline.mjs側に呼び出し自体が無いというアーキテクチャと食い違っていた（実装漏れでも誤記でもなく着手前の言語化ミス）と判明。独立検証で「GOAL達成に不要」「削除しても実害発生確率は極めて低い（既存のtrim-plan.mjsの防御コードで実質カバー済み）」と確認したうえで、マスターの明示的な決定（『必要性の低い葉は存在がデメリット。削除しろ』）によりG-EDIT-TRIM-H/Iの2葉を削除し（PR #85）、PR #63はクローズした。",
+        "ロードマップ全体（G-EDITOR配下・G-P2・G-PENDING・G-MOSAIC(CLI)・G-TESTINFRA・G-SLIM・G-DELIVERY、約150葉）をサブエージェントで横断監査し、TRIM-H/Iと同型の欠陥（凍結verifyが実装に存在しない仕組みを前提にしている）を持つ他の葉が無いことを確認した。",
+        "PR #84：P1-2-F/G/H/I（起動時トークン/Origin/Content-Length/レート制限）とG-DELIVERY-CIGATE/FAILCLEARの6葉を、自分の目で再検証したうえでdone化。G-DELIVERY 2葉は永続テストを新規作成して検証を機械化した。",
+        "PR #86：P0-5-C/D、P1-9-D/E、P1-10、P1-11、P1-12-A/Bの8葉をdone化。P1-12-A/Bはこれまでコードレビューのみだった検証を永続テスト化した。P0-5-Aはffmpeg実出力検証インフラ未整備で構造的にブロック中と確認し、doingのまま維持。",
+        "PR #87：G-TESTINFRA-LINT/SCRIPTSLINT、M-1-E/F、M-4-H、S-5/S-6の7葉をdone化。G-TESTINFRA-ESCAPEPATH-BはCodeQLアラートAPIが403で確認不能なためdoingのまま維持。",
+        "以上でG-P1（重大なセキュリティ・正しさの欠陥、10葉）を全done化、G-P0（致命的な欠陥、3葉）を2/3done化した。合計21葉done化（6+8+7）。",
+        "GOAL/STAGE-1の受入定義に照らし、残るstatus:doing葉のうちG-EDITOR配下27葉はGOAL達成に非必須（GOAL.detail自身が『軌道修正チェックリストが全て片付くまで作戦会議を保留』と明記）と独立検証で確認し、意図的に今回のスコープ外とした。"
       ],
       "trouble": [
-        "K2の検証中にコンテナが再起動し、実行中だったindependent-verifierサブエージェントが失われた。ただし途中までコミット済みだった作業（commit 35dc515、永続テストの雛形+専用の遅延版偽pythonヘルパー）が残っていたため、その続きを直接引き継いで完成させ、無駄なやり直しを避けられた。",
-        "送信予約(send_later)によるチェックインメッセージが、既に対応済みの古いコミットSHAを参照したまま複数回届いた（非同期でのpush/CI進行と予約メッセージの発火タイミングがずれるため想定内ではあるが、毎回「本当に最新状態か」をPR APIで確認し直す必要があった）。",
-        "ユーザーから『1個ずつは遅すぎる』との指摘を受け、途中で単発の逐次確認モードから並列検証+単一PRバッチへ方針転換した。最初から並列バッチでmeta.basisChangesの競合リスクを想定していれば、この手戻りは避けられた。"
+        "CI待ち〜マージを1体のサブエージェントに委任する際、『Monitorツールでバックグラウンド待機を仕掛けて自分は完了扱いで終了する』という振る舞いが2回（PR #84・PR #86）連続で発生し、両方とも後続の引き継ぎエージェントで完成させる必要があった。3回目（PR #87）以降『Monitorに頼らず自分で直接30〜60秒間隔でポーリングし続けよ、CIの完走・マージまで1回のエージェント呼び出し内で完結させよ』と明記したところ解消した。docs/failures.mdに教訓を追記済み。",
+        "PR #84のCI実行で、通常5〜6分のtypecheck/lint/test/buildジョブが約52分間停滞するという異常が発生した（原因不明、キャンセル不要で自然に完走・成功）。再発時はdocs/failures.mdへの追記を検討。",
+        "GitHubのリポジトリ設定でPRマージ後に対象ブランチが自動削除される仕様のため、セッション指定ブランチ(claude/checkin-gqpudr)をマージ後に最新mainから作り直すたびに、pushし直すまでstop hookが『未pushコミットあり』を繰り返し検知した。バグではなく想定内の挙動（force-with-lease pushで都度解消）。"
       ]
     },
     "updated": "2026-08-10",
