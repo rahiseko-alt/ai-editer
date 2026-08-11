@@ -79,6 +79,37 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter video-shorts exec playwright install --with-deps chromium
 
+      # マスター決定(D-2, 2026-08-11): G-EDIT-CAPTION-B の確かめ方を「文字認識ツール
+      # (tesseract-ocr)を入れて実際に読ませる」へ変更。字幕は日本語なので日本語言語パック
+      # (tesseract-ocr-jpn)も入れる。版は P1-12 と同じ考え方で実際に配布されている番号を
+      # 明示指定する(無指定だとミラー側の更新で黙って違う版が入りうるため)。
+      - name: Install tesseract-ocr (G-EDIT-CAPTION-B の実フレームOCR検証で使う)
+        run: |
+          sudo apt-get install -y -qq tesseract-ocr=5.3.4-1build5 tesseract-ocr-jpn=1:4.1.0-2
+          tesseract --version | head -1
+          tesseract --list-langs
+
+      # マスター決定(D-3, 2026-08-11): G-EDIT-CAPTION-D の通し確認を「音声認識モデルを置いて
+      # 実際に認識させる」へ変更。faster-whisper のモデル本体(Hugging Face Hub から取得)は
+      # 数百MBあり毎回取得すると重いので、キャッシュして初回のみダウンロードにする。
+      # キーは requirements.txt のハッシュを含める(faster-whisper の版が変わったらモデルの
+      # 保存形式も変わりうるため、古いキャッシュを使い回さない)。
+      - name: Cache faster-whisper model (small)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-faster-whisper-small-${{ hashFiles('video-shorts/requirements.txt') }}-v1
+
+      - name: Install faster-whisper (D-3の通し確認で実モデルを動かすのに使う)
+        run: |
+          spec=$(grep -E '^faster-whisper==' video-shorts/requirements.txt)
+          if [ -z "$spec" ]; then
+            echo "FAIL: faster-whisper が video-shorts/requirements.txt に見つかりません"
+            exit 1
+          fi
+          echo "installing: $spec"
+          python -m pip install "$spec"
+
       - name: Test
         run: pnpm -r test
 

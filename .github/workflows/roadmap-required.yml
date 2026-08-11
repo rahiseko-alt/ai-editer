@@ -75,6 +75,30 @@ jobs:
           python -m pip install "$spec"
       - name: Install Playwright Chromium (verifyCmdが実ブラウザ検証テストを使う場合に備える)
         run: pnpm --filter video-shorts exec playwright install --with-deps chromium
+      # マスター決定(D-2, 2026-08-11)。ci.yml の quality ジョブと同じ手順（版を明示指定）。
+      # roadmap-required は verifyCmd を実際に実行するため、quality 側だけに入れても
+      # ここで tesseract が無ければ G-EDIT-CAPTION-B の verifyCmd がここでは失敗する
+      # （2026-08-11 実際に発生：PR #90 で roadmap-required のみ失敗）。
+      - name: Install tesseract-ocr (verifyCmdがG-EDIT-CAPTION-BのOCR検証を使う場合に備える)
+        run: |
+          sudo apt-get install -y -qq tesseract-ocr=5.3.4-1build5 tesseract-ocr-jpn=1:4.1.0-2
+          tesseract --version | head -1
+          tesseract --list-langs
+      # マスター決定(D-3, 2026-08-11)。ci.yml の quality ジョブと同じ理由でここにも要る。
+      - name: Cache faster-whisper model (small)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-faster-whisper-small-${{ hashFiles('video-shorts/requirements.txt') }}-v1
+      - name: Install faster-whisper (verifyCmdがG-EDIT-CAPTION-Dの実モデル検証を使う場合に備える)
+        run: |
+          spec=$(grep -E '^faster-whisper==' video-shorts/requirements.txt)
+          if [ -z "$spec" ]; then
+            echo "FAIL: faster-whisper が video-shorts/requirements.txt に見つかりません"
+            exit 1
+          fi
+          echo "installing: $spec"
+          python -m pip install "$spec"
       - name: done化する葉のverifyCmdを実際に実行して合否を判定
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
