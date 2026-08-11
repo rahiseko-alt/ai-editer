@@ -227,6 +227,54 @@
         "criteriaHash": "95d020a4386a038324624adab8038e1ac0405fd0befef5926e0b133443d21688",
         "at": "2026-08-11",
         "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（independent-verifierが実サーバー+実ブラウザで新規作成したvideo-shorts/tests/webapp-ai-caption-progress-check.mjsを実行し8 PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P0-5-C",
+        "criteriaHash": "31bc1aa6c6c04e2e98674a2a2ff31606ddc52f02fd2b8a316c8e0f55de52dd6d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/sub-none-render-check.mjsをffmpeg実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P0-5-D",
+        "criteriaHash": "b57aeb59abe721403923f8b8fd38ae8bc38d3c48d8abe36cde6ced5c0530e73d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/mosaic-job-wiring-check.mjsをffmpeg/opencv実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-9-D",
+        "criteriaHash": "f4afd30321ddc9ca77231e75bf7e269ac71310211adce3e2a995a6c6dc73928d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-9-E",
+        "criteriaHash": "7bb0f02dec38bdbf410e11c88bf38579a4fbdadd5200e8f5f612fb8b7fd98c09",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-10",
+        "criteriaHash": "3783431b2ee73d6548a8f687692f63bf92985fe5d26cd287d2d2ce34fb694260",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-11",
+        "criteriaHash": "b60cdee913c62410f94478d628fab6049a8a0d1f7c0e59a9f240d65e333c5c4d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（pnpm audit --audit-level moderateをローカル再実行し脆弱性0件を確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-12-A",
+        "criteriaHash": "1f6035138d0b9a1cd62a87eee03afa66c6698ceb0b4071ec2aafa7b29265b7d0",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/external-tool-version-pin-check.mjsとして機械化し20 PASS/0 FAILを確認済み。無指定サンプルに対する対照実験を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-12-B",
+        "criteriaHash": "3a48e29e902439c0fb7b2ab99c92834c67aa0117a15a248366209a733ad89159",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/consent-before-tool-install-check.mjsとして機械化し9 PASS/0 FAILを確認済み。文言除去した変異テキストに対する対照実験を含む）。text/verifyは変更していない。"
       }
     ]
   },
@@ -290,30 +338,32 @@
                       "kind": "state",
                       "theme": "字幕なしを選んだら、実際に字幕が焼き込まれない",
                       "meaning": "「字幕オフ」を選んだのに字幕が出てしまう、が起きない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "sub=noneを選んだジョブの出力動画に字幕が焼き込まれていない",
                           "verify": "ffmpeg実機環境でsub:\"none\"を指定してrenderを実行し、字幕なし基準フレームとのフレーム差分比較で出力フレームが一致する（＝字幕が焼かれていない）ことを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/sub-none-render-check.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
-                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
+                      "detail": "ツリー見直し(基盤/セキュリティ系レビュー)で検出。P0-5は cut/size(向き・尺)の区間しか子で説明できておらず、sub/trim/mosaicの区間が未分解のまま親のthemeに含まれていた。実装済み・ローカルテスト緑：既存配線(server/pipeline-runner.mjsがstate.subからnoSubを決めpipeline.mjs renderへ--no-subを渡す/cmdRenderがstate.subも読む)を実機確認するtests/sub-none-render-check.mjsを追加。node pipeline.mjs init/renderを実行し、独立に呼んだrenderClip(assPath無し)基準フレームとsub=noneの出力フレームが一致・sub=onは同基準と異なることをffmpeg実機で確認。ローカルでALL PASS(pnpm -r testにも追加)。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
                     },
                     {
                       "id": "P0-5-D",
                       "kind": "state",
                       "theme": "モザイクを選んだときだけ、実際に顔にモザイクが掛かる",
                       "meaning": "「モザイクあり」を選んだのに素顔のまま出る、が起きない",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "mosaic=onを選んだジョブの成果物に、選んだときだけモザイク処理が適用される",
                           "verify": "実際にmosaic:\"on\"を指定したジョブを流し、applyMosaicStageが呼ばれcandidates.jsonが更新されることを確認する（既存のface-mosaic-check.py等との重複が無いかを確認した上で追加する）",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/mosaic-job-wiring-check.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
-                      "detail": "実装済み・ローカルテスト緑・CI run URL待ち：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。CI run URLは次PRで確定。"
+                      "detail": "実装済み・ローカルテスト緑：既存配線(server/pipeline-runner.mjsのrunJobがopts.mosaic===\"on\"のときだけapplyMosaicStageを呼ぶ)を、既存テスト(face-mosaic-check.py/mosaic-ui-check.py。どちらもsrc/apply-mosaic-stage.mjsを直接叩くだけでstartJob()経由のrunJobは通さない=重複しないことを確認済み)とは別に、tests/mosaic-job-wiring-check.mjsを追加してstartJob()を実際に起動し確認。t段/s段はPATHへ差し込んだ身代わりpython/claudeで固定応答させ(claude -pのbuildSafeEnv()がallowlist外の環境変数を落とすため値はスクリプト本文に埋め込み)、r段(render)・m段(mosaic)は本物のffmpeg/opencv(python3)を通す。mosaic:\"on\"ではcandidates.jsonが-mosaic.mp4を指し素顔がpre-mosaicへ退避されること、mosaic未指定(既定)では退避ディレクトリ自体が作られずcandidates.jsonも素顔のままであることを対照として確認。ローカルでALL PASS(pnpm -r testにも追加)。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
                     }
                   ],
                   "detail": "根拠: server/pipeline-runner.mjs:241-247 が作るstateにmode/sub/orientが無い。opts.cut/opts.sizeも後段で未使用。1:1/4:5はレンダラー未実装。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P0-5）"
@@ -713,30 +763,32 @@
                       "kind": "state",
                       "theme": "クリップ結合の間隔判定が境界値でも正しく動く",
                       "meaning": "「ぎりぎり」の間隔でも結合するかどうかが仕様通り",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "頭尾の間隔がちょうどMAX_MATCH_GAP_SECのときは結合され、僅かに超えるときは結合されない",
                           "verify": "gap=10.0秒ちょうど、gap=10.001秒のtranscript fixtureをそれぞれ与え、前者は結合・後者は非結合になることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-D用の2テスト（gap=ちょうどMAX_MATCH_GAP_SEC→結合／gap=+0.001秒→非結合）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
+                      "detail": "ツリー見直しで検出。既存fixtureはgap=98秒等、閾値から大きく外れた値のみで境界値(ちょうど10秒)を突いていなかった。実装済み・ローカルテスト緑：video-shorts/tests/smoke.mjsにP1-9-D用の2テスト（gap=ちょうどMAX_MATCH_GAP_SEC→結合／gap=+0.001秒→非結合）を追加し、node tests/smoke.mjsで96 PASS/0 FAILを確認済み。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
                     },
                     {
                       "id": "P1-9-E",
                       "kind": "state",
                       "theme": "発話カバー率が境界値でも採否が仕様通り",
                       "meaning": "「ぎりぎり」のカバー率でも採用するかどうかが仕様通り",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "カバー率がちょうどMIN_MATCH_COVERAGEのときは採用され、僅かに下回るときは採用されない",
                           "verify": "coverage=0.5ちょうど、coverage=0.49のfixtureをそれぞれ用意し、採否が分かれることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/smoke.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ],
-                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。実装済み・ローカルテスト緑・CI run URL待ち：video-shorts/tests/smoke.mjsにP1-9-E用の2テスト（coverage=ちょうどMIN_MATCH_COVERAGE→採用／coverage=0.49→非採用）を追加し、node tests/smoke.mjsで91 PASS/0 FAILを確認済み。"
+                      "detail": "ツリー見直しで検出。既存fixtureはcoverage=0.2等、閾値から大きく外れた値のみだった。実装済み・ローカルテスト緑：video-shorts/tests/smoke.mjsにP1-9-E用の2テスト（coverage=ちょうどMIN_MATCH_COVERAGE→採用／coverage=0.49→非採用）を追加し、node tests/smoke.mjsで96 PASS/0 FAILを確認済み。2026-08-11 再検証セッションでverifyCmdを実行し直しALL PASSを確認、CI run URLで確定しdoneへ更新。"
                     }
                   ],
                   "detail": "根拠: reverse matchが前方語と100秒後の後方語を1クリップにできる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-9）"
@@ -746,13 +798,14 @@
                   "kind": "state",
                   "theme": "配布物に開発中のゴミファイルが混ざらない",
                   "meaning": "お客様に渡すZIPに、余計な内部ファイルが入っていない",
-                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）実装済み・ローカルテスト緑・CI run URL待ち: build-dist.mjsをDESTの部分削除(既知ディレクトリ名だけrmSync)からDEST丸ごとrmSync＋allowlist方式(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)へ変更。tests/dist-slim-check.mjsに、既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし、dist直下が許可リストと完全一致し侵入者が消えている(余剰0件)ことを確認するテストを追加。旧実装に戻すとFAILすることを確認済み(正しく検知できる)。",
-                  "status": "doing",
+                  "detail": "根拠: 配布ビルドが未追跡のskill/を削除せず再利用し、ZIPへ混入させる。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-10）実装済み・ローカルテスト緑: build-dist.mjsをDESTの部分削除(既知ディレクトリ名だけrmSync)からDEST丸ごとrmSync＋allowlist方式(ALLOWLIST_ROOT_FILES/ALLOWLIST_DIRS)へ変更。tests/dist-slim-check.mjsに、既存distへ未追跡の侵入者ファイルを仕込んでから再ビルドし、dist直下が許可リストと完全一致し侵入者が消えている(余剰0件)ことを確認するテストを追加。旧実装に戻すとFAILすることを確認済み(正しく検知できる)。2026-08-11 再検証セッションでverifyCmdを実行し直し19 PASS/0 FAILを確認、CI run URLで確定しdoneへ更新。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "配布ビルドが空stagingからallowlist方式でコピーされ、未追跡ファイル(skill/等)を混入させない",
                       "verify": "build-dist.mjsを実行し、生成されたdist/ZIPの内容が許可リストと完全一致し余剰ファイルが0件であることを確認する",
-                      "evidence": ""
+                      "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                     }
                   ]
                 },
@@ -761,13 +814,14 @@
                   "kind": "state",
                   "theme": "依存ライブラリに既知の重大な脆弱性が無い",
                   "meaning": "使っている部品(ライブラリ)に、既に知られている危険な穴が無い",
-                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）。pnpm audit --audit-level moderateが既にCI(quality→gate)に組み込まれ、脆弱性0件であることを確認済み。",
-                  "status": "doing",
+                  "detail": "根拠: npm audit: High 5、Moderate 4。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-11）。pnpm audit --audit-level moderateが既にCI(quality→gate)に組み込まれ、脆弱性0件であることを確認済み。2026-08-11 再検証セッションでpnpm audit --audit-level moderateを再実行し「No known vulnerabilities found」を確認、CI run URLで確定しdoneへ更新。",
+                  "status": "done",
                   "criteria": [
                     {
                       "text": "依存関係の脆弱性スキャンでHigh/Critical脆弱性が0件である",
                       "verify": "pnpm audit --audit-level moderate（または npm audit）を実行し、High/Critical脆弱性が0件であることを確認する",
-                      "evidence": ""
+                      "verifyCmd": "pnpm audit --audit-level moderate",
+                      "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                     }
                   ]
                 },
@@ -782,13 +836,14 @@
                       "kind": "state",
                       "theme": "外部ツールのバージョンを固定する",
                       "meaning": "実行するたびに違うバージョンが動く事故を防ぐ",
-                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。実施: video-shorts/requirements.txt の faster-whisper/groq/opencv-python-headlessを`>=`(上限無し)から`==`固定に変更。.github/workflows/ci.yml と measure-leak-rate.yml の apt-get install ffmpeg/zip を ubuntu-24.04 実測版(ffmpeg=7:6.1.1-3ubuntu5, zip=3.0-13ubuntu0.2)へ固定。.claude/hooks/session-start.sh のリモート自動導入も同じ ffmpeg 版へ固定(取得不能時は警告を出した上で無指定版へフォールバック＝ユーザーが使えなくなる事故を避けつつ、ドリフトを隠さない)。CI 内の opencv 導入はrequirements.txtの固定値を参照するため自動追従。リポジトリ内grep(uvx/npx/pip install/apt-get install)で他に無指定呼び出しが無いことを確認済み(video-shorts配下)。docs/setup-runbook.mdの`uv tool install`/`npx marp`はvideo-shorts以外の別製品(kosespark Writer、本ロードマップのGOAL=動画編集の対象外)のため今回は対象外(別途起票が必要)。",
-                      "status": "doing",
+                      "detail": "uvx/npx等の可変依存呼び出しをバージョン/hash固定する。実施: video-shorts/requirements.txt の faster-whisper/groq/opencv-python-headlessを`>=`(上限無し)から`==`固定に変更。.github/workflows/ci.yml と measure-leak-rate.yml の apt-get install ffmpeg/zip を ubuntu-24.04 実測版(ffmpeg=7:6.1.1-3ubuntu5, zip=3.0-13ubuntu0.2)へ固定。.claude/hooks/session-start.sh のリモート自動導入も同じ ffmpeg 版へ固定(取得不能時は警告を出した上で無指定版へフォールバック＝ユーザーが使えなくなる事故を避けつつ、ドリフトを隠さない)。CI 内の opencv 導入はrequirements.txtの固定値を参照するため自動追従。リポジトリ内grep(uvx/npx/pip install/apt-get install)で他に無指定呼び出しが無いことを確認済み(video-shorts配下)。docs/setup-runbook.mdの`uv tool install`/`npx marp`はvideo-shorts以外の別製品(kosespark Writer、本ロードマップのGOAL=動画編集の対象外)のため今回は対象外(別途起票が必要)。2026-08-11 再検証セッションで、これまでコードレビューのみだった検証を機械化: video-shorts/tests/external-tool-version-pin-check.mjsを新設し、requirements.txtの==固定・ci.yml/measure-leak-rate.ymlのapt-get install版固定・session-start.shのFFMPEG_PIN・video-shorts配下のuvx/npx無指定呼び出し不在を、無指定サンプルに対する対照実験付きで実物ファイルから検証(20 PASS/0 FAIL)。CI run URLで確定しdoneへ更新。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "uvx/npx等の外部ツール呼び出しがバージョンまたはhash指定で固定されている",
                           "verify": "呼び出しコマンドにバージョン/hash指定があることをコードレビューし、固定前後で実行結果が再現することを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/external-tool-version-pin-check.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ]
                     },
@@ -797,13 +852,14 @@
                       "kind": "state",
                       "theme": "初回実行時に同意を得る",
                       "meaning": "何が実行されるか知らないまま外部ツールが動かない",
-                      "detail": "バージョン固定前の初回実行に同意フローを設ける。実施: video-shorts/start-here.mdを確認したところ、ローカルPC想定のフロー(⓪はじめの説明と同意 → ①必要なソフトの導入=Node/Python/ffmpeg/pip installの前に毎回「何がなぜ必要かを説明→入手方法提示→承認を得てから導入」)には既に✋ゲートがあり満たしていた。一方、PCを持たないユーザー向けのクラウドリモートセッション経路は`.claude/hooks/session-start.sh`がSessionStart時に無音でffmpeg/pipライブラリを自動導入しており、技術的にフック実行前にユーザーと対話して同意を得ることはできない(セッション開始前に走るため)。この経路の同意欠落を埋めるため、start-here.mdの冒頭注記を改訂し、⓪の説明時に「ffmpeg/文字起こしライブラリはこの環境へ承認前に自動導入済みで、入れたのはこの2つだけ」と開示してからユーザーの同意を得るよう明記した(事後開示+同意でリスクを可視化。無言のまま先へ進めることを禁止)。",
-                      "status": "doing",
+                      "detail": "バージョン固定前の初回実行に同意フローを設ける。実施: video-shorts/start-here.mdを確認したところ、ローカルPC想定のフロー(⓪はじめの説明と同意 → ①必要なソフトの導入=Node/Python/ffmpeg/pip installの前に毎回「何がなぜ必要かを説明→入手方法提示→承認を得てから導入」)には既に✋ゲートがあり満たしていた。一方、PCを持たないユーザー向けのクラウドリモートセッション経路は`.claude/hooks/session-start.sh`がSessionStart時に無音でffmpeg/pipライブラリを自動導入しており、技術的にフック実行前にユーザーと対話して同意を得ることはできない(セッション開始前に走るため)。この経路の同意欠落を埋めるため、start-here.mdの冒頭注記を改訂し、⓪の説明時に「ffmpeg/文字起こしライブラリはこの環境へ承認前に自動導入済みで、入れたのはこの2つだけ」と開示してからユーザーの同意を得るよう明記した(事後開示+同意でリスクを可視化。無言のまま先へ進めることを禁止)。2026-08-11 再検証セッションで、これまでコードレビューのみだった検証を機械化: video-shorts/tests/consent-before-tool-install-check.mjsを新設し、start-here.mdの実物テキストから(1)ローカル経路の⓪✋ゲート・①導入前の説明→提示→承認、(2)クラウド経路の事後開示+同意確認、両方の文言と順序を、文言を除去した変異テキストに対する対照実験付きで検証(9 PASS/0 FAIL)。CI run URLで確定しdoneへ更新。",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "外部ツール初回実行前にユーザー同意を得るフローがある",
                           "verify": "初回セットアップ手順を実行し、外部ツール実行前に同意確認が挟まることを確認する",
-                          "evidence": ""
+                          "verifyCmd": "node video-shorts/tests/consent-before-tool-install-check.mjs",
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31458366197/job/93676729336"
                         }
                       ]
                     }
