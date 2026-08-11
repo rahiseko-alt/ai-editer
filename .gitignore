@@ -40,3 +40,6 @@ __pycache__/
 
 # Agent tool worktree scratch dirs (isolation:"worktree")
 .claude/worktrees/
+
+# 個人のClaude Code設定上書き（チーム共有のsettings.jsonとは別）
+.claude/settings.local.json
