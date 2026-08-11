@@ -185,6 +185,12 @@
         "criteriaHash": "db8910c39dfdf04e45be4d2688821fbbf21d334b78b99533561878ea17594b7d",
         "at": "2026-08-11",
         "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-K2",
+        "criteriaHash": "95d020a4386a038324624adab8038e1ac0405fd0befef5926e0b133443d21688",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（independent-verifierが実サーバー+実ブラウザで新規作成したvideo-shorts/tests/webapp-ai-caption-progress-check.mjsを実行し8 PASSを確認済み）。text/verifyは変更していない。"
       }
     ]
   },
@@ -2510,12 +2516,13 @@
                           "kind": "state",
                           "theme": "AI が字幕を点検していることが、画面の進み具合で分かる",
                           "meaning": "止まっているのか動いているのか分からない時間が生まれない",
-                          "detail": "【2026-08-10 実装者によるコードレビュー確認】webapp-mockup/app.jsのEDITING_LABEL['c']=\"AIが字幕の間違いを直しています\"、STEP_ORDER=[\"t\",\"c\",\"s\",\"r\",\"m\"]でtとsの間に既に入っている。webapp-mockup/index.htmlの#progress・#editing-stepsの両方に<... data-k=\"c\">の行/要素が既にある(t/c/s/r/mの5段が並ぶ)。既存のtests/smoke.mjsに「字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている」「UI: 字幕直し段(c)の進捗表示の受け皿がある」の2テストが既にあり(STEP_ORDER/EDITING_LABEL/data-k=\"c\"の3点を機械で検査)、node tests/smoke.mjsは87 PASS / 0 FAILで緑。ブラウザでの実地確認(実行中→完了の表示遷移そのものを目で見る)はこのセッションでは行っておらず、独立検証の工程に委ねる(タスク指示どおり、コードレビューでの確認で代替)。",
+                          "detail": "【2026-08-10 実装者によるコードレビュー確認】webapp-mockup/app.jsのEDITING_LABEL['c']=\"AIが字幕の間違いを直しています\"、STEP_ORDER=[\"t\",\"c\",\"s\",\"r\",\"m\"]でtとsの間に既に入っている。webapp-mockup/index.htmlの#progress・#editing-stepsの両方に<... data-k=\"c\">の行/要素が既にある(t/c/s/r/mの5段が並ぶ)。既存のtests/smoke.mjsに「字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が挟まっている」「UI: 字幕直し段(c)の進捗表示の受け皿がある」の2テストが既にあり(STEP_ORDER/EDITING_LABEL/data-k=\"c\"の3点を機械で検査)、node tests/smoke.mjsは87 PASS / 0 FAILで緑。ブラウザでの実地確認(実行中→完了の表示遷移そのものを目で見る)はこのセッションでは行っておらず、独立検証の工程に委ねる(タスク指示どおり、コードレビューでの確認で代替)。\n\n【2026-08-11 independent-verifierの判定】PASS。実サーバー(server/index.mjs)+実ブラウザ(Playwright/Chromium)でファイル選択→実行確認→ジョブ完了までを流し、window.setStage/setEditingStep/#editing-statusへの代入を同期フックしてDOM状態遷移を実測した。(a) #progress側でt(done)の後にc(active)→c(done)の後にs(active)という順序、(b) #editing-steps側でも同じ順序、(c) 編集中オーバーレイの文言「AIが字幕の間違いを直しています」の表示、(d) ジョブが実際にevent:doneまで完走し候補が生成されていること(見せかけの表示でないこと)、(e) ブラウザ側pageerrorが0件、を確認。永続テストvideo-shorts/tests/webapp-ai-caption-progress-check.mjsとして固定し、package.jsonのtestへ組み込み。node video-shorts/tests/webapp-ai-caption-progress-check.mjs で8 PASS/0 FAIL。",
                           "status": "doing",
                           "criteria": [
                             {
                               "text": "画面の進捗表示に、AI が字幕を点検している工程が独立した段として現れ、終わると完了として表示される",
                               "verify": "画面を操作する手順を含むため、判定は independent-verifier が verify を自分で再実行し、その場で観察して行う（作業した本人の報告を根拠にしない）。PATH に偽 claude を置いた状態でサーバを起動し、ブラウザで処理を流して、文字起こしと区間選定の間に AI の点検の段が現れ、実行中と完了が既存の段（文字起こし・場面選び・書き出し）と同じ形で表示されることを確認する。",
+                              "verifyCmd": "node video-shorts/tests/webapp-ai-caption-progress-check.mjs",
                               "evidence": ""
                             }
                           ]
