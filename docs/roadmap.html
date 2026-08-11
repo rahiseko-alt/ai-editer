@@ -124,12 +124,14 @@
       "done": [
         "GOAL.detail『軌道修正チェックリスト』のマスター判断待ちD-1/D-2/D-3について、マスターから明示的な決定を受け記録した：D-1=顔モザイクの凍結は解かない（維持）／D-2=G-EDIT-CAPTION-Bの確かめ方はtesseract-ocrで実際に読ませる／D-3=G-EDIT-CAPTION-Dの通し確認は音声認識モデルを実際にCIへ置いて認識させる。",
         "D-1: 実装には触れず記録のみ。G-EDIT-MOSAIC-UI配下は引き続き凍結中。",
-        "D-2: video-shorts/tests/caption-recaption-ocr-check.mjsを新設。実サーバー・実ffmpegで(1)編集なしのPOST /recaption(対照)→OCR、(2)PUT /captionsで編集、(3)編集後のPOST /recaption→OCR、を実行し、書き換え後の文字だけが読み取れることを確認する。.github/workflows/ci.ymlへtesseract-ocr(5.3.4-1build5)/tesseract-ocr-jpn(1:4.1.0-2)の導入を追加。G-EDIT-CAPTION-Bをdone化（status:todoだったため凍結対象外）。recaptionStageのapplyEdits呼び出しを無効化する変異で実際に6件FAILすることを確認し検出力を確認済み（ファイルは元に戻した）。",
-        "D-3: video-shorts/tests/term-apply-check.pyへreal_model_check()を追加し、src/transcribe.pyを実際にサブプロセスとして2回起動（辞書にペア有り/無しで凍結済み音声tests/fixtures/trim-calibration/calibration.flacを文字起こし）する形へ拡張。.github/workflows/ci.ymlへfaster-whisper(small)のモデルキャッシュ(actions/cache)とpip install手順を追加。凍結済み葉のcriteria変更のためmeta.basisChangesへ正当化宣言を追加しG-EDIT-CAPTION-Dをdone化（text/verifyは無変更、verifyCmdのみ追加）。load_correctionsが常に{}を返す変異で実際に3件FAILすることを確認し検出力を確認済み（ファイルは元に戻した）。",
-        "package.jsonのtestスクリプトへcaption-recaption-ocr-check.mjsを配線（recaption-human-vs-ai-check.mjsの直後）。"
+        "D-2: video-shorts/tests/caption-recaption-ocr-check.mjsを新設。実サーバー・実ffmpegで(1)編集なしのPOST /recaption(対照)→OCR、(2)PUT /captionsで編集、(3)編集後のPOST /recaption→OCR、を実行し、書き換え後の文字だけが読み取れることを確認する。CIへtesseract-ocr(5.3.4-1build5)/tesseract-ocr-jpn(1:4.1.0-2)の導入を追加。G-EDIT-CAPTION-Bをdone化（status:todoだったため凍結対象外）。recaptionStageのapplyEdits呼び出しを無効化する変異で実際に6件FAILすることを確認し検出力を確認済み（ファイルは元に戻した）。",
+        "D-3: video-shorts/tests/term-apply-check.pyへreal_model_check()を追加し、src/transcribe.pyを実際にサブプロセスとして2回起動（辞書にペア有り/無しで凍結済み音声tests/fixtures/trim-calibration/calibration.flacを文字起こし）する形へ拡張。CIへfaster-whisper(small)のモデルキャッシュ(actions/cache)とpip install手順を追加。凍結済み葉のcriteria変更のためmeta.basisChangesへ正当化宣言を追加しG-EDIT-CAPTION-Dをdone化（text/verifyは無変更、verifyCmdのみ追加）。load_correctionsが常に{}を返す変異で実際に3件FAILすることを確認し検出力を確認済み（ファイルは元に戻した）。",
+        "着手時はci.ymlのqualityジョブにのみtesseract-ocr/faster-whisperを入れていたが、roadmap-required.ymlも独立してverify-done-gate.mjs（verifyCmd実行）を回すため同じ導入が要ることが判明し、roadmap-required.ymlにも同じ手順を追加した。",
+        "PR #90をマージ（squash、main=c5a702a）。マージ時点でG-EDIT-CAPTION-B/Dのevidenceが暫定値（実装を含むcommit SHA）のままだったため、CIが実際に緑になったrun/job（typecheck / lint / test / buildジョブ）の実URLへ差し替える追いPRを本セッションで作成・マージした。"
       ],
       "trouble": [
-        "特筆すべき事項は無し。単純なカタカナ短語（例:「サクラ」）はこの環境のtesseract 5.3.4+jpnでは字形によって誤読する実測があり（--psm 6/7/8/11いずれでも再現）、かな+漢字混在の語に変えて解決した（G-EDIT-CAPTION-Bのdetail参照）。"
+        "単純なカタカナ短語（例:「サクラ」）はこの環境のtesseract 5.3.4+jpnでは字形によって誤読する実測があり（--psm 6/7/8/11いずれでも再現）、かな+漢字混在の語に変えて解決した（G-EDIT-CAPTION-Bのdetail参照）。",
+        "本セッション中、roadmap-required.ymlへのtesseract/faster-whisper追加コミットと、evidenceへ暫定commit SHAを入れるコミットが、このエージェントの明示的な操作の記憶が無いまま既にorigin上に存在している状態を観測した（コミットメッセージ・Claude-Session footerは本セッションと一致）。原因は特定できていないが、内容は正しく（roadmap-requiredジョブが独立環境を持つことの見落としを実際に修正しておりGitHub上の失敗ログとも整合）、CIも最終的に全緑だったためそのまま採用し、evidenceの実URL化だけ本セッションで追いPRとして行った。次回このような食い違いに気づいたら、まずorigin側の実際の状態をgit fetchで確認し、ローカルの記憶より git log を信頼すること。"
       ]
     },
     "updated": "2026-08-11",
@@ -2362,7 +2364,7 @@
                           "text": "保存した字幕で焼き直した出力に、書き換え後の文字が写っており、かつ書き換え前の文字が写っていない",
                           "verify": "実サーバー・実ffmpegで、書き換え前後で文字が明確に異なる字幕を用いて実際に(1)編集なしでの焼き直し(対照)、(2)人の編集(PUT /api/jobs/:id/captions)、(3)編集後の焼き直し(POST /api/jobs/:id/recaption)を行い、焼き直した出力から、その字幕が表示される時刻から等間隔に3フレームを抜く。各フレームにtesseract-ocr(jpn言語パック、--psm 7、negate+下部帯切り出し+2倍拡大の前処理)を掛け、(1)の出力では書き換え前の文字が読み取れ書き換え後の文字は読み取れないこと、(3)の出力では書き換え後の文字が読み取れ書き換え前の文字は読み取れないことを、3フレームすべてで確認する。",
                           "verifyCmd": "node video-shorts/tests/caption-recaption-ocr-check.mjs",
-                          "evidence": "75c1822d285fd39abe89c085b2c3d5011cee3de2"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31470364619/job/93712135780"
                         }
                       ]
                     },
@@ -2408,7 +2410,7 @@
                           "text": "辞書に対が入っているときだけ、字幕の元になる words[].w に修正後の語が現れる",
                           "verify": "同じ音声・同じ手順で2本流す。(a)辞書に対を入れた状態では transcript.json の words[].w に修正後の語が現れること、(b)対照として辞書から同じ対を外した状態では words[].w に修正前の語が現れること、の両方を確認する。(b)が無いと、音声認識が元々正しく書き起こしただけでも合格してしまう。segments[].text だけが直っている状態は不合格とする(焼かれる字幕は words[].w から作られるため)。",
                           "verifyCmd": "python3 video-shorts/tests/term-apply-check.py",
-                          "evidence": "75c1822d285fd39abe89c085b2c3d5011cee3de2"
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31470364619/job/93712135780"
                         }
                       ]
                     },
