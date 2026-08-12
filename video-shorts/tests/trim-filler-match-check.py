@@ -313,13 +313,16 @@ def main():
         filt = a_head + ";".join(a_body) + f";{pairs}concat=n={n}:v=0:a=1[out]"
         ffmpeg(["-i", FLAC, "-filter_complex", filt, "-map", "[out]", "-c:a", "aac", "-b:a", "192k", out_path])
 
-    # 是正対象の反証(1)自体が実測していた残置率は90%/75%（旧方式でこの2水準が誤って合格していた）。
-    # ここではその2水準を、旧方式の欠陥が起きた2件のフィラーとは別に、この新素材の2件のフィラー
-    # (index0=最短级、index6=最長級)で再現する。25%/50%は別途探った結果、フィラーによって
-    # 検出できる場合とできない場合があり(filler0の50%は検出できるがfiller6の50%はできない。
-    # 詳細はdetail参照)、この葉の受入事実として断定できる範囲を90%/75%に絞る。
-    for filler_index in (0, 6):
-        for retain_pct in (75, 90):
+    # 反証(1)自体が実測していた残置率は90%/75%（旧方式でこの2水準が誤って合格していた）。
+    # 2026-08-12 basis-reviewerの指摘(反証)で、フィラー4区間すべてで25〜74%残置を実測したところ、
+    # 検出できる境界がフィラーごとに異なり(50〜65%の間で揺れる。非単調な区間もある)、この帯を
+    # 「必ず検出できる」と主張することはできないと判明した。フィラー4区間すべてで確実に検出できる
+    # と実測で確認できた最小の残置率は65%(index6が65%で初めて検出される。60%ではまだ未検出)。
+    # そこでこの葉の受入事実を「65%以上の残置は必ず検出される」に絞り、フィラー4区間×3水準
+    # (65%/75%/90%)の全12組み合わせで実測する。25〜64%残置の検出可否はこの葉の対象外とし、
+    # criteria.text自身にもその範囲を明記する(既知の限界。断定できない範囲を偽って合格扱いにしない)。
+    for filler_index in filler_idx:
+        for retain_pct in (65, 75, 90):
             out_path = os.path.join(work, f"partial_{filler_index}_{retain_pct}.m4a")
             build_partial_residue_output(filler_index, retain_pct / 100.0, out_path)
             sr_p = ffprobe_sr(out_path)
@@ -329,6 +332,38 @@ def main():
                   f"対照: フィラー(index{filler_index} {segs[filler_index]['text']})の"
                   f"{retain_pct}%だけを残した半端カットは「まだ含まれている」と判定される"
                   f"(距離{dist:.3f} < しきい値{threshold:.3f}。反証(1)是正の実証)")
+
+    # ── 対照: 語(index1,3,5,7)が丸ごと1つ脱落した出力は、その語が「含まれていない」と正しく判定される ──
+    # 2026-08-12 basis-reviewerの指摘: G-EDIT-TRIM-Cには「語が丸ごと消えた壊れた実装」を実際に
+    # 合成して検出できることを確かめた実行記録が無かった(反証(2)是正の校正(identity/different_word)
+    # だけでは、この葉が実際に壊れた出力を落とせることの直接証拠にならない)。KEEPから該当語だけを
+    # 除いた出力を実際に合成し、その語の距離がしきい値を上回る(=含まれていない)ことを確認する。
+    order = [1, 3, 5, 7]
+    for missing_index in order:
+        remaining = [i for i in order if i != missing_index]
+        out_path = os.path.join(work, f"missing_{missing_index}.m4a")
+        parts = [(segs[i]["start_sample"], segs[i]["end_sample"]) for i in remaining]
+        n = len(parts)
+        a_head = f"[0:a]aresample={sr},asplit={n}" + "".join(f"[sa{k}]" for k in range(n)) + ";"
+        a_body = []
+        for k, (start, end) in enumerate(parts):
+            length = end - start
+            fade = min(round(0.005 * sr), length // 4)
+            fade_in = "" if k == 0 or fade < 1 else f",afade=t=in:ss=0:ns={fade}"
+            fade_out = "" if k == n - 1 or fade < 1 else f",afade=t=out:ss={length - fade}:ns={fade}"
+            a_body.append(
+                f"[sa{k}]atrim=start_sample={start}:end_sample={end},asetpts=PTS-STARTPTS{fade_in}{fade_out}[ta{k}]"
+            )
+        pairs = "".join(f"[ta{k}]" for k in range(n))
+        filt = a_head + ";".join(a_body) + f";{pairs}concat=n={n}:v=0:a=1[out]"
+        ffmpeg(["-i", FLAC, "-filter_complex", filt, "-map", "[out]", "-c:a", "aac", "-b:a", "192k", out_path])
+        sr_m = ffprobe_sr(out_path)
+        target_m = mfcc(decode_pcm(out_path, sr_m), sr_m)
+        dist = subsequence_dtw_distance(ref_mfcc[missing_index], target_m)
+        check(dist > threshold,
+              f"対照: 語(index{missing_index} {segs[missing_index]['text']})が丸ごと脱落した出力は、"
+              f"その語が「含まれていない」と正しく判定される(距離{dist:.3f} > しきい値{threshold:.3f}。"
+              f"反証(2)是正の実証)")
 
     # ── 対照: 何も詰めない(全8区間が残る)偽実装は、フィラーが「まだ含まれている」と正しく判定される ──
     passthrough_out = os.path.join(work, "passthrough.m4a")
