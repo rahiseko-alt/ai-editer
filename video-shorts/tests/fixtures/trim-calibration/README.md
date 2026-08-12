@@ -1,7 +1,21 @@
-# trim-calibration — G-EDIT-TRIM-B のしきい値校正用（凍結済み）
+# trim-calibration — G-EDIT-TRIM-A/B/C/D/E の凍結済み素材
 
 `G-EDIT-TRIM-B`（無音・言い淀みカットでフィラーが本当に消えたか）の判定に使う
-**しきい値を決めるための素材**です。実装より先に凍結してあります。
+**しきい値を決めるための素材**であり、`G-EDIT-TRIM-A/C/D/E` も同じ素材・同じ区間表を使う
+（design値の一貫性のため）。実装より先に凍結してあります。
+
+**2026-08-12 軌道修正C-7反証(2)(3)是正で作り直した**（旧素材はindex1/7が同じ語「こんにちは」の
+重複で片方消失を検出できず、言い淀みと語の長さも完全分離しており単純な長さしきい値の偽実装を
+弾けなかった）。index0〜5は旧素材と設計値(秒)が完全一致し、index6/7だけを差し替えている。
+詳細は `calibration.json` の `_readme` と各セグメントの `note` を参照。
+
+同日、`G-EDIT-TRIM-B/C` の照合方法も「探す側と同じ長さの窓を滑らせるDTW」から
+「開始・終了位置自由(subsequence)DTW」へ全面作り直した(反証(1)是正)。旧方式はフィラー音声の
+75〜90%が残っていても検出できない構造上の欠陥を持っていた。新実装は
+`video-shorts/tests/trim-filler-match-check.py`（MFCC抽出・subsequence DTWとも numpy のみで実装。
+scipy/librosa等の追加依存なし）。判定対象の出力音声は
+`video-shorts/tests/trim-filler-audio-helper.mjs` が本物の `buildTrimFilters`（`src/trim-plan.mjs`）
+を呼んで作る。
 
 ## なぜ凍結が要るか
 

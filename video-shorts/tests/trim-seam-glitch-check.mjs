@@ -74,8 +74,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(HERE, "fixtures", "trim-calibration");
 const FLAC = path.join(FIXTURE_DIR, "calibration.flac");
 const CAL_JSON = path.join(FIXTURE_DIR, "calibration.json");
-const FLAC_SHA = "edb077722b770d109d2568e0f0332ae5af42efa5625dd4ffc39ad51513fec800";
-const CAL_SHA = "6f29d6e6222cfd74ace2a62608ba1e8ed54c0852cc841a8506ac51ad69470058";
+const FLAC_SHA = "9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165";
+const CAL_SHA = "9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58";
 
 // ── しきい値・窓（着手前に固定。基準の凍結後は緩めない）──────────
 const Z_THRESHOLD = 2.5;      // 指標1の合格ライン(z<2.5)
@@ -172,8 +172,8 @@ try {
     return s.end_sample - s.start_sample;
   }
   const len1 = nativeLen(1), len3 = nativeLen(3), len5 = nativeLen(5), len7 = nativeLen(7);
-  t("検算: 独立算出した保持語の長さが凍結値のとおり（word1/3/5/7）", () => {
-    assert.deepStrictEqual([len1, len3, len5, len7], [27739, 23307, 24917, 27739]);
+  t("検算: 独立算出した保持語の長さが凍結値のとおり（word1/3/5/7。2026-08-12素材作り直しでword7=はいへ差し替え）", () => {
+    assert.deepStrictEqual([len1, len3, len5, len7], [27739, 23307, 24917, 17023]);
   });
   // 継ぎ目1=word1の直後 / 継ぎ目2=word1+word3の直後 / 継ぎ目3=word1+word3+word5の直後(判定対象外)
   const EXPECTED_SEAM_NATIVE = [len1, len1 + len3, len1 + len3 + len5];
