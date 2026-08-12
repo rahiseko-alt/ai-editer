@@ -24,8 +24,8 @@
 // ── 素材（凍結。他のTRIM葉と同じ計算・同じ数値を使う）────────────────────────
 // 音声は calibration.flac（そのまま。区間は加工しない）、映像はこの検査が合成する
 // black:s=320x180:r=15（絵の中身は判定に使わない）。TRIM-A の「素材TA」と全く同じ作りで、
-// 実測長は 11.402812秒（＝最終区間の終わり。末尾の無音は存在しない。calibration.json の
-// 人手記載値 11.903 は使わない＝軌道修正C-14で既出）。fixture 自体は1バイトも変更していない。
+// 実測長は 11.052517秒（＝最終区間の終わり。末尾の無音は存在しない。2026-08-12 軌道修正C-7
+// 反証(2)(3)是正でcalibration.flac/jsonを作り直したため、PR-1時点の値11.402812から更新した）。
 //
 // ── 発話開始検出の道具（数値で確定させる。実装後に選べる余地を残さない）────────────
 // 10ms窓のRMSを求め、クリップ全体のRMSピークの5%を閾値に「鳴っている」と判定する。
@@ -67,13 +67,15 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(HERE, "fixtures", "trim-calibration");
 const FLAC = path.join(FIXTURE_DIR, "calibration.flac");
 const CAL_JSON = path.join(FIXTURE_DIR, "calibration.json");
-const FLAC_SHA = "edb077722b770d109d2568e0f0332ae5af42efa5625dd4ffc39ad51513fec800";
-const CAL_SHA = "6f29d6e6222cfd74ace2a62608ba1e8ed54c0852cc841a8506ac51ad69470058";
+const FLAC_SHA = "9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165";
+const CAL_SHA = "9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58";
 
 const SR = 22050;                 // 凍結素材の標本化周波数
 const FPS = 15;                   // 合成する映像のコマ数/秒（TRIM-A の素材TAと同じ）
 const VIDEO_W = 320, VIDEO_H = 180;
-const TA_DUR = 11.403;            // 素材TAの実測長（calibration.jsonの人手記載値11.903は使わない）
+// 素材TAの実測長。2026-08-12 軌道修正C-7反証(2)(3)是正でcalibration.flac/jsonを作り直した
+// (index6をあのー→なんか、index7をこんにちは→はいへ差し替え)ため、旧値11.403から更新した。
+const TA_DUR = 11.053;
 
 // ── 発話開始検出の数値（凍結）───────────────────────────────────
 const ONSET_WIN = 0.010;          // 10ms窓

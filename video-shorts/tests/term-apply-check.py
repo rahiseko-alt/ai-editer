@@ -129,7 +129,9 @@ CALIB_FLAC = os.path.join(HERE, "fixtures", "trim-calibration", "calibration.fla
 TERM_DICT_PATH = os.path.join(ROOT, "src", "term-corrections.json")
 TRANSCRIBE_PY = os.path.join(ROOT, "src", "transcribe.py")
 
-# calibration.json（凍結済み）が定義する区間のうち index 1/7 は「こんにちは」。
+# calibration.json（凍結済み）が定義する区間のうち index 1 は「こんにちは」
+# （2026-08-12 軌道修正C-7反証(2)(3)是正でindex7は「はい」へ差し替えたが、この検査は
+# 位置に依存せずwords[].w全体に対する部分一致で見るため、index1が残っていれば影響しない）。
 # small モデルでの実測（本検査を書く際に確認済み）では「こんにちは。」のように
 # 句読点が付いて1語になるため、辞書側は素の「こんにちは」を key にした部分一致で
 # 直る（transcribe.fix_words は連結文字列に対する部分一致で置換する）。

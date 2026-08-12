@@ -4,10 +4,10 @@
 // 位置は tests/trim-duration-check.mjs が製品経路（planTrim → renderClip）で測る。
 // A の合格条件（4.733秒＝71コマ ほか）はそちらに書いてある。
 //
-// 【素材の全長について】凍結素材 calibration.flac の実測長は 11.402812秒 で、区間表の
-// 最終区間の終わり 11.403秒 と一致する。区間表の説明値 audio.duration_sec（11.903）は
-// 実ファイルと 0.500秒 食い違う人手の値なので、判定には使わない
-// （2026-08-08 の失敗記録「凍結した合格ラインの数値が、凍結素材では誰も満たせない値だった」）。
+// 【素材の全長について】凍結素材 calibration.flac の実測長は 11.052517秒 で、区間表の
+// 最終区間の終わり 11.053秒 と一致する（2026-08-12 軌道修正C-7反証(2)(3)是正で素材を
+// 作り直した際、audio.duration_sec には最初から実測値をそのまま書いてある。旧素材にあった
+// 「説明値が実ファイルと0.500秒食い違う」という既知の誤りは、この素材には存在しない）。
 // 末尾の無音は存在しないので、「末尾の余韻を残す」性質は素材の長さを仮に伸ばして確かめる。
 //
 // 素材は凍結済みの tests/fixtures/trim-calibration/calibration.json だけを使う。
@@ -26,7 +26,7 @@ import { isFiller, normalizeWord, planTrim } from "../src/trim-plan.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(HERE, "fixtures", "trim-calibration");
 const CAL_JSON = path.join(FIXTURE_DIR, "calibration.json");
-const CAL_SHA = "6f29d6e6222cfd74ace2a62608ba1e8ed54c0852cc841a8506ac51ad69470058";
+const CAL_SHA = "9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58";
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -49,16 +49,44 @@ const DURATION = segs[segs.length - 1].end;   // 11.403
 // 文字起こしが返す形（words[]）へ写す。区間表は設計値なので、これが正。
 const words = segs.map((s) => ({ w: s.text, start: s.start, end: s.end }));
 
-t("素材: 区間表の中身が凍結どおり（8区間・フィラー4件・最終区間の終わり11.403秒）", () => {
+t("素材: 区間表の中身が凍結どおり（8区間・フィラー4件・最終区間の終わり11.053秒）", () => {
   assert.strictEqual(segs.length, 8);
   assert.strictEqual(segs.filter((s) => s.kind === "filler").length, 4);
-  assert.strictEqual(DURATION, 11.403);
+  assert.strictEqual(DURATION, 11.053);
 });
 
-t("素材: 説明値 duration_sec(11.903) は実素材と 0.500秒 違う（判定には使わない）", () => {
+t("素材: 説明値 duration_sec は実測値そのもの（区間表の最終区間の終わりと0.001秒未満の差）", () => {
   // 凍結しておくと、黙って直されたり別の値に化けたときに気づける。
-  assert.strictEqual(cal.audio.duration_sec, 11.903);
-  assert.ok(Math.abs(cal.audio.duration_sec - DURATION - 0.5) < 1e-9);
+  assert.strictEqual(cal.audio.duration_sec, 11.052517);
+  assert.ok(Math.abs(cal.audio.duration_sec - DURATION) < 0.001);
+});
+
+t("素材: 語4件がすべて異なる（軌道修正C-7反証(2)是正: 旧素材はindex1/7が同じ語で重複していた）", () => {
+  const wordTexts = segs.filter((s) => s.kind === "word").map((s) => s.text);
+  assert.strictEqual(new Set(wordTexts).size, wordTexts.length,
+    `語に重複がある: ${JSON.stringify(wordTexts)}`);
+});
+
+t("素材: 言い淀みの最長(なんか)が語の最短(はい)より長い"
+  + "（軌道修正C-7反証(3)是正: 単純な長さしきい値では原理的に分離できないことの確認）", () => {
+  const fillerDurs = segs.filter((s) => s.kind === "filler").map((s) => s.end - s.start);
+  const wordDurs = segs.filter((s) => s.kind === "word").map((s) => s.end - s.start);
+  const maxFiller = Math.max(...fillerDurs);
+  const minWord = Math.min(...wordDurs);
+  assert.ok(maxFiller > minWord,
+    `言い淀み最長(${maxFiller})が語最短(${minWord})を超えていない＝長さだけで分離できてしまう`);
+});
+
+t("対照: 0.9秒未満を機械的に切るだけの偽実装は、この素材ではもう製品planTrimと一致しない"
+  + "（旧素材ではkeep集合が文字列レベルで完全一致していた＝この偽実装を通していた）", () => {
+  const plan = planTrim(words, { duration: DURATION });
+  const naiveKeep = words.filter((w) => (w.end - w.start) >= 0.9)
+    .map((w) => ({ start: w.start, end: w.end }));
+  assert.notDeepStrictEqual(
+    plan.keep.map((k) => ({ start: k.start, end: k.end })),
+    naiveKeep,
+    "0.9秒しきい値の偽実装が、製品planTrimのkeepと一致してしまっている"
+  );
 });
 
 // ── 言い淀みの見分け ────────────────────────────────────────
@@ -88,10 +116,11 @@ t("C: 似ているが別の語は切らない", () => {
 });
 
 // ── A: 尺の計算（コマ境界へ揃える前の、決め方だけの値）──────
-// 4.703 = 11.403 − 無音3.500 − 言い淀み3.200。素材のコマ数/秒を渡していないので
-// コマ境界への丸めは掛からない。丸めを含んだ出荷経路の値（15fps で 4.733秒）は
-// tests/trim-duration-check.mjs が実物で測る。
-const EXPECTED = 4.703;
+// 4.217 = 11.053 − 無音3.500 − 言い淀み3.336（0.813+0.787+0.813+0.923）。
+// ＝残る4語の長さの合計（1.258+1.057+1.130+0.772）と一致する。素材のコマ数/秒を渡していないので
+// コマ境界への丸めは掛からない。丸めを含んだ出荷経路の値は tests/trim-duration-check.mjs が実物で測る。
+const EXPECTED = 4.217;
+const FILLER_TOTAL = 3.336;
 t(`A: 通常設定での残り時間が ${EXPECTED} 秒になる（丸め前）`, () => {
   const plan = planTrim(words, { duration: DURATION });
   assert.ok(Math.abs(plan.keptSeconds - EXPECTED) <= 0.01,
@@ -111,13 +140,13 @@ t("A: 末尾の余韻は詰めない（凍結素材には末尾の無音が無�
 
 // ── 対照: 無音カットと言い淀みカットの寄与を分けて測る ────────
 // 「両者の短縮量の差が無音カットの寄与」を、決め方の側で確かめる。
-t(`対照A: 言い淀みだけを切ると ${(DURATION - 3.2).toFixed(3)} 秒（無音3.500秒は残る）`, () => {
+t(`対照A: 言い淀みだけを切ると ${(DURATION - FILLER_TOTAL).toFixed(3)} 秒（無音3.500秒は残る）`, () => {
   const plan = planTrim(words, { duration: DURATION, cutSilence: false });
-  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.2)) <= 0.01,
-    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.2).toFixed(3)} ±0.01）`);
+  assert.ok(Math.abs(plan.keptSeconds - (DURATION - FILLER_TOTAL)) <= 0.01,
+    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - FILLER_TOTAL).toFixed(3)} ±0.01）`);
 });
 
-t(`対照A: 無音だけを切ると ${(DURATION - 3.5).toFixed(3)} 秒（言い淀み3.200秒は残る）`, () => {
+t(`対照A: 無音だけを切ると ${(DURATION - 3.5).toFixed(3)} 秒（言い淀み${FILLER_TOTAL}秒は残る）`, () => {
   const plan = planTrim(words, { duration: DURATION, cutFillers: false });
   assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.5)) <= 0.01,
     `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.5).toFixed(3)} ±0.01）`);
@@ -192,17 +221,19 @@ t("対照: 何も切らない実装なら A の検査は落ちる", () => {
 // FILLERS.length > 0 を見るだけの堂々巡りだった（実装のFILLERS配列をそのまま流用して
 // 「空でないこと」を確認するだけで、FILLERSを2語に縮めても18語に増やしても19 PASS/0 FAILの
 // まま変化しなかった＝一覧の中身が正しいかを実質的に何も検査していなかった）。
-// この素材(calibration.json)が実際に使う言い淀みは「えーと」「あのー」の2語だけ(残り10語は
-// この素材では未使用)。実装のFILLERS配列を経由せず、この2語をハードコードした独立の期待値で
-// isFilerを検査し、かつ「空集合ならこの素材の言い淀み4区間を1件も検出できない」ことを
+// この素材(calibration.json)が実際に使う言い淀みは「えーと」「あのー」「なんか」の3語だけ
+// (残り11語はこの素材では未使用。2026-08-12 軌道修正C-7反証(3)是正で「なんか」を追加した)。
+// 実装のFILLERS配列を経由せず、この3語をハードコードした独立の期待値でisFilerを検査し、
+// かつ「空集合ならこの素材の言い淀み4区間を1件も検出できない」ことを
 // 実際に空集合を作って実測する(有るときに有ると言える対照)。
-t("言い淀み一覧には、この素材が使う言い淀み「えーと」「あのー」が含まれている(FILLERS配列を経由しないハードコードされた期待値)", () => {
+t("言い淀み一覧には、この素材が使う言い淀み「えーと」「あのー」「なんか」が含まれている(FILLERS配列を経由しないハードコードされた期待値)", () => {
   assert.ok(isFiller("えーと"), "『えーと』が言い淀みと判定されない");
   assert.ok(isFiller("あのー"), "『あのー』が言い淀みと判定されない");
+  assert.ok(isFiller("なんか"), "『なんか』が言い淀みと判定されない");
 });
 
-t("対照: 残す語(こんにちは・ありがとう・よろしく)は言い淀みと判定されない", () => {
-  for (const w of ["こんにちは", "ありがとう", "よろしく"]) {
+t("対照: 残す語(こんにちは・ありがとう・よろしく・はい)は言い淀みと判定されない", () => {
+  for (const w of ["こんにちは", "ありがとう", "よろしく", "はい"]) {
     assert.ok(!isFiller(w), `残すべき語『${w}』が言い淀みと誤判定された`);
   }
 });
