@@ -174,9 +174,30 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
 }
 
 /**
+ * リストの中で、指定した id/criteriaHash に一致する「完全な宣言」が何件あるかを数える。
+ * @param {BasisChangeEntry[]} list
+ * @param {string} id
+ * @param {string} criteriaHash
+ * @returns {number}
+ */
+function countCompleteDeclarations(list, id, criteriaHash) {
+  return list.filter((e) => isCompleteDeclaration(e, id, criteriaHash)).length;
+}
+
+/**
  * ある識別子(idとcriteriaHash)について、HEAD側に「今回のPRで新規に追加された」正当な宣言が
- * あるかを判定する。無ければ違反。あるが BASE 時点で既に存在していれば "not-new" として違反。
- * 無ければ null（＝合格）を返す純粋ヘルパー（3つの違反パターンで共有する）。
+ * あるかを判定する。無ければ違反。あるが BASE 時点で既に同数以上存在していれば "not-new" として
+ * 違反。無ければ null（＝合格）を返す純粋ヘルパー（3つの違反パターンで共有する）。
+ *
+ * 存在チェックではなく件数比較にしているのは、同じ id/criteriaHash の組が過去に一度
+ * 正当な理由で宣言され、その後 criteria 本文を書き換えないまま再び別の正当な理由
+ * （例：以前は文面修正の宣言、今回は削除の宣言）で宣言し直すケースがあるため。
+ * 単純な存在チェックだと、BASE に同じ id/criteriaHash の宣言が1件でも残っていれば、
+ * HEAD 側に今回のPRで新規に追加した宣言があっても「既出」として誤って弾いてしまう
+ * （2026-08-12、G-EDIT-CAPTION-E の削除宣言が、2026-08-11 の文面修正時に生まれたのと
+ * 同じ criteriaHash を指したために誤検知したのを機に発見・是正）。
+ * HEAD 側の件数が BASE 側の件数を上回っていれば、少なくとも1件は今回のPRで新規に
+ * 追加されたとみなせる。
  *
  * category には常に元の違反種別("deleted"/"unfrozen"/"undeclared")を残す。reason が
  * "not-new" に化けても、formatViolation が「削除／凍結解除の文脈で書かれた"not-new"」を
@@ -194,12 +215,12 @@ export function isCompleteDeclaration(entry, id, criteriaHash) {
  * @returns {FreezeViolation | null}
  */
 function checkDeclaration({ id, criteriaHash, headBasisChanges, baseBasisChanges, baseHash, headHash, undeclaredReason }) {
-  const declaredInHead = headBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
-  if (!declaredInHead) {
+  const headCount = countCompleteDeclarations(headBasisChanges, id, criteriaHash);
+  if (headCount === 0) {
     return { id, baseHash, headHash, reason: undeclaredReason, category: undeclaredReason };
   }
-  const alreadyDeclaredInBase = baseBasisChanges.some((e) => isCompleteDeclaration(e, id, criteriaHash));
-  if (alreadyDeclaredInBase) {
+  const baseCount = countCompleteDeclarations(baseBasisChanges, id, criteriaHash);
+  if (headCount <= baseCount) {
     return { id, baseHash, headHash, reason: "not-new", category: undeclaredReason, criteriaHash };
   }
   return null; // 正当な基準変更として合格

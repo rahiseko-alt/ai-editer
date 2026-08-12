@@ -55,6 +55,34 @@ t(`C: ${MAX_TERM_LENGTH + 1}文字は載せない（1文字でも超えたら載
   assert.ok(!isSingleTerm("あ".repeat(MAX_TERM_LENGTH + 1)));
 });
 
+// 軌道修正C-6反証(11)是正: 「12文字」はJavaScriptのString.prototype.length
+// （UTF-16コード単位）で数える、と凍結する（G-EDIT-CAPTION-Cのcriteria/verify参照）。
+// コードポイント数や見た目の文字数（書記素）とは異なる結果になる入力で、
+// 実装が実際にUTF-16単位で数えていることを対照させる。
+t("C対照: サロゲートペア文字は1字あたり2としてUTF-16単位で数えられる（見た目・コードポイント数では通らない境界）", () => {
+  // 𠮟（U+20B9F、「しかる」の異体字）はBMP外でUTF-16では2コード単位。
+  // 7個なら見た目もコードポイント数も7（12以内）だが、UTF-16単位では14で12を超える。
+  const term = "\u{20B9F}".repeat(7);
+  assert.strictEqual([...term].length, 7, "前提: コードポイント数は7のはず");
+  assert.strictEqual(term.length, 14, "前提: UTF-16コード単位は14のはず");
+  assert.ok(!isSingleTerm(term), "コードポイント数7・見た目7文字だが、UTF-16単位14文字なので載せない");
+});
+
+t("C対照: サロゲートペア文字ちょうど6個(UTF-16単位で12)は境界内として載せてよい", () => {
+  const term = "\u{20B9F}".repeat(6);
+  assert.strictEqual(term.length, 12, "前提: UTF-16コード単位はちょうど12のはず");
+  assert.ok(isSingleTerm(term), "UTF-16単位でちょうど12文字なので載せてよい");
+});
+
+t("C対照: 結合文字（濁点等）は分解形だと見た目の文字数より多くUTF-16単位を消費する（見た目基準では通らない境界）", () => {
+  // "が" は "か"+結合濁点(NFD分解形の「が」)。見た目は1文字だがUTF-16単位は2。
+  // 7個なら見た目は7文字（12以内）だが、UTF-16単位では14で12を超える。
+  const term = "が".repeat(7);
+  assert.strictEqual(term.normalize("NFC").length, 7, "前提: 見た目(NFC正規化後)の文字数は7のはず");
+  assert.strictEqual(term.length, 14, "前提: UTF-16コード単位は14のはず");
+  assert.ok(!isSingleTerm(term), "見た目7文字だが、UTF-16単位14文字なので載せない");
+});
+
 t("C: 空白を含むものは「文」とみなして載せない（半角・全角・タブ・改行）", () => {
   for (const s of ["椎間板 ヘルニア", "椎間板　ヘルニア", "椎間板\tヘルニア", "椎間板\nヘルニア"]) {
     assert.ok(!isSingleTerm(s), `載せてはいけない: ${JSON.stringify(s)}`);
