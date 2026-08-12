@@ -44,7 +44,7 @@ t("素材: 区間表が凍結どおり（SHA-256 が一致する）", () => {
 const cal = JSON.parse(calRaw.toString("utf-8"));
 const segs = cal.segments;
 // 素材の全長は、説明値ではなく区間表の最終区間の終わりを正とする（上のコメント参照）。
-const DURATION = segs[segs.length - 1].end;   // 11.403
+const DURATION = segs[segs.length - 1].end;   // 11.053
 
 // 文字起こしが返す形（words[]）へ写す。区間表は設計値なので、これが正。
 const words = segs.map((s) => ({ w: s.text, start: s.start, end: s.end }));
