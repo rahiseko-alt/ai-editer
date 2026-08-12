@@ -74,8 +74,18 @@ def luma(frame):
     return 0.114 * b + 0.587 * g + 0.299 * r
 
 
-def black_bands(frame, y_thresh=24, row_ratio=0.98):
-    """外側から連続する近黒行の高さ(上端・下端)を返す。A/D と同じ定義(BT.601 Y<=24, 98%以上)。"""
+# 軌道修正C-8反証(1)是正(2026-08-12): 旧Y<=24は、決め打ちで帯色を近黒グレーへ変える適応的な
+# 実装(RGB(28,28,28)/(32,32,32)/(40,40,40)、いずれもグレーなのでBT.601 Y=RGB値そのもの)に
+# すり抜けられることが実測済みだった。Y<=55へ引き上げる。この値が安全な根拠(RF-R/RF-N/RF-Mが
+# 共有するbackground()の市松模様、tests/reframe_fixtures.py background()):
+# 市松の明側セルはr=230固定で、そのセル内の最小輝度は(b=0,g=0の極端でも)0.299*230=68.77。
+# 市松は64px角で交互配置され、どの行・どの608px幅クロップ窓を取っても明側セルは必ず存在するため、
+# 実測(numpy, 1920x1080全画素)で「1行のうちY<=68の画素が98%以上を占める行」は0件
+# (最大でも1行あたり50.0%、市松の明暗が半々のため)。よってY<=55は実際の映像を誤検出しない
+# (68.77との間に13.77の余裕)。かつ決め打ちグレー3色(Y=28/32/40)は全てY<=55で検出される
+# (最大40との間に15の余裕)。
+def black_bands(frame, y_thresh=55, row_ratio=0.98):
+    """外側から連続する近黒行の高さ(上端・下端)を返す。A/D と同じ定義(BT.601 Y<=55, 98%以上)。"""
     y = luma(frame)
     near_black_row = (y <= y_thresh).mean(axis=1) >= row_ratio
     top = 0
@@ -239,6 +249,28 @@ check(
     lb_top / TARGET_H >= 0.02 and lb_bot / TARGET_H >= 0.02,
     f"上端={lb_top}px({lb_top/TARGET_H*100:.1f}%) 下端={lb_bot}px({lb_bot/TARGET_H*100:.1f}%)",
 )
+
+# 対照: letterbox方式だが、帯色を真っ黒(0x000000)から近黒グレーへ変える「適応的な実装」。
+# 反証(1)(2026-08-08)の実測どおり、旧Y<=24ではRGB(28,28,28)/(32,32,32)/(40,40,40)がいずれも
+# 帯0pxとしてすり抜けていた。新しいY<=55で、この3色すべてが依然として帯として検出されることを確認する。
+ADVERSARIAL_PAD_COLORS = ["0x1c1c1c", "0x202020", "0x282828"]  # Y=28 / 32 / 40
+for color in ADVERSARIAL_PAD_COLORS:
+    adv_path = p(f"RF-R-adversarial-{color}.mp4")
+    run_ffmpeg([
+        "-i", p("RF-R.mp4"),
+        "-vf", f"scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease,"
+               f"pad={TARGET_W}:{TARGET_H}:(ow-iw)/2:(oh-ih)/2:{color},setsar=1",
+        *ENCODE_ARGS, adv_path,
+    ])
+    adv_frames = read_frames(adv_path)
+    adv_bands = [black_bands(f) for f in adv_frames]
+    adv_top = max(t for t, _ in adv_bands)
+    adv_bot = max(b for _, b in adv_bands)
+    check(
+        f"A対照(帯色{color}への適応): 上下の黒帯が検出され不合格になる",
+        adv_top / TARGET_H >= 0.02 and adv_bot / TARGET_H >= 0.02,
+        f"上端={adv_top}px({adv_top/TARGET_H*100:.1f}%) 下端={adv_bot}px({adv_bot/TARGET_H*100:.1f}%)",
+    )
 
 # ================================================================== 葉B
 print("\n=== G-EDIT-REFRAME-B: 顔が、画面に対して十分な大きさで写る ===")
