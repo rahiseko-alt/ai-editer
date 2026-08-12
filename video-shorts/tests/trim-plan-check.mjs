@@ -21,7 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FILLERS, isFiller, normalizeWord, planTrim } from "../src/trim-plan.mjs";
+import { isFiller, normalizeWord, planTrim } from "../src/trim-plan.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.join(HERE, "fixtures", "trim-calibration");
@@ -188,10 +188,37 @@ t("対照: 何も切らない実装なら A の検査は落ちる", () => {
     "何も切っていないのに期待の尺と一致すると判定された");
 });
 
-t("対照: 言い淀みの一覧が空なら B の検査は落ちる", () => {
-  assert.ok(FILLERS.length > 0, "言い淀みの一覧が空");
-  const anyFiller = segs.filter((x) => x.kind === "filler").some((s) => isFiller(s.text));
-  assert.ok(anyFiller, "一覧が素材の言い淀みを1つも拾えていない");
+// 軌道修正C-7反証(12)是正: 旧「対照: 言い淀みの一覧が空ならBの検査は落ちる」は
+// FILLERS.length > 0 を見るだけの堂々巡りだった（実装のFILLERS配列をそのまま流用して
+// 「空でないこと」を確認するだけで、FILLERSを2語に縮めても18語に増やしても19 PASS/0 FAILの
+// まま変化しなかった＝一覧の中身が正しいかを実質的に何も検査していなかった）。
+// この素材(calibration.json)が実際に使う言い淀みは「えーと」「あのー」の2語だけ(残り10語は
+// この素材では未使用)。実装のFILLERS配列を経由せず、この2語をハードコードした独立の期待値で
+// isFilerを検査し、かつ「空集合ならこの素材の言い淀み4区間を1件も検出できない」ことを
+// 実際に空集合を作って実測する(有るときに有ると言える対照)。
+t("言い淀み一覧には、この素材が使う言い淀み「えーと」「あのー」が含まれている(FILLERS配列を経由しないハードコードされた期待値)", () => {
+  assert.ok(isFiller("えーと"), "『えーと』が言い淀みと判定されない");
+  assert.ok(isFiller("あのー"), "『あのー』が言い淀みと判定されない");
+});
+
+t("対照: 残す語(こんにちは・ありがとう・よろしく)は言い淀みと判定されない", () => {
+  for (const w of ["こんにちは", "ありがとう", "よろしく"]) {
+    assert.ok(!isFiller(w), `残すべき語『${w}』が言い淀みと誤判定された`);
+  }
+});
+
+t("素材: 言い淀みタグが付いた4区間すべてを実装のisFilerが検出できる(一部だけでなく全件)", () => {
+  const fillerSegs = segs.filter((s) => s.kind === "filler");
+  assert.strictEqual(fillerSegs.length, 4, "前提: 言い淀み区間は4件のはず");
+  assert.ok(fillerSegs.every((s) => isFiller(s.text)),
+    `検出できない言い淀み区間がある: ${JSON.stringify(fillerSegs.filter((s) => !isFiller(s.text)))}`);
+});
+
+t("対照: 言い淀みの一覧が空だと、この素材の言い淀み4区間を1件も検出できない(FILLERSを流用せず独立に空集合を作って実測)", () => {
+  const emptyFillerSet = new Set();
+  const detectedByEmpty = segs.filter((s) => s.kind === "filler")
+    .filter((s) => emptyFillerSet.has(normalizeWord(s.text)));
+  assert.strictEqual(detectedByEmpty.length, 0, "空集合なのに検出できてしまった(前提が壊れている)");
 });
 
 console.log(`\n--- ${pass} PASS / ${fail} FAIL ---`);

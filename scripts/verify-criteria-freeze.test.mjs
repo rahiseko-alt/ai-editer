@@ -245,6 +245,40 @@ t("削除の迂回路 対照: BASE側のハッシュで正当な宣言があれ�
   assert.deepStrictEqual(violations, []);
 });
 
+// 2026-08-12の実害の再現：G-EDIT-CAPTION-Eを削除する際、削除直前のcriteriaHashが
+// 前日(2026-08-11)の文面修正で既にmeta.basisChangesへ記録済みだったハッシュと一致した
+// （文面修正後、criteria本文を一切変えないまま今回削除したため）。単純な「BASEに同じ
+// id/criteriaHashの宣言が存在するか」の存在チェックだと、今回新規に追加した削除の宣言が
+// あっても「既出」として誤って弾いてしまう。件数比較（HEAD側の件数がBASE側を上回っているか）
+// で正しく「新規に1件増えている」と判定できることを保証する。
+t("同じcriteriaHashが過去に別件で既に宣言されていても、今回新規に1件追加すれば削除は合格する（件数比較）", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const priorEntry = { id: "G-1", criteriaHash: baseHash, at: "2026-08-11", reason: "過去の文面修正の宣言" };
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [priorEntry] });
+  const newEntry = { id: "G-1", criteriaHash: baseHash, at: "2026-08-12", reason: "今回はこの葉自体を削除する" };
+  const head = {
+    meta: { basisChanges: [priorEntry, newEntry] },
+    nodes: [{ id: "ROOT", kind: "state", children: [] }],
+  };
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.deepStrictEqual(violations, [], "件数が1→2に増えているので新規宣言として合格するはず");
+});
+
+t("同じcriteriaHashが過去に別件で既に宣言されている対照: 新規追加が無ければ従来どおり違反のまま（件数比較の対照）", () => {
+  const baseHash = hashCriteria(CRIT_A);
+  const priorEntry = { id: "G-1", criteriaHash: baseHash, at: "2026-08-11", reason: "過去の文面修正の宣言" };
+  const base = roadmap({ status: "done", criteria: CRIT_A, basisChanges: [priorEntry] });
+  // HEAD側はBASEと同じ1件のまま（今回のPRで新規に追加した宣言が無い）
+  const head = {
+    meta: { basisChanges: [priorEntry] },
+    nodes: [{ id: "ROOT", kind: "state", children: [] }],
+  };
+  const violations = findCriteriaFreezeViolations(base, head);
+  assert.strictEqual(violations.length, 1, "新規追加が無いので引き続き違反になるはず");
+  assert.ok(violations[0]);
+  assert.strictEqual(violations[0].reason, "not-new");
+});
+
 t("todoへ戻す迂回路: 凍結済みの葉のstatusをtodoへ戻すと、宣言なしでは違反になる", () => {
   // 一旦アンフリーズしてから自由に基準を書き換える迂回路（この時点ではcriteriaは不変でもよい）。
   const base = roadmap({ status: "doing", criteria: CRIT_A });
