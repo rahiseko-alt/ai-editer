@@ -36,6 +36,13 @@ function broadcast(jobId, payload, event = null) {
   const line = event
     ? `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`
     : `data: ${JSON.stringify(payload)}\n\n`;
+  // AUD-P1-10c: 「今どの段階が進行中か」を表す進捗行(status付き・ログ行ではない)だけを
+  // 直近スナップショットとして憶えておく。これがあると、(a) POST応答からEventSource接続
+  // までの間に飛んだ進捗、(b) 切断中に飛んだ進捗を、後から購読した相手へ即座に届けられる
+  // （購読者0人の間にbroadcastしても、下のforは何もせず素通りして消えてしまうため）。
+  if (payload && payload.status && !event) {
+    job.lastEvent = line;
+  }
   for (const sub of job.subscribers) {
     try {
       sub.push(line);
@@ -86,7 +93,7 @@ const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中
  */
 export function subscribeJob(jobId, push, close) {
   if (!jobs.has(jobId)) {
-    jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
+    jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
   }
   const job = jobs.get(jobId);
   const sub = { push, close };
@@ -105,6 +112,12 @@ export function subscribeJob(jobId, push, close) {
     try { push(`event: interrupted\ndata: ${JSON.stringify({ message: INTERRUPTED_MESSAGE })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
+  } else if (job.lastEvent) {
+    // AUD-P1-10c: まだ実行中(init/t/c/s/r/m)のジョブへの購読。POST応答〜EventSource接続の
+    // 間や、切断していた間に進捗が進んでいても、次の進捗が飛んでくるまで画面が更新されない
+    // (=見逃した進捗が復旧しない)。直近のスナップショットを接続直後に1回だけ届け、
+    // 見た目上の状態を現在地へ追いつかせる。
+    try { push(job.lastEvent); } catch (_) {}
   }
 }
 
@@ -343,12 +356,15 @@ export function startJob(jobId, inputAbsPath, opts) {
     return false;
   }
   if (!existing) {
-    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null });
+    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
   } else {
     // 購読者（SSE）は保持したまま状態だけリセットして再実行
     existing.stage = "init";
     existing.error = null;
     existing.errorCode = null;
+    // AUD-P1-10c: 前回実行分の古いスナップショットを持ち越さない(再実行直後に新規購読が
+    // 来た場合、前回ジョブの進捗を新しいジョブの状態として誤って見せてしまうのを防ぐ)。
+    existing.lastEvent = null;
   }
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
   const workDir = path.join(WORK_ROOT, jobId);
