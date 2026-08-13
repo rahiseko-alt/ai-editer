@@ -361,6 +361,12 @@ function showEditingError(msg) {
 }
 
 // 話し声なし等「そもそも編集できない」専用カード
+// AUD-P2-23: 見た目はモーダルそのものだが既存のフォーカストラップ(attachModal)に
+// 繋がっておらず、表示してもフォーカスは表示前の場所に残ったままだった(理由文言も
+// 「別の動画を選ぶ」ボタンもキーボードで辿り着く保証が無かった)。confirm/result の
+// 2モーダルと同じ仕組みに乗せ、開いたら即フォーカスを移す・Tabで外へ出さない・
+// Escapeで閉じる・閉じたら元の場所へ戻す、を揃える。
+const cantEditModal = attachModal($("cantedit-card"), closeCantEdit);
 function showCantEdit(reason) {
   hideEditing();
   $("btn-run").disabled = false;
@@ -369,15 +375,22 @@ function showCantEdit(reason) {
   const c = $("cantedit-card");
   c.classList.remove("hidden");
   requestAnimationFrame(() => c.classList.add("show"));
+  cantEditModal.open($("cantedit-retry")); // 初期フォーカスは再選択の主動線
 }
 function hideCantEdit() {
   const c = $("cantedit-card");
   c.classList.remove("show");
   setTimeout(() => c.classList.add("hidden"), 300);
+  cantEditModal.close();
 }
-$("cantedit-retry").addEventListener("click", () => {
+// Escapeで閉じたとき(=attachModalのonClose)も、ボタンクリック時と同じく
+// 「動画未選択」の状態へ戻す(カードだけ閉じてファイル選択済みのまま宙に浮かせない)。
+function closeCantEdit() {
   hideCantEdit();
   state.file = null; $("filebar").classList.add("hidden"); $("drop").classList.remove("hidden"); refresh();
+}
+$("cantedit-retry").addEventListener("click", () => {
+  closeCantEdit();
   $("file").click();   // すぐ選び直せるようファイル選択を開く
 });
 
