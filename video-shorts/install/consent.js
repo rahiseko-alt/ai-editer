@@ -24,6 +24,9 @@
   const CONTRACT = card.dataset.contract || "";
   const CONTACT = card.dataset.contact || "";
   const PRODUCT = card.dataset.product || "video-shorts.zip";
+  // AUD-P1-14: 確定本文が閲覧できない契約に同意させないためのゲート。
+  // data-contract-available が明示的に "false" でない限り有効（既定は利用可能側に寄せない＝安全側）。
+  const CONTRACT_AVAILABLE = card.dataset.contractAvailable !== "false";
 
   if (contactShowEl) contactShowEl.textContent = CONTACT;
   if (productShowEl) productShowEl.textContent = PRODUCT;
@@ -43,6 +46,12 @@
   }
 
   function refresh() {
+    if (!CONTRACT_AVAILABLE) {
+      // 確定本文が無い間は、名前・チェックの状態にかかわらず同意操作自体を許可しない。
+      startEl.disabled = true;
+      hintEl.textContent = "「" + CONTRACT + "」の確定本文が未掲載のため、現在は同意・ダウンロードできません。";
+      return;
+    }
     const ok = nameEl.value.trim().length > 0 && agreeEl.checked;
     startEl.disabled = !ok;
     hintEl.textContent = ok
