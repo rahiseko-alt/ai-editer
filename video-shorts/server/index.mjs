@@ -21,6 +21,7 @@ import {
   endRecaption,
   isRecaptioning,
   runGated,
+  cancelJob,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
@@ -658,6 +659,15 @@ async function handlePostTerms(req, res, jobId) {
   return jsonRes(res, 200, { ok: true, ...result });
 }
 
+// POST /api/jobs/:id/cancel — 実行中のジョブを手動でキャンセルする(AUD-P1-11a)
+function handleCancelJob(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  const result = cancelJob(id);
+  if (!result.ok) return jsonRes(res, 409, { error: result.reason });
+  return jsonRes(res, 200, { ok: true });
+}
+
 // POST /api/jobs/:id/recaption — 直した字幕で焼き直す
 async function handleRecaption(req, res, jobId) {
   const id = safeId(jobId);
@@ -769,6 +779,18 @@ async function handleRequest(req, res) {
       return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
     }
     return handlePostTerms(req, res, id);
+  }
+
+  // POST /api/jobs/:id/cancel（AUD-P1-11a: 実行中のジョブを手動でキャンセルする）
+  const cancelMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (method === "POST" && cancelMatch) {
+    const id = decodeId(cancelMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (!writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
+    return handleCancelJob(req, res, id);
   }
 
   // POST /api/jobs/:id/recaption（直した字幕で焼き直す）

@@ -34,7 +34,102 @@ const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
 // (TTL掃除の除外判定)からも参照するため、使用箇所より前で宣言する。
 const recaptioningJobs = new Set();
 
-/** SSE イベントを購読者全員に push。error/done は接続も close する */
+/**
+ * AUD-P1-11a/11b: ジョブごとのキャンセル/タイムアウト管理。
+ * jobId → { child: ChildProcess|null, cancelRequested: boolean, terminalReason: "cancelled"|"timeout"|null }
+ *   - child: そのジョブが現在spawnしている子プロセス(spawnAndLog経由)。無ければnull
+ *     (ステージの合間・子プロセスを使わないステージの実行中など)。
+ *   - cancelRequested: cancelJob()が呼ばれたら true。以後このジョブは新しい子プロセスを
+ *     起動する前に即座に中止する(既にキューで順番待ち中でも、次に子を起動しようとした
+ *     瞬間に止まる)。
+ *   - terminalReason: 子プロセスの close ハンドラが「なぜ死んだか」を判定するための印。
+ *     killChildTree()を呼ぶ側(cancelJob/タイムアウト)が呼ぶ前にここへ書き込む。
+ */
+const jobControls = new Map();
+
+/** jobIdの制御レコードを取得(無ければ作る)。 */
+function getControl(jobId) {
+  let c = jobControls.get(jobId);
+  if (!c) {
+    c = { child: null, cancelRequested: false, terminalReason: null };
+    jobControls.set(jobId, c);
+  }
+  return c;
+}
+
+/** ジョブの制御レコードを破棄する。ジョブの(再)開始時・終端到達時に呼ぶ。 */
+function resetControl(jobId) {
+  jobControls.delete(jobId);
+}
+
+/**
+ * AUD-P1-11a: 子プロセスを起動しないステージ(AI字幕校正・顔モザイク等)の合間でも
+ * キャンセル要求を汲み取れるよう、各ステージの開始直前に呼ぶチェックポイント。
+ * cancelRequested済みならその場で 'cancelled' を投げ、以降のステージへ進ませない
+ * (spawnAndLog自身も同様のチェックを持つが、spawnAndLogを経由しないステージは
+ * このチェックポイントが無いとキャンセルに気付けないまま最後まで走ってしまう)。
+ */
+function throwIfCancelled(jobId) {
+  const c = jobControls.get(jobId);
+  if (c && c.cancelRequested) {
+    const err = new Error("ユーザーによりキャンセルされました");
+    err.code = "cancelled";
+    throw err;
+  }
+}
+
+/**
+ * 子プロセス(のプロセスツリー全体)を殺す。
+ * AUD-P1-11a/11b: 「直接の子だけ」kill すると、ffmpeg 等が spawn した孫プロセスが
+ * 生き残ってしまう(監査指摘)。POSIXでは spawnAndLog が detached:true で子を
+ * 独立プロセスグループのリーダーにしているため、`-pid`(負のPID)を kill すると
+ * そのグループに属する子孫プロセスもまとめて終了できる。Windowsではプロセスグループの
+ * 概念が異なるため taskkill の /T(ツリー) オプションで代替する。
+ * まず SIGTERM で行儀よく止め、一定時間後もまだ生きていれば SIGKILL で強制終了する。
+ */
+function killChildTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const send = (signal) => {
+    try {
+      if (process.platform === "win32") {
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        process.kill(-child.pid, signal);
+      }
+    } catch (_) {
+      // 既に終了している(ESRCH)等は無視。killChildTreeは「止まっていてほしい」という
+      // 意思表示であり、既に死んでいるなら目的は達成済み。
+    }
+  };
+  send("SIGTERM");
+  // SIGTERMに応じない(ハングしたffmpeg等)場合の保険。グレースピリオド後にSIGKILLへ。
+  const killer = setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    send("SIGKILL");
+  }, 3000);
+  killer.unref();
+}
+
+/**
+ * ジョブをキャンセルする(AUD-P1-11a: 手動キャンセルAPI)。
+ * @returns {{ok: true} | {ok: false, reason: string}}
+ */
+export function cancelJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job || !RUNNING_STAGES.includes(job.stage)) {
+    return { ok: false, reason: "実行中のジョブではありません" };
+  }
+  const c = getControl(jobId);
+  c.cancelRequested = true;
+  c.terminalReason = "cancelled";
+  if (c.child) killChildTree(c.child);
+  return { ok: true };
+}
+
+/** ジョブとして終端状態を意味するイベント名一覧(SSE接続を閉じる基準)。 */
+const TERMINAL_EVENTS = ["error", "done", "cancelled", "timeout"];
+
+/** SSE イベントを購読者全員に push。error/done/cancelled/timeout は接続も close する */
 function broadcast(jobId, payload, event = null) {
   const job = jobs.get(jobId);
   if (!job) return;
@@ -48,8 +143,8 @@ function broadcast(jobId, payload, event = null) {
       // 切断済み購読者は無視
     }
   }
-  // 終端イベント（error / done）は全購読者の SSE 接続を閉じて Set をクリア
-  if (event === "error" || event === "done") {
+  // 終端イベント（error / done / cancelled / timeout）は全購読者の SSE 接続を閉じて Set をクリア
+  if (TERMINAL_EVENTS.includes(event)) {
     for (const sub of job.subscribers) {
       try { sub.close(); } catch (_) {}
     }
@@ -117,6 +212,14 @@ export function subscribeJob(jobId, push, close) {
     try { push(`event: done\ndata: ${JSON.stringify({ stage: "done" })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
+  } else if (job.stage === "cancelled" || job.stage === "timeout") {
+    // AUD-P1-11a/11b: キャンセル/タイムアウトで終端したジョブへの再接続も、error/done と
+    // 同じくリプレイして即通知する(でなければ再接続した購読者だけ永久に何も受け取れない)。
+    try {
+      push(`event: ${job.stage}\ndata: ${JSON.stringify({ message: job.error || null, code: job.errorCode || null })}\n\n`);
+    } catch (_) {}
+    try { close(); } catch (_) {}
+    job.subscribers.delete(sub);
   } else if (job.stage === "interrupted") {
     try { push(`event: interrupted\ndata: ${JSON.stringify({ message: INTERRUPTED_MESSAGE })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
@@ -180,6 +283,20 @@ function secretsToRedact() {
 }
 
 /**
+ * ステージ単位のタイムアウト(ms)。既定30分。VS_STAGE_TIMEOUT_SECONDSで秒単位で上書きできる
+ * (0以下・非数は既定へ)。AUD-P1-11b: ハングした子プロセス(ffmpeg/ffprobe/文字起こし等)を
+ * 誰もキャンセルしなくても自動的に打ち切るための上限。spawnAndLog経由の各ステージ
+ * (transcribe.py / node pipeline.mjs select / node pipeline.mjs render)それぞれに
+ * 個別に適用される(ステージが変わるたびタイマーはリセットされる＝ジョブ全体ではなく
+ * 「今動いている1本の子プロセス」が単位)。
+ */
+export function resolveStageTimeoutMs(envValue = process.env.VS_STAGE_TIMEOUT_SECONDS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n > 0 ? n * 1000 : 30 * 60 * 1000;
+}
+const STAGE_TIMEOUT_MS = resolveStageTimeoutMs();
+
+/**
  * 子プロセスを spawn し、stderr を行単位で onLine に渡す。
  * 終了コード 0 以外は reject。
  *
@@ -192,20 +309,48 @@ function secretsToRedact() {
  * 直前にも念のためもう一度 redactSecrets を掛け、防御を二重化する(万一ストリーミング側の
  * 境界計算に取りこぼしがあっても、この最終防波堤で捕まえる)。
  *
+ * AUD-P1-11a/11b: jobIdを渡すと、そのジョブの制御レコード(jobControls)へ実行中の
+ * 子プロセスを登録する。これにより cancelJob() からプロセスツリーごと kill できる
+ * (P1-11a)。あわせて STAGE_TIMEOUT_MS を過ぎても終わらない場合は自動的に同じ kill 経路へ
+ * 入り、'timeout' として reject する(P1-11b＝誰もキャンセルしなくても自動的に打ち切られる)。
+ * jobId が既に cancelRequested 済みなら、そもそも子プロセスを起動せず即座に reject する
+ * (キューで順番待ち中にキャンセルされたジョブが、自分の番が来た瞬間に新しい子を
+ * 起動してしまうのを防ぐ)。
+ *
  * @param {string} cmd
  * @param {string[]} args
- * @param {{ envExtra?: string[], [key: string]: any }} opts envExtra はこの呼び出しに限り
- *   allowlistへ追加する環境変数キー(例: transcribe.pyのGROQ_API_KEY)。値そのものではなくキー名。
+ * @param {{ envExtra?: string[], jobId?: string, [key: string]: any }} opts envExtra は
+ *   この呼び出しに限りallowlistへ追加する環境変数キー(例: transcribe.pyのGROQ_API_KEY)。
+ *   jobId を渡すとキャンセル/タイムアウト管理の対象になる(渡さない呼び出しは対象外)。
  * @param {(line: string) => void} onLine
  */
 function spawnAndLog(cmd, args, opts, onLine) {
-  const { envExtra, ...restOpts } = opts || {};
+  const { envExtra, jobId, ...restOpts } = opts || {};
   return new Promise((resolve, reject) => {
+    const control = jobId ? getControl(jobId) : null;
+    if (control && control.cancelRequested) {
+      const err = new Error("ユーザーによりキャンセルされました");
+      err.code = "cancelled";
+      return reject(err);
+    }
     const child = spawn(cmd, args, {
       env: buildChildEnv(envExtra),
       windowsHide: true,
+      // AUD-P1-11a: POSIXでは独立プロセスグループのリーダーにし、killChildTree()が
+      // グループごと(孫プロセス含め)止められるようにする。Windowsではこのオプションは
+      // 新コンソールの意味になり別の副作用があるため付けない(taskkill /T で代替する)。
+      detached: process.platform !== "win32",
       ...restOpts,
     });
+    if (control) control.child = child;
+    let stageTimer = null;
+    if (control && STAGE_TIMEOUT_MS > 0) {
+      stageTimer = setTimeout(() => {
+        control.terminalReason = "timeout";
+        killChildTree(child);
+      }, STAGE_TIMEOUT_MS);
+      stageTimer.unref();
+    }
     const secrets = secretsToRedact();
     const stderrRedactor = createStreamingRedactor(secrets);
     const stdoutRedactor = createStreamingRedactor(secrets);
@@ -230,18 +375,35 @@ function spawnAndLog(cmd, args, opts, onLine) {
     child.stdout.on("data", (chunk) => {
       emitOutText(stdoutRedactor.push(chunk.toString()));
     });
-    child.on("error", (err) => reject(new Error(`spawn error: ${err.message}`)));
-    child.on("close", (code) => {
+    child.on("error", (err) => {
+      if (stageTimer) clearTimeout(stageTimer);
+      reject(new Error(`spawn error: ${err.message}`));
+    });
+    child.on("close", (code, signal) => {
+      if (stageTimer) clearTimeout(stageTimer);
+      if (control && control.child === child) control.child = null;
       // ストリームが終わったので、まだ確定させていなかった末尾(境界待ちの保持分)を出す。
       emitErrText(stderrRedactor.flush());
       emitOutText(stdoutRedactor.flush());
+      // AUD-P1-11a/11b: cancelJob()/タイムアウトのどちらかが既にこの子を殺しにいっていれば、
+      // 通常の「終了コード0以外」エラーではなく、code/'cancelled'/'timeout'として reject する。
+      const reason = control && control.terminalReason;
+      if (reason === "cancelled" || reason === "timeout") {
+        const err = new Error(
+          reason === "cancelled"
+            ? "ユーザーによりキャンセルされました"
+            : `処理が制限時間(${Math.round(STAGE_TIMEOUT_MS / 1000)}秒)を超えたため自動的に打ち切られました`
+        );
+        err.code = reason;
+        return reject(err);
+      }
       if (code !== 0) {
         // errBuf は上でチャンクをまたいで伏字化済みだが、Error.message はこの後
         // state.json永続化(P1-14-C)・SSE配信(P1-14-B)の両方の入り口になるため、
         // 多層防御としてここでもう一度 redactSecrets を掛ける(AUD-P1-05a/05b)。
         return reject(
           new Error(
-            `${cmd} 終了コード ${code}。stderr: ${redactSecrets(errBuf, secrets).slice(0, 400)}`
+            `${cmd} 終了コード ${code}${signal ? `(signal ${signal})` : ""}。stderr: ${redactSecrets(errBuf, secrets).slice(0, 400)}`
           )
         );
       }
@@ -372,11 +534,15 @@ export function runGated(fn) {
  */
 export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
-  // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
+  // 完了済（done/error/cancelled/timeout）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
   if (existing && RUNNING_STAGES.includes(existing.stage)) {
     return false;
   }
+  // AUD-P1-11a/11b: 前回の実行(キャンセル/タイムアウト/エラー)の制御レコードが残っていると、
+  // 新しい実行が「まだキャンセル済みのまま」扱いされて子プロセスを一切起動できなくなる。
+  // 開始のたびに必ずクリアする。
+  resetControl(jobId);
   if (!existing) {
     jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null });
   } else {
@@ -388,40 +554,55 @@ export function startJob(jobId, inputAbsPath, opts) {
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
   const workDir = path.join(WORK_ROOT, jobId);
   const exec = () =>
-    runJob(jobId, inputAbsPath, opts).catch((err) => {
-      process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
-      // AUD-P1-05a/05b: SSE配信(broadcast)・state.json永続化(writeState)の直前に、
-      // それぞれ念のためもう一度 redactSecrets を掛ける(多層防御)。spawnAndLog側の
-      // ストリーミング伏字化(chunk境界対応)が主たる修正だが、err.messageはpipeline.mjs等
-      // 別経路のエラー（子プロセスのspawn自体の失敗メッセージ等）から来る場合もあり、
-      // ここが「SSEへ出る/state.jsonへ書かれる直前」の最後の関門になる。
-      const safeMessage = redactSecrets(err?.message ?? String(err), secretsToRedact());
-      const job = jobs.get(jobId);
-      if (job) {
-        job.stage = "error";
-        job.error = safeMessage;
-        job.errorCode = err?.code ?? null;
+    runJob(jobId, inputAbsPath, opts).then(
+      () => {
+        // AUD-P1-11a/11b: 正常終了した(=もうこのジョブをキャンセル/タイムアウトさせる対象では
+        // ない)ので、制御レコードを片付ける(残しておくと次回実行時までメモリに残り続ける)。
+        resetControl(jobId);
+      },
+      (err) => {
+        process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
+        // AUD-P1-05a/05b: SSE配信(broadcast)・state.json永続化(writeState)の直前に、
+        // それぞれ念のためもう一度 redactSecrets を掛ける(多層防御)。spawnAndLog側の
+        // ストリーミング伏字化(chunk境界対応)が主たる修正だが、err.messageはpipeline.mjs等
+        // 別経路のエラー（子プロセスのspawn自体の失敗メッセージ等）から来る場合もあり、
+        // ここが「SSEへ出る/state.jsonへ書かれる直前」の最後の関門になる。
+        const safeMessage = redactSecrets(err?.message ?? String(err), secretsToRedact());
+        // AUD-P1-11a/11b: cancelJob()や自動タイムアウトで終わった場合は、汎用の"error"ではなく
+        // 専用の終端stage/イベント("cancelled"/"timeout")として区別する。フロントや
+        // 監視側が「利用者の意思によるキャンセル」「自動打ち切り」「本当の失敗」を
+        // 見分けられるようにするため。
+        const terminalStage =
+          err?.code === "cancelled" ? "cancelled" : err?.code === "timeout" ? "timeout" : "error";
+        const job = jobs.get(jobId);
+        if (job) {
+          job.stage = terminalStage;
+          job.error = safeMessage;
+          job.errorCode = err?.code ?? null;
+        }
+        // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
+        // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
+        // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
+        // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
+        // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
+        try {
+          const current = readState(workDir) || {};
+          writeState(workDir, {
+            ...current,
+            stage: terminalStage,
+            error: safeMessage,
+            errorCode: err?.code ?? null,
+          });
+        } catch (writeErr) {
+          process.stderr.write(
+            `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
+          );
+        }
+        broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, terminalStage);
+        // 制御レコードは既に使い終えたので片付ける(cancelJob()の対象から外れる)。
+        resetControl(jobId);
       }
-      // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
-      // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
-      // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
-      // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
-      // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
-      try {
-        const current = readState(workDir) || {};
-        writeState(workDir, {
-          ...current,
-          stage: "error",
-          error: safeMessage,
-          errorCode: err?.code ?? null,
-        });
-      } catch (writeErr) {
-        process.stderr.write(
-          `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
-        );
-      }
-      broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, "error");
-    });
+    );
   if (groqKeyAvailable()) {
     // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
     // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C)。
@@ -493,7 +674,8 @@ async function runJob(jobId, inputAbsPath, opts) {
     [TRANSCRIBE_PY, inputAbsPath, transcriptPath],
     // P1-14-A: GROQ_API_KEYはtranscribe.pyのGroq経路選択に必要な唯一の秘密情報。
     // ここでだけ明示的にallowlistへ加える(select/renderの子には渡さない)。
-    { envExtra: ["GROQ_API_KEY"] },
+    // AUD-P1-11a/11b: jobIdを渡し、キャンセル/タイムアウトの対象にする。
+    { envExtra: ["GROQ_API_KEY"], jobId },
     (ln) => broadcast(jobId, { stage: "t", status: "active", log: ln })
   );
 
@@ -517,6 +699,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 直った文字を読む（「公開」と「後悔」を取り違えた文で場面を選ばれずに済む）し、
   // 焼く字幕も直った文字になる。失敗したら例外のままジョブを失敗させる
   // （黙って元の文字起こしで進めると、直したつもりで直っていない動画が出る）。
+  throwIfCancelled(jobId);
   job.stage = "c";
   broadcast(jobId, { stage: "c", status: "active", label: "AIが字幕の間違いを直しています" });
 
@@ -544,7 +727,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   await spawnAndLog(
     "node",
     selectArgs,
-    {},
+    { jobId },
     (ln) => broadcast(jobId, { stage: "s", status: "active", log: ln })
   );
 
@@ -554,6 +737,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // incomplete:true をstateへ残し、成功したふりをしない(候補生成・SSE完了通知の両方に反映)。
   let selectIncomplete = false;
   if (mode !== "digest") {
+    throwIfCancelled(jobId);
     const result = await runClaudeSelect(workDir, (msg) => {
       broadcast(jobId, { stage: "s", status: "active", log: msg });
     });
@@ -582,7 +766,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   await spawnAndLog(
     "node",
     renderArgs,
-    {},
+    { jobId },
     (ln) => broadcast(jobId, { stage: "r", status: "active", log: ln })
   );
 
@@ -595,6 +779,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 掛けたときは素顔のファイルを成果物フォルダの外へ退避する（納品はフォルダからの
   // コピーなので、一覧から隠すだけでは「うっかり素顔を渡す」を防げない）。
   if (opts.mosaic === "on") {
+    throwIfCancelled(jobId);
     job.stage = "m";
     broadcast(jobId, { stage: "m", status: "active", label: "顔にモザイクを掛けています" });
 
