@@ -9,6 +9,9 @@
   --brand-ink: #ffffff;
   --ok: #16a34a;
   --disabled: #b8bfca;
+  --warn: #b45309;
+  --warn-bg: #fff7ed;
+  --warn-line: #fdba74;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -19,6 +22,9 @@
     --line: #2a323d;
     --brand: #3b82f6;
     --disabled: #3a434f;
+    --warn: #fbbf24;
+    --warn-bg: #2a1f0f;
+    --warn-line: #92651a;
   }
 }
 
@@ -55,6 +61,11 @@ body {
   padding: 1px 8px; margin-left: 8px; vertical-align: 2px; white-space: nowrap;
 }
 .fine { font-size: 13px; color: var(--sub); }
+.notice-unavailable {
+  font-size: 14px; color: var(--warn); font-weight: 600;
+  margin: 12px 0 0; padding: 10px 12px;
+  background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px;
+}
 :root { --hl: #b8860b; }
 @media (prefers-color-scheme: dark) { :root { --hl: #d9a441; } }
 
@@ -99,6 +110,8 @@ body {
   font-size: 15px; cursor: pointer; background: var(--bg);
 }
 .check input { width: 22px; height: 22px; margin-top: 1px; accent-color: var(--brand); flex: 0 0 auto; }
+.check:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+.check input:disabled { cursor: not-allowed; }
 
 #start {
   font-size: 17px; font-weight: 700;
