@@ -12,6 +12,7 @@ import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
+import { redactSecrets } from "./security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -136,20 +137,54 @@ function writeState(workDir, state) {
   writeJsonAtomically(path.join(workDir, "state.json"), state);
 }
 
+// P1-14-A: パイプラインの子(python/node)へ渡してよい環境変数の基本allowlist。
+// claude起動口(src/claude-safety.mjs ALLOWED_ENV_VARS)より広いのは、python/nodeの実行系・
+// ライブラリ解決・モデルキャッシュに必要な変数を含むため(APIキー等の秘密情報は含めない)。
+const BASE_CHILD_ENV_VARS = [
+  "PATH", "HOME", "LANG", "LC_ALL", "LANGUAGE", "USER",
+  "TMPDIR", "TMP", "TEMP",
+  "PYTHONPATH", "PYTHONIOENCODING", "PYTHONUNBUFFERED", "VIRTUAL_ENV",
+  "NODE_PATH",
+  "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+  "HF_HOME", "HUGGINGFACE_HUB_CACHE", // faster-whisperモデルキャッシュの置き場所
+];
+
+/** allowlist(+呼び出しごとの追加キー)だけを含むenvを作る。単体テストのためexportする。 */
+export function buildChildEnv(extraKeys = []) {
+  const env = {};
+  for (const key of [...BASE_CHILD_ENV_VARS, ...extraKeys]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
+
+/** P1-14-B/C: 子の出力・エラーメッセージから伏字にすべき秘密情報の実値一覧。 */
+function secretsToRedact() {
+  return [process.env.GROQ_API_KEY, process.env.ANTHROPIC_API_KEY].filter(Boolean);
+}
+
 /**
  * 子プロセスを spawn し、stderr を行単位で onLine に渡す。
  * 終了コード 0 以外は reject。
+ *
+ * @param {string} cmd
+ * @param {string[]} args
+ * @param {{ envExtra?: string[], [key: string]: any }} opts envExtra はこの呼び出しに限り
+ *   allowlistへ追加する環境変数キー(例: transcribe.pyのGROQ_API_KEY)。値そのものではなくキー名。
+ * @param {(line: string) => void} onLine
  */
 function spawnAndLog(cmd, args, opts, onLine) {
+  const { envExtra, ...restOpts } = opts || {};
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
-      env: process.env,
+      env: buildChildEnv(envExtra),
       windowsHide: true,
-      ...opts,
+      ...restOpts,
     });
+    const secrets = secretsToRedact();
     let errBuf = "";
     child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
+      const text = redactSecrets(chunk.toString(), secrets);
       errBuf += text;
       text.split("\n").forEach((ln) => {
         if (ln.trim()) onLine(ln.trim());
@@ -157,8 +192,7 @@ function spawnAndLog(cmd, args, opts, onLine) {
     });
     // stdout も受け取る（pipeline.mjs が stdout に出力する場合あり）
     child.stdout.on("data", (chunk) => {
-      chunk
-        .toString()
+      redactSecrets(chunk.toString(), secrets)
         .split("\n")
         .forEach((ln) => {
           if (ln.trim()) onLine(`[stdout] ${ln.trim()}`);
@@ -167,6 +201,8 @@ function spawnAndLog(cmd, args, opts, onLine) {
     child.on("error", (err) => reject(new Error(`spawn error: ${err.message}`)));
     child.on("close", (code) => {
       if (code !== 0) {
+        // errBuf は上でチャンク単位で既に伏字化済み(P1-14-C: state.jsonへ書かれるError.messageの
+        // 経路もここを通るため、二重に伏字化する必要はない)。
         return reject(
           new Error(
             `${cmd} 終了コード ${code}。stderr: ${errBuf.slice(0, 400)}`
@@ -258,6 +294,39 @@ export function createConcurrencyGate(max) {
 
 const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
 const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
+
+// P1-13-B: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
+// src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。また、
+// 焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
+// 本編ジョブと同じゲートを共有させ、同時実行数の上限を一本化する。
+const recaptioningJobs = new Set();
+
+/** 指定ジョブが現在焼き直し中かどうか。 */
+export function isRecaptioning(jobId) {
+  return recaptioningJobs.has(jobId);
+}
+
+/** 焼き直しの開始をマークする。既に開始済みなら false（呼び出し側は409等で拒否する）。 */
+export function beginRecaption(jobId) {
+  if (recaptioningJobs.has(jobId)) return false;
+  recaptioningJobs.add(jobId);
+  return true;
+}
+
+/** 焼き直しの終了をマークする（成功・失敗いずれの経路でも呼ぶこと）。 */
+export function endRecaption(jobId) {
+  recaptioningJobs.delete(jobId);
+}
+
+/**
+ * fn（引数無しでPromiseを返す関数）を、本編ジョブと共有の同時実行数ゲート配下で実行し、
+ * その結果を呼び出し側へ返す。焼き直しのffmpeg起動を、本編ジョブと合算した上限内に収める。
+ */
+export function runGated(fn) {
+  return new Promise((resolve, reject) => {
+    concurrencyGate.run(() => fn().then(resolve, reject));
+  });
+}
 
 /**
  * ジョブ実行開始（非同期・kick して即返す）
@@ -381,7 +450,9 @@ async function runJob(jobId, inputAbsPath, opts) {
   await spawnAndLog(
     "python",
     [TRANSCRIBE_PY, inputAbsPath, transcriptPath],
-    {},
+    // P1-14-A: GROQ_API_KEYはtranscribe.pyのGroq経路選択に必要な唯一の秘密情報。
+    // ここでだけ明示的にallowlistへ加える(select/renderの子には渡さない)。
+    { envExtra: ["GROQ_API_KEY"] },
     (ln) => broadcast(jobId, { stage: "t", status: "active", log: ln })
   );
 

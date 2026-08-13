@@ -52,12 +52,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { runFfmpeg } from "../src/render-vertical.mjs";
+import { hashToken } from "../server/security.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
 const WORK_ROOT = path.join(ROOT, "work");
 const OUT_ROOT = path.join(ROOT, "output");
-const PORT = 59196; // このテスト専用の固定ポート(他テストと衝突しない値)
+const PORT = 59208; // このテスト専用の固定ポート(他テストと衝突しない値。旧59196はsmoke.mjsのSMOKE_SERVER_PORTと重複していたためL-7で是正)
 const JOB_ID = "caption-recaption-ocr-check-job";
 const WORK_DIR = path.join(WORK_ROOT, JOB_ID);
 const OUT_DIR = path.join(OUT_ROOT, JOB_ID);
@@ -242,7 +243,8 @@ try {
   // ── サーバー起動 ──────────────────────────────────────────
   const started = await startServer();
   server = started.child;
-  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), "caption-ocr-job-token", "utf-8");
+  // P1-15-B: job-token.txtにはハッシュを保存する(persistJobToken参照)。
+  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), hashToken("caption-ocr-job-token"), "utf-8");
   const auth = "?jobToken=caption-ocr-job-token";
 
   // ── (1) 対照実験: まだ誰も直していない状態で焼き直し(=最初のジョブ完了直後と同じ) ──

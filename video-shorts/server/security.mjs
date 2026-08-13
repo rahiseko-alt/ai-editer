@@ -71,10 +71,13 @@ export function isValidJobToken(jobId, candidate) {
  */
 export function persistJobToken(workDir, token) {
   fs.mkdirSync(workDir, { recursive: true });
-  fs.writeFileSync(path.join(workDir, "job-token.txt"), token, "utf-8");
+  // P1-15-B: 平文のまま残さない。照合時は候補トークンを同じくハッシュ化して比較する
+  // (index.mjs の isAuthorizedForJob 参照)。
+  fs.writeFileSync(path.join(workDir, "job-token.txt"), hashToken(token), "utf-8");
 }
 
-/** 永続化されたジョブトークンを読む(無ければ null)。 */
+/** 永続化されたジョブトークンのハッシュを読む(無ければ null)。値はsha256(hex)であり、
+ *  平文のトークンそのものではない(persistJobToken参照)。 */
 export function loadPersistedJobToken(workDir) {
   const p = path.join(workDir, "job-token.txt");
   if (!fs.existsSync(p)) return null;
@@ -202,4 +205,33 @@ export function createRateLimiter({ windowMs, max, nowClock = Date.now }) {
       return true;
     },
   };
+}
+
+/**
+ * P1-13-A: JSON系エンドポイント(PUT captions / POST terms)のボディ上限。
+ * MAX_UPLOAD_BYTES(動画アップロード用・500MB)とは別に、テキストの直しに現実的な上限を設ける。
+ */
+export const MAX_JSON_BODY_BYTES = 1 * 1024 * 1024; // 1MB（字幕1語・用語1件の直しには十分すぎる量）
+
+/**
+ * P1-15-B: ジョブトークンを平文でディスクへ残さないためのハッシュ化(sha256 hex)。
+ * 照合はハッシュ同士の比較で行う(isValidToken の timingSafeEqual と組み合わせて使う)。
+ */
+export function hashToken(token) {
+  return crypto.createHash("sha256").update(String(token), "utf-8").digest("hex");
+}
+
+/**
+ * P1-14-B: 子プロセス出力・エラーメッセージから、既知の秘密情報の値を伏字へ置き換える。
+ * secrets には実際の値(process.env由来)を渡す。空文字列・undefinedは無視する
+ * (空文字列を置換対象にすると全ての位置にマッチして壊れるため)。
+ */
+export function redactSecrets(text, secrets) {
+  if (typeof text !== "string" || !text) return text;
+  let out = text;
+  for (const s of secrets || []) {
+    if (typeof s !== "string" || s.length < 4) continue; // 短すぎる値は誤爆(通常文字列との偶然一致)の恐れがあるため対象外
+    out = out.split(s).join("[REDACTED]");
+  }
+  return out;
 }

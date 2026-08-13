@@ -44,6 +44,7 @@ import {
   persistJobToken,
   loadPersistedJobToken,
   restoreJobToken,
+  hashToken,
 } from "../server/security.mjs";
 import { summarizeChunkResults } from "../server/claude-select.mjs";
 
@@ -834,7 +835,13 @@ t("P1-1-C: 実行cwdはジョブ専用の隔離ディレクトリになる", () 
     assert.ok(dirA.startsWith(os.tmpdir()), "OS tmpdir配下(リポジトリ外)に作られること");
     assert.ok(dirA.includes("smoke-job-A"), "ジョブ専用(jobId込み)のディレクトリであること");
   } finally {
-    fs.rmSync(path.dirname(dirA), { recursive: true, force: true });
+    // P1-18-B以降、createIsolatedCwdは固定名の中間ディレクトリを持たずos.tmpdir()直下に
+    // mkdtempで作る(symlink先回り対策)。そのためpath.dirname(dirA)はos.tmpdir()自身
+    // (例: /tmp)になり、それを再帰削除すると/tmp配下の無関係なファイルまで巻き込んで
+    // 消してしまう(実際にCIでEACCES: permission denied, rmdir '/tmp'を検出)。
+    // 自分が作った2つのディレクトリだけを個別に消す。
+    fs.rmSync(dirA, { recursive: true, force: true });
+    fs.rmSync(dirB, { recursive: true, force: true });
   }
 });
 
@@ -1231,7 +1238,20 @@ t("P1-6: ジョブトークンをworkDirへ永続化し、再読込で同じ値�
   try {
     assert.strictEqual(loadPersistedJobToken(workDir), null, "永続化前はnull");
     persistJobToken(workDir, "persisted-token-value");
-    assert.strictEqual(loadPersistedJobToken(workDir), "persisted-token-value");
+    assert.strictEqual(loadPersistedJobToken(workDir), hashToken("persisted-token-value"));
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+t("P1-15-B: workDirへ永続化されるジョブトークンは平文ではなくハッシュである", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "video-shorts-p1-15-b-"));
+  try {
+    persistJobToken(workDir, "plaintext-should-not-appear");
+    const raw = fs.readFileSync(path.join(workDir, "job-token.txt"), "utf-8").trim();
+    assert.notStrictEqual(raw, "plaintext-should-not-appear",
+      "job-token.txtに平文のトークンがそのまま書かれている");
+    assert.strictEqual(raw, hashToken("plaintext-should-not-appear"));
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

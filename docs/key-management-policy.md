@@ -19,8 +19,17 @@
 
 ## 3. 保管
 
-- 保管場所は **客 PC の `.env` のみ**。git 追跡外（親 `.gitignore` + `.claude/settings.json` deny + `secret-write-gate.mjs` の三重ガード）。
+- 保管場所は **客 PC の `.env` のみ**。git 追跡外（ルート `.gitignore` の `.env` / `.env.*` 除外の1枚で担保）。
+  2026-08-13 の徹底監査（`docs/audits/2026-08-13-security-audit.md` M-6）で、以前ここに記載していた説明が
+  実態と一致しないことが判明した。`secret-write-gate.mjs` はリポジトリに存在せず、`.claude/settings.json`
+  にも `.env` を対象にした読み書き拒否設定は無い。実在するのは `.gitignore` の1枚のみであり、この節は
+  実態に合わせて是正した（P1-14-D）。
 - **AI-Editer は客の鍵を預からない・保存しない・複製しない**（受託は構築/保守の役務のみ）。
+- **残課題（backlog、`docs/roadmap.html` P1-19 参照）**: `.claude/settings.json` へ `.env` の読み書きを
+  拒否する `permissions.deny` 設定を追加すること、および AI エージェントが誤って `.env` の中身を
+  ログ・チャット・コミットへ書き出すことを機械的に検知する `secret-write-gate.mjs` 相当の仕組みを
+  導入することは、いずれも未実装のまま残っている。導入する場合は Claude Code の設定スキーマを
+  確認したうえで、既存のセッション運用を壊さない形で追加する。
 
 ## 4. 課金上限・暴走停止
 

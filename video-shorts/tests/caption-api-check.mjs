@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { EDITS_FILE } from "../src/caption-store.mjs";
 import { DICT_PATH, readDictionary } from "../src/term-dictionary.mjs";
+import { hashToken } from "../server/security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORT = 59187;                       // このテスト専用の固定ポート
@@ -109,7 +110,8 @@ function call(method, pathAndQuery, { body, headers } = {}) {
 function prepareJob(dir, token) {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "job-token.txt"), token, "utf-8");
+  // P1-15-B: job-token.txtにはハッシュを保存する(persistJobToken参照)。
+  fs.writeFileSync(path.join(dir, "job-token.txt"), hashToken(token), "utf-8");
   fs.writeFileSync(
     path.join(dir, "transcript.json"),
     JSON.stringify({ words: WORDS, segments: [] }, null, 2), "utf-8",

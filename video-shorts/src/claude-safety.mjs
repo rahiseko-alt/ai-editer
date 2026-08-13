@@ -39,11 +39,17 @@ export function buildSafeEnv(sourceEnv = process.env) {
 /** ジョブ専用の隔離ディレクトリを作り、claude -p の cwd として返す。
  *  リポジトリ配下(work/<id>)ではなくOS tmpdir配下に作る。cwdの上方探索でリポジトリの
  *  CLAUDE.md（司令塔憲法）を読ませてsub-claudeがペルソナ化するのを避ける既存対策を踏襲しつつ、
- *  jobIdごとに別ディレクトリにすることで他ジョブ/他顧客のファイルには辿り着けないようにする。 */
+ *  jobIdごとに別ディレクトリにすることで他ジョブ/他顧客のファイルには辿り着けないようにする。
+ *
+ *  P1-18-B: 旧実装は os.tmpdir()/video-shorts-claude-cwd という固定名の親ディレクトリを
+ *  mkdirSync(recursive:true) で作っていた。同一PC上の別プロセス・別ユーザーが実行前に
+ *  この固定パスへ攻撃者制御ディレクトリを指すsymlinkを設置しておくと、mkdirSyncはそれを
+ *  黙って追随し、以後の全ジョブの隔離作業場所が攻撃者制御下に化けてしまう(実機PoCで確認済み)。
+ *  固定名の中間ディレクトリを一切作らず、os.tmpdir() 直下へ fs.mkdtempSync で予測不能な
+ *  ランダム名のディレクトリを新規作成する(mkdtempは既存パス上には作れず、常に新規ディレクトリ
+ *  を作成する仕組みのため、先回りされたsymlinkを辿りようがない)。 */
 export function createIsolatedCwd(jobId) {
-  const dir = path.join(os.tmpdir(), "video-shorts-claude-cwd", String(jobId));
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  return fs.mkdtempSync(path.join(os.tmpdir(), `video-shorts-claude-${String(jobId)}-`));
 }
 
 /** claude -p にツールを一切使わせないための引数。 */
