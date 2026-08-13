@@ -349,7 +349,11 @@ async function cmdRender(workDir, opts = {}) {
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderSegment({
+      // AUD-P1-02a/02b: この戻り値（実際に使われた開始秒・詰め後の keep 区間・詰め後の尺）を
+      // 捨てずに manifest へ持ち回る。捨てると、字幕焼き直し(recaption-stage.mjs)は
+      // raw な start/end から作り直すしかなくなり、詰めた尺（例: 4秒→1秒）が戻ってしまう
+      // （実際に起きていたバグそのもの）。
+      const renderResult = await renderSegment({
         input: state.input,
         seg,
         words: transcript.words || [],
@@ -377,6 +381,15 @@ async function cmdRender(workDir, opts = {}) {
         height: size.height,
         vertical: size.vertical,
         status: "pending", // UI で採用/破棄
+        // AUD-P1-02a/02b: 実際に使ったレンダ計画。字幕焼き直しはここを読み、同じ関数へ
+        // 同じ値を渡して再現する（raw start/end から作り直さない）。
+        renderPlan: {
+          segStart: renderResult.segStart,
+          keep: renderResult.keep,
+          clipDuration: renderResult.clipDuration,
+          canvasW: canvas.w,
+          canvasH: canvas.h,
+        },
       });
       log(`  [OK] ${path.basename(outFile)} ${size.width}x${size.height} vertical=${size.vertical}`);
     } catch (e) {
@@ -390,7 +403,9 @@ async function cmdRender(workDir, opts = {}) {
   const selectIncomplete = !!state.selectIncomplete;
   if (resolved.length > 0 && manifest.length === 0) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete });
+      { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete,
+        srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+        srcSampleRate: srcSampleRate ?? null, orientation });
     state.stage = "render_failed";
     state.candidates = 0;
     saveState(workDir, state);
@@ -417,7 +432,9 @@ async function cmdRender(workDir, opts = {}) {
 
   if (mode === "digest" && manifest.length > 0 && digest === null) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete });
+      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete,
+        srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+        srcSampleRate: srcSampleRate ?? null, orientation });
     state.stage = "render_failed";
     state.candidates = manifest.length;
     saveState(workDir, state);
@@ -425,7 +442,12 @@ async function cmdRender(workDir, opts = {}) {
   }
 
   writeJson(path.join(outDir, "candidates.json"),
-    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete });
+    // AUD-P1-02b: srcW/srcH（+ fps/標本化周波数）をここで持ち回る。recaption-stage.mjs は
+    // 従来 state.srcW/state.srcH（本番のstate.jsonには存在しないフィールド）を参照しており、
+    // 常に undefined → 拡大ガード無しの既定解像度で焼き直され、初回レンダと解像度がずれていた。
+    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete,
+      srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+      srcSampleRate: srcSampleRate ?? null, orientation });
   state.stage = "rendered";
   state.candidates = manifest.length;
   saveState(workDir, state);
