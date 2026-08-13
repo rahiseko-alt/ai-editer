@@ -187,6 +187,14 @@ export function activeJobIds() {
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
 const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中断されました。お手数ですが、もう一度実行してください。";
 
+/** ジョブの state.json を読む（無ければ null）。subscribeJob (AUD-P2-16) から参照するため
+ *  ここ(subscribeJobより前)で宣言する。 */
+function readState(workDir) {
+  const sp = path.join(workDir, "state.json");
+  if (!fs.existsSync(sp)) return null;
+  return JSON.parse(fs.readFileSync(sp, "utf-8"));
+}
+
 /**
  * SSE 購読者を追加。
  * P1-6: jobId がこのプロセスの jobs Map に存在しない状態で呼ばれるのは、"ジョブトークン認可
@@ -197,7 +205,27 @@ const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中
  */
 export function subscribeJob(jobId, push, close) {
   if (!jobs.has(jobId)) {
-    jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
+    // AUD-P2-16: メモリのjobs Mapに無いからといって無条件で"interrupted"を合成しない。
+    // このプロセスが一度もこのジョブを起動していない(=以前のプロセス、または再起動後の
+    // 再接続)場合でも、work/<jobId>/state.jsonが実際に終端(done/error/cancelled/timeout)
+    // まで到達していれば、その事実を優先してリプレイする。state.jsonが処理途中のstageの
+    // まま止まっている(=書き込みが止まっている＝プロセスが死んだ証拠)場合や、
+    // state.json自体が無い(このジョブを誰も一度も起動していない)場合だけ、
+    // 従来どおり本当に「中断された」ものとして扱う。
+    const disk = readState(path.join(WORK_ROOT, jobId));
+    const diskStage = disk?.stage;
+    if (diskStage === "done") {
+      jobs.set(jobId, { stage: "done", subscribers: new Set(), error: null, errorCode: null });
+    } else if (diskStage === "error" || diskStage === "cancelled" || diskStage === "timeout") {
+      jobs.set(jobId, {
+        stage: diskStage,
+        subscribers: new Set(),
+        error: disk.error || null,
+        errorCode: disk.errorCode || null,
+      });
+    } else {
+      jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
+    }
   }
   const job = jobs.get(jobId);
   const sub = { push, close };
@@ -239,13 +267,6 @@ export function unsubscribeJob(jobId, push) {
   }
 }
 
-/** ジョブの state.json を読む（無ければ null） */
-function readState(workDir) {
-  const sp = path.join(workDir, "state.json");
-  if (!fs.existsSync(sp)) return null;
-  return JSON.parse(fs.readFileSync(sp, "utf-8"));
-}
-
 /**
  * ジョブの state.json を書く。
  * P2-1: 直接 truncate 書込みだと、書いている途中でプロセスが落ちたときに state.json が
@@ -254,6 +275,35 @@ function readState(workDir) {
  */
 function writeState(workDir, state) {
   writeJsonAtomically(path.join(workDir, "state.json"), state);
+}
+
+/**
+ * AUD-P2-16: state.json への更新を「読む→マージ→原子書き込み」の一本道に集約する。
+ *
+ * 旧実装は runJob() が起動時に作った1個のJSオブジェクト(state)を関数の間ずっと使い回し、
+ * 各ステージ完了ごとに `state.stage = "..."; writeState(workDir, state);` で丸ごと
+ * 上書きしていた。ところが `node pipeline.mjs select/render` は**別プロセス**であり、
+ * それ自身が state.json を読み書きして digestMeta・candidates 等のフィールドを
+ * 書き加える(pipeline.mjs の saveState 参照)。子プロセスの書き込み**後**に、
+ * pipeline-runner.mjs 側の「子プロセスが何を書いたか知らない・起動時のまま古い」
+ * インメモリの state オブジェクトを丸ごと書き戻すと、子プロセスが追加したフィールドが
+ * 消える(監査指摘: 「a stale in-memory state object gets written back over fields a
+ * child process added」)。
+ *
+ * 対策: 各更新のたびに、その時点のディスク上の state.json を読み直し(=子プロセスが
+ * 書いたものを含む最新の状態)、そこへ今回のパッチだけをマージしてから書き戻す。
+ * これにより、どのフィールドを最後に触ったのが誰であっても(このプロセス自身でも
+ * 別の子プロセスでも)、上書きで消えることがなくなる。
+ *
+ * @param {string} workDir
+ * @param {object} patch 上書きしたいフィールドのみ
+ * @returns {object} マージ後の完全なstateオブジェクト(呼び出し側が参照したい場合用)
+ */
+function updateState(workDir, patch) {
+  const current = readState(workDir) || {};
+  const merged = { ...current, ...patch };
+  writeState(workDir, merged);
+  return merged;
 }
 
 // P1-14-A: パイプラインの子(python/node)へ渡してよい環境変数の基本allowlist。
@@ -585,10 +635,9 @@ export function startJob(jobId, inputAbsPath, opts) {
         // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
         // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
         // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
+        // AUD-P2-16: ここも updateState (読む→マージ→原子書き込み) に統一する。
         try {
-          const current = readState(workDir) || {};
-          writeState(workDir, {
-            ...current,
+          updateState(workDir, {
             stage: terminalStage,
             error: safeMessage,
             errorCode: err?.code ?? null,
@@ -646,7 +695,10 @@ async function runJob(jobId, inputAbsPath, opts) {
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
 
   // state.json 初期作成（pipeline.mjs init の代替）
-  const state = {
+  // AUD-P2-16: 以後このローカル変数を使い回して丸ごと上書きすることはしない
+  // (updateStateがそのつど最新のディスク内容を読んでマージする＝子プロセスが
+  // 書き足したフィールドを消さない)。
+  updateState(workDir, {
     id: jobId,
     input: inputAbsPath,
     transcript: null,
@@ -659,8 +711,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
     // （顔モザイクで同じ取りこぼしをしたので、結線を smoke.mjs で押さえる）。
     trim: opts.trim === "on" ? "on" : "none",
-  };
-  writeState(workDir, state);
+  });
 
   const job = jobs.get(jobId);
 
@@ -679,9 +730,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     (ln) => broadcast(jobId, { stage: "t", status: "active", log: ln })
   );
 
-  state.stage = "transcribed";
-  state.transcript = transcriptPath;
-  writeState(workDir, state);
+  updateState(workDir, { stage: "transcribed", transcript: transcriptPath });
 
   // 話し声が無い動画（音楽・歓声のみ等）は文字起こしが 0 件になる。
   // ここで素人に分かる言葉で止める（select/claude を走らせず無駄なコストも避ける）。
@@ -709,8 +758,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
   });
 
-  state.stage = "captionfixed";
-  writeState(workDir, state);
+  updateState(workDir, { stage: "captionfixed" });
   broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
   broadcast(jobId, { stage: "c", status: "done" });
 
@@ -751,9 +799,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     }
   }
 
-  state.stage = "selected";
-  state.selectIncomplete = selectIncomplete;
-  writeState(workDir, state);
+  updateState(workDir, { stage: "selected", selectIncomplete });
   broadcast(jobId, { stage: "s", status: "done", incomplete: selectIncomplete });
 
   // ── Stage r: レンダリング ────────────────────────────────────
@@ -770,8 +816,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     (ln) => broadcast(jobId, { stage: "r", status: "active", log: ln })
   );
 
-  state.stage = "rendered";
-  writeState(workDir, state);
+  updateState(workDir, { stage: "rendered" });
   broadcast(jobId, { stage: "r", status: "done" });
 
   // ── Stage m: 顔モザイク（選ばれたときだけ） ──────────────────
@@ -794,13 +839,17 @@ async function runJob(jobId, inputAbsPath, opts) {
     });
     fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
 
-    state.stage = "mosaicked";
-    state.mosaic = "on";
-    writeState(workDir, state);
+    updateState(workDir, { stage: "mosaicked", mosaic: "on" });
     broadcast(jobId, { stage: "m", status: "done" });
   }
 
   // ── 完了 ─────────────────────────────────────────────────────
+  // AUD-P2-16: doneも(errorやcancelled/timeoutと同様に)必ずディスクへ永続化する。
+  // 旧実装はメモリのjob.stageだけをdoneにしており、state.jsonは最後に書いた
+  // "rendered"/"mosaicked"のまま止まっていた。サーバー再起動後にこのジョブへ
+  // 再接続すると、jobs Mapが空(=このプロセスは一度も起動していない)なので、
+  // state.jsonを読んで「本当はdoneだった」と判定できることが要る(subscribeJob参照)。
+  updateState(workDir, { stage: "done", selectIncomplete });
   job.stage = "done";
   broadcast(jobId, { stage: "done", incomplete: selectIncomplete }, "done");
 }
