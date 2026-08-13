@@ -560,13 +560,16 @@ async function runJob(jobId, inputAbsPath, opts) {
     const outDir = path.join(OUT_ROOT, jobId);
     const candPath = path.join(outDir, "candidates.json");
     const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
-    const next = await applyMosaicStage({
+    // AUD-P1-06: candidates.json の書き換えは applyMosaicStage() が原子的（temp+rename）に
+    // 行う。ここで改めて fs.writeFileSync すると、その書き込み自体が非原子的なtruncate書きに
+    // 戻ってしまい、書いている途中で落ちたときに壊れて読めなくなる。
+    await applyMosaicStage({
       outDir,
       stashDir: path.join(workDir, "pre-mosaic"),
       candidates: cand,
+      candPath,
       onLog: (ln) => broadcast(jobId, { stage: "m", status: "active", log: ln }),
     });
-    fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
 
     state.stage = "mosaicked";
     state.mosaic = "on";

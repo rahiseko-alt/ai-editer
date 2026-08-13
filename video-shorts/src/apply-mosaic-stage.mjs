@@ -16,10 +16,56 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { writeJsonAtomically } from "./atomic-json.mjs";
 import { resolveInside, safeBasename } from "./safe-path.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MOSAIC_CLI = path.join(HERE, "apply_mosaic_cli.py");
+
+// AUD-P1-06: 退避(stash-move)完了後・candidates.json 書き換え完了前に強制終了すると、
+// candidates.json が「もう成果物フォルダに無いファイル」を指したまま残ってしまう。
+// stashDir 配下にこの名前で書き込み前ジャーナル(write-ahead journal)を残し、
+// 次回 applyMosaicStage() 実行時（＝ジョブ再開/再起動時）に自動で後始末できるようにする。
+const JOURNAL_NAME = "mosaic-journal.json";
+
+/**
+ * 前回、退避(stash-move)完了後・candidates.json 書き換え完了前に強制終了した形跡
+ * （書き込み前ジャーナルの残骸）があれば後始末する。
+ *
+ * ジャーナルは「これから何を退避し、最終的に candidates.json をどう書き換えるつもりか」を
+ * 退避を始める前に書き残したもの。ここでは:
+ *  1. ジャーナルに書かれた退避(move)のうち、まだ済んでいないものを完了させる
+ *     （退避元にファイルが残っていれば移す。退避先に既にあれば済んでいる＝何もしない）。
+ *  2. 退避が全部済んだ状態で、ジャーナルが持つ最終形の candidates.json を原子的に書く。
+ *  3. ジャーナルを消す（後始末完了）。
+ * ジャーナルが無ければ何もしない（＝前回は正常終了している）。
+ *
+ * @param {string} stashDir 素顔の退避先ディレクトリ
+ * @param {{onLog?: (s:string)=>void}} [opts]
+ * @returns {object|null} 復旧して書いた candidates.json の中身（ジャーナルが無ければ null）
+ */
+export function recoverMosaicJournal(stashDir, { onLog } = {}) {
+  const journalPath = path.join(stashDir, JOURNAL_NAME);
+  if (!fs.existsSync(journalPath)) return null;
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf-8"));
+  for (const mv of journal.moves) {
+    if (fs.existsSync(mv.to)) continue; // 退避済み(ここは何もしない)
+    if (fs.existsSync(mv.from)) {
+      fs.renameSync(mv.from, mv.to);
+      if (onLog) onLog(`[RECOVER] 中断していた顔モザイクの退避を再開しました: ${path.basename(mv.from)}`);
+    } else {
+      // 退避元にも退避先にも無い＝この移動の記録だけでは復旧できない実データ欠損。
+      // 黙って先へ進むと「復旧できた」と偽ることになるので、必ず投げる。
+      throw new Error(
+        `顔モザイクの後始末を再開できません。退避元にも退避先にもファイルがありません: ${mv.from}`
+      );
+    }
+  }
+  writeJsonAtomically(journal.candPath, journal.next);
+  fs.rmSync(journalPath, { force: true });
+  if (onLog) onLog(`[RECOVER] candidates.json を復旧しました: ${journal.candPath}`);
+  return journal.next;
+}
 
 /**
  * python3 → python の順で使える実行ファイルを選ぶ。
@@ -76,11 +122,24 @@ function runMosaic(python, src, dst, onLog) {
  * @param {string} p.outDir    成果物フォルダ（output/<id>）
  * @param {string} p.stashDir  素顔の退避先（成果物フォルダの外）
  * @param {object} p.candidates candidates.json の中身
+ * @param {string} [p.candPath] candidates.json の実パス（既定 outDir/candidates.json）。
+ *   ここへ最終形を原子的に書き込むところまでこの関数の責務にする（AUD-P1-06:
+ *   呼び出し側が受け取った戻り値を fs.writeFileSync で直接truncate書きすると、
+ *   書いている途中で落ちたときに壊れて読めなくなる）。
  * @param {(s:string)=>void} [p.onLog]
  * @returns {Promise<object>} 書き換え後の candidates.json の中身
  */
-export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) {
+export async function applyMosaicStage({ outDir, stashDir, candidates, candPath, onLog }) {
+  const resolvedCandPath = candPath || path.join(outDir, "candidates.json");
   const python = resolvePython();
+
+  // AUD-P1-06: 前回、退避完了後・candidates.json 書き換え完了前に強制終了した形跡があれば、
+  // 新しい作業を始める前に必ず先に後始末する。
+  try {
+    recoverMosaicJournal(stashDir, { onLog });
+  } catch (e) {
+    throw new Error(`前回の顔モザイク確定処理の復旧に失敗しました: ${e.message}`);
+  }
 
   // 対象（各クリップ＋あればダイジェスト）を一覧にする
   const targets = (candidates.candidates || []).map((c) => ({ kind: "clip", entry: c }));
@@ -129,20 +188,34 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
   // 途中で落ちたまま放置すると「1本目＝退避済みで顔を隠した版だけ／2本目＝素顔と
   // 顔を隠した版が両方」という混在が成果物フォルダに残る。第1段と同じく、
   // 失敗したら素顔だけの状態へ戻す。
-  const moved = [];
+  //
+  // AUD-P1-06: 退避(rename)は1本ごとに原子的だが、「退避を全部済ませる」→
+  // 「candidates.json を書き換える」という2段そのものは原子的ではない。この間に
+  // 強制終了すると、candidates.json が旧のまま（＝もう成果物フォルダに無いファイルを
+  // 指す）残ってしまう。退避を始める前に「これから何を退避し、最終的に
+  // candidates.json をどう書くか」を書き込み前ジャーナルとして先に書いておき、
+  // 次回 applyMosaicStage()（＝recoverMosaicJournal()）が「退避は済んでいるか」を見て
+  // 安全に先へ進める・candidates.json を仕上げられるようにする。
   const next = { ...candidates, mosaic: true };
   const byKind = { clip: [], digest: null };
+  for (const m of made) {
+    const updated = { ...m.entry, file: m.outName, path: m.dst };
+    if (m.kind === "digest") byKind.digest = updated;
+    else byKind.clip.push(updated);
+  }
+  next.candidates = byKind.clip;
+  if (byKind.digest) next.digest = byKind.digest;
+
+  fs.mkdirSync(stashDir, { recursive: true });
+  const journalPath = path.join(stashDir, JOURNAL_NAME);
+  const plannedMoves = made.map((m) => ({ from: m.src, to: resolveInside(stashDir, m.safeName) }));
+  writeJsonAtomically(journalPath, { candPath: resolvedCandPath, moves: plannedMoves, next });
+
+  const moved = [];
   try {
-    fs.mkdirSync(stashDir, { recursive: true });
-    for (const m of made) {
-      // AUD-P1-01b: 退避先(stashDir配下)も m.entry.file をそのまま使わず、検証済みの
-      // safeName を毎回 resolveInside() で解決してから使う（TOCTOU対策）。
-      const stashed = resolveInside(stashDir, m.safeName);
-      fs.renameSync(m.src, stashed);
-      moved.push({ from: stashed, to: m.src });
-      const updated = { ...m.entry, file: m.outName, path: m.dst };
-      if (m.kind === "digest") byKind.digest = updated;
-      else byKind.clip.push(updated);
+    for (const mv of plannedMoves) {
+      fs.renameSync(mv.from, mv.to);
+      moved.push({ from: mv.to, to: mv.from });
     }
   } catch (e) {
     // 戻す作業そのものも失敗しうる（退避を止めた原因＝権限・ロックは戻す側でも起きる）。
@@ -155,6 +228,10 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
     for (const m of made) {
       try { fs.rmSync(m.dst, { force: true }); } catch (_) { stuck.push(m.outName); }
     }
+    // ロールバックできた（＝旧状態に戻せた）ならジャーナルも消す。旧状態のまま
+    // 残しておくと、次回 recoverMosaicJournal() がもう存在しないファイルを
+    // 前提に後始末を試みてしまう。
+    if (!stuck.length) { try { fs.rmSync(journalPath, { force: true }); } catch (_) {} }
     if (stuck.length) {
       throw new Error(
         `顔モザイクの後始末に失敗しました。成果物フォルダに素顔と加工済みが混ざったまま残っています` +
@@ -163,8 +240,11 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
     }
     throw e;
   }
-  next.candidates = byKind.clip;
-  if (byKind.digest) next.digest = byKind.digest;
+
+  // 退避が全部済んだので、candidates.json を原子的に書き、ジャーナルを消す
+  // （ここで強制終了しても、次回 recoverMosaicJournal() が同じ内容を書き直すだけ＝冪等）。
+  writeJsonAtomically(resolvedCandPath, next);
+  try { fs.rmSync(journalPath, { force: true }); } catch (_) {}
 
   return next;
 }
@@ -179,10 +259,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   const candPath = path.join(outDir, "candidates.json");
   const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
   applyMosaicStage({
-    outDir, stashDir, candidates: cand,
+    outDir, stashDir, candidates: cand, candPath,
     onLog: (s) => process.stderr.write(s + "\n"),
   }).then((next) => {
-    fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
+    // candidates.json は applyMosaicStage() が既に原子的に書き終えている
+    // （AUD-P1-06: ここで再度 fs.writeFileSync すると、その書き込み自体が
+    // truncateを伴う非原子的な書き込みに戻ってしまう）。
     console.log(`mosaic applied: ${next.candidates.length} clip(s)`);
   }).catch((e) => {
     console.error(e.message);
