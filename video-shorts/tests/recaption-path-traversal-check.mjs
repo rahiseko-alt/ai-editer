@@ -26,12 +26,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { runFfmpeg } from "../src/render-vertical.mjs";
 import { recaptionStage } from "../src/recaption-stage.mjs";
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 let pass = 0, fail = 0;
 function report(name, ok, detail) {

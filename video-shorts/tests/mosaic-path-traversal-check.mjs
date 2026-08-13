@@ -23,10 +23,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { applyMosaicStage, mosaicName } from "../src/apply-mosaic-stage.mjs";
+import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.join(HERE, "..", "src");
