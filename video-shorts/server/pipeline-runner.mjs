@@ -50,8 +50,14 @@ function broadcast(jobId, payload, event = null) {
       // 切断済み購読者は無視
     }
   }
-  // 終端イベント（error / done）は全購読者の SSE 接続を閉じて Set をクリア
-  if (event === "error" || event === "done") {
+  // 終端イベント（job-error / done）は全購読者の SSE 接続を閉じて Set をクリア
+  // AUD-P1-10b: 業務エラー(このジョブが失敗した)はSSEの名前付きイベントとして
+  // "error" ではなく "job-error" を使う。EventSourceは接続断などのネイティブ"error"と、
+  // サーバーが"event: error"という名前で送った独自イベントを、クライアント側では
+  // どちらも同じ addEventListener("error", ...) が受け取ってしまい区別できない
+  // （前者は再接続すべき一時的な障害、後者は再接続しても無意味な終端）。
+  // 名前を分けることで、クライアントはネイティブerrorだけを伝送エラーとして扱える。
+  if (event === "job-error" || event === "done") {
     for (const sub of job.subscribers) {
       try { sub.close(); } catch (_) {}
     }
@@ -101,7 +107,8 @@ export function subscribeJob(jobId, push, close) {
 
   // race condition 対策: 既に終了済み/中断済みならリプレイして即通知
   if (job.stage === "error") {
-    try { push(`event: error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
+    // AUD-P1-10b: wireのイベント名は job-error（内部の job.stage==="error" とは別物）。
+    try { push(`event: job-error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
   } else if (job.stage === "done") {
@@ -395,7 +402,8 @@ export function startJob(jobId, inputAbsPath, opts) {
           `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
         );
       }
-      broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
+      // AUD-P1-10b: wireのイベント名は job-error（ネイティブEventSourceの"error"と衝突させない）。
+      broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "job-error");
     });
   if (groqKeyAvailable()) {
     // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、

@@ -143,8 +143,10 @@ function postJob(token, samplePath) {
 function firstDataLine(jobId, jobToken, waitMs) {
   return new Promise((resolve) => {
     let settled = false;
+    let timer;
+    let req;
     const settle = (v) => { if (settled) return; settled = true; clearTimeout(timer); req.destroy(); resolve(v); };
-    const req = http.get({
+    req = http.get({
       host: "127.0.0.1", port: PORT,
       path: `/api/jobs/${jobId}/events?jobToken=${jobToken}`,
       headers: { host: `127.0.0.1:${PORT}` },
@@ -158,7 +160,7 @@ function firstDataLine(jobId, jobToken, waitMs) {
       });
     });
     req.on("error", () => settle(null));
-    const timer = setTimeout(() => settle(null), waitMs);
+    timer = setTimeout(() => settle(null), waitMs);
   });
 }
 

@@ -468,7 +468,11 @@ function run() {
           .catch((msg) => showError(String(msg)));
       });
 
-      es.addEventListener("error", (ev) => {
+      // AUD-P1-10b: サーバーが送る業務/アプリケーションエラー(このジョブが失敗した、等)。
+      // ネイティブのEventSource "error" と衝突しない専用のイベント名(job-error)で届くので、
+      // ここは常に「もう続行できない終端」として扱ってよい(接続を閉じ、再接続はしない＝
+      // 再接続しても同じ理由でまた失敗するだけの結果が分かっている状況のため)。
+      es.addEventListener("job-error", (ev) => {
         es.close();
         let msg = "処理に失敗しました", code = null;
         try { const d = JSON.parse(ev.data); if (d.message) msg = d.message; code = d.code || null; } catch { /* ignore */ }
@@ -483,6 +487,13 @@ function run() {
         let msg = "サーバーが再起動したため、処理が中断されました。もう一度実行してください。";
         try { const d = JSON.parse(ev.data); if (d.message) msg = d.message; } catch { /* ignore */ }
         showError(msg);
+      });
+
+      // 伝送レベルの障害(EventSourceのネイティブerror)。業務エラーは上のjob-errorイベントへ
+      // 分離済みなので、ここへ来るのは接続そのものの問題だけになる。
+      es.addEventListener("error", () => {
+        es.close();
+        showError("サーバーとの接続が切れました。もう一度お試しください。");
       });
     })
     .catch((msg) => showError(String(msg)));
