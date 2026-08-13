@@ -84,14 +84,42 @@ const EXCLUDE = [
 ];
 const excluded = (name) => EXCLUDE.some((re) => re.test(name));
 
-// ディレクトリを除外フィルタ付きで再帰コピー
+// AUD-P1-04: 「ディレクトリを丸ごと再帰コピーし、除外リストに載っている名前だけ弾く」方式だと、
+// 除外リストが想定していない場所（例: src/ 直下に置かれた誰かの作業用の秘密ファイル）に
+// git 未追跡（untracked）のファイルが1つ紛れ込むだけで、それがそのまま配布物へ入ってしまう。
+// 「untracked ファイルは構造的に配布物へ入り得ない」ようにするため、コピー対象は
+// ファイルシステムの再帰列挙ではなく `git ls-files`（＝git が追跡しているファイルのみ）から作る。
+function gitTrackedFiles(relDir) {
+  let out;
+  try {
+    // -z: NUL区切り。空白やUnicode正規化を含むファイル名でも壊れず1件ずつ取り出すため。
+    out = execFileSync("git", ["ls-files", "-z", relDir], { cwd: SRC });
+  } catch (e) {
+    // ここで黙ってファイルシステム再帰コピーへフォールバックすると、このfixの意味
+    // （untracked ファイルの混入を構造的に防ぐ）が失われるため、fail-closedで停止する。
+    throw new Error(
+      `git ls-files に失敗しました。配布ビルドは git 管理下のチェックアウトが前提です: ${e.message}`,
+    );
+  }
+  return out.toString("utf-8").split("\0").filter(Boolean);
+}
+
+// git が追跡しているファイルだけをコピー（未追跡ファイルは列挙にすら出てこないので混入し得ない）。
 function copyDirFiltered(relDir) {
-  for (const entry of fs.readdirSync(path.join(SRC, relDir), { withFileTypes: true })) {
-    if (excluded(entry.name)) continue;
-    const rel = path.join(relDir, entry.name);
+  for (const rel of gitTrackedFiles(relDir)) {
+    // 既存の EXCLUDE 判定はディレクトリ再帰の各階層で「その階層の名前」を見ていたので、
+    // 経路のどのセグメント（__pycache__ 等のディレクトリ名を含む）にも同じ判定を適用する。
+    const segments = rel.split("/");
+    if (segments.some((seg) => excluded(seg))) continue;
     if (SLIM && isMosaicPath(rel)) continue;
-    if (entry.isDirectory()) copyDirFiltered(rel);
-    else copyRel(rel);
+    const from = path.join(SRC, rel);
+    if (!fs.existsSync(from)) continue; // 削除済みだがまだcommitされていない等、作業木に無いtracked pathはスキップ
+    // symlink は fail-closed（追わない・コピーしない）。追跡させると symlink の指し先が
+    // 配布物の外（例: 開発者のホーム配下の機密ファイル）を指していても気付けないため。
+    if (fs.lstatSync(from).isSymbolicLink()) {
+      throw new Error(`配布ビルド中止: symlink はコピーできません（fail-closed）: ${rel}`);
+    }
+    copyRel(rel);
   }
 }
 
