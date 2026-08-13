@@ -42,10 +42,15 @@ const html = fs.readFileSync(manualPath, "utf-8");
 const useSectionMatch = html.match(/<section id="use">([\s\S]*?)<\/section>/);
 if (!useSectionMatch) fail(`install/user-manual.html に <section id="use"> が見つかりません: ${manualPath}`);
 const useSection = useSectionMatch[1];
+// CodeQL(double escaping or unescaping)対策: 複数回の.replace()を連鎖させると、
+// 前段の置換が生んだ文字列を後段が誤って再デコードしうる(例: &amp;lt; の多重デコード)。
+// 単一の正規表現+コールバックで1回の走査に閉じ込め、その懸念自体を無くす。
+const HTML_ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+function decodeHtmlEntities(s) {
+  return s.replace(/&(lt|gt|amp|quot|#39);/g, (_, name) => HTML_ENTITIES[name]);
+}
 const cmds = [...useSection.matchAll(/<pre class="cmd">([\s\S]*?)<\/pre>/g)]
-  .map((m) => m[1]
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim())
+  .map((m) => decodeHtmlEntities(m[1]).trim())
   .filter(Boolean);
 if (cmds.length === 0) fail("<section id=\"use\"> 内に実行可能な <pre class=\"cmd\"> が1件も見つかりません");
 console.log(`[walkthrough] ${manualPath} から ${cmds.length} 個のコマンドを検出:`);
