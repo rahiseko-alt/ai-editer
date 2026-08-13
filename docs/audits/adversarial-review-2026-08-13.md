@@ -8,7 +8,7 @@
 
 ## 結論
 
-新規のリリース阻害事項を P1 14件、P2 10件確認した。特に、成果物ディレクトリ外へのファイル操作、配布物への未追跡ファイル混入、秘密情報の伏字漏れ、字幕再焼き直しによる編集消失、Windows日本語パスでのモザイク全面停止は、出荷前に解消すべきである。
+新規のリリース阻害事項を P1 15件、P2 11件確認した。特に、成果物ディレクトリ外へのファイル操作、配布物への未追跡ファイル混入、秘密情報の伏字漏れ、字幕再焼き直しによる編集消失、Windows日本語パスでのモザイク全面停止は、出荷前に解消すべきである。
 
 重大度は次の意味で使用する。
 
@@ -134,16 +134,25 @@ recaptionは開始時に字幕編集を一度だけsnapshotする。その後も
 - 該当: `docs/terms-and-liability.md:1-3`
 - 修正案: 確定した版番号付き契約書を表示またはリンクし、そのhashをreceiptへ含める。取得不能時は同意操作を無効にする
 
+### 15. Windows・OneDrive・日本語パスで再帰削除後にNodeプロセスが異常終了する
+
+Node.js v24.13.0のWindows環境で、OneDrive配下かつ日本語を含む実checkout上の再帰的な`fs.rmSync()`を実行すると、削除後にプロセスが終了コード`-1073740791`でネイティブクラッシュした。同一コミットを`%TEMP%`のASCIIパスへ置くと同じE2E群は実行できた。製品のTTL掃除も同じ削除APIを使用するため、期限切れジョブの掃除がサーバー全体を終了させる可能性がある。`package.json`にはNode対応版の上限指定がない。
+
+- 該当: `video-shorts/server/job-lifecycle.mjs:117`
+- 該当: `video-shorts/tests/restart-reconnect-check.mjs:76,126`
+- 該当: `video-shorts/tests/job-quota-race-check.mjs:97`
+- 修正案: 対応Node版を明示し、OneDrive・Unicode配置をWindows CIで実行する。削除処理は隔離したworkerまたは回復可能なrename-first方式とし、異常終了がサーバー本体へ波及しない構成にする
+
 ## P2: 修正が必要な事項
 
-### 15. 再起動時にディスクstateを無視し、完了済みジョブもinterruptedになる
+### 16. 再起動時にディスクstateを無視し、完了済みジョブもinterruptedになる
 
 メモリのjobs Mapに無い場合、`state.json`を読まず一律`interrupted`を生成する。doneもメモリだけで永続化しない。さらに親が古いstateオブジェクトを書き戻して子プロセスが追加したフィールドを消す経路がある。
 
 - 該当: `video-shorts/server/pipeline-runner.mjs:87-105,529-531,548-549,577-579`
 - 修正案: state遷移を一箇所へ集約し、毎回read-merge-atomic-writeする。done/errorを永続化して再接続時に復元する
 
-### 16. PCなしクラウド利用用フックが配布物に含まれない
+### 17. PCなしクラウド利用用フックが配布物に含まれない
 
 `start-here.md`は`.claude/hooks/session-start.sh`が自動導入済みと説明するが、配布allowlistに`.claude`がない。フック自体もリポジトリ配置の`video-shorts/requirements.txt`を前提とし、dist直下の配置と一致しない。CIは完全なcheckout上でだけフックを検査する。
 
@@ -152,7 +161,7 @@ recaptionは開始時に字幕編集を一度だけsnapshotする。その後も
 - 該当: `.claude/hooks/session-start.sh:47`
 - 該当: `.github/workflows/ci.yml:173-197`
 
-### 17. Windowsを対象にしながら品質ゲートがWindowsで実行不能
+### 18. Windowsを対象にしながら品質ゲートがWindowsで実行不能
 
 package scriptはPython検査を`python3`固定で起動する。Windowsでは`python`が利用可能でも`python3`が失敗する。またstate atomic検査がWindows絶対パスを生のESM importへ埋め込み、`ERR_UNSUPPORTED_ESM_URL_SCHEME`になる。実測は2 PASS / 1 FAILで、CIはUbuntuだけである。
 
@@ -160,7 +169,7 @@ package scriptはPython検査を`python3`固定で起動する。Windowsでは`p
 - 該当: `video-shorts/tests/state-atomic-write-check.mjs:83-86`
 - 該当: `.github/workflows/ci.yml:13,125-127,173-175,202-206`
 
-### 18. 外部ツール版固定検査が必須workflowを見落とす
+### 19. 外部ツール版固定検査が必須workflowを見落とす
 
 `roadmap-required.yml`はffmpegを版指定なしでapt installするが、固定検査は`ci.yml`と`measure-leak-rate.yml`しか走査しない。この不整合がある状態で検査は20 PASSとなった。
 
@@ -168,21 +177,21 @@ package scriptはPython検査を`python3`固定で起動する。Windowsでは`p
 - 該当: `video-shorts/tests/external-tool-version-pin-check.mjs:62-79`
 - 修正案: 全workflowを再帰走査し、apt/pip/npxの無指定導入を拒否する
 
-### 19. 実行待ちqueueとjobs Mapに上限・回収がない
+### 20. 実行待ちqueueとjobs Mapに上限・回収がない
 
 queueは待ち件数の上限がなく、終了済みjobsもMapから削除されない。レート制限内で継続投入されるとclosure、購読状態、ジョブディレクトリが蓄積する。
 
 - 該当: `video-shorts/server/pipeline-runner.mjs:27-30,273-292,384-399`
 - 修正案: queue上限、待機TTL、cancel、terminal job回収、接続数とジョブ総数の上限を追加する
 
-### 20. 非正方形SAR素材を横につぶす
+### 21. 非正方形SAR素材を横につぶす
 
 probeはsample/display aspect ratioを取得せず、coded width/heightだけでfitした後`setsar=1`にする。display 16:9の720x480/SAR 32:27素材をlandscapeへrenderすると、人物や文字が横圧縮され左右に不要な黒帯が付く。
 
 - 該当: `video-shorts/src/render-vertical.mjs:123-126,207-234`
 - 修正案: SAR/DARをprobeし、display pixel寸法へ正規化してからfit/padする
 
-### 21. 低解像度canvasでも字幕トークンが固定で画面外へ切れる
+### 22. 低解像度canvasでも字幕トークンが固定で画面外へ切れる
 
 拡大ガードはcanvasを360x640などへ縮めるが、font size、outline、marginは1080x1920向け固定値のままである。360x640、bold、20字の単一wordをrenderしたPoCでは字幕pixelが左右端へ接触しclipした。
 
@@ -190,27 +199,34 @@ probeはsample/display aspect ratioを取得せず、coded width/heightだけで
 - 該当: `video-shorts/src/srt-builder.mjs:86-100,152-169`
 - 修正案: 全style tokenをcanvas比でscaleし、grapheme/display width単位で長いtokenを分割する
 
-### 22. 「編集できません」ダイアログがフォーカスを取得しない
+### 23. 「編集できません」ダイアログがフォーカスを取得しない
 
 no-speech等で表示されるカードは見た目がダイアログだが、既存のfocus trapへ接続されず、`aria-modal`もない。焦点は背面に残り、理由や再選択ボタンへ確実に到達できない。
 
 - 該当: `video-shorts/webapp-mockup/index.html:281-298`
 - 該当: `video-shorts/webapp-mockup/app.js:348-367`
 
-### 23. 結果タブの表示とARIA状態が矛盾する
+### 24. 結果タブの表示とARIA状態が矛盾する
 
 タブクリック時にpanelと`.is-on`だけを切り替え、`aria-selected`を更新しない。「使わない候補」を表示しても読み上げでは「採用候補」が選択されたままになる。Arrow/Home/Endとroving tabindexもない。
 
 - 該当: `video-shorts/webapp-mockup/index.html:199-203`
 - 該当: `video-shorts/webapp-mockup/app.js:265-271`
 
-### 24. SSEがバックプレッシャを無視する
+### 25. SSEがバックプレッシャを無視する
 
 `res.write()`のfalseを無視し、子stdout/stderrの各行を全購読者へ送り続ける。遅い購読者のresponse bufferへログが蓄積し、複数購読でメモリ消費が増幅する。
 
 - 該当: `video-shorts/server/index.mjs:417-440`
 - 該当: `video-shorts/server/pipeline-runner.mjs:32-45,176-200`
 - 修正案: `drain`まで送信を止め、進捗をcoalesceし、ログを上限付きring bufferにする
+
+### 26. recaption同時実行数テストが子プロセス未観測でも合格する
+
+Windowsで`security-recaption-flood-check.mjs`を実行すると、4ジョブのrecaptionがすべて200となる一方、ffmpeg子プロセスの実測ピークは0だった。それでも検査条件が`peakFfmpeg <= 2`だけなのでPASSする。監視機構が一度もffmpegを観測できなくても、上限が守られた証拠として扱う偽緑である。
+
+- 該当: `video-shorts/tests/security-recaption-flood-check.mjs:180-208`
+- 修正案: `peakFfmpeg >= 1`を前提条件として要求し、Windows対応のprocess-tree観測を使う。観測不能時はskipではなくFAILにする
 
 ## 補足所見
 
@@ -255,6 +271,24 @@ localhost Hostを名乗れる同一端末プロセスは静的indexから起動t
 - 既存backlogのM-5、M-7、L-3、L-6
 
 ## 実施した裏取り
+
+### イレギュラーE2E 3パターン
+
+製品コードが同一のコミット`f18763bf992d7b4d52537d117f4dcc1517cbad33`を`%TEMP%`の独立worktreeへ展開し、実サーバー、HTTP、SSE、ffmpegを使って検証した。検証用スクリプトとworktreeは終了後に削除した。
+
+1. **サーバー再起動と完了済みstateの復元: FAIL**
+   - 基本の再接続検査は4 PASS / 0 FAILだった。
+   - ただし`state.json`を`stage: rendered`、`candidates: 2`として再起動後にSSE購読すると、`done`ではなく`event: interrupted`を返した。
+   - P2「再起動時にディスクstateを無視する」を実HTTP経路で再現した。
+2. **容量上限付近の同時アップロード: PASS**
+   - 70%相当のアップロード2件を同時送信すると、一方が202、他方が507となった。
+   - 拒否されたwork directoryは残らず、予約容量の解放後に小容量アップロードが202で成功した。4 PASS / 0 FAIL。
+3. **字幕保存とrecaptionの競合: FAIL**
+   - 実動画のrecaption開始後、ASS生成を確認してから字幕PUTを送信した。
+   - 字幕PUTとrecaptionは双方200を返し、保存済み字幕は新版だったが、生成動画へ渡されたASSは旧字幕だった。
+   - P1「字幕保存と焼き直しの競合」を実HTTP・ffmpeg経路で再現した。
+
+元のOneDrive・日本語パス上では、3検査ともアサーション到達前に再帰削除後のNodeネイティブクラッシュが発生した。この配置差分の再現結果をP1 15へ記録した。
 
 - `node video-shorts/tests/smoke.mjs`: 97 PASS / 0 FAIL
 - `pnpm audit --audit-level moderate`: 既知脆弱性なし
