@@ -414,6 +414,12 @@
           "criteriaHash": "c606a5e88fd4c616c257ece00ab7926ce0211031b8017ac88b19e9f40d2b95d9",
           "at": "2026-08-12",
           "reason": "軌道修正C-7（basis-reviewerの2回目レビュー、2026-08-12）で受けた反証への対応。反証: この葉のverifyが『素材TA(…実測長11.402812秒)』という、2026-08-12のcalibration.flac/json作り直し(反証(2)(3)是正)で古くなった数値をそのまま参照していた。実際の音声実測長は11.052517秒(PR-1完了時点の11.402812秒から変わっている)。verify本文の該当箇所を実測値へ更新し、旧値をいつの時点の値だったか明記した(履歴として旧値そのものは残す)。判定ロジック・しきい値(TOL_SEC=0.08秒)は一切変更していない(素材の実際の長さを説明する数値の追随更新のみ)。"
+        },
+        {
+          "id": "G-EDIT-TRIM-A",
+          "criteriaHash": "c5259af7576f8732a5f0a574986e53c58d10900f669112be940ae4c0bcf6d347",
+          "at": "2026-08-13",
+          "reason": "done-gate(CI)の指摘への対応。この葉は元々criteria[0]にverifyCmdフィールドが無く、verify本文中に手順としてnode tests/trim-duration-check.mjsを実行する旨が書かれているだけだった。B/C/D/Eには既にverifyCmdフィールドがあり、この葉だけ機械が直接実行できる形になっていなかった。text/verifyの受入内容・判定ロジック・しきい値は一切変更せず、verifyCmdフィールド(\"node video-shorts/tests/trim-duration-check.mjs\")を追加しただけ。"
         }
       ]
     },
