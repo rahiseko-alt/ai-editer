@@ -1293,5 +1293,176 @@ check(
 shutil.rmtree(F_DIR, ignore_errors=True)
 
 
+# ================================================================ AUD-P1-08
+# 日本語パスでもWindows版の顔モザイクが起動できる（対監査修正）。
+#
+# Windows版OpenCVの ONNX 読み込みAPI（FaceDetectorYN.create() / FaceRecognizerSF.create()）は、
+# 対象ファイルが実在してサイズも正しくても、絶対パスに日本語などの非ASCII文字が含まれると
+# `Can't read ONNX file` で失敗する。この失敗モード自体は Windows+OpenCV 固有の制限で、
+# Linux の OpenCV では一般に再現しない（このマシンで実測しても再現しないことを以下で確認する）。
+# したがってここで機械的に検証できるのは次の2点だけ：
+#   (1) ASCIIキャッシュへのコピー関数が、日本語パスを与えたときに正しくバイトをコピーし、
+#       ASCIIのみのパスを返すこと（Linux 上でも実測できる＝コピーロジック自体の正しさ）。
+#   (2) FaceDetectorYN.create() / FaceRecognizerSF.create() が、元の（非ASCIIかもしれない）
+#       パスではなく ASCII キャッシュパスで呼ばれていること（呼び出しをモックして実測する）。
+# Windows実機での `Can't read ONNX file` が実際に解消することそのものは、このLinux環境では
+# 再現も確認もできない。この葉のWindows固有の主張は「コードレビューレベルで検証済み」に
+# 留まり、「実機で確認した」わけではないことを明示する。
+
+from face_mosaic import ascii_safe_cache_path, imread_unicode, imwrite_unicode  # noqa: E402
+
+_AUD_DIR = os.path.join(FIXTURES, "..", "_aud_p1_08_tmp")
+shutil.rmtree(_AUD_DIR, ignore_errors=True)
+os.makedirs(_AUD_DIR, exist_ok=True)
+
+# --------------------------------------------------------- (1) コピーロジックの正しさ
+# 日本語（非ASCII）を含むディレクトリ名の下にモデルファイルを置く。
+_jp_dir = os.path.join(_AUD_DIR, "日本語フォルダ_テスト用")
+os.makedirs(_jp_dir, exist_ok=True)
+_jp_model_src = os.path.join(_jp_dir, "顔検出モデル.onnx")
+shutil.copyfile(MODEL_PATH, _jp_model_src)
+
+_src_is_nonascii = True
+try:
+    _jp_model_src.encode("ascii")
+    _src_is_nonascii = False
+except UnicodeEncodeError:
+    pass
+check(
+    "AUD-P1-08 前提: 検証に使う元パスが実際に非ASCII（日本語）を含む",
+    _src_is_nonascii,
+    f"元パス={_jp_model_src!r} がASCIIエンコードできてしまった（テスト条件が成立していない）",
+)
+
+_cache_path = ascii_safe_cache_path(_jp_model_src)
+_cache_is_ascii = True
+try:
+    _cache_path.encode("ascii")
+except UnicodeEncodeError:
+    _cache_is_ascii = False
+check(
+    "AUD-P1-08 (1): 日本語パスを与えると、返り値がASCIIのみのパスになる",
+    _cache_is_ascii,
+    f"返り値={_cache_path!r}",
+)
+check(
+    "AUD-P1-08 (1): キャッシュ先に元ファイルと同じバイト列がコピーされている",
+    os.path.exists(_cache_path)
+    and open(_cache_path, "rb").read() == open(_jp_model_src, "rb").read(),
+    f"cache={_cache_path!r} exists={os.path.exists(_cache_path)}",
+)
+
+# ASCIIのみの元パスなら、無駄なコピーをせずそのまま返す（既存の分かりやすい呼び出しを崩さない）
+_ascii_src = os.path.join(_AUD_DIR, "ascii-model.onnx")
+shutil.copyfile(MODEL_PATH, _ascii_src)
+check(
+    "AUD-P1-08: 元パスが既にASCIIのみなら、コピーせずそのままのパスを返す",
+    ascii_safe_cache_path(_ascii_src) == _ascii_src,
+    f"got={ascii_safe_cache_path(_ascii_src)!r}",
+)
+
+# 内容が変わったら（サイズが変われば）キャッシュを作り直す（古い内容を使い続けない）
+_stale_dir = os.path.join(_AUD_DIR, "日本語_更新チェック")
+os.makedirs(_stale_dir, exist_ok=True)
+_stale_src = os.path.join(_stale_dir, "モデル.onnx")
+with open(_stale_src, "wb") as f:
+    f.write(b"v1-old-content")
+_cache1 = ascii_safe_cache_path(_stale_src)
+with open(_stale_src, "wb") as f:
+    f.write(b"v2-new-content-longer")
+_cache2 = ascii_safe_cache_path(_stale_src)
+check(
+    "AUD-P1-08: 元ファイルの中身（サイズ）が変わったら、キャッシュも新しい内容に更新される",
+    open(_cache2, "rb").read() == b"v2-new-content-longer",
+    f"cache1内容={open(_cache1, 'rb').read()!r} cache2内容={open(_cache2, 'rb').read()!r}",
+)
+
+# --------------------------------------------------------- (2) create() がASCIIキャッシュパスで呼ばれる
+# cv2.FaceDetectorYN.create() をモックし、実際に渡された第一引数（モデルパス）を記録する。
+# 「コード上そう書いてある」ではなく、実行時に実際に渡る値を確かめる。
+import face_mosaic as _fm_mod  # noqa: E402
+
+_orig_det_create = _fm_mod.cv2.FaceDetectorYN.create
+_captured_det_path = {}
+
+
+def _fake_det_create(*args, **kwargs):
+    _captured_det_path["path"] = args[0]
+    return _orig_det_create(*args, **kwargs)
+
+
+_fm_mod.cv2.FaceDetectorYN.create = _fake_det_create
+try:
+    _det_aud = create_detector(64, 64, model_path=_jp_model_src)
+finally:
+    _fm_mod.cv2.FaceDetectorYN.create = _orig_det_create
+
+check(
+    "AUD-P1-08 (2): FaceDetectorYN.create() には元の(日本語を含む)パスではなくASCIIキャッシュパスが渡る",
+    _captured_det_path.get("path") == _cache_path and _captured_det_path.get("path") != _jp_model_src,
+    f"渡されたpath={_captured_det_path.get('path')!r} / 期待するcache={_cache_path!r} "
+    f"/ 元の非ASCIIパス={_jp_model_src!r}",
+)
+
+# create_recognizer() も同じ経路を通る（FaceRecognizerSF.create()）ので同様に確認する。
+_jp_rec_src = os.path.join(_jp_dir, "顔識別モデル.onnx")
+shutil.copyfile(RECOGNIZER_PATH, _jp_rec_src)
+_rec_cache_path = ascii_safe_cache_path(_jp_rec_src)
+
+_orig_rec_create = _fm_mod.cv2.FaceRecognizerSF.create
+_captured_rec_path = {}
+
+
+def _fake_rec_create(*args, **kwargs):
+    _captured_rec_path["path"] = args[0]
+    return _orig_rec_create(*args, **kwargs)
+
+
+_fm_mod.cv2.FaceRecognizerSF.create = _fake_rec_create
+try:
+    _rec_aud = create_recognizer(model_path=_jp_rec_src)
+finally:
+    _fm_mod.cv2.FaceRecognizerSF.create = _orig_rec_create
+
+check(
+    "AUD-P1-08 (2): FaceRecognizerSF.create() にも元パスではなくASCIIキャッシュパスが渡る",
+    _captured_rec_path.get("path") == _rec_cache_path and _captured_rec_path.get("path") != _jp_rec_src,
+    f"渡されたpath={_captured_rec_path.get('path')!r} / 期待するcache={_rec_cache_path!r}",
+)
+
+# --------------------------------------------------------- 画像I/Oも非ASCIIパスで読み書きできる
+# cv2.imread/cv2.imwrite の代わりに np.fromfile+imdecode / imencode+tofile を使う経路。
+# こちらは Linux 上でも普通に検証できる（Windowsだけの制限ではなく、両OSで動くべき経路）。
+_jp_img_dir = os.path.join(_AUD_DIR, "日本語_画像フォルダ")
+os.makedirs(_jp_img_dir, exist_ok=True)
+_jp_img_path = os.path.join(_jp_img_dir, "顔写真.png")
+_write_ok = imwrite_unicode(_jp_img_path, one)
+_read_back = imread_unicode(_jp_img_path) if _write_ok else None
+check(
+    "AUD-P1-08: 日本語パスへ imwrite_unicode で書き出せる",
+    _write_ok and os.path.exists(_jp_img_path) and os.path.getsize(_jp_img_path) > 0,
+)
+check(
+    "AUD-P1-08: 日本語パスから imread_unicode で読み戻すと元画像と一致する（バイト単位で欠落しない）",
+    _read_back is not None and np.array_equal(_read_back, one),
+    f"読み戻し形状={None if _read_back is None else _read_back.shape} 期待={one.shape}",
+)
+check(
+    "AUD-P1-08: register_person()（内部でimread_unicodeを使う）が日本語パスの参照写真を読める",
+    register_person(_jp_img_path, name="p1-08")["signature"] is not None,
+)
+
+shutil.rmtree(_AUD_DIR, ignore_errors=True)
+
+print(
+    "\n[NOTE AUD-P1-08] Windows+OpenCV固有の実際の失敗モード（日本語絶対パスで "
+    "`Can't read ONNX file` になる現象そのもの）は、この環境（Linux）では再現できず、"
+    "したがってここでの修正が実機で解消することも実行では確認できていません。"
+    "上記のテストで確認したのは (1) ASCIIキャッシュへのコピーが正しいこと、"
+    "(2) create() へ実際にASCIIキャッシュパスが渡っていること、の2点のみで、"
+    "Windows実機での解消はコードレビューレベルの検証に留まります。"
+)
+
+
 print(f"\n--- {passed} PASS / {failed} FAIL ---")
 sys.exit(1 if failed else 0)
