@@ -551,6 +551,10 @@ $("tab-keep").addEventListener("click", (e) => {
 // 焼き込む前に文字を直せるようにする。直した内容はサーバへ保存し、
 // 「この字幕で焼き直す」で作り直す。よく出る名前は用語辞書へ覚えさせる。
 let capCtx = null;   // { job, clip, words }
+// AUD-P1-12: 焼き直し(recaption)実行中は字幕の直しを一切保存させない(サーバ側の409と対で、
+// UIレベルでも編集を明示的にロックする。ロック中に保存しようとして409を初めて知るより、
+// 押せない/入力できない状態を先に見せたほうが「なぜ保存できないか」が伝わる)。
+let capLocked = false;
 
 function capStatus(text, isError) {
   const el = $("caption-status");
@@ -561,6 +565,7 @@ function capStatus(text, isError) {
 function openCaptionEditor(job, clip) {
   if (!job || !clip) return;
   capCtx = { job, clip, words: [] };
+  capLocked = false;
   $("caption-title").textContent = `字幕を直す — ${clip.h}`;
   $("caption-editor").classList.remove("hidden");
   $("tab-keep").classList.add("hidden");
@@ -585,9 +590,11 @@ function renderCaptionWords() {
     el.innerHTML = `<p class="placeholder">この部分に字幕の文字がありません。</p>`;
     return;
   }
+  // AUD-P1-12: 焼き直し中はinputへdisabledを付け、見た目でも編集できないことを示す。
+  const disabledAttr = capLocked ? " disabled" : "";
   el.innerHTML = capCtx.words.map((w) =>
     `<span class="caption-word ${w.edited ? "is-edited" : ""}" data-index="${w.index}">` +
-    `<input type="text" value="${esc(w.w)}" data-index="${w.index}" aria-label="字幕の語" />` +
+    `<input type="text" value="${esc(w.w)}" data-index="${w.index}" aria-label="字幕の語"${disabledAttr} />` +
     (w.edited ? `<span class="caption-orig">元: ${esc(w.original)}</span>` : "") +
     `</span>`).join("");
 }
@@ -595,6 +602,13 @@ function renderCaptionWords() {
 // 入力欄を離れたとき（またはEnter）に保存する
 $("caption-words").addEventListener("change", (e) => {
   const input = e.target.closest("input[data-index]"); if (!input) return;
+  // AUD-P1-12: 焼き直し中はサーバも409で拒否するが、UI側でも先に弾いて
+  // 「保存できたように見えて実は反映されない」体験を避ける。
+  if (capLocked) {
+    capStatus("焼き直し中は字幕を直せません。焼き直しが終わってからお試しください。", true);
+    renderCaptionWords();
+    return;
+  }
   saveCaptionWord(Number(input.dataset.index), input.value);
 });
 $("caption-words").addEventListener("keydown", (e) => {
@@ -611,7 +625,9 @@ function saveCaptionWord(index, text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ index, text }),
     }, job.jobToken))
-    .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "保存に失敗しました")))))
+    .then((r) => r.json().then((j) => (r.ok
+      ? j
+      : Promise.reject(Object.assign(new Error(j.error || "保存に失敗しました"), { status: r.status })))))
     .then((j) => {
       const w = capCtx.words.find((x) => x.index === index);
       if (w) { w.w = j.after; w.edited = j.after !== w.original; }
@@ -619,7 +635,14 @@ function saveCaptionWord(index, text) {
       capStatus("保存しました");
       offerLearnTerm(j.before, j.after);
     })
-    .catch((e) => capStatus(e.message, true));
+    .catch((e) => {
+      // AUD-P1-12: サーバがUIのロック判定より早く焼き直しを開始した(競合)場合、
+      // ここで409を受け取る。保存できなかった事実を伝えつつ、UIも追随してロックする
+      // (元の入力値へ戻すため再描画する＝画面上は保存されたように見えたままにしない)。
+      if (e.status === 409) capLocked = true;
+      renderCaptionWords();
+      capStatus(e.message, true);
+    });
 }
 
 // 直した語を用語辞書へ覚えさせる導線（次の案件から自動で直る）
@@ -648,14 +671,23 @@ function offerLearnTerm(before, after) {
 }
 
 $("caption-rebake").addEventListener("click", () => {
-  if (!capCtx) return;
+  if (!capCtx || capLocked) return;
   const { job } = capCtx;
-  capStatus("焼き直しています…（動画を作り直すので少し待ちます）");
+  // AUD-P1-12: 焼き直し開始と同時に編集をロックする。開始直前(スナップショットを
+  // 取る前)に保存されたPUTは通常どおり反映されるが、開始後のPUTはサーバ側で409に
+  // なるため、その体験(押せるのに保存されない)をUI側でも先に防ぐ。
+  capLocked = true;
+  renderCaptionWords();
+  capStatus("焼き直しています…（動画を作り直すので少し待ちます・この間は字幕を編集できません）");
   fetch(withTokenQuery(`/api/jobs/${job.jobId}/recaption`, job.jobToken),
     withTokenHeader({ method: "POST" }, job.jobToken))
     .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || "焼き直しに失敗しました")))))
     .then((j) => capStatus(`焼き直しました（${j.rebuilt}本）`))
-    .catch((e) => capStatus(e.message, true));
+    .catch((e) => capStatus(e.message, true))
+    .finally(() => {
+      capLocked = false;
+      renderCaptionWords();
+    });
 });
 
 $("caption-back").addEventListener("click", () => {

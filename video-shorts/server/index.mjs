@@ -19,6 +19,7 @@ import {
   activeJobIds,
   beginRecaption,
   endRecaption,
+  isRecaptioning,
   runGated,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
@@ -589,6 +590,16 @@ function handleGetCaptions(req, res, jobId) {
 async function handlePutCaptions(req, res, jobId) {
   const id = safeId(jobId);
   if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  // AUD-P1-12: recaption(焼き直し)は開始時に字幕の直しを1回だけスナップショットして
+  // 動画へ焼き込む。焼き直し実行中にPUTを受理して保存だけ成功させると、実行中の焼き直しは
+  // 古いスナップショットのまま完了してしまい、保存した直しが黙って握りつぶされる
+  // (保存自体は200で成功したように見えるのに、出来上がる動画には反映されない)。
+  // 焼き直し中のPUTは409で明確に拒否し、UI側にも編集ロックさせる(webapp-mockup/app.js)。
+  if (isRecaptioning(id)) {
+    return jsonRes(res, 409, {
+      error: "焼き直し中は字幕を直せません。焼き直しが終わってからもう一度お試しください。",
+    });
+  }
   let body;
   try {
     body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
