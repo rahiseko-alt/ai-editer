@@ -73,7 +73,11 @@
     </section>
 
     <!-- Next 押下で製品ファイルをダウンロード。控えのメール送信は任意（署名不要） -->
-    <section class="receipt" id="receipt" hidden>
+    <!-- AUD-S-01: role="status"+aria-liveは静的markupに置く(=中身が入る前から既に存在させる)。
+         JSで動的に付け足すと「表示と同時に中身も入る」タイミングになり、スクリーンリーダーが
+         ライブリージョンとして認識する前に中身が変わってしまい確実に読み上げられない。
+         tabindex="-1"はプログラムからのfocus()専用(Tab順には入れない)。 -->
+    <section class="receipt" id="receipt" role="status" aria-live="polite" tabindex="-1" hidden>
       <h2>ダウンロードを開始しました</h2>
       <p class="note">拡張機能ファイル <strong id="productShow">video-shorts.zip</strong> のダウンロードが始まりました。開いて（展開して）、<strong>使用説明書（<a href="user-manual.html">user-manual.html</a>）</strong>のとおりにご利用ください。<br />自動で始まらない場合は <a id="productLink" href="video-shorts.zip" download>こちらから手動でダウンロード</a>してください。</p>
 

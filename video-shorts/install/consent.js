@@ -122,6 +122,12 @@
     startEl.disabled = true;
     startEl.textContent = "ダウンロードを開始しました";
     receiptEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    // AUD-S-01: 同意完了後、フォーカスは押した#startのまま(disabled化で見た目上も
+    // 宙に浮く)残っていた。控え(#receipt)へフォーカスを移し、完了をスクリーンリーダーが
+    // 確実に読み上げられるようにする(role/aria-liveは静的markup側で既に用意済み)。
+    // downloadProduct()が作る一時<a>のクリックで一瞬フォーカスが移ることがあるため、
+    // ここで最後に呼んで確実に勝たせる。
+    receiptEl.focus();
   });
 
   sendmailEl.addEventListener("click", function () { if (fullText) openMail(); });
