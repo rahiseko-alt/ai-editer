@@ -489,11 +489,22 @@ function run() {
         showError(msg);
       });
 
-      // 伝送レベルの障害(EventSourceのネイティブerror)。業務エラーは上のjob-errorイベントへ
-      // 分離済みなので、ここへ来るのは接続そのものの問題だけになる。
+      // AUD-P1-10a: 伝送レベルの障害(EventSourceのネイティブerror)。業務エラーは上の
+      // job-errorイベントへ分離済みなので、ここへ来るのは接続そのものの問題だけになる。
+      // これには2種類あり、readyStateで区別できる。
+      //   ① readyState===CONNECTING: 接続済みストリームが途中で切れただけ(TCP切断・
+      //      サーバー再起動の瞬間など)。ブラウザは仕様上これを検知すると自動で再接続を
+      //      試みる。ここでes.close()を呼ぶとその自動再接続を握りつぶしてしまうため、
+      //      何もしない(閉じない)。再接続後はサーバーが購読時に現在のスナップショットを
+      //      即送る(AUD-P1-10c)ため、切断中に見逃した進捗もここで復旧する。
+      //   ② readyState===CLOSED: 接続そのものを一度も確立できなかった(認可エラー等で
+      //      HTTP応答が200/text-event-streamでなかった)場合、ブラウザは仕様上二度と
+      //      自動再接続しない。これは打つ手が無いので、ここで明示的に終端として画面へ伝える。
       es.addEventListener("error", () => {
-        es.close();
-        showError("サーバーとの接続が切れました。もう一度お試しください。");
+        if (es.readyState === EventSource.CLOSED) {
+          showError("サーバーとの接続が切れました。もう一度お試しください。");
+        }
+        // readyState === CONNECTING の間は何もしない＝ブラウザの自動再接続に任せる。
       });
     })
     .catch((msg) => showError(String(msg)));
