@@ -460,7 +460,9 @@ function run() {
             if (!r.ok) return r.json().then((d) => Promise.reject(d.error || d.message || "候補取得失敗"));
             return r.json();
           })
-          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete))
+          // AUD-S-03: renderFailed(一部候補の書き出し失敗件数)もfillResultsへ渡す
+          // (これまでAPI応答に居ても画面が一切読んでいなかった)。
+          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete, data.renderFailed || 0))
           .catch((msg) => showError(String(msg)));
       });
 
@@ -499,7 +501,7 @@ $("editing-error-close").addEventListener("click", hideEditing);
 let jobs = [];
 let curJob = -1;
 function activeJob() { return jobs[curJob] || null; }
-function addJob(jobId, jobToken, candidates, incomplete) {
+function addJob(jobId, jobToken, candidates, incomplete, renderFailed) {
   const keep = (candidates || []).map((c) => ({
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
@@ -515,6 +517,7 @@ function addJob(jobId, jobToken, candidates, incomplete) {
     keep,
     trash: [],   // エンジンは採用候補のみ返すため trash は空
     incomplete: !!incomplete, // P1-5: 区間選定の一部が失敗し、全編をカバーできていない場合true
+    renderFailed: Number(renderFailed) || 0, // AUD-S-03: 書き出しに失敗した候補の本数
   });
   curJob = jobs.length - 1;
 }
@@ -543,6 +546,12 @@ function renderResults() {
     // P1-5: 一部の区間選定に失敗している場合、成功扱いに見せず必ず明示する(黙って欠落させない)。
     (job.incomplete
       ? `<p class="reason warn">⚠ 動画の一部区間の解析に失敗したため、全編ではなく成功した範囲のみから選んでいます。</p>`
+      : "") +
+    // AUD-S-03: 一部候補の書き出し(レンダ)自体が失敗した場合も、本数が想定より
+    // 少ない理由をここで明示する(APIのJSONに数値が乗るだけでは画面に出ない=見た目上は
+    // 「たまたま少なく選ばれた」ように見えてしまい、失敗の事実が伝わらない)。
+    (job.renderFailed > 0
+      ? `<p class="reason warn">⚠ ${job.renderFailed}件の書き出しに失敗したため、成功した${KEEP.length}件のみを表示しています。</p>`
       : "") +
     `<p class="reason">あなたの設定をもとに、AIがそのまま使える部分を${KEEP.length}本選びました。短い・中身が薄い部分は「使わない候補」に入れています。</p>` +
     (KEEP.length
@@ -706,9 +715,9 @@ function openResult() {
   requestAnimationFrame(() => ov.classList.add("show"));
   resultModal.open($("result-close")); // 初期フォーカスは閉じるボタン
 }
-function fillResults(jobId, jobToken, candidates, incomplete) {
+function fillResults(jobId, jobToken, candidates, incomplete, renderFailed) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
-  addJob(jobId, jobToken, candidates, incomplete);  // 今回の結果を履歴に積む（過去分は残る）
+  addJob(jobId, jobToken, candidates, incomplete, renderFailed);  // 今回の結果を履歴に積む（過去分は残る）
   renderJobList();
   renderResults();
   openResult();
