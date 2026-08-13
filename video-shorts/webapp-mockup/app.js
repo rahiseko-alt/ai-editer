@@ -462,7 +462,9 @@ function run() {
           })
           // AUD-S-03: renderFailed(一部候補の書き出し失敗件数)もfillResultsへ渡す
           // (これまでAPI応答に居ても画面が一切読んでいなかった)。
-          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete, data.renderFailed || 0))
+          // AUD-S-04: digest(まとめて1本にした最終動画)もfillResultsへ渡す
+          // (これまでAPI応答に居ても画面が一切読んでいなかった)。
+          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete, data.renderFailed || 0, data.digest || null))
           .catch((msg) => showError(String(msg)));
       });
 
@@ -501,7 +503,7 @@ $("editing-error-close").addEventListener("click", hideEditing);
 let jobs = [];
 let curJob = -1;
 function activeJob() { return jobs[curJob] || null; }
-function addJob(jobId, jobToken, candidates, incomplete, renderFailed) {
+function addJob(jobId, jobToken, candidates, incomplete, renderFailed, digest) {
   const keep = (candidates || []).map((c) => ({
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
@@ -518,6 +520,7 @@ function addJob(jobId, jobToken, candidates, incomplete, renderFailed) {
     trash: [],   // エンジンは採用候補のみ返すため trash は空
     incomplete: !!incomplete, // P1-5: 区間選定の一部が失敗し、全編をカバーできていない場合true
     renderFailed: Number(renderFailed) || 0, // AUD-S-03: 書き出しに失敗した候補の本数
+    digest: digest && digest.file ? digest : null, // AUD-S-04: まとめて1本にした最終動画(あれば)
   });
   curJob = jobs.length - 1;
 }
@@ -537,9 +540,23 @@ $("job-list").addEventListener("click", (e) => {
   renderJobList(); renderResults();
 });
 
+// AUD-S-04: digest(まとめて1本にした最終動画)の再生・DL導線。タブの外に置くので
+// 採用候補/使わない候補のどちらを見ていても常に見える。無ければ枠ごと隠す。
+function renderJobDigest(job) {
+  const el = $("job-digest");
+  if (!job || !job.digest) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  const src = withTokenQuery(`/api/clips/${job.jobId}/${encodeURIComponent(job.digest.file)}`, job.jobToken);
+  el.innerHTML =
+    `<b>まとめ動画（${job.digest.parts || job.keep.length}本を1本に結合）</b>` +
+    `<video controls preload="metadata" src="${esc(src)}"></video>` +
+    `<div class="job-digest-actions"><a class="clip-btn dl" id="job-digest-dl" href="${esc(src)}" download="${esc(job.digest.file)}">⬇ まとめ動画をDL</a></div>`;
+  el.classList.remove("hidden");
+}
+
 function renderResults() {
   const job = activeJob(); if (!job) return;
   const KEEP = job.keep, TRASH = job.trash;
+  renderJobDigest(job);
   $("keep-n").textContent = KEEP.length;
   $("trash-n").textContent = TRASH.length;
   $("tab-keep").innerHTML =
@@ -715,9 +732,9 @@ function openResult() {
   requestAnimationFrame(() => ov.classList.add("show"));
   resultModal.open($("result-close")); // 初期フォーカスは閉じるボタン
 }
-function fillResults(jobId, jobToken, candidates, incomplete, renderFailed) {
+function fillResults(jobId, jobToken, candidates, incomplete, renderFailed, digest) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
-  addJob(jobId, jobToken, candidates, incomplete, renderFailed);  // 今回の結果を履歴に積む（過去分は残る）
+  addJob(jobId, jobToken, candidates, incomplete, renderFailed, digest);  // 今回の結果を履歴に積む（過去分は残る）
   renderJobList();
   renderResults();
   openResult();

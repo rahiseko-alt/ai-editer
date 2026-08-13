@@ -196,6 +196,10 @@
         </div>
       </div>
       <div class="job-list hidden" id="job-list"></div>
+      <!-- AUD-S-04: 候補APIが返すdigest(まとめて1本にした最終動画)は、これまで
+           fillResults()がdata.candidatesしか読まず、生成されていても画面から見えなかった。
+           タブ(採用候補/使わない候補)の外・両方から常に見える位置に置く。 -->
+      <div class="job-digest hidden" id="job-digest"></div>
       <div class="tabs" role="tablist">
         <button class="tab is-on" data-tab="keep" role="tab" aria-selected="true" aria-controls="tab-keep">採用候補 <b id="keep-n">0</b></button>
         <button class="tab" data-tab="trash" role="tab" aria-selected="false" aria-controls="tab-trash">使わない候補 <b id="trash-n">0</b></button>
