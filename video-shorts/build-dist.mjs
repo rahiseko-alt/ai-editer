@@ -145,6 +145,34 @@ for (const f of ALLOWLIST_ROOT_FILES) {
 }
 // 2. src / tests / skill（pyc・__pycache__ 除外）
 for (const d of ALLOWLIST_DIRS) copyDirFiltered(d);
+
+// 2b. AUD-P2-17a: .claude/hooks/session-start.sh（PCを持たないクラウドセッション利用者向けの
+//     自動プロビジョニングフック）。start-here.md 冒頭は「このフックがセッション開始時に
+//     ffmpeg と文字起こしライブラリを自動導入済み」と明言しているため、配布物に無いと
+//     start-here.md の記述自体が嘘になる。video-shorts/ の外（リポジトリルート直下）に
+//     置かれたファイルなので、src/tests/skill と同じ allowlist の枠組みでは拾えない別経路として
+//     明示的にコピーする（.claude/ の他のファイル（agents/・skills/・settings.json・
+//     check-uncommitted.sh 等）はこのテンプレリポジトリ自身の統治用で客の配布物には無関係の
+//     ため、session-start.sh 1本だけを対象にする）。
+const REPO_ROOT = path.join(SRC, "..");
+const HOOK_REL = path.join(".claude", "hooks", "session-start.sh");
+const hookFrom = path.join(REPO_ROOT, HOOK_REL);
+{
+  // AUD-P1-04と同じ理由でfail-closed: git未追跡やsymlinkなら配布ビルドを止める。
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", HOOK_REL], { cwd: REPO_ROOT, stdio: "pipe" });
+  } catch {
+    throw new Error(`配布ビルド中止: ${HOOK_REL} が見つからない、またはgit未追跡です`);
+  }
+  if (fs.lstatSync(hookFrom).isSymbolicLink()) {
+    throw new Error(`配布ビルド中止: symlink はコピーできません（fail-closed）: ${HOOK_REL}`);
+  }
+  const hookTo = path.join(DEST, HOOK_REL);
+  ensureDir(path.dirname(hookTo));
+  fs.copyFileSync(hookFrom, hookTo);
+  fs.chmodSync(hookTo, 0o755);
+}
+
 // 3. 版刻印（再現性のため git hash を記録・.gitignore で追跡外の dist の出所を明示）
 let ver = "unknown";
 try {

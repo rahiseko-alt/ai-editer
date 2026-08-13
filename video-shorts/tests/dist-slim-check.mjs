@@ -142,7 +142,7 @@ check(
 // 事前に仕込んでおき、build-dist.mjs実行後にそれが消えている（＝生成物がallowlistと完全一致し
 // 余剰ファイルが0件）ことで確かめる。もし現状のように「既知のディレクトリ名だけ部分削除」
 // していると、この侵入者ファイルは生き残ってしまい FAIL する。
-const ALLOWLIST_TOP = ["start-here.md", "pipeline.mjs", "requirements.txt", "version.txt", "src", "tests", "skill"];
+const ALLOWLIST_TOP = ["start-here.md", "pipeline.mjs", "requirements.txt", "version.txt", "src", "tests", "skill", ".claude"];
 function seedIntruders(distDir) {
   fs.mkdirSync(distDir, { recursive: true });
   fs.writeFileSync(path.join(distDir, "old-build-leftover.txt"), "stale\n", "utf-8");
@@ -236,6 +236,41 @@ try {
     "AUD-P1-04: git管理下のsymlinkはfail-closedで配布ビルドが中止される（追従・コピーされない）",
     buildFailed,
     buildMsg,
+  );
+}
+
+// ---------------------------------------------------------------- AUD-P2-17a
+// start-here.md 冒頭は「PCを持たないクラウドセッション利用者向けに .claude/hooks/session-start.sh が
+// 自動導入済み」と明言している。この記述が嘘にならないよう、実際に配布物へ含まれることを直接検査する。
+for (const [label, dir] of [["軽い版", SLIM], ["標準版", FULL]]) {
+  const hookPath = path.join(dir, ".claude", "hooks", "session-start.sh");
+  check(
+    `AUD-P2-17a: ${label}のdistに .claude/hooks/session-start.sh が存在する`,
+    fs.existsSync(hookPath),
+  );
+  if (fs.existsSync(hookPath)) {
+    const mode = fs.statSync(hookPath).mode & 0o777;
+    check(
+      `AUD-P2-17a: ${label}の .claude/hooks/session-start.sh が実行可能権限を持つ`,
+      (mode & 0o100) !== 0,
+      `実際のmode=${mode.toString(8)}`,
+    );
+  }
+  // .claude/ 配下は session-start.sh 以外(このテンプレリポジトリ自身の統治用ファイル群)を
+  // 客の配布物へ持ち込まない(agents/・skills/・settings.json・check-uncommitted.sh 等)。
+  const claudeDir = path.join(dir, ".claude");
+  const claudeTop = fs.existsSync(claudeDir) ? fs.readdirSync(claudeDir) : null;
+  check(
+    `AUD-P2-17a: ${label}のdistの.claude/直下にはhooks/以外の何も無い`,
+    !!claudeTop && claudeTop.length === 1 && claudeTop[0] === "hooks",
+    `実際の中身=${JSON.stringify(claudeTop)}`,
+  );
+  const hooksDir = path.join(dir, ".claude", "hooks");
+  const hooksTop = fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir) : null;
+  check(
+    `AUD-P2-17a: ${label}のdistの.claude/hooks/直下にはsession-start.sh以外の何も無い(check-uncommitted.sh等を持ち込まない)`,
+    !!hooksTop && hooksTop.length === 1 && hooksTop[0] === "session-start.sh",
+    `実際の中身=${JSON.stringify(hooksTop)}`,
   );
 }
 
