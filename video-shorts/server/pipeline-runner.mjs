@@ -12,7 +12,7 @@ import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
-import { redactSecrets } from "./security.mjs";
+import { redactSecrets, createStreamingRedactor } from "./security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -183,6 +183,15 @@ function secretsToRedact() {
  * 子プロセスを spawn し、stderr を行単位で onLine に渡す。
  * 終了コード 0 以外は reject。
  *
+ * AUD-P1-05a/05b: 秘密情報(APIキー等)が2つのdataイベント(チャンク)の境目で分割されて
+ * 出力されると、チャンク単位で独立に伏字化してから連結する旧方式では伏字化を素通りして
+ * しまう。stdout/stderr それぞれに createStreamingRedactor() を1つずつ持たせ、チャンクを
+ * またいで秘密情報の出現を検出できるようにする(ストリームが終わったら flush() で
+ * 保持していた末尾も確定させる)。さらに、close 時にreject する Error.message
+ * （state.jsonのerrorフィールド・SSEのevent:errorへ伝播する経路の入り口）を組み立てる
+ * 直前にも念のためもう一度 redactSecrets を掛け、防御を二重化する(万一ストリーミング側の
+ * 境界計算に取りこぼしがあっても、この最終防波堤で捕まえる)。
+ *
  * @param {string} cmd
  * @param {string[]} args
  * @param {{ envExtra?: string[], [key: string]: any }} opts envExtra はこの呼び出しに限り
@@ -198,30 +207,41 @@ function spawnAndLog(cmd, args, opts, onLine) {
       ...restOpts,
     });
     const secrets = secretsToRedact();
+    const stderrRedactor = createStreamingRedactor(secrets);
+    const stdoutRedactor = createStreamingRedactor(secrets);
     let errBuf = "";
-    child.stderr.on("data", (chunk) => {
-      const text = redactSecrets(chunk.toString(), secrets);
+    const emitErrText = (text) => {
+      if (!text) return;
       errBuf += text;
       text.split("\n").forEach((ln) => {
         if (ln.trim()) onLine(ln.trim());
       });
+    };
+    const emitOutText = (text) => {
+      if (!text) return;
+      text.split("\n").forEach((ln) => {
+        if (ln.trim()) onLine(`[stdout] ${ln.trim()}`);
+      });
+    };
+    child.stderr.on("data", (chunk) => {
+      emitErrText(stderrRedactor.push(chunk.toString()));
     });
     // stdout も受け取る（pipeline.mjs が stdout に出力する場合あり）
     child.stdout.on("data", (chunk) => {
-      redactSecrets(chunk.toString(), secrets)
-        .split("\n")
-        .forEach((ln) => {
-          if (ln.trim()) onLine(`[stdout] ${ln.trim()}`);
-        });
+      emitOutText(stdoutRedactor.push(chunk.toString()));
     });
     child.on("error", (err) => reject(new Error(`spawn error: ${err.message}`)));
     child.on("close", (code) => {
+      // ストリームが終わったので、まだ確定させていなかった末尾(境界待ちの保持分)を出す。
+      emitErrText(stderrRedactor.flush());
+      emitOutText(stdoutRedactor.flush());
       if (code !== 0) {
-        // errBuf は上でチャンク単位で既に伏字化済み(P1-14-C: state.jsonへ書かれるError.messageの
-        // 経路もここを通るため、二重に伏字化する必要はない)。
+        // errBuf は上でチャンクをまたいで伏字化済みだが、Error.message はこの後
+        // state.json永続化(P1-14-C)・SSE配信(P1-14-B)の両方の入り口になるため、
+        // 多層防御としてここでもう一度 redactSecrets を掛ける(AUD-P1-05a/05b)。
         return reject(
           new Error(
-            `${cmd} 終了コード ${code}。stderr: ${errBuf.slice(0, 400)}`
+            `${cmd} 終了コード ${code}。stderr: ${redactSecrets(errBuf, secrets).slice(0, 400)}`
           )
         );
       }
@@ -370,10 +390,16 @@ export function startJob(jobId, inputAbsPath, opts) {
   const exec = () =>
     runJob(jobId, inputAbsPath, opts).catch((err) => {
       process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
+      // AUD-P1-05a/05b: SSE配信(broadcast)・state.json永続化(writeState)の直前に、
+      // それぞれ念のためもう一度 redactSecrets を掛ける(多層防御)。spawnAndLog側の
+      // ストリーミング伏字化(chunk境界対応)が主たる修正だが、err.messageはpipeline.mjs等
+      // 別経路のエラー（子プロセスのspawn自体の失敗メッセージ等）から来る場合もあり、
+      // ここが「SSEへ出る/state.jsonへ書かれる直前」の最後の関門になる。
+      const safeMessage = redactSecrets(err?.message ?? String(err), secretsToRedact());
       const job = jobs.get(jobId);
       if (job) {
         job.stage = "error";
-        job.error = err?.message ?? String(err);
+        job.error = safeMessage;
         job.errorCode = err?.code ?? null;
       }
       // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
@@ -386,7 +412,7 @@ export function startJob(jobId, inputAbsPath, opts) {
         writeState(workDir, {
           ...current,
           stage: "error",
-          error: err?.message ?? String(err),
+          error: safeMessage,
           errorCode: err?.code ?? null,
         });
       } catch (writeErr) {
@@ -394,7 +420,7 @@ export function startJob(jobId, inputAbsPath, opts) {
           `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
         );
       }
-      broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
+      broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, "error");
     });
   if (groqKeyAvailable()) {
     // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
