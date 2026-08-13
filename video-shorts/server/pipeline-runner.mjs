@@ -29,6 +29,11 @@ const jobs = new Map();
 /** 「実行中/待機中」とみなすstage一覧。TTL掃除の除外判定・二重起動ガードの両方から参照する。 */
 const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
 
+// P1-13-B/AUD-P1-03a/03b: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
+// src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。activeJobIds()
+// (TTL掃除の除外判定)からも参照するため、使用箇所より前で宣言する。
+const recaptioningJobs = new Set();
+
 /** SSE イベントを購読者全員に push。error/done は接続も close する */
 function broadcast(jobId, payload, event = null) {
   const job = jobs.get(jobId);
@@ -64,13 +69,24 @@ export function isRunning(jobId) {
  * mtimeだけを見るため、startJob() でキューへ積まれた直後（state.jsonをまだ書いていない・
  * ディレクトリのmtimeが古いまま）のジョブを「放置された古いジョブ」と誤認して消しうる。
  * server/index.mjs はこの一覧を掃除の除外リストとして渡す。
+ *
+ * AUD-P1-03a/03b: 本編ジョブ(jobs Map)だけでなく、焼き直し(recaption)中/焼き直し待ち
+ * （concurrencyGateで順番待ち）のジョブIDも含める。recaptioningJobs は
+ * beginRecaption()〜endRecaption() の間、その2状態(実行中・共有ゲートで待機中)の両方に
+ * わたって当該jobIdを保持し続けるため(server/index.mjsのhandleRecaptionはbeginRecaption→
+ * runGated→endRecaptionの順で呼ぶ)、ここに含めるだけで両方をまとめて保護できる。
+ * 含めていないと、焼き直し中/焼き直し待ちのジョブがTTLを過ぎていた場合にwork/outputの
+ * ディレクトリごと掃除で消えてしまい、実行中の焼き直しが入出力ファイルを失って壊れる。
  */
 export function activeJobIds() {
-  const ids = [];
+  const ids = new Set();
   for (const [id, job] of jobs) {
-    if (RUNNING_STAGES.includes(job.stage)) ids.push(id);
+    if (RUNNING_STAGES.includes(job.stage)) ids.add(id);
   }
-  return ids;
+  for (const id of recaptioningJobs) {
+    ids.add(id);
+  }
+  return [...ids];
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
@@ -295,11 +311,10 @@ export function createConcurrencyGate(max) {
 const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
 const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
 
-// P1-13-B: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
-// src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。また、
-// 焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
+// P1-13-B: 焼き直し(recaption)は同一ジョブへの並列連打だと一時ファイル名がジョブ固定のため
+// 競合する。また、焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
 // 本編ジョブと同じゲートを共有させ、同時実行数の上限を一本化する。
-const recaptioningJobs = new Set();
+// (recaptioningJobs 本体の宣言は activeJobIds() より前・ファイル冒頭側にある。)
 
 /** 指定ジョブが現在焼き直し中かどうか。 */
 export function isRecaptioning(jobId) {
