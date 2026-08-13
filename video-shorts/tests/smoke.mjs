@@ -669,7 +669,12 @@ t("字幕直し: 文字起こし(t)の後・区間選定(s)の前に工程(c)が
   const posS = src.indexOf('job.stage = "s"');
   assert.ok(posT > 0 && posC > posT, "工程が文字起こしより前にある（直す前の文字を読んでしまう）");
   assert.ok(posS > posC, "工程が区間選定より後にある（選定が誤変換のままの文章を読む）");
-  assert.ok(/state\.stage = "captionfixed"/.test(src), "state.stage に captionfixed を記録していない");
+  // AUD-P2-16: updateState(workDir, { stage: "captionfixed" }) 経由の記録も許容する
+  // (read-merge-atomic-write に統一したため、直接代入の形では書かれなくなった)。
+  assert.ok(
+    /state\.stage = "captionfixed"/.test(src) || /stage:\s*"captionfixed"/.test(src),
+    "state.stage に captionfixed を記録していない"
+  );
 });
 
 t("字幕直し: 走行中判定(stage c)に入っている（二重起動を防ぐ）", () => {
