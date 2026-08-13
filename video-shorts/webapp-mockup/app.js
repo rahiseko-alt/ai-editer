@@ -271,9 +271,16 @@ function attachModal(root, onClose) {
 }
 
 // ---- タブ（採用候補 / 使わない候補）----
+// AUD-P2-24: is-on(見た目)だけでなくaria-selectedも実際に表示中のパネルと一致させる。
+// これが無いと、クリックでパネルが切り替わってもスクリーンリーダーは前に選んでいた
+// タブを読み上げ続ける(見た目と読み上げ内容が食い違う)。
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("is-on"));
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.remove("is-on");
+    t.setAttribute("aria-selected", "false");
+  });
   tab.classList.add("is-on");
+  tab.setAttribute("aria-selected", "true");
   $("tab-keep").classList.toggle("hidden", tab.dataset.tab !== "keep");
   $("tab-trash").classList.toggle("hidden", tab.dataset.tab !== "trash");
 }));
