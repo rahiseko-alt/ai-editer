@@ -29,6 +29,59 @@ const jobs = new Map();
 /** 「実行中/待機中」とみなすstage一覧。TTL掃除の除外判定・二重起動ガードの両方から参照する。 */
 const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
 
+/** 終端(それ以上進まない)とみなすstage一覧。AUD-P2-20aのメモリ回収の対象判定に使う。 */
+const TERMINAL_STAGES = ["done", "error", "cancelled", "timeout"];
+
+/**
+ * AUD-P2-20a: 終端ジョブの保持期間(ms)。既定10分。VS_JOB_RETENTION_SECONDSで秒単位の
+ * 上書きができる(0以下・非数は既定へ)。terminalStages(done/error/cancelled/timeout)へ
+ * 到達してからこの期間を過ぎたジョブは、定期的にメモリ(jobs Map)から回収する。
+ *
+ * 旧実装は終端に達したジョブをjobs Mapから一切削除しておらず、稼働し続けるサーバーへ
+ * 継続的にジョブが投入されると、終わったジョブの記録がメモリに際限なく溜まり続けていた
+ * (監査指摘)。
+ */
+export function resolveJobRetentionMs(envValue = process.env.VS_JOB_RETENTION_SECONDS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n > 0 ? n * 1000 : 10 * 60 * 1000;
+}
+const JOB_RETENTION_MS = resolveJobRetentionMs();
+
+/**
+ * jobs Mapのうち、終端(TERMINAL_STAGES)に達してから JOB_RETENTION_MS を過ぎたものを
+ * 削除する(AUD-P2-20a)。終端イベントの時点でSSE購読者は既に全員closeされている
+ * (broadcast参照)ため、削除しても購読者を巻き込まない。
+ * @param {number} [nowMs] テストで実時間を待たずに検証できるよう呼び出し側が渡せる。
+ * @returns {string[]} 削除したjobId一覧
+ */
+export function reclaimTerminalJobs(nowMs = Date.now()) {
+  const removed = [];
+  for (const [id, job] of jobs) {
+    if (!TERMINAL_STAGES.includes(job.stage)) continue;
+    if (typeof job.terminatedAt !== "number") continue; // 保険(通常は終端到達時に必ず設定される)
+    if (nowMs - job.terminatedAt > JOB_RETENTION_MS) {
+      jobs.delete(id);
+      removed.push(id);
+    }
+  }
+  return removed;
+}
+
+// 起動しっぱなしのローカルサーバーでも定期的に回収されるよう、1分ごとに実行する
+// (エントリ自体は軽量なので毎分の走査コストは無視できる)。unref()でこのタイマーだけの
+// ためにプロセスが終了できなくなるのを防ぐ(テスト等での後始末)。
+setInterval(() => reclaimTerminalJobs(), 60 * 1000).unref();
+
+/** jobs Mapに指定jobIdがまだ載っているか(テスト用に公開)。 */
+export function hasJobInMemory(jobId) {
+  return jobs.has(jobId);
+}
+
+/** jobs Mapの現在の件数(テスト用に公開)。 */
+export function jobsMapSize() {
+  return jobs.size;
+}
+
 // P1-13-B/AUD-P1-03a/03b: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
 // src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。activeJobIds()
 // (TTL掃除の除外判定)からも参照するため、使用箇所より前で宣言する。
@@ -543,6 +596,25 @@ export function createConcurrencyGate(max) {
 const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
 const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
 
+/** groq経路の待ち行列(順番待ち・実行中を除く)の現在長。AUD-P2-20bのテスト用に公開する。 */
+export function queueWaitingCount() {
+  return concurrencyGate.waiting;
+}
+
+/**
+ * AUD-P2-20b: 順番待ちキューの長さ上限（純粋関数・テスト用に切り出し）。既定20。
+ * VS_MAX_QUEUE_LENGTHで上書きできる(1未満・非数は既定へ)。
+ *
+ * 旧実装は待ち行列(groq経路のconcurrencyGate内部キュー・local経路のlocalQueue)に
+ * 上限が無く、投入され続けると際限なく伸びた(監査指摘)。上限に達したら新規投入自体を
+ * 4xxで拒否する(キューへ積まずに即座に断る＝黙って溜め込まない)。
+ */
+export function resolveMaxQueueLength(envValue = process.env.VS_MAX_QUEUE_LENGTH) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 20;
+}
+const MAX_QUEUE_LENGTH = resolveMaxQueueLength();
+
 // P1-13-B: 焼き直し(recaption)は同一ジョブへの並列連打だと一時ファイル名がジョブ固定のため
 // 競合する。また、焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
 // 本編ジョブと同じゲートを共有させ、同時実行数の上限を一本化する。
@@ -581,6 +653,8 @@ export function runGated(fn) {
  * @param {string} jobId
  * @param {string} inputAbsPath - 保存済みの入力動画絶対パス
  * @param {{ sub: "on"|"none", cut: "topic"|"minutes", size: "9:16"|"16:9", cutMin?: number }} opts
+ * @returns {true|false|"queue_full"} true=受理, false=同一jobId実行中で拒否(409),
+ *   "queue_full"=AUD-P2-20b: 待ち行列が上限に達しているため拒否(呼び出し側は4xxで断ること)。
  */
 export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
@@ -588,6 +662,14 @@ export function startJob(jobId, inputAbsPath, opts) {
   const existing = jobs.get(jobId);
   if (existing && RUNNING_STAGES.includes(existing.stage)) {
     return false;
+  }
+  // AUD-P2-20b: どちらの経路(groq/local)を使うかで見るべき待ち行列が違う。
+  // ジョブ登録・制御レコード初期化より前に判定し、上限超過時は何も変更せず即座に断る
+  // (キューへ積んでから断ると「積んだのに拒否された」という不整合が起きる)。
+  const willUseGroq = groqKeyAvailable();
+  const currentQueueLength = willUseGroq ? concurrencyGate.waiting : localQueue.length;
+  if (currentQueueLength >= MAX_QUEUE_LENGTH) {
+    return "queue_full";
   }
   // AUD-P1-11a/11b: 前回の実行(キャンセル/タイムアウト/エラー)の制御レコードが残っていると、
   // 新しい実行が「まだキャンセル済みのまま」扱いされて子プロセスを一切起動できなくなる。
@@ -629,6 +711,8 @@ export function startJob(jobId, inputAbsPath, opts) {
           job.stage = terminalStage;
           job.error = safeMessage;
           job.errorCode = err?.code ?? null;
+          // AUD-P2-20a: 終端到達時刻を記録する(reclaimTerminalJobsの保持期間判定に使う)。
+          job.terminatedAt = Date.now();
         }
         // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
         // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
@@ -652,9 +736,9 @@ export function startJob(jobId, inputAbsPath, opts) {
         resetControl(jobId);
       }
     );
-  if (groqKeyAvailable()) {
+  if (willUseGroq) {
     // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
-    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C)。
+    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C。上限はAUD-P2-20bで別途判定済み)。
     concurrencyGate.run(exec);
   } else {
     // local: 直列。待ち中であることを購読者へ通知してからキュー投入
@@ -851,5 +935,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // state.jsonを読んで「本当はdoneだった」と判定できることが要る(subscribeJob参照)。
   updateState(workDir, { stage: "done", selectIncomplete });
   job.stage = "done";
+  // AUD-P2-20a: 終端到達時刻を記録する(reclaimTerminalJobsの保持期間判定に使う)。
+  job.terminatedAt = Date.now();
   broadcast(jobId, { stage: "done", incomplete: selectIncomplete }, "done");
 }

@@ -402,6 +402,14 @@ async function handlePostJobs(req, res) {
 
     // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
     const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
+    if (started === "queue_full") {
+      // AUD-P2-20b: 待ち行列が上限に達している。既にディスクへ書き終えたアップロードを
+      // 残さない(受理しないのだから成果物フォルダも残す理由が無い＝他の拒否経路と同じ作法)。
+      fs.rmSync(workDir, { recursive: true, force: true });
+      return jsonRes(res, 429, {
+        error: "順番待ちが混み合っています。しばらく待ってから再試行してください。",
+      });
+    }
     if (!started) {
       return jsonRes(res, 409, { error: "already running", jobId });
     }
