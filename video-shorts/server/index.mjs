@@ -56,6 +56,7 @@ import {
   sweepExpiredJobs,
   removeDirViaChildProcess,
 } from "./job-lifecycle.mjs";
+import { createBackpressureAwarePush } from "./sse-backpressure.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -448,9 +449,9 @@ function handleJobEvents(req, res, jobId) {
   // 初期 ping（接続確立確認）
   res.write(": ping\n\n");
 
-  function push(line) {
-    res.write(line);
-  }
+  // AUD-P2-25: res.write()のbackpressureを尊重するpushへ差し替える
+  // (遅い購読者がいてもNodeプロセス側のメモリが無制限に膨らまないようにする)。
+  const push = createBackpressureAwarePush(res);
   function close() {
     try {
       res.end();

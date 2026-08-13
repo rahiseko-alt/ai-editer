@@ -457,10 +457,18 @@ function spawnAndLog(cmd, args, opts, onLine) {
     const secrets = secretsToRedact();
     const stderrRedactor = createStreamingRedactor(secrets);
     const stdoutRedactor = createStreamingRedactor(secrets);
+    // AUD-P2-25: errBufは異常終了時のError.message組み立てにしか使わず、実際に使うのは
+    // 末尾で `.slice(0, 400)` した先頭400文字だけ(下のclose参照)。旧実装はここへ
+    // stderr全量を無制限に連結し続けており、長時間・大量に出力する子プロセスが
+    // 異常終了せずに走り続けると、この文字列だけでプロセスのメモリを際限なく食う
+    // (監査指摘)。使われるのは先頭部分だけなので、上限に達したら以後は溜めない。
+    const ERR_BUF_CAP = 8192;
     let errBuf = "";
     const emitErrText = (text) => {
       if (!text) return;
-      errBuf += text;
+      if (errBuf.length < ERR_BUF_CAP) {
+        errBuf += text.slice(0, ERR_BUF_CAP - errBuf.length);
+      }
       text.split("\n").forEach((ln) => {
         if (ln.trim()) onLine(ln.trim());
       });
