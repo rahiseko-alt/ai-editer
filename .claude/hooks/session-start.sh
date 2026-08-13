@@ -11,6 +11,23 @@ fi
 
 REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
+# AUD-P2-17b: このフックは2つのレイアウトどちらから実行されても requirements.txt を
+# 見つけられなければならない。
+#   - フルチェックアウト(このリポジトリ自身): requirements.txt は video-shorts/ 配下
+#     ($REPO_ROOT/video-shorts/requirements.txt)。
+#   - 配布物(dist/ai-editer-video-shorts、build-dist.mjs が生成): video-shorts/ という
+#     階層自体が無く、requirements.txt は dist のルート直下（$REPO_ROOT 直下）に平坦化される。
+# CLAUDE_PROJECT_DIR やこのファイル自身の位置から機械的に決まる $REPO_ROOT は
+# どちらのレイアウトでも「対象ルート」を指すので、実在するほうを選べば両対応できる。
+if [ -f "$REPO_ROOT/video-shorts/requirements.txt" ]; then
+  REQUIREMENTS_TXT="$REPO_ROOT/video-shorts/requirements.txt"
+elif [ -f "$REPO_ROOT/requirements.txt" ]; then
+  REQUIREMENTS_TXT="$REPO_ROOT/requirements.txt"
+else
+  echo "[session-start][ERROR] requirements.txt が見つかりません(確認したパス: $REPO_ROOT/video-shorts/requirements.txt / $REPO_ROOT/requirements.txt)。" >&2
+  exit 1
+fi
+
 # バージョン固定（roadmap P1-12-A）: ubuntu-24.04 の apt リポジトリで実際に動作確認した版。
 # CI(.github/workflows/ci.yml)の ubuntu-24.04 ランナーと同じ版に合わせてある。
 FFMPEG_PIN="7:6.1.1-3ubuntu5"
@@ -44,11 +61,11 @@ fi
 
 if ! python3 -c "import faster_whisper, groq" >/dev/null 2>&1; then
   echo "[session-start] 文字起こしライブラリ(faster-whisper/groq)が無いため導入します..." >&2
-  if python3 -m pip install --break-system-packages -r "$REPO_ROOT/video-shorts/requirements.txt"; then
+  if python3 -m pip install --break-system-packages -r "$REQUIREMENTS_TXT"; then
     :
   else
     rc=$?
-    echo "[session-start][ERROR] pip install (video-shorts/requirements.txt) に失敗しました(exit code: ${rc})。" >&2
+    echo "[session-start][ERROR] pip install (${REQUIREMENTS_TXT}) に失敗しました(exit code: ${rc})。" >&2
     echo "[session-start][ERROR] requirements.txt の内容・PyPIへのネットワーク到達性を確認してください。" >&2
     exit "$rc"
   fi
