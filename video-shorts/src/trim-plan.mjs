@@ -302,13 +302,22 @@ export const DEFAULT_SAMPLE_RATE = 48000;
  * @param {boolean} [opts.seamFade] 継ぎ目にフェードを掛けるか（既定 true）
  * @param {string} [opts.fpsRational] 素材の r_frame_rate（"30000/1001" のような分数の文字列）
  * @param {number} [opts.sampleRate] 素材の音声の標本化周波数（既定 48000）
- * @returns {{chain:string, count:number,
+ * @param {boolean} [opts.hasAudio] 素材に音声ストリームが有るか（既定 true）。
+ *   false のときは `[0:a]` を一切参照しない映像のみの式を組む（AUD-S-02）。
+ *   音声トラックが無い素材に対して `[0:a]` を参照すると、そのラベルが存在しないため
+ *   ffmpeg が「Stream specifier ':a' in filtergraph ... matches no streams」で落ちる。
+ *   通常経路は上流の無音声検出でこの入口を通らないよう守られているが、renderClip() を
+ *   直接 keep 付きで呼ぶ経路（テスト・将来の呼び出し側）ではこのガードが無いため、
+ *   ここで音声の有無に応じて式そのものを変える。
+ * @returns {{chain:string, count:number, hasAudio:boolean,
  *            spans:{startFrame:number|null,endFrame:number|null,
- *                   startSample:number,endSample:number}[]}|null}
- *   全部残すなら null（フィルタ不要）。chain は [tvout]（映像）と [taout]（音声）を作る1本の式。
+ *                   startSample:number|null,endSample:number|null}[]}|null}
+ *   全部残すなら null（フィルタ不要）。chain は [tvout]（映像）を作り、hasAudio が true の
+ *   ときだけ加えて [taout]（音声）も作る1本の式。
  */
 export function buildTrimFilters(keep, opts = {}) {
   const withFade = opts.seamFade !== false;
+  const hasAudio = opts.hasAudio !== false; // 既定は従来どおり「音声あり」
   const rat = parseFpsRational(opts.fpsRational);
   const sr = Number.isFinite(opts.sampleRate) && opts.sampleRate > 0
     ? Math.round(opts.sampleRate)
@@ -338,7 +347,8 @@ export function buildTrimFilters(keep, opts = {}) {
   const vHead = rat
     ? `[0:v]fps=fps=${rat.num}/${rat.den},split=${n}${labels("sv")};`
     : `[0:v]split=${n}${labels("sv")};`;
-  const aHead = `[0:a]aresample=${sr},asplit=${n}${labels("sa")};`;
+  // hasAudio=false のときはヘッダ自体を組まない（`[0:a]` を式のどこにも書かない）。
+  const aHead = hasAudio ? `[0:a]aresample=${sr},asplit=${n}${labels("sa")};` : "";
 
   const v = cuts.map((c, i) => {
     const cut = c.a !== null
@@ -351,7 +361,7 @@ export function buildTrimFilters(keep, opts = {}) {
   // 「プツッ」という音が入る（葉D が防ぎたい状態）。
   // 長さは SEAM_FADE_SEC。耳に「消えた」と分からない範囲で、跳ねだけを均す。
   // ここも標本の数で指定する（秒で書くと afade の中でまた丸めが起きる）。
-  const a = cuts.map((c, i) => {
+  const a = hasAudio ? cuts.map((c, i) => {
     const len = c.B - c.A;
     const fade = Math.min(Math.round(SEAM_FADE_SEC * sr), Math.floor(len / 4));
     const fadeIn = (!withFade || i === 0 || fade < 1) ? "" : `,afade=t=in:ss=0:ns=${fade}`;
@@ -359,16 +369,23 @@ export function buildTrimFilters(keep, opts = {}) {
       : `,afade=t=out:ss=${len - fade}:ns=${fade}`;
     return `[sa${i}]atrim=start_sample=${c.A}:end_sample=${c.B},asetpts=PTS-STARTPTS`
       + `${fadeIn}${fadeOut}[ta${i}]`;
-  });
+  }) : [];
 
-  // concat の入力は [映像0][音声0][映像1][音声1]… の交互順（v=1:a=1 のときの並び）。
-  const pairs = cuts.map((_, i) => `[tv${i}][ta${i}]`).join("");
+  // concat の入力は音声ありなら [映像0][音声0][映像1][音声1]… の交互順（v=1:a=1）、
+  // 音声無しなら [映像0][映像1]… の映像だけの並び（v=1:a=0・[taout]は作らない）。
+  const pairs = cuts.map((_, i) => (hasAudio ? `[tv${i}][ta${i}]` : `[tv${i}]`)).join("");
+  const concatOut = hasAudio ? "[tvout][taout]" : "[tvout]";
+  const parts = [vHead, aHead, `${v.join(";")};`];
+  if (hasAudio) parts.push(`${a.join(";")};`);
+  parts.push(`${pairs}concat=n=${n}:v=1:a=${hasAudio ? 1 : 0}${concatOut}`);
+
   return {
-    chain: `${vHead}${aHead}${v.join(";")};${a.join(";")};`
-      + `${pairs}concat=n=${n}:v=1:a=1[tvout][taout]`,
+    chain: parts.join(""),
     count: n,
+    hasAudio,
     spans: cuts.map((c) => ({
-      startFrame: c.a, endFrame: c.b, startSample: c.A, endSample: c.B,
+      startFrame: c.a, endFrame: c.b,
+      startSample: hasAudio ? c.A : null, endSample: hasAudio ? c.B : null,
     })),
   };
 }
