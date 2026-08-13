@@ -324,8 +324,11 @@ async function cmdRender(workDir, opts = {}) {
   } catch (e) {
     log(`[WARN] 素材解像度のprobeに失敗（拡大ガード無効で続行）: ${e.message}`);
   }
-  const srcW = srcSize ? srcSize.width : undefined;
-  const srcH = srcSize ? srcSize.height : undefined;
+  // coded width/height ではなく SAR 補正後の表示寸法を使う（AUD-P2-21）。SAR=1:1（大半の
+  // 素材）では displayWidth===width のため無変化。非正方形ピクセルの素材だけ、実際の
+  // 表示アスペクト比で拡大ガード・fit の目標寸法を選べるようになる。
+  const srcW = srcSize ? srcSize.displayWidth : undefined;
+  const srcH = srcSize ? srcSize.displayHeight : undefined;
   // 詰めるときに区間の端をコマの境目へ揃えるのに要る。取れなければ揃えない（従来どおりの動き）。
   const srcFps = srcSize ? srcSize.fps : null;
   // 分数のままの姿。コマ数/秒が一定でない素材（画面録画）で、切る前に等間隔のコマ列へ
