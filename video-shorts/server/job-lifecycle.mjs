@@ -10,9 +10,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const DAY_SECONDS = 24 * 60 * 60;
 const GIGABYTE = 1024 * 1024 * 1024;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const RM_WORKER_SCRIPT = path.join(HERE, "rm-job-dir-worker.mjs");
 
 /** TTL(秒)。既定24時間。VS_JOB_TTL_SECONDS で上書き（正の有限数のみ。それ以外は既定へ）。 */
 export function resolveTtlSeconds(envValue = process.env.VS_JOB_TTL_SECONDS) {
@@ -78,6 +82,49 @@ function dirMtimeMs(dir) {
   return latest;
 }
 
+/** 既定の削除実装(このプロセス内で直接 fs.rmSync する・従来どおりの挙動)。 */
+function defaultRemoveDir(p) {
+  fs.rmSync(p, { recursive: true, force: true });
+}
+
+/**
+ * AUD-P1-15: 削除処理を「このプロセスとは別のOSプロセス」で行う版。
+ *
+ * docs/audits/adversarial-review-2026-08-13.md #15: Node.js v24.13.0のWindows環境で、
+ * OneDrive配下・日本語を含む実パス上の再帰的な fs.rmSync() が、終了コード
+ * -1073740791 のネイティブクラッシュでプロセスごと落ちることが実地で確認された。
+ * これはJSの try/catch では捕まえられない種類の異常終了で、呼び出し元でどれだけ
+ * 丁寧にtry/catchしてもそのtry/catchごとプロセスが消し飛ぶため無力になる
+ * (このファイル内の try/catch は「捕まえられる例外」にしか効かない)。
+ *
+ * 削除を子プロセス(rm-job-dir-worker.mjs)へ切り出すことで、そのプロセスが
+ * ネイティブクラッシュしても死ぬのはワーカーだけになり、呼び出し元(サーバー本体)は
+ * 子プロセスの異常終了(シグナル・非0終了コード)として観測できる普通のJSエラーに
+ * 変換して受け取れる(=サーバー本体は継続稼働できる)。
+ *
+ * ⚠ このプロセス分離は「サーバー本体を巻き込まない」ことは保証するが、Windows実機・
+ * 実OneDrive・実日本語パスでの実地検証はこのLinux開発環境では行えていない
+ * (詳細は AGENTS.md 及び本leafの最終報告を参照)。
+ */
+export function removeDirViaChildProcess(p, { execPath = process.execPath, scriptPath = RM_WORKER_SCRIPT, timeoutMs = 30_000 } = {}) {
+  const result = spawnSync(execPath, [scriptPath, p], {
+    timeout: timeoutMs,
+    windowsHide: true,
+    encoding: "utf-8",
+  });
+  if (result.error) throw result.error; // spawn自体の失敗(ENOENT等)
+  if (result.signal) {
+    throw new Error(
+      `削除ワーカーがシグナル ${result.signal} で終了しました(ネイティブクラッシュ等の可能性があります)。パス: ${p}`
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `削除ワーカーが異常終了しました(code=${result.status})。パス: ${p} stderr: ${(result.stderr || "").toString().slice(0, 300)}`
+    );
+  }
+}
+
 /**
  * roots配下の直下ディレクトリ(=各ジョブ)のうち、最終更新から ttlSeconds 秒を過ぎたものを
  * 削除する。
@@ -91,9 +138,13 @@ function dirMtimeMs(dir) {
  *   mtimeだけで判定すると「作成直後でまだ何も書き込まれていない実行中ジョブ」を
  *   「放置された古いジョブ」と誤認して消してしまう。呼び出し側が実行中/待機中の
  *   ジョブID一覧を渡し、ここでは無条件にスキップする）。
+ * @param {(p: string) => void} [removeDir] 実際の削除を行う関数(差し替え可能・テスト/
+ *   AUD-P1-15用)。既定はこのプロセス内で直接 fs.rmSync する従来どおりの実装。
+ *   server/index.mjs は本番運用時に removeDirViaChildProcess を渡し、削除を子プロセスへ
+ *   隔離する(ネイティブクラッシュがサーバー本体へ波及しないようにするため)。
  * @returns {{root:string, jobId:string}[]} 削除したジョブ
  */
-export function sweepExpiredJobs(roots, ttlSeconds, nowMs, excludeJobIds = []) {
+export function sweepExpiredJobs(roots, ttlSeconds, nowMs, excludeJobIds = [], removeDir = defaultRemoveDir) {
   const exclude = excludeJobIds instanceof Set ? excludeJobIds : new Set(excludeJobIds);
   const removed = [];
   for (const root of roots) {
@@ -113,8 +164,10 @@ export function sweepExpiredJobs(roots, ttlSeconds, nowMs, excludeJobIds = []) {
         // removed へ push していたため「削除できたことになっているが実は残っている」
         // 状態を報告してしまっていた。1件の削除失敗が他のディレクトリの掃除を止めないよう
         // try/catchで個別に包み、実際に削除できたものだけを removed へ積む。
+        // AUD-P1-15: removeDir が(隔離した子プロセス経由で)投げる「異常終了」も、
+        // ここで同じ try/catch が受け止め、他のディレクトリの掃除を止めずに続行する。
         try {
-          fs.rmSync(p, { recursive: true, force: true });
+          removeDir(p);
           removed.push({ root, jobId: ent.name });
         } catch (e) {
           process.stderr.write(

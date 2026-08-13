@@ -13,7 +13,11 @@
 ## 技術スタック（既存実装より確定）
 
 - クラウド / ホスティング: 不要（客の PC 上でローカル動作。AI-Editer のサーバ・アカウントを介さない）
-- 言語 / ランタイム: Node.js 22（標準モジュールのみ・npm 依存ゼロ） + Python 3（文字起こし: Groq Whisper API）
+- 言語 / ランタイム: Node.js 22（標準モジュールのみ・npm 依存ゼロ） + Python 3（文字起こし: Groq Whisper API）。
+  `package.json` の `engines.node` で `>=20.0.0 <24.0.0` を明示している(AUD-P1-15)。上限を切っているのは、
+  Node.js v24.13.0 の Windows 環境で OneDrive 配下・日本語パス上の `fs.rmSync()` 再帰削除がネイティブ
+  クラッシュ(終了コード `-1073740791`)を起こすことが実地監査で確認された(`docs/audits/adversarial-review-2026-08-13.md` #15)ため。
+  22系(この開発環境・CIの `.node-version` と同じ)での同条件の再現有無は未検証。
 - フレームワーク: 無し（`server/index.mjs` は `node:http` のみで実装した素の HTTP サーバ）
 - パッケージ / 依存管理: pnpm workspace（配布物は npm 依存ゼロ）。外部バイナリとして ffmpeg/ffprobe が必須（別途導入）。
   2026-08-09 マスター承認により `playwright` を devDependencies へ追加した（P2-5/7/8 の実ブラウザ検証用）。

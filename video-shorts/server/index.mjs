@@ -54,6 +54,7 @@ import {
   computeUsedBytes,
   hasQuotaAvailable,
   sweepExpiredJobs,
+  removeDirViaChildProcess,
 } from "./job-lifecycle.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
@@ -82,11 +83,23 @@ const writeRateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 const JOB_TTL_SECONDS = resolveTtlSeconds();
 const STORAGE_QUOTA_BYTES = resolveQuotaBytes();
 
-/** P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。 */
+/**
+ * P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。
+ * AUD-P1-15: 削除処理そのものは removeDirViaChildProcess() で別プロセスへ隔離する。
+ * Windows/OneDrive/日本語パスの組み合わせで fs.rmSync() がネイティブクラッシュを起こしても
+ * (docs/audits/adversarial-review-2026-08-13.md #15)、死ぬのはその子プロセスだけにして
+ * サーバー本体は継続稼働させるため(job-lifecycle.mjs のコメント参照)。
+ */
 function sweepExpiredJobsNow() {
   // 実行中/待機中のジョブは、まだ state.json を書いていない(=ディレクトリのmtimeが古いまま
   // に見える)可能性があるため掃除から除外する（pipeline-runner.mjs activeJobIds() 参照）。
-  const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now(), activeJobIds());
+  const removed = sweepExpiredJobs(
+    [WORK_ROOT, OUT_ROOT],
+    JOB_TTL_SECONDS,
+    Date.now(),
+    activeJobIds(),
+    removeDirViaChildProcess,
+  );
   for (const r of removed) {
     process.stderr.write(`[ai-editer] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
   }
