@@ -324,8 +324,11 @@ async function cmdRender(workDir, opts = {}) {
   } catch (e) {
     log(`[WARN] 素材解像度のprobeに失敗（拡大ガード無効で続行）: ${e.message}`);
   }
-  const srcW = srcSize ? srcSize.width : undefined;
-  const srcH = srcSize ? srcSize.height : undefined;
+  // coded width/height ではなく SAR 補正後の表示寸法を使う（AUD-P2-21）。SAR=1:1（大半の
+  // 素材）では displayWidth===width のため無変化。非正方形ピクセルの素材だけ、実際の
+  // 表示アスペクト比で拡大ガード・fit の目標寸法を選べるようになる。
+  const srcW = srcSize ? srcSize.displayWidth : undefined;
+  const srcH = srcSize ? srcSize.displayHeight : undefined;
   // 詰めるときに区間の端をコマの境目へ揃えるのに要る。取れなければ揃えない（従来どおりの動き）。
   const srcFps = srcSize ? srcSize.fps : null;
   // 分数のままの姿。コマ数/秒が一定でない素材（画面録画）で、切る前に等間隔のコマ列へ
@@ -349,7 +352,11 @@ async function cmdRender(workDir, opts = {}) {
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
     try {
-      await renderSegment({
+      // AUD-P1-02a/02b: この戻り値（実際に使われた開始秒・詰め後の keep 区間・詰め後の尺）を
+      // 捨てずに manifest へ持ち回る。捨てると、字幕焼き直し(recaption-stage.mjs)は
+      // raw な start/end から作り直すしかなくなり、詰めた尺（例: 4秒→1秒）が戻ってしまう
+      // （実際に起きていたバグそのもの）。
+      const renderResult = await renderSegment({
         input: state.input,
         seg,
         words: transcript.words || [],
@@ -377,6 +384,15 @@ async function cmdRender(workDir, opts = {}) {
         height: size.height,
         vertical: size.vertical,
         status: "pending", // UI で採用/破棄
+        // AUD-P1-02a/02b: 実際に使ったレンダ計画。字幕焼き直しはここを読み、同じ関数へ
+        // 同じ値を渡して再現する（raw start/end から作り直さない）。
+        renderPlan: {
+          segStart: renderResult.segStart,
+          keep: renderResult.keep,
+          clipDuration: renderResult.clipDuration,
+          canvasW: canvas.w,
+          canvasH: canvas.h,
+        },
       });
       log(`  [OK] ${path.basename(outFile)} ${size.width}x${size.height} vertical=${size.vertical}`);
     } catch (e) {
@@ -390,7 +406,12 @@ async function cmdRender(workDir, opts = {}) {
   const selectIncomplete = !!state.selectIncomplete;
   if (resolved.length > 0 && manifest.length === 0) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete });
+      // AUD-S-03: failCountはここまで計算済みなのに、これまでcandidates.jsonへ一度も
+      // 書かれていなかった（ログにしか出ない）。一部候補の書き出し失敗を画面側が
+      // 検出・表示するための唯一の材料なので、他の2箇所のwriteJsonとあわせて含める。
+      { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete,
+        srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+        srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
     state.stage = "render_failed";
     state.candidates = 0;
     saveState(workDir, state);
@@ -417,7 +438,10 @@ async function cmdRender(workDir, opts = {}) {
 
   if (mode === "digest" && manifest.length > 0 && digest === null) {
     writeJson(path.join(outDir, "candidates.json"),
-      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete });
+      // AUD-S-03: 部分失敗件数(renderFailed)を持ち回る（詳細は下の主経路のwriteJson参照）。
+      { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete,
+        srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+        srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
     state.stage = "render_failed";
     state.candidates = manifest.length;
     saveState(workDir, state);
@@ -425,7 +449,15 @@ async function cmdRender(workDir, opts = {}) {
   }
 
   writeJson(path.join(outDir, "candidates.json"),
-    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete });
+    // AUD-P1-02b: srcW/srcH（+ fps/標本化周波数）をここで持ち回る。recaption-stage.mjs は
+    // 従来 state.srcW/state.srcH（本番のstate.jsonには存在しないフィールド）を参照しており、
+    // 常にundefined → 拡大ガード無しの既定解像度で焼き直され、初回レンダと解像度がずれていた。
+    // AUD-S-03: renderFailed(部分失敗件数)も併せて持ち回る。一部区間だけレンダに失敗しても
+    // (failCount>0でもmanifest.length>0なら)この主経路を通るため、失敗件数が
+    // webapp-mockup側へ渡る唯一の経路はここになる。
+    { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete,
+      srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
+      srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
   state.stage = "rendered";
   state.candidates = manifest.length;
   saveState(workDir, state);
@@ -438,7 +470,7 @@ async function cmdRender(workDir, opts = {}) {
   stageEnd(workDir, "render");
   log(summaryLine(readTiming(workDir)));
   log(`[DONE] ${manifest.length} 本生成 → ${outDir}\\candidates.json`);
-  log(`[NEXT] ui/index.html を開いて candidates.json を読み込み、採用/破棄を選別`);
+  log(`[NEXT] output/${path.basename(workDir)}/candidates.json と short-*.mp4 を確認し、採用/破棄を選別`);
 }
 
 function cmdStatus(workDir) {

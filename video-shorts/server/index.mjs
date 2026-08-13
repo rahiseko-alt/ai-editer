@@ -19,7 +19,9 @@ import {
   activeJobIds,
   beginRecaption,
   endRecaption,
+  isRecaptioning,
   runGated,
+  cancelJob,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
@@ -52,7 +54,9 @@ import {
   computeUsedBytes,
   hasQuotaAvailable,
   sweepExpiredJobs,
+  removeDirViaChildProcess,
 } from "./job-lifecycle.mjs";
+import { createBackpressureAwarePush } from "./sse-backpressure.mjs";
 
 const PORT = Number(process.env.PORT ?? 5178);
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -80,11 +84,23 @@ const writeRateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 const JOB_TTL_SECONDS = resolveTtlSeconds();
 const STORAGE_QUOTA_BYTES = resolveQuotaBytes();
 
-/** P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。 */
+/**
+ * P2-4(A): TTLを過ぎたジョブ(work/output配下)を削除する。起動時に1回、以後は定期実行する。
+ * AUD-P1-15: 削除処理そのものは removeDirViaChildProcess() で別プロセスへ隔離する。
+ * Windows/OneDrive/日本語パスの組み合わせで fs.rmSync() がネイティブクラッシュを起こしても
+ * (docs/audits/adversarial-review-2026-08-13.md #15)、死ぬのはその子プロセスだけにして
+ * サーバー本体は継続稼働させるため(job-lifecycle.mjs のコメント参照)。
+ */
 function sweepExpiredJobsNow() {
   // 実行中/待機中のジョブは、まだ state.json を書いていない(=ディレクトリのmtimeが古いまま
   // に見える)可能性があるため掃除から除外する（pipeline-runner.mjs activeJobIds() 参照）。
-  const removed = sweepExpiredJobs([WORK_ROOT, OUT_ROOT], JOB_TTL_SECONDS, Date.now(), activeJobIds());
+  const removed = sweepExpiredJobs(
+    [WORK_ROOT, OUT_ROOT],
+    JOB_TTL_SECONDS,
+    Date.now(),
+    activeJobIds(),
+    removeDirViaChildProcess,
+  );
   for (const r of removed) {
     process.stderr.write(`[ai-editer] TTL(${JOB_TTL_SECONDS}秒)超過のため削除: ${r.root}/${r.jobId}\n`);
   }
@@ -387,6 +403,14 @@ async function handlePostJobs(req, res) {
 
     // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
     const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
+    if (started === "queue_full") {
+      // AUD-P2-20b: 待ち行列が上限に達している。既にディスクへ書き終えたアップロードを
+      // 残さない(受理しないのだから成果物フォルダも残す理由が無い＝他の拒否経路と同じ作法)。
+      fs.rmSync(workDir, { recursive: true, force: true });
+      return jsonRes(res, 429, {
+        error: "順番待ちが混み合っています。しばらく待ってから再試行してください。",
+      });
+    }
     if (!started) {
       return jsonRes(res, 409, { error: "already running", jobId });
     }
@@ -425,9 +449,9 @@ function handleJobEvents(req, res, jobId) {
   // 初期 ping（接続確立確認）
   res.write(": ping\n\n");
 
-  function push(line) {
-    res.write(line);
-  }
+  // AUD-P2-25: res.write()のbackpressureを尊重するpushへ差し替える
+  // (遅い購読者がいてもNodeプロセス側のメモリが無制限に膨らまないようにする)。
+  const push = createBackpressureAwarePush(res);
   function close() {
     try {
       res.end();
@@ -589,6 +613,16 @@ function handleGetCaptions(req, res, jobId) {
 async function handlePutCaptions(req, res, jobId) {
   const id = safeId(jobId);
   if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  // AUD-P1-12: recaption(焼き直し)は開始時に字幕の直しを1回だけスナップショットして
+  // 動画へ焼き込む。焼き直し実行中にPUTを受理して保存だけ成功させると、実行中の焼き直しは
+  // 古いスナップショットのまま完了してしまい、保存した直しが黙って握りつぶされる
+  // (保存自体は200で成功したように見えるのに、出来上がる動画には反映されない)。
+  // 焼き直し中のPUTは409で明確に拒否し、UI側にも編集ロックさせる(webapp-mockup/app.js)。
+  if (isRecaptioning(id)) {
+    return jsonRes(res, 409, {
+      error: "焼き直し中は字幕を直せません。焼き直しが終わってからもう一度お試しください。",
+    });
+  }
   let body;
   try {
     body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
@@ -645,6 +679,15 @@ async function handlePostTerms(req, res, jobId) {
   }
   if (!result.added) return jsonRes(res, 400, { error: result.reason, ...result });
   return jsonRes(res, 200, { ok: true, ...result });
+}
+
+// POST /api/jobs/:id/cancel — 実行中のジョブを手動でキャンセルする(AUD-P1-11a)
+function handleCancelJob(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  const result = cancelJob(id);
+  if (!result.ok) return jsonRes(res, 409, { error: result.reason });
+  return jsonRes(res, 200, { ok: true });
 }
 
 // POST /api/jobs/:id/recaption — 直した字幕で焼き直す
@@ -758,6 +801,18 @@ async function handleRequest(req, res) {
       return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
     }
     return handlePostTerms(req, res, id);
+  }
+
+  // POST /api/jobs/:id/cancel（AUD-P1-11a: 実行中のジョブを手動でキャンセルする）
+  const cancelMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (method === "POST" && cancelMatch) {
+    const id = decodeId(cancelMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (!writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
+    return handleCancelJob(req, res, id);
   }
 
   // POST /api/jobs/:id/recaption（直した字幕で焼き直す）

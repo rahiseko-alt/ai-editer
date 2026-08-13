@@ -24,6 +24,9 @@
   const CONTRACT = card.dataset.contract || "";
   const CONTACT = card.dataset.contact || "";
   const PRODUCT = card.dataset.product || "video-shorts.zip";
+  // AUD-P1-14: 確定本文が閲覧できない契約に同意させないためのゲート。
+  // data-contract-available が明示的に "false" でない限り有効（既定は利用可能側に寄せない＝安全側）。
+  const CONTRACT_AVAILABLE = card.dataset.contractAvailable !== "false";
 
   if (contactShowEl) contactShowEl.textContent = CONTACT;
   if (productShowEl) productShowEl.textContent = PRODUCT;
@@ -43,6 +46,18 @@
   }
 
   function refresh() {
+    // AUD-P1-14: #agree はHTML側で既定 disabled（安全側）。確定本文が用意され
+    // data-contract-available が "false" 以外になった時点で、ここで実際に有効化する
+    // (これを書かないと、将来フラグを立てても静的disabledが残ったまま同意操作が
+    // 永久に完了できなくなる)。
+    agreeEl.disabled = !CONTRACT_AVAILABLE;
+    agreeEl.setAttribute("aria-disabled", CONTRACT_AVAILABLE ? "false" : "true");
+    if (!CONTRACT_AVAILABLE) {
+      // 確定本文が無い間は、名前・チェックの状態にかかわらず同意操作自体を許可しない。
+      startEl.disabled = true;
+      hintEl.textContent = "「" + CONTRACT + "」の確定本文が未掲載のため、現在は同意・ダウンロードできません。";
+      return;
+    }
     const ok = nameEl.value.trim().length > 0 && agreeEl.checked;
     startEl.disabled = !ok;
     hintEl.textContent = ok
@@ -122,6 +137,12 @@
     startEl.disabled = true;
     startEl.textContent = "ダウンロードを開始しました";
     receiptEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    // AUD-S-01: 同意完了後、フォーカスは押した#startのまま(disabled化で見た目上も
+    // 宙に浮く)残っていた。控え(#receipt)へフォーカスを移し、完了をスクリーンリーダーが
+    // 確実に読み上げられるようにする(role/aria-liveは静的markup側で既に用意済み)。
+    // downloadProduct()が作る一時<a>のクリックで一瞬フォーカスが移ることがあるため、
+    // ここで最後に呼んで確実に勝たせる。
+    receiptEl.focus();
   });
 
   sendmailEl.addEventListener("click", function () { if (fullText) openMail(); });

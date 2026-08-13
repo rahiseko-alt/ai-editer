@@ -142,7 +142,7 @@ try {
   createdJobId = jobId;
 
   const events = await collectEvents(jobId, jobToken, 15_000);
-  const gotError = /event:\s*error/.test(events.body);
+  const gotError = /event:\s*job-error/.test(events.body);
   report("前提: 偽pythonの異常終了によりジョブがerrorで終わる", gotError, events.body.slice(0, 500));
 
   // ── P1-14-B: SSE配信本文に生の鍵が現れない ──────────────────────

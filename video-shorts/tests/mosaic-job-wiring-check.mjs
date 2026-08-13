@@ -115,7 +115,7 @@ function waitForJob(jobId, timeoutMs = 180000) {
         unsubscribeJob(jobId, push);
         clearTimeout(timer);
         resolve(lines);
-      } else if (/^event:\s*error\b/m.test(line)) {
+      } else if (/^event:\s*job-error\b/m.test(line)) {
         settled = true;
         unsubscribeJob(jobId, push);
         clearTimeout(timer);
@@ -195,7 +195,10 @@ async function main() {
     // ── A: mosaic:"on" を指定した実ジョブを流す ──────────────────────────
     const on = await runJobAndInspect("on", "on");
     check(on.state.mosaic === "on", "mosaic=on: state.json に mosaic:\"on\" が記録される");
-    check(on.state.stage === "mosaicked", `mosaic=on: state.stage が mosaicked になる(実=${on.state.stage})`);
+    // AUD-P2-16: ジョブ完了時に state.stage="done" が必ず永続化されるようになったため
+    // (旧実装は最後に書いたステージ"mosaicked"のまま止まっていた＝doneの永続化漏れが
+    // 実際のバグだった)、ここで観測されるのは"mosaicked"ではなく最終的な"done"になる。
+    check(on.state.stage === "done", `mosaic=on: state.stage が(m段を経て)最終的にdoneになる(実=${on.state.stage})`);
     check(
       on.lines.some((l) => l.includes('"stage":"m"')),
       "mosaic=on: SSE進捗に m 段(モザイク)のイベントが流れている"
@@ -228,7 +231,9 @@ async function main() {
     // 「"on" ではない」を確かめる）。
     const off = await runJobAndInspect("none", "off");
     check(off.state.mosaic === undefined, "mosaic=none: state.json に mosaic キーが書かれない(=工程が呼ばれていない)");
-    check(off.state.stage === "rendered", `mosaic=none: state.stage が rendered で止まる(実=${off.state.stage})`);
+    // AUD-P2-16: 同様にm段が無い経路でも、最終的にstate.stage="done"まで永続化される
+    // (旧実装は"rendered"のまま止まっていた＝doneの永続化漏れが実際のバグだった)。
+    check(off.state.stage === "done", `mosaic=none: state.stage が(m段を経ずに)最終的にdoneになる(実=${off.state.stage})`);
     check(
       !off.lines.some((l) => l.includes('"stage":"m"')),
       "対照: mosaic=none: SSE進捗に m 段のイベントが一切流れていない"

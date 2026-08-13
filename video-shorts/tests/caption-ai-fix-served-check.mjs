@@ -191,7 +191,7 @@ function postJob(token, samplePath) {
   });
 }
 
-/** SSE を接続したまま、サーバーが event:error / event:done で接続を閉じるまで読み切る。 */
+/** SSE を接続したまま、サーバーが event:job-error / event:done で接続を閉じるまで読み切る。 */
 function collectEvents(jobId, jobToken, timeoutMs) {
   return new Promise((resolve, reject) => {
     let body = "";

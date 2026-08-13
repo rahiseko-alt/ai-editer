@@ -204,9 +204,20 @@ try {
     results.every((r) => r.status === 200),
     JSON.stringify(results.map((r) => r.status)),
   );
+  // AUD-P2-26: プロセスツリー監視が実際に何も観測できていない(peakFfmpeg==0のまま)場合、
+  // 以前の実装ではそれでも「上限を超えていない」という理由でPASS扱いになっていた。
+  // それは「監視が機能していない」ことと「上限を守れている」ことを区別できない偽の緑
+  // (docs/audits/adversarial-review-2026-08-13.md AUD-P2-26)。監視が実際にffmpeg子プロセスを
+  // 最低1つ観測したことを独立した受入事実として先に検証し、これが崩れたら後続の上限チェックも
+  // 連動してFAILさせる(スキップではなく明示的な不合格にする)。
+  report(
+    `P1-13-C前提: 監視が実際に少なくとも1つのffmpeg子プロセスを観測した(実測ピーク=${peakFfmpeg})`,
+    peakFfmpeg >= 1,
+    `peak=${peakFfmpeg}; 0のままだと監視機構が機能しておらず、上限チェックが何も検証していない(偽の緑の疑い)`,
+  );
   report(
     `P1-13-C: 同時に生存するffmpeg子プロセス数が上限(${MAX_CONCURRENT})を超えない(実測ピーク=${peakFfmpeg})`,
-    peakFfmpeg <= MAX_CONCURRENT,
+    peakFfmpeg >= 1 && peakFfmpeg <= MAX_CONCURRENT,
     `peak=${peakFfmpeg} limit=${MAX_CONCURRENT}`,
   );
 

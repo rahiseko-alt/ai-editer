@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import { applyEdits, readEdits } from "./caption-store.mjs";
 import { buildAss, wordsInRange } from "./srt-builder.mjs";
 import { computeCanvas, renderClip } from "./render-vertical.mjs";
+import { remapWords } from "./trim-plan.mjs";
+import { resolveInside, safeBasename } from "./safe-path.mjs";
 
 /** 焼き直しに必要なものが揃っているか調べ、揃っていれば材料を返す。 */
 export function collectMaterials(workDir, outDir) {
@@ -55,7 +57,12 @@ export async function recaptionStage({ workDir, outDir, onLog }) {
   const edits = readEdits(workDir);
   const words = applyEdits(transcript.words || [], edits);
   const orientation = state.orient || "portrait";
-  const canvas = computeCanvas(orientation, state.srcW, state.srcH);
+  // AUD-P1-02b: state.srcW/state.srcH は本番の state.json には存在しないフィールドで、
+  // 常に undefined になり拡大ガードが効かないまま既定解像度で焼き直されていた。
+  // 初回レンダ時に candidates.json へ書いた実際の素材解像度を使う（無ければ従来どおり無指定）。
+  const srcW = candidates.srcW;
+  const srcH = candidates.srcH;
+  const canvas = computeCanvas(orientation, srcW, srcH);
   const clips = candidates.candidates || [];
 
   // ── 第1段: 全部作る（まだ差し替えない） ──────────────────
@@ -67,23 +74,43 @@ export async function recaptionStage({ workDir, outDir, onLog }) {
       if (typeof c.start !== "number" || typeof c.end !== "number") {
         throw new Error(`クリップ ${c.file} に区間の時刻がありません（焼き直せません）`);
       }
-      const relWords = wordsInRange(words, c.start, c.end);
+      // AUD-P1-01a: candidates.json の `file` は path.join() へそのまま渡すと、
+      // "../../evil.mp4" のような値でジョブの成果物フォルダ外を書き換えられてしまう。
+      // 単純なbasename・許可拡張子のみを通す（parse直後の1回だけでなく、下のI/Oのたびに
+      // resolveInside() で再検査する＝TOCTOU対策）。
+      const safeName = safeBasename(c.file);
+
+      // AUD-P1-02a: 初回レンダで確定した「実際に使った開始秒(segStart)」「詰め後に残した区間
+      // (keep)」「詰め後の尺(clipDuration)」を manifest から読み、同じ値で再現する。
+      // ここを c.start/c.end という raw な値から作り直すと、無音・言い淀みを詰めた分の尺
+      // （例: 4秒→1秒）が焼き直しのたびに戻ってしまう（実際に起きていたバグそのもの）。
+      const plan = c.renderPlan || {};
+      const segStart = typeof plan.segStart === "number" ? plan.segStart : c.start;
+      const keep = Array.isArray(plan.keep) && plan.keep.length ? plan.keep : null;
+      const clipDuration = typeof plan.clipDuration === "number"
+        ? plan.clipDuration
+        : (c.duration ?? (c.end - c.start));
+      const width = typeof plan.canvasW === "number" ? plan.canvasW : canvas.w;
+      const height = typeof plan.canvasH === "number" ? plan.canvasH : canvas.h;
+
+      const relWordsAll = wordsInRange(words, segStart, c.end);
+      const assWords = keep ? remapWords(relWordsAll, keep) : relWordsAll;
       const assPath = path.join(workDir, `recaption-${i + 1}.ass`);
       fs.writeFileSync(
         assPath,
-        buildAss(relWords, c.hook, c.duration ?? (c.end - c.start),
-          { style: state.subStyle, width: canvas.w, height: canvas.h }),
+        buildAss(assWords, c.hook, clipDuration, { style: state.subStyle, width, height }),
         "utf-8",
       );
-      const tmpOut = path.join(outDir, `${c.file}.recaption-tmp.mp4`);
+      const tmpOut = resolveInside(outDir, `${safeName}.recaption-tmp.mp4`);
       failing = tmpOut;
       await renderClip({
-        input: state.input, start: c.start, end: c.end, assPath, output: tmpOut,
-        orientation, srcW: state.srcW, srcH: state.srcH,
+        input: state.input, start: segStart, end: c.end, assPath, output: tmpOut,
+        orientation, srcW, srcH, keep,
+        fpsRational: candidates.srcFpsRational, sampleRate: candidates.srcSampleRate,
       });
       if (!fs.existsSync(tmpOut)) throw new Error(`焼き直しの出力が生成されませんでした: ${c.file}`);
       failing = null;
-      made.push({ entry: c, tmpOut, dst: path.join(outDir, c.file) });
+      made.push({ entry: c, tmpOut, safeName });
       if (onLog) onLog(`[OK] 字幕を焼き直しました: ${c.file}`);
     }
   } catch (e) {
@@ -96,7 +123,10 @@ export async function recaptionStage({ workDir, outDir, onLog }) {
   const swapped = [];
   try {
     for (const m of made) {
-      fs.renameSync(m.tmpOut, m.dst);
+      // TOCTOU対策: 差し替え先(dst)は「解決してからすぐ使う」よう、実際にrenameする直前で
+      // 毎回 resolveInside() を呼び直す（第1段で計算した値を使い回さない）。
+      const dst = resolveInside(outDir, m.safeName);
+      fs.renameSync(m.tmpOut, dst);
       swapped.push(m);
     }
   } catch (e) {

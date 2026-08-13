@@ -96,7 +96,7 @@ function waitForJob(jobId, timeoutMs = 180000) {
         unsubscribeJob(jobId, push);
         clearTimeout(timer);
         resolve(lines);
-      } else if (/^event:\s*error\b/m.test(line)) {
+      } else if (/^event:\s*job-error\b/m.test(line)) {
         settled = true;
         unsubscribeJob(jobId, push);
         clearTimeout(timer);

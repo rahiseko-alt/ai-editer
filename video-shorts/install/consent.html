@@ -11,12 +11,19 @@
         data-consent-version="1.0"
         data-consent-date="2026-07-04"
         data-contract="AI顧問契約書 第10版"
+        data-contract-available="false"
         data-contact="rahiseko@gmail.com"
         data-product="video-shorts.zip">
     <header class="head">
       <h1>video-shorts のダウンロード</h1>
       <p class="sub">ご利用の前に、下記の <strong>外部サービス・AI利用に関する内容</strong>（AI顧問契約書 第10版 別紙4・別紙5 相当）をご確認・ご同意のうえ、ダウンロードしてください。<strong>署名は不要です</strong>（チェックがご同意になります）。本内容と顧問契約書に齟齬があるときは顧問契約書が優先します。</p>
       <p class="services">本ツールが利用する外部サービス：Groq（文字起こし高速化・任意）／ Anthropic Claude（区間選定・お客様のサブスクリプション）</p>
+      <p class="notice-unavailable" role="alert">
+        ⚠ 現在、「AI顧問契約書 第10版」の確定本文・リンクをこの画面からご提供できません
+        （リポジトリ内の候補文書は客向け素案であり、マスター確定前のためです）。
+        確定本文が閲覧できない状態でのご同意はいただけないため、下の同意チェック・ダウンロードは無効化しています。
+        本文が確定・掲載され次第、この画面から改めてご案内します。
+      </p>
     </header>
 
     <!-- 同意文言。ハッシュ計算の対象になるため id="terms" 内をそのまま用いる -->
@@ -64,16 +71,20 @@
       </label>
 
       <label class="check">
-        <input type="checkbox" id="agree" />
+        <input type="checkbox" id="agree" disabled aria-disabled="true" aria-describedby="hint" />
         <span>上記のすべて、及び AI顧問契約書（第10版）の内容を確認し、同意します。</span>
       </label>
 
       <button id="start" type="button" disabled>同意してダウンロード（Next）</button>
-      <p class="hint" id="hint">お名前の入力と同意のチェックで押せるようになります。</p>
+      <p class="hint" id="hint">「AI顧問契約書 第10版」の確定本文が未掲載のため、現在は同意・ダウンロードできません。</p>
     </section>
 
     <!-- Next 押下で製品ファイルをダウンロード。控えのメール送信は任意（署名不要） -->
-    <section class="receipt" id="receipt" hidden>
+    <!-- AUD-S-01: role="status"+aria-liveは静的markupに置く(=中身が入る前から既に存在させる)。
+         JSで動的に付け足すと「表示と同時に中身も入る」タイミングになり、スクリーンリーダーが
+         ライブリージョンとして認識する前に中身が変わってしまい確実に読み上げられない。
+         tabindex="-1"はプログラムからのfocus()専用(Tab順には入れない)。 -->
+    <section class="receipt" id="receipt" role="status" aria-live="polite" tabindex="-1" hidden>
       <h2>ダウンロードを開始しました</h2>
       <p class="note">拡張機能ファイル <strong id="productShow">video-shorts.zip</strong> のダウンロードが始まりました。開いて（展開して）、<strong>使用説明書（<a href="user-manual.html">user-manual.html</a>）</strong>のとおりにご利用ください。<br />自動で始まらない場合は <a id="productLink" href="video-shorts.zip" download>こちらから手動でダウンロード</a>してください。</p>
 

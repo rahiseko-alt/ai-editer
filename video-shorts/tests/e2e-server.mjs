@@ -56,7 +56,7 @@ http.get({ host: HOST, port: PORT, path: `/api/jobs/${jobId}/events` }, (res) =>
       console.log(`\n[DONE but candidates ${r.status}]`);
       process.exit(1);
     }
-    if (!finished && /event:\s*error/.test(sseBuf)) {
+    if (!finished && /event:\s*job-error/.test(sseBuf)) {
       finished = true;
       console.log("\n[ERROR event received]");
       process.exit(1);

@@ -44,6 +44,17 @@
 .job-chip:hover { background: rgba(0,0,0,.05); color: var(--ink); transform: translateY(-1px); }
 .job-chip.is-on { background: var(--chip-on-bg); color: var(--chip-on-text); border: 2px solid var(--chip-on-border); font-weight: 800; }
 
+/* AUD-S-04: まとめて1本(digest)の再生・ダウンロード導線 */
+.job-digest {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; margin-bottom: 10px;
+  border: 1px solid rgba(0,0,0,.10); border-radius: 10px;
+  background: rgba(0,0,0,.03); flex-shrink: 0;
+}
+.job-digest b { font-size: 14px; }
+.job-digest video { width: 100%; max-height: 220px; border-radius: 8px; background: #000; display: block; }
+.job-digest-actions { display: flex; align-items: center; gap: 10px; }
+
 /* タブ行 */
 .tabs { display: flex; gap: 7px; margin-bottom: 10px; flex-wrap: wrap; flex-shrink: 0; }
 .tab {

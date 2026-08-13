@@ -235,3 +235,75 @@ export function redactSecrets(text, secrets) {
   }
   return out;
 }
+
+/**
+ * AUD-P1-05a/05b: チャンク境界をまたいで分割された秘密情報も伏字化できる、状態を持つ
+ * ストリーミング版の伏字化器。
+ *
+ * 旧実装(redactSecrets呼び出し)は子プロセスのstdout/stderrチャンクへ**チャンク単位**で
+ * 独立に伏字化を掛けたあと連結していた。そのため秘密情報の値がちょうど2チャンクの
+ * 境目で分割されると(例: 1チャンク目の末尾に前半、2チャンク目の先頭に後半)、
+ * どちらのチャンク単体にも完全な秘密情報の文字列が含まれず、伏字化されないまま
+ * 連結後のSSE配信/state.json永続化にそのまま漏れていた。
+ *
+ * 対策: 直近 (secretsの最大長 - 1) 文字ぶんの「まだ確定できない末尾」を常に次呼び出しへ
+ * 持ち越す(carry)。以後入力される文字と連結して初めて安全域(secretsの最大長ぶんの
+ * 「これ以上続きが来ても一致状況が変わらない」位置)を計算し、そこまでだけを確定出力する。
+ * 安全域の境界をまたいで秘密情報の出現がある場合は、その出現の開始位置まで境界を
+ * 前方へ縮めてから切り出す(＝secretsの出現そのものを分割して切り出すことは絶対にしない)。
+ *
+ * @param {(string|undefined|null)[]} secrets 実際の秘密情報の値(4文字未満・falsy値は無視)
+ */
+export function createStreamingRedactor(secrets) {
+  const list = (secrets || []).filter((s) => typeof s === "string" && s.length >= 4);
+  const maxLen = list.reduce((m, s) => Math.max(m, s.length), 0);
+  const holdBack = maxLen > 0 ? maxLen - 1 : 0;
+  let carry = "";
+
+  /** combined中で「これ以上追記されても判定が変わらない」安全に確定出力できる長さを返す。
+   *  素朴な (combined.length - holdBack) を初期値とし、その境界をまたいで秘密情報の
+   *  出現(部分一致ではなく完全一致)がある場合は、その出現の開始位置まで縮める
+   *  (縮めた結果さらに別の出現をまたぐ可能性もゼロではないため不動点まで繰り返す。
+   *  secretsは高々数個・短い文字列のため計算コストは無視できる)。 */
+  function safeEmitLen(combined) {
+    let cap = Math.max(0, combined.length - holdBack);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const s of list) {
+        let idx = combined.indexOf(s);
+        while (idx !== -1) {
+          const end = idx + s.length;
+          if (idx < cap && end > cap) {
+            cap = idx;
+            changed = true;
+          }
+          idx = combined.indexOf(s, idx + 1);
+        }
+      }
+    }
+    return cap;
+  }
+
+  return {
+    /** チャンクを1つ渡し、今回「確定して出力してよい」伏字化済みテキストを返す
+     *  (まだ確定できない末尾はcarryとして内部に保持し、戻り値には含めない)。 */
+    push(chunk) {
+      if (typeof chunk !== "string" || chunk === "") return "";
+      if (list.length === 0) return chunk; // 伏字化対象の秘密情報が無ければそのまま通す
+      const combined = carry + chunk;
+      const cut = safeEmitLen(combined);
+      const emitRaw = combined.slice(0, cut);
+      carry = combined.slice(cut);
+      return redactSecrets(emitRaw, list);
+    },
+    /** 入力が終端したときに呼ぶ。以後データが来ないので、保持していた末尾を確定させて
+     *  伏字化した結果を返す(内部状態はクリアされる)。 */
+    flush() {
+      if (!carry) return "";
+      const out = redactSecrets(carry, list);
+      carry = "";
+      return out;
+    },
+  };
+}

@@ -12,7 +12,7 @@ import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
-import { redactSecrets } from "./security.mjs";
+import { redactSecrets, createStreamingRedactor } from "./security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -29,13 +29,173 @@ const jobs = new Map();
 /** 「実行中/待機中」とみなすstage一覧。TTL掃除の除外判定・二重起動ガードの両方から参照する。 */
 const RUNNING_STAGES = ["init", "t", "c", "s", "r", "m"];
 
-/** SSE イベントを購読者全員に push。error/done は接続も close する */
+/** 終端(それ以上進まない)とみなすstage一覧。AUD-P2-20aのメモリ回収の対象判定に使う。 */
+const TERMINAL_STAGES = ["done", "error", "cancelled", "timeout"];
+
+/**
+ * AUD-P2-20a: 終端ジョブの保持期間(ms)。既定10分。VS_JOB_RETENTION_SECONDSで秒単位の
+ * 上書きができる(0以下・非数は既定へ)。terminalStages(done/error/cancelled/timeout)へ
+ * 到達してからこの期間を過ぎたジョブは、定期的にメモリ(jobs Map)から回収する。
+ *
+ * 旧実装は終端に達したジョブをjobs Mapから一切削除しておらず、稼働し続けるサーバーへ
+ * 継続的にジョブが投入されると、終わったジョブの記録がメモリに際限なく溜まり続けていた
+ * (監査指摘)。
+ */
+export function resolveJobRetentionMs(envValue = process.env.VS_JOB_RETENTION_SECONDS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n > 0 ? n * 1000 : 10 * 60 * 1000;
+}
+const JOB_RETENTION_MS = resolveJobRetentionMs();
+
+/**
+ * jobs Mapのうち、終端(TERMINAL_STAGES)に達してから JOB_RETENTION_MS を過ぎたものを
+ * 削除する(AUD-P2-20a)。終端イベントの時点でSSE購読者は既に全員closeされている
+ * (broadcast参照)ため、削除しても購読者を巻き込まない。
+ * @param {number} [nowMs] テストで実時間を待たずに検証できるよう呼び出し側が渡せる。
+ * @returns {string[]} 削除したjobId一覧
+ */
+export function reclaimTerminalJobs(nowMs = Date.now()) {
+  const removed = [];
+  for (const [id, job] of jobs) {
+    if (!TERMINAL_STAGES.includes(job.stage)) continue;
+    if (typeof job.terminatedAt !== "number") continue; // 保険(通常は終端到達時に必ず設定される)
+    if (nowMs - job.terminatedAt > JOB_RETENTION_MS) {
+      jobs.delete(id);
+      removed.push(id);
+    }
+  }
+  return removed;
+}
+
+// 起動しっぱなしのローカルサーバーでも定期的に回収されるよう、1分ごとに実行する
+// (エントリ自体は軽量なので毎分の走査コストは無視できる)。unref()でこのタイマーだけの
+// ためにプロセスが終了できなくなるのを防ぐ(テスト等での後始末)。
+setInterval(() => reclaimTerminalJobs(), 60 * 1000).unref();
+
+/** jobs Mapに指定jobIdがまだ載っているか(テスト用に公開)。 */
+export function hasJobInMemory(jobId) {
+  return jobs.has(jobId);
+}
+
+/** jobs Mapの現在の件数(テスト用に公開)。 */
+export function jobsMapSize() {
+  return jobs.size;
+}
+
+// P1-13-B/AUD-P1-03a/03b: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
+// src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。activeJobIds()
+// (TTL掃除の除外判定)からも参照するため、使用箇所より前で宣言する。
+const recaptioningJobs = new Set();
+
+/**
+ * AUD-P1-11a/11b: ジョブごとのキャンセル/タイムアウト管理。
+ * jobId → { child: ChildProcess|null, cancelRequested: boolean, terminalReason: "cancelled"|"timeout"|null }
+ *   - child: そのジョブが現在spawnしている子プロセス(spawnAndLog経由)。無ければnull
+ *     (ステージの合間・子プロセスを使わないステージの実行中など)。
+ *   - cancelRequested: cancelJob()が呼ばれたら true。以後このジョブは新しい子プロセスを
+ *     起動する前に即座に中止する(既にキューで順番待ち中でも、次に子を起動しようとした
+ *     瞬間に止まる)。
+ *   - terminalReason: 子プロセスの close ハンドラが「なぜ死んだか」を判定するための印。
+ *     killChildTree()を呼ぶ側(cancelJob/タイムアウト)が呼ぶ前にここへ書き込む。
+ */
+const jobControls = new Map();
+
+/** jobIdの制御レコードを取得(無ければ作る)。 */
+function getControl(jobId) {
+  let c = jobControls.get(jobId);
+  if (!c) {
+    c = { child: null, cancelRequested: false, terminalReason: null };
+    jobControls.set(jobId, c);
+  }
+  return c;
+}
+
+/** ジョブの制御レコードを破棄する。ジョブの(再)開始時・終端到達時に呼ぶ。 */
+function resetControl(jobId) {
+  jobControls.delete(jobId);
+}
+
+/**
+ * AUD-P1-11a: 子プロセスを起動しないステージ(AI字幕校正・顔モザイク等)の合間でも
+ * キャンセル要求を汲み取れるよう、各ステージの開始直前に呼ぶチェックポイント。
+ * cancelRequested済みならその場で 'cancelled' を投げ、以降のステージへ進ませない
+ * (spawnAndLog自身も同様のチェックを持つが、spawnAndLogを経由しないステージは
+ * このチェックポイントが無いとキャンセルに気付けないまま最後まで走ってしまう)。
+ */
+function throwIfCancelled(jobId) {
+  const c = jobControls.get(jobId);
+  if (c && c.cancelRequested) {
+    const err = new Error("ユーザーによりキャンセルされました");
+    err.code = "cancelled";
+    throw err;
+  }
+}
+
+/**
+ * 子プロセス(のプロセスツリー全体)を殺す。
+ * AUD-P1-11a/11b: 「直接の子だけ」kill すると、ffmpeg 等が spawn した孫プロセスが
+ * 生き残ってしまう(監査指摘)。POSIXでは spawnAndLog が detached:true で子を
+ * 独立プロセスグループのリーダーにしているため、`-pid`(負のPID)を kill すると
+ * そのグループに属する子孫プロセスもまとめて終了できる。Windowsではプロセスグループの
+ * 概念が異なるため taskkill の /T(ツリー) オプションで代替する。
+ * まず SIGTERM で行儀よく止め、一定時間後もまだ生きていれば SIGKILL で強制終了する。
+ */
+function killChildTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const send = (signal) => {
+    try {
+      if (process.platform === "win32") {
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        process.kill(-child.pid, signal);
+      }
+    } catch (_) {
+      // 既に終了している(ESRCH)等は無視。killChildTreeは「止まっていてほしい」という
+      // 意思表示であり、既に死んでいるなら目的は達成済み。
+    }
+  };
+  send("SIGTERM");
+  // SIGTERMに応じない(ハングしたffmpeg等)場合の保険。グレースピリオド後にSIGKILLへ。
+  const killer = setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    send("SIGKILL");
+  }, 3000);
+  killer.unref();
+}
+
+/**
+ * ジョブをキャンセルする(AUD-P1-11a: 手動キャンセルAPI)。
+ * @returns {{ok: true} | {ok: false, reason: string}}
+ */
+export function cancelJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job || !RUNNING_STAGES.includes(job.stage)) {
+    return { ok: false, reason: "実行中のジョブではありません" };
+  }
+  const c = getControl(jobId);
+  c.cancelRequested = true;
+  c.terminalReason = "cancelled";
+  if (c.child) killChildTree(c.child);
+  return { ok: true };
+}
+
+/** ジョブとして終端状態を意味するイベント名一覧(SSE接続を閉じる基準)。 */
+const TERMINAL_EVENTS = ["job-error", "done", "cancelled", "timeout"];
+
+/** SSE イベントを購読者全員に push。error/done/cancelled/timeout は接続も close する */
 function broadcast(jobId, payload, event = null) {
   const job = jobs.get(jobId);
   if (!job) return;
   const line = event
     ? `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`
     : `data: ${JSON.stringify(payload)}\n\n`;
+  // AUD-P1-10c: 「今どの段階が進行中か」を表す進捗行(status付き・ログ行ではない)だけを
+  // 直近スナップショットとして憶えておく。これがあると、(a) POST応答からEventSource接続
+  // までの間に飛んだ進捗、(b) 切断中に飛んだ進捗を、後から購読した相手へ即座に届けられる
+  // （購読者0人の間にbroadcastしても、下のforは何もせず素通りして消えてしまうため）。
+  if (payload && payload.status && !event) {
+    job.lastEvent = line;
+  }
   for (const sub of job.subscribers) {
     try {
       sub.push(line);
@@ -43,8 +203,13 @@ function broadcast(jobId, payload, event = null) {
       // 切断済み購読者は無視
     }
   }
-  // 終端イベント（error / done）は全購読者の SSE 接続を閉じて Set をクリア
-  if (event === "error" || event === "done") {
+  // AUD-P1-10b: 終端イベント(job-error / done / cancelled / timeout)は全購読者の SSE 接続を
+  // 閉じて Set をクリアする。業務エラーの wire イベント名は"error"ではなく"job-error"を使う。
+  // EventSourceは接続断などのネイティブ"error"と、サーバーが"event: error"という名前で送った
+  // 独自イベントを、クライアント側では同じ addEventListener("error", ...) が受け取ってしまい
+  // 区別できない(前者は再接続すべき一時的な障害、後者は再接続しても無意味な終端)ため、
+  // 名前を分けてクライアントがネイティブerrorだけを伝送エラーとして扱えるようにする。
+  if (TERMINAL_EVENTS.includes(event)) {
     for (const sub of job.subscribers) {
       try { sub.close(); } catch (_) {}
     }
@@ -64,17 +229,36 @@ export function isRunning(jobId) {
  * mtimeだけを見るため、startJob() でキューへ積まれた直後（state.jsonをまだ書いていない・
  * ディレクトリのmtimeが古いまま）のジョブを「放置された古いジョブ」と誤認して消しうる。
  * server/index.mjs はこの一覧を掃除の除外リストとして渡す。
+ *
+ * AUD-P1-03a/03b: 本編ジョブ(jobs Map)だけでなく、焼き直し(recaption)中/焼き直し待ち
+ * （concurrencyGateで順番待ち）のジョブIDも含める。recaptioningJobs は
+ * beginRecaption()〜endRecaption() の間、その2状態(実行中・共有ゲートで待機中)の両方に
+ * わたって当該jobIdを保持し続けるため(server/index.mjsのhandleRecaptionはbeginRecaption→
+ * runGated→endRecaptionの順で呼ぶ)、ここに含めるだけで両方をまとめて保護できる。
+ * 含めていないと、焼き直し中/焼き直し待ちのジョブがTTLを過ぎていた場合にwork/outputの
+ * ディレクトリごと掃除で消えてしまい、実行中の焼き直しが入出力ファイルを失って壊れる。
  */
 export function activeJobIds() {
-  const ids = [];
+  const ids = new Set();
   for (const [id, job] of jobs) {
-    if (RUNNING_STAGES.includes(job.stage)) ids.push(id);
+    if (RUNNING_STAGES.includes(job.stage)) ids.add(id);
   }
-  return ids;
+  for (const id of recaptioningJobs) {
+    ids.add(id);
+  }
+  return [...ids];
 }
 
 /** サーバー再起動時にクライアントへ伝える、ジョブが中断された旨のメッセージ(P1-6)。 */
 const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中断されました。お手数ですが、もう一度実行してください。";
+
+/** ジョブの state.json を読む（無ければ null）。subscribeJob (AUD-P2-16) から参照するため
+ *  ここ(subscribeJobより前)で宣言する。 */
+function readState(workDir) {
+  const sp = path.join(workDir, "state.json");
+  if (!fs.existsSync(sp)) return null;
+  return JSON.parse(fs.readFileSync(sp, "utf-8"));
+}
 
 /**
  * SSE 購読者を追加。
@@ -86,7 +270,28 @@ const INTERRUPTED_MESSAGE = "サーバーが再起動したため、処理が中
  */
 export function subscribeJob(jobId, push, close) {
   if (!jobs.has(jobId)) {
-    jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
+    // AUD-P2-16: メモリのjobs Mapに無いからといって無条件で"interrupted"を合成しない。
+    // このプロセスが一度もこのジョブを起動していない(=以前のプロセス、または再起動後の
+    // 再接続)場合でも、work/<jobId>/state.jsonが実際に終端(done/error/cancelled/timeout)
+    // まで到達していれば、その事実を優先してリプレイする。state.jsonが処理途中のstageの
+    // まま止まっている(=書き込みが止まっている＝プロセスが死んだ証拠)場合や、
+    // state.json自体が無い(このジョブを誰も一度も起動していない)場合だけ、
+    // 従来どおり本当に「中断された」ものとして扱う。
+    const disk = readState(path.join(WORK_ROOT, jobId));
+    const diskStage = disk?.stage;
+    if (diskStage === "done") {
+      jobs.set(jobId, { stage: "done", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
+    } else if (diskStage === "error" || diskStage === "cancelled" || diskStage === "timeout") {
+      jobs.set(jobId, {
+        stage: diskStage,
+        subscribers: new Set(),
+        error: disk.error || null,
+        errorCode: disk.errorCode || null,
+        lastEvent: null,
+      });
+    } else {
+      jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
+    }
   }
   const job = jobs.get(jobId);
   const sub = { push, close };
@@ -94,17 +299,32 @@ export function subscribeJob(jobId, push, close) {
 
   // race condition 対策: 既に終了済み/中断済みならリプレイして即通知
   if (job.stage === "error") {
-    try { push(`event: error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
+    // AUD-P1-10b: wireのイベント名は job-error（内部の job.stage==="error" とは別物）。
+    try { push(`event: job-error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
   } else if (job.stage === "done") {
     try { push(`event: done\ndata: ${JSON.stringify({ stage: "done" })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
+  } else if (job.stage === "cancelled" || job.stage === "timeout") {
+    // AUD-P1-11a/11b: キャンセル/タイムアウトで終端したジョブへの再接続も、error/done と
+    // 同じくリプレイして即通知する(でなければ再接続した購読者だけ永久に何も受け取れない)。
+    try {
+      push(`event: ${job.stage}\ndata: ${JSON.stringify({ message: job.error || null, code: job.errorCode || null })}\n\n`);
+    } catch (_) {}
+    try { close(); } catch (_) {}
+    job.subscribers.delete(sub);
   } else if (job.stage === "interrupted") {
     try { push(`event: interrupted\ndata: ${JSON.stringify({ message: INTERRUPTED_MESSAGE })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
+  } else if (job.lastEvent) {
+    // AUD-P1-10c: まだ実行中(init/t/c/s/r/m)のジョブへの購読。POST応答〜EventSource接続の
+    // 間や、切断していた間に進捗が進んでいても、次の進捗が飛んでくるまで画面が更新されない
+    // (=見逃した進捗が復旧しない)。直近のスナップショットを接続直後に1回だけ届け、
+    // 見た目上の状態を現在地へ追いつかせる。
+    try { push(job.lastEvent); } catch (_) {}
   }
 }
 
@@ -120,13 +340,6 @@ export function unsubscribeJob(jobId, push) {
   }
 }
 
-/** ジョブの state.json を読む（無ければ null） */
-function readState(workDir) {
-  const sp = path.join(workDir, "state.json");
-  if (!fs.existsSync(sp)) return null;
-  return JSON.parse(fs.readFileSync(sp, "utf-8"));
-}
-
 /**
  * ジョブの state.json を書く。
  * P2-1: 直接 truncate 書込みだと、書いている途中でプロセスが落ちたときに state.json が
@@ -135,6 +348,35 @@ function readState(workDir) {
  */
 function writeState(workDir, state) {
   writeJsonAtomically(path.join(workDir, "state.json"), state);
+}
+
+/**
+ * AUD-P2-16: state.json への更新を「読む→マージ→原子書き込み」の一本道に集約する。
+ *
+ * 旧実装は runJob() が起動時に作った1個のJSオブジェクト(state)を関数の間ずっと使い回し、
+ * 各ステージ完了ごとに `state.stage = "..."; writeState(workDir, state);` で丸ごと
+ * 上書きしていた。ところが `node pipeline.mjs select/render` は**別プロセス**であり、
+ * それ自身が state.json を読み書きして digestMeta・candidates 等のフィールドを
+ * 書き加える(pipeline.mjs の saveState 参照)。子プロセスの書き込み**後**に、
+ * pipeline-runner.mjs 側の「子プロセスが何を書いたか知らない・起動時のまま古い」
+ * インメモリの state オブジェクトを丸ごと書き戻すと、子プロセスが追加したフィールドが
+ * 消える(監査指摘: 「a stale in-memory state object gets written back over fields a
+ * child process added」)。
+ *
+ * 対策: 各更新のたびに、その時点のディスク上の state.json を読み直し(=子プロセスが
+ * 書いたものを含む最新の状態)、そこへ今回のパッチだけをマージしてから書き戻す。
+ * これにより、どのフィールドを最後に触ったのが誰であっても(このプロセス自身でも
+ * 別の子プロセスでも)、上書きで消えることがなくなる。
+ *
+ * @param {string} workDir
+ * @param {object} patch 上書きしたいフィールドのみ
+ * @returns {object} マージ後の完全なstateオブジェクト(呼び出し側が参照したい場合用)
+ */
+function updateState(workDir, patch) {
+  const current = readState(workDir) || {};
+  const merged = { ...current, ...patch };
+  writeState(workDir, merged);
+  return merged;
 }
 
 // P1-14-A: パイプラインの子(python/node)へ渡してよい環境変数の基本allowlist。
@@ -164,48 +406,135 @@ function secretsToRedact() {
 }
 
 /**
+ * ステージ単位のタイムアウト(ms)。既定30分。VS_STAGE_TIMEOUT_SECONDSで秒単位で上書きできる
+ * (0以下・非数は既定へ)。AUD-P1-11b: ハングした子プロセス(ffmpeg/ffprobe/文字起こし等)を
+ * 誰もキャンセルしなくても自動的に打ち切るための上限。spawnAndLog経由の各ステージ
+ * (transcribe.py / node pipeline.mjs select / node pipeline.mjs render)それぞれに
+ * 個別に適用される(ステージが変わるたびタイマーはリセットされる＝ジョブ全体ではなく
+ * 「今動いている1本の子プロセス」が単位)。
+ */
+export function resolveStageTimeoutMs(envValue = process.env.VS_STAGE_TIMEOUT_SECONDS) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n > 0 ? n * 1000 : 30 * 60 * 1000;
+}
+const STAGE_TIMEOUT_MS = resolveStageTimeoutMs();
+
+/**
  * 子プロセスを spawn し、stderr を行単位で onLine に渡す。
  * 終了コード 0 以外は reject。
  *
+ * AUD-P1-05a/05b: 秘密情報(APIキー等)が2つのdataイベント(チャンク)の境目で分割されて
+ * 出力されると、チャンク単位で独立に伏字化してから連結する旧方式では伏字化を素通りして
+ * しまう。stdout/stderr それぞれに createStreamingRedactor() を1つずつ持たせ、チャンクを
+ * またいで秘密情報の出現を検出できるようにする(ストリームが終わったら flush() で
+ * 保持していた末尾も確定させる)。さらに、close 時にreject する Error.message
+ * （state.jsonのerrorフィールド・SSEのevent:errorへ伝播する経路の入り口）を組み立てる
+ * 直前にも念のためもう一度 redactSecrets を掛け、防御を二重化する(万一ストリーミング側の
+ * 境界計算に取りこぼしがあっても、この最終防波堤で捕まえる)。
+ *
+ * AUD-P1-11a/11b: jobIdを渡すと、そのジョブの制御レコード(jobControls)へ実行中の
+ * 子プロセスを登録する。これにより cancelJob() からプロセスツリーごと kill できる
+ * (P1-11a)。あわせて STAGE_TIMEOUT_MS を過ぎても終わらない場合は自動的に同じ kill 経路へ
+ * 入り、'timeout' として reject する(P1-11b＝誰もキャンセルしなくても自動的に打ち切られる)。
+ * jobId が既に cancelRequested 済みなら、そもそも子プロセスを起動せず即座に reject する
+ * (キューで順番待ち中にキャンセルされたジョブが、自分の番が来た瞬間に新しい子を
+ * 起動してしまうのを防ぐ)。
+ *
  * @param {string} cmd
  * @param {string[]} args
- * @param {{ envExtra?: string[], [key: string]: any }} opts envExtra はこの呼び出しに限り
- *   allowlistへ追加する環境変数キー(例: transcribe.pyのGROQ_API_KEY)。値そのものではなくキー名。
+ * @param {{ envExtra?: string[], jobId?: string, [key: string]: any }} opts envExtra は
+ *   この呼び出しに限りallowlistへ追加する環境変数キー(例: transcribe.pyのGROQ_API_KEY)。
+ *   jobId を渡すとキャンセル/タイムアウト管理の対象になる(渡さない呼び出しは対象外)。
  * @param {(line: string) => void} onLine
  */
 function spawnAndLog(cmd, args, opts, onLine) {
-  const { envExtra, ...restOpts } = opts || {};
+  const { envExtra, jobId, ...restOpts } = opts || {};
   return new Promise((resolve, reject) => {
+    const control = jobId ? getControl(jobId) : null;
+    if (control && control.cancelRequested) {
+      const err = new Error("ユーザーによりキャンセルされました");
+      err.code = "cancelled";
+      return reject(err);
+    }
     const child = spawn(cmd, args, {
       env: buildChildEnv(envExtra),
       windowsHide: true,
+      // AUD-P1-11a: POSIXでは独立プロセスグループのリーダーにし、killChildTree()が
+      // グループごと(孫プロセス含め)止められるようにする。Windowsではこのオプションは
+      // 新コンソールの意味になり別の副作用があるため付けない(taskkill /T で代替する)。
+      detached: process.platform !== "win32",
       ...restOpts,
     });
+    if (control) control.child = child;
+    let stageTimer = null;
+    if (control && STAGE_TIMEOUT_MS > 0) {
+      stageTimer = setTimeout(() => {
+        control.terminalReason = "timeout";
+        killChildTree(child);
+      }, STAGE_TIMEOUT_MS);
+      stageTimer.unref();
+    }
     const secrets = secretsToRedact();
+    const stderrRedactor = createStreamingRedactor(secrets);
+    const stdoutRedactor = createStreamingRedactor(secrets);
+    // AUD-P2-25: errBufは異常終了時のError.message組み立てにしか使わず、実際に使うのは
+    // 末尾で `.slice(0, 400)` した先頭400文字だけ(下のclose参照)。旧実装はここへ
+    // stderr全量を無制限に連結し続けており、長時間・大量に出力する子プロセスが
+    // 異常終了せずに走り続けると、この文字列だけでプロセスのメモリを際限なく食う
+    // (監査指摘)。使われるのは先頭部分だけなので、上限に達したら以後は溜めない。
+    const ERR_BUF_CAP = 8192;
     let errBuf = "";
-    child.stderr.on("data", (chunk) => {
-      const text = redactSecrets(chunk.toString(), secrets);
-      errBuf += text;
+    const emitErrText = (text) => {
+      if (!text) return;
+      if (errBuf.length < ERR_BUF_CAP) {
+        errBuf += text.slice(0, ERR_BUF_CAP - errBuf.length);
+      }
       text.split("\n").forEach((ln) => {
         if (ln.trim()) onLine(ln.trim());
       });
+    };
+    const emitOutText = (text) => {
+      if (!text) return;
+      text.split("\n").forEach((ln) => {
+        if (ln.trim()) onLine(`[stdout] ${ln.trim()}`);
+      });
+    };
+    child.stderr.on("data", (chunk) => {
+      emitErrText(stderrRedactor.push(chunk.toString()));
     });
     // stdout も受け取る（pipeline.mjs が stdout に出力する場合あり）
     child.stdout.on("data", (chunk) => {
-      redactSecrets(chunk.toString(), secrets)
-        .split("\n")
-        .forEach((ln) => {
-          if (ln.trim()) onLine(`[stdout] ${ln.trim()}`);
-        });
+      emitOutText(stdoutRedactor.push(chunk.toString()));
     });
-    child.on("error", (err) => reject(new Error(`spawn error: ${err.message}`)));
-    child.on("close", (code) => {
+    child.on("error", (err) => {
+      if (stageTimer) clearTimeout(stageTimer);
+      reject(new Error(`spawn error: ${err.message}`));
+    });
+    child.on("close", (code, signal) => {
+      if (stageTimer) clearTimeout(stageTimer);
+      if (control && control.child === child) control.child = null;
+      // ストリームが終わったので、まだ確定させていなかった末尾(境界待ちの保持分)を出す。
+      emitErrText(stderrRedactor.flush());
+      emitOutText(stdoutRedactor.flush());
+      // AUD-P1-11a/11b: cancelJob()/タイムアウトのどちらかが既にこの子を殺しにいっていれば、
+      // 通常の「終了コード0以外」エラーではなく、code/'cancelled'/'timeout'として reject する。
+      const reason = control && control.terminalReason;
+      if (reason === "cancelled" || reason === "timeout") {
+        const err = new Error(
+          reason === "cancelled"
+            ? "ユーザーによりキャンセルされました"
+            : `処理が制限時間(${Math.round(STAGE_TIMEOUT_MS / 1000)}秒)を超えたため自動的に打ち切られました`
+        );
+        err.code = reason;
+        return reject(err);
+      }
       if (code !== 0) {
-        // errBuf は上でチャンク単位で既に伏字化済み(P1-14-C: state.jsonへ書かれるError.messageの
-        // 経路もここを通るため、二重に伏字化する必要はない)。
+        // errBuf は上でチャンクをまたいで伏字化済みだが、Error.message はこの後
+        // state.json永続化(P1-14-C)・SSE配信(P1-14-B)の両方の入り口になるため、
+        // 多層防御としてここでもう一度 redactSecrets を掛ける(AUD-P1-05a/05b)。
         return reject(
           new Error(
-            `${cmd} 終了コード ${code}。stderr: ${errBuf.slice(0, 400)}`
+            `${cmd} 終了コード ${code}${signal ? `(signal ${signal})` : ""}。stderr: ${redactSecrets(errBuf, secrets).slice(0, 400)}`
           )
         );
       }
@@ -295,11 +624,29 @@ export function createConcurrencyGate(max) {
 const MAX_CONCURRENT_JOBS = resolveMaxConcurrentJobs();
 const concurrencyGate = createConcurrencyGate(MAX_CONCURRENT_JOBS);
 
-// P1-13-B: 焼き直し(recaption)専用の管理。同一ジョブへの並列連打は
-// src/recaption-stage.mjs の一時ファイル名がジョブ固定のため競合する。また、
-// 焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
+/** groq経路の待ち行列(順番待ち・実行中を除く)の現在長。AUD-P2-20bのテスト用に公開する。 */
+export function queueWaitingCount() {
+  return concurrencyGate.waiting;
+}
+
+/**
+ * AUD-P2-20b: 順番待ちキューの長さ上限（純粋関数・テスト用に切り出し）。既定20。
+ * VS_MAX_QUEUE_LENGTHで上書きできる(1未満・非数は既定へ)。
+ *
+ * 旧実装は待ち行列(groq経路のconcurrencyGate内部キュー・local経路のlocalQueue)に
+ * 上限が無く、投入され続けると際限なく伸びた(監査指摘)。上限に達したら新規投入自体を
+ * 4xxで拒否する(キューへ積まずに即座に断る＝黙って溜め込まない)。
+ */
+export function resolveMaxQueueLength(envValue = process.env.VS_MAX_QUEUE_LENGTH) {
+  const n = Number(envValue);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 20;
+}
+const MAX_QUEUE_LENGTH = resolveMaxQueueLength();
+
+// P1-13-B: 焼き直し(recaption)は同一ジョブへの並列連打だと一時ファイル名がジョブ固定のため
+// 競合する。また、焼き直しはこれまでconcurrencyGateの対象外でffmpegを無制限にspawnできた。
 // 本編ジョブと同じゲートを共有させ、同時実行数の上限を一本化する。
-const recaptioningJobs = new Set();
+// (recaptioningJobs 本体の宣言は activeJobIds() より前・ファイル冒頭側にある。)
 
 /** 指定ジョブが現在焼き直し中かどうか。 */
 export function isRecaptioning(jobId) {
@@ -334,56 +681,97 @@ export function runGated(fn) {
  * @param {string} jobId
  * @param {string} inputAbsPath - 保存済みの入力動画絶対パス
  * @param {{ sub: "on"|"none", cut: "topic"|"minutes", size: "9:16"|"16:9", cutMin?: number }} opts
+ * @returns {true|false|"queue_full"} true=受理, false=同一jobId実行中で拒否(409),
+ *   "queue_full"=AUD-P2-20b: 待ち行列が上限に達しているため拒否(呼び出し側は4xxで断ること)。
  */
 export function startJob(jobId, inputAbsPath, opts) {
   // 走行中ガード: 同一 jobId が実行中（init/t/c/s/r/m）なら二重起動を拒否。
-  // 完了済（done/error）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
+  // 完了済（done/error/cancelled/timeout）や購読のみ（unknown）は再起動を許可（同じ動画の再編集）。
   const existing = jobs.get(jobId);
   if (existing && RUNNING_STAGES.includes(existing.stage)) {
     return false;
   }
+  // AUD-P2-20b: どちらの経路(groq/local)を使うかで見るべき待ち行列が違う。
+  // ジョブ登録・制御レコード初期化より前に判定し、上限超過時は何も変更せず即座に断る
+  // (キューへ積んでから断ると「積んだのに拒否された」という不整合が起きる)。
+  const willUseGroq = groqKeyAvailable();
+  const currentQueueLength = willUseGroq ? concurrencyGate.waiting : localQueue.length;
+  if (currentQueueLength >= MAX_QUEUE_LENGTH) {
+    return "queue_full";
+  }
+  // AUD-P1-11a/11b: 前回の実行(キャンセル/タイムアウト/エラー)の制御レコードが残っていると、
+  // 新しい実行が「まだキャンセル済みのまま」扱いされて子プロセスを一切起動できなくなる。
+  // 開始のたびに必ずクリアする。
+  resetControl(jobId);
   if (!existing) {
-    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null });
+    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
   } else {
     // 購読者（SSE）は保持したまま状態だけリセットして再実行
     existing.stage = "init";
     existing.error = null;
     existing.errorCode = null;
+    // AUD-P1-10c: 前回実行分の古いスナップショットを持ち越さない(再実行直後に新規購読が
+    // 来た場合、前回ジョブの進捗を新しいジョブの状態として誤って見せてしまうのを防ぐ)。
+    existing.lastEvent = null;
   }
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
   const workDir = path.join(WORK_ROOT, jobId);
   const exec = () =>
-    runJob(jobId, inputAbsPath, opts).catch((err) => {
-      process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
-      const job = jobs.get(jobId);
-      if (job) {
-        job.stage = "error";
-        job.error = err?.message ?? String(err);
-        job.errorCode = err?.code ?? null;
+    runJob(jobId, inputAbsPath, opts).then(
+      () => {
+        // AUD-P1-11a/11b: 正常終了した(=もうこのジョブをキャンセル/タイムアウトさせる対象では
+        // ない)ので、制御レコードを片付ける(残しておくと次回実行時までメモリに残り続ける)。
+        resetControl(jobId);
+      },
+      (err) => {
+        process.stderr.write(`[pipeline error] jobId=${jobId} ${err?.stack ?? err}\n`);
+        // AUD-P1-05a/05b: SSE配信(broadcast)・state.json永続化(writeState)の直前に、
+        // それぞれ念のためもう一度 redactSecrets を掛ける(多層防御)。spawnAndLog側の
+        // ストリーミング伏字化(chunk境界対応)が主たる修正だが、err.messageはpipeline.mjs等
+        // 別経路のエラー（子プロセスのspawn自体の失敗メッセージ等）から来る場合もあり、
+        // ここが「SSEへ出る/state.jsonへ書かれる直前」の最後の関門になる。
+        const safeMessage = redactSecrets(err?.message ?? String(err), secretsToRedact());
+        // AUD-P1-11a/11b: cancelJob()や自動タイムアウトで終わった場合は、汎用の"error"ではなく
+        // 専用の終端stage/イベント("cancelled"/"timeout")として区別する。フロントや
+        // 監視側が「利用者の意思によるキャンセル」「自動打ち切り」「本当の失敗」を
+        // 見分けられるようにするため。
+        const terminalStage =
+          err?.code === "cancelled" ? "cancelled" : err?.code === "timeout" ? "timeout" : "error";
+        const job = jobs.get(jobId);
+        if (job) {
+          job.stage = terminalStage;
+          job.error = safeMessage;
+          job.errorCode = err?.code ?? null;
+          // AUD-P2-20a: 終端到達時刻を記録する(reclaimTerminalJobsの保持期間判定に使う)。
+          job.terminatedAt = Date.now();
+        }
+        // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
+        // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
+        // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
+        // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
+        // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
+        // AUD-P2-16: ここも updateState (読む→マージ→原子書き込み) に統一する。
+        try {
+          updateState(workDir, {
+            stage: terminalStage,
+            error: safeMessage,
+            errorCode: err?.code ?? null,
+          });
+        } catch (writeErr) {
+          process.stderr.write(
+            `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
+          );
+        }
+        // AUD-P1-10b: state.json/job.stage は内部的に "error" のままだが、SSE の wire イベント名は
+        // ネイティブEventSourceの"error"と衝突しない"job-error"へ変換する(cancelled/timeoutはそのまま)。
+        broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, terminalStage === "error" ? "job-error" : terminalStage);
+        // 制御レコードは既に使い終えたので片付ける(cancelJob()の対象から外れる)。
+        resetControl(jobId);
       }
-      // G-EDIT-MOSAIC-UI-O-2: 失敗をメモリ上の job.stage だけでなく state.json にも残す。
-      // ここを書かないと、途中まで（例: rendered）進んだ state.json が最後に書いた
-      // 成功段階のまま残り、サーバー再起動後に読み直すと成功したジョブに見えてしまう
-      // （メモリの job.stage は再起動で消える一方、state.json はディスクに残るため）。
-      // state.json がまだ一度も書かれていない（init 前に落ちた等）場合は空オブジェクトを土台にする。
-      try {
-        const current = readState(workDir) || {};
-        writeState(workDir, {
-          ...current,
-          stage: "error",
-          error: err?.message ?? String(err),
-          errorCode: err?.code ?? null,
-        });
-      } catch (writeErr) {
-        process.stderr.write(
-          `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
-        );
-      }
-      broadcast(jobId, { message: err?.message ?? String(err), code: err?.code ?? null }, "error");
-    });
-  if (groqKeyAvailable()) {
+    );
+  if (willUseGroq) {
     // Groq: 並列実行（クラウド側で並列処理される）。ただし同時実行数の上限までで、
-    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C)。
+    // 超過分はconcurrencyGateがFIFOで順番待ちにする(P2-4-C。上限はAUD-P2-20bで別途判定済み)。
     concurrencyGate.run(exec);
   } else {
     // local: 直列。待ち中であることを購読者へ通知してからキュー投入
@@ -424,7 +812,10 @@ async function runJob(jobId, inputAbsPath, opts) {
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
 
   // state.json 初期作成（pipeline.mjs init の代替）
-  const state = {
+  // AUD-P2-16: 以後このローカル変数を使い回して丸ごと上書きすることはしない
+  // (updateStateがそのつど最新のディスク内容を読んでマージする＝子プロセスが
+  // 書き足したフィールドを消さない)。
+  updateState(workDir, {
     id: jobId,
     input: inputAbsPath,
     transcript: null,
@@ -437,8 +828,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
     // （顔モザイクで同じ取りこぼしをしたので、結線を smoke.mjs で押さえる）。
     trim: opts.trim === "on" ? "on" : "none",
-  };
-  writeState(workDir, state);
+  });
 
   const job = jobs.get(jobId);
 
@@ -452,13 +842,12 @@ async function runJob(jobId, inputAbsPath, opts) {
     [TRANSCRIBE_PY, inputAbsPath, transcriptPath],
     // P1-14-A: GROQ_API_KEYはtranscribe.pyのGroq経路選択に必要な唯一の秘密情報。
     // ここでだけ明示的にallowlistへ加える(select/renderの子には渡さない)。
-    { envExtra: ["GROQ_API_KEY"] },
+    // AUD-P1-11a/11b: jobIdを渡し、キャンセル/タイムアウトの対象にする。
+    { envExtra: ["GROQ_API_KEY"], jobId },
     (ln) => broadcast(jobId, { stage: "t", status: "active", log: ln })
   );
 
-  state.stage = "transcribed";
-  state.transcript = transcriptPath;
-  writeState(workDir, state);
+  updateState(workDir, { stage: "transcribed", transcript: transcriptPath });
 
   // 話し声が無い動画（音楽・歓声のみ等）は文字起こしが 0 件になる。
   // ここで素人に分かる言葉で止める（select/claude を走らせず無駄なコストも避ける）。
@@ -476,6 +865,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 直った文字を読む（「公開」と「後悔」を取り違えた文で場面を選ばれずに済む）し、
   // 焼く字幕も直った文字になる。失敗したら例外のままジョブを失敗させる
   // （黙って元の文字起こしで進めると、直したつもりで直っていない動画が出る）。
+  throwIfCancelled(jobId);
   job.stage = "c";
   broadcast(jobId, { stage: "c", status: "active", label: "AIが字幕の間違いを直しています" });
 
@@ -485,8 +875,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
   });
 
-  state.stage = "captionfixed";
-  writeState(workDir, state);
+  updateState(workDir, { stage: "captionfixed" });
   broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
   broadcast(jobId, { stage: "c", status: "done" });
 
@@ -503,7 +892,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   await spawnAndLog(
     "node",
     selectArgs,
-    {},
+    { jobId },
     (ln) => broadcast(jobId, { stage: "s", status: "active", log: ln })
   );
 
@@ -513,6 +902,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   // incomplete:true をstateへ残し、成功したふりをしない(候補生成・SSE完了通知の両方に反映)。
   let selectIncomplete = false;
   if (mode !== "digest") {
+    throwIfCancelled(jobId);
     const result = await runClaudeSelect(workDir, (msg) => {
       broadcast(jobId, { stage: "s", status: "active", log: msg });
     });
@@ -526,9 +916,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     }
   }
 
-  state.stage = "selected";
-  state.selectIncomplete = selectIncomplete;
-  writeState(workDir, state);
+  updateState(workDir, { stage: "selected", selectIncomplete });
   broadcast(jobId, { stage: "s", status: "done", incomplete: selectIncomplete });
 
   // ── Stage r: レンダリング ────────────────────────────────────
@@ -541,12 +929,11 @@ async function runJob(jobId, inputAbsPath, opts) {
   await spawnAndLog(
     "node",
     renderArgs,
-    {},
+    { jobId },
     (ln) => broadcast(jobId, { stage: "r", status: "active", log: ln })
   );
 
-  state.stage = "rendered";
-  writeState(workDir, state);
+  updateState(workDir, { stage: "rendered" });
   broadcast(jobId, { stage: "r", status: "done" });
 
   // ── Stage m: 顔モザイク（選ばれたときだけ） ──────────────────
@@ -554,27 +941,37 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 掛けたときは素顔のファイルを成果物フォルダの外へ退避する（納品はフォルダからの
   // コピーなので、一覧から隠すだけでは「うっかり素顔を渡す」を防げない）。
   if (opts.mosaic === "on") {
+    throwIfCancelled(jobId);
     job.stage = "m";
     broadcast(jobId, { stage: "m", status: "active", label: "顔にモザイクを掛けています" });
 
     const outDir = path.join(OUT_ROOT, jobId);
     const candPath = path.join(outDir, "candidates.json");
     const cand = JSON.parse(fs.readFileSync(candPath, "utf-8"));
-    const next = await applyMosaicStage({
+    // AUD-P1-06: candidates.json の書き換えは applyMosaicStage() が原子的（temp+rename）に
+    // 行う。ここで改めて fs.writeFileSync すると、その書き込み自体が非原子的なtruncate書きに
+    // 戻ってしまい、書いている途中で落ちたときに壊れて読めなくなる。
+    await applyMosaicStage({
       outDir,
       stashDir: path.join(workDir, "pre-mosaic"),
       candidates: cand,
+      candPath,
       onLog: (ln) => broadcast(jobId, { stage: "m", status: "active", log: ln }),
     });
-    fs.writeFileSync(candPath, JSON.stringify(next, null, 2), "utf-8");
 
-    state.stage = "mosaicked";
-    state.mosaic = "on";
-    writeState(workDir, state);
+    updateState(workDir, { stage: "mosaicked", mosaic: "on" });
     broadcast(jobId, { stage: "m", status: "done" });
   }
 
   // ── 完了 ─────────────────────────────────────────────────────
+  // AUD-P2-16: doneも(errorやcancelled/timeoutと同様に)必ずディスクへ永続化する。
+  // 旧実装はメモリのjob.stageだけをdoneにしており、state.jsonは最後に書いた
+  // "rendered"/"mosaicked"のまま止まっていた。サーバー再起動後にこのジョブへ
+  // 再接続すると、jobs Mapが空(=このプロセスは一度も起動していない)なので、
+  // state.jsonを読んで「本当はdoneだった」と判定できることが要る(subscribeJob参照)。
+  updateState(workDir, { stage: "done", selectIncomplete });
   job.stage = "done";
+  // AUD-P2-20a: 終端到達時刻を記録する(reclaimTerminalJobsの保持期間判定に使う)。
+  job.terminatedAt = Date.now();
   broadcast(jobId, { stage: "done", incomplete: selectIncomplete }, "done");
 }
