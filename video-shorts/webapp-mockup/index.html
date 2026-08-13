@@ -35,7 +35,7 @@
         <h2 class="group-label" id="h-video">
           <span class="step-n" aria-hidden="true">1</span> 動画
         </h2>
-        <label class="drop" id="drop" for="file">
+        <label class="drop" id="drop" for="file" tabindex="0" role="button" aria-label="動画をドロップまたはクリックで選択">
           <input type="file" id="file" accept="video/*" hidden />
           <span class="drop-ico" aria-hidden="true">⬆</span>
           <span class="drop-text" id="drop-text">動画をドロップ<br>またはクリックで選択</span>
@@ -196,6 +196,10 @@
         </div>
       </div>
       <div class="job-list hidden" id="job-list"></div>
+      <!-- AUD-S-04: 候補APIが返すdigest(まとめて1本にした最終動画)は、これまで
+           fillResults()がdata.candidatesしか読まず、生成されていても画面から見えなかった。
+           タブ(採用候補/使わない候補)の外・両方から常に見える位置に置く。 -->
+      <div class="job-digest hidden" id="job-digest"></div>
       <div class="tabs" role="tablist">
         <button class="tab is-on" data-tab="keep" role="tab" aria-selected="true" aria-controls="tab-keep">採用候補 <b id="keep-n">0</b></button>
         <button class="tab" data-tab="trash" role="tab" aria-selected="false" aria-controls="tab-trash">使わない候補 <b id="trash-n">0</b></button>
@@ -278,7 +282,7 @@
   </div>
 
   <!-- ===== 編集できないカード（話し声なし等・通常画面の上に浮く小窓）===== -->
-  <div class="cantedit-card hidden" id="cantedit-card" role="dialog" aria-label="編集できません">
+  <div class="cantedit-card hidden" id="cantedit-card" role="dialog" aria-modal="true" aria-label="編集できません">
     <div class="ce-mark" aria-hidden="true">
       <svg class="ce-svg" viewBox="0 0 48 48">
         <rect x="19" y="9" width="10" height="20" rx="5" />

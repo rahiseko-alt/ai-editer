@@ -4,7 +4,7 @@
 // 【なぜ実サーバーで確かめるか】server/pipeline-runner.mjs の runJob() は関数を直接呼べば
 // 「stage c が例外を投げたら catch されてジョブが error になる」ことは読み取れるが、それは
 // 実装を読んだ結果の推測にすぎない。実際に POST /api/jobs → SSE 進捗という本番と同じ経路を
-// 実プロセス2本（サーバー本体・偽 claude）で通し、(a) 進捗が event: error で終わること、
+// 実プロセス2本（サーバー本体・偽 claude）で通し、(a) 進捗が event: job-error で終わること、
 // (b) 区間選定の成果物(llm-response.json)とクリップが1本も作られていないこと、を実測する。
 // 対照として、正しく返す偽 claude では同じ手順が event: done まで進み、区間選定の成果物と
 // クリップが実際に作られることを確認する（「常に失敗するテスト」で緑を偽装しないため）。
@@ -176,7 +176,7 @@ function postJob(token, samplePath) {
   });
 }
 
-/** SSE を接続したまま、サーバーが event:error / event:done で接続を閉じるまで読み切る。 */
+/** SSE を接続したまま、サーバーが event:job-error / event:done で接続を閉じるまで読み切る。 */
 function collectEvents(jobId, jobToken, timeoutMs) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -242,7 +242,9 @@ async function runScenario(label, claudeBehavior, { expectDone }) {
     const outDir = path.join(OUT_ROOT, jobId);
 
     const events = await collectEvents(jobId, jobToken, expectDone ? 90_000 : 30_000);
-    const gotError = /event:\s*error/.test(events.body);
+    // AUD-P1-10b: wireのイベント名は "error"(EventSourceのネイティブerrorと衝突する)から
+    // "job-error"へ変更済み。内部の job.stage 値は "error" のまま。
+    const gotError = /event:\s*job-error/.test(events.body);
     const gotDone = /event:\s*done/.test(events.body);
 
     if (expectDone) {
@@ -263,7 +265,7 @@ async function runScenario(label, claudeBehavior, { expectDone }) {
           fs.existsSync(clipPath) && fs.statSync(clipPath).size > 0, clipPath);
       }
     } else {
-      report(`${label}: 必ず失敗する偽claudeでは進捗がevent: errorで終わる（doneに到達しない）`,
+      report(`${label}: 必ず失敗する偽claudeでは進捗がevent: job-errorで終わる（doneに到達しない）`,
         gotError && !gotDone, `body末尾=${events.body.slice(-300)}`);
 
       const respPath = path.join(workDir, "llm-response.json");

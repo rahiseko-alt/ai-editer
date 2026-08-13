@@ -34,6 +34,14 @@ const drop = $("drop"), fileInput = $("file");
 ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, () => drop.classList.remove("drag")));
 drop.addEventListener("drop", (ev) => { ev.preventDefault(); const f = ev.dataTransfer.files?.[0]; if (f) setFile(f); });
 fileInput.addEventListener("change", (ev) => { const f = ev.target.files?.[0]; if (f) setFile(f); });
+// AUD-P1-13: 見た目上のアップロード枠は<label>で、リンク先の<input type=file>はhiddenのため
+// クリックでしか開けなかった(Tab移動もEnter/Spaceでの起動も出来ない)。tabindex="0"で
+// フォーカス可能にした上で、Enter/Spaceでもファイル選択を起動できるようにする。
+drop.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") return;
+  ev.preventDefault();
+  fileInput.click();
+});
 $("clear-file").addEventListener("click", () => {
   state.file = null; $("filebar").classList.add("hidden"); drop.classList.remove("hidden"); refresh();
 });
@@ -263,9 +271,16 @@ function attachModal(root, onClose) {
 }
 
 // ---- タブ（採用候補 / 使わない候補）----
+// AUD-P2-24: is-on(見た目)だけでなくaria-selectedも実際に表示中のパネルと一致させる。
+// これが無いと、クリックでパネルが切り替わってもスクリーンリーダーは前に選んでいた
+// タブを読み上げ続ける(見た目と読み上げ内容が食い違う)。
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("is-on"));
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.remove("is-on");
+    t.setAttribute("aria-selected", "false");
+  });
   tab.classList.add("is-on");
+  tab.setAttribute("aria-selected", "true");
   $("tab-keep").classList.toggle("hidden", tab.dataset.tab !== "keep");
   $("tab-trash").classList.toggle("hidden", tab.dataset.tab !== "trash");
 }));
@@ -346,6 +361,12 @@ function showEditingError(msg) {
 }
 
 // 話し声なし等「そもそも編集できない」専用カード
+// AUD-P2-23: 見た目はモーダルそのものだが既存のフォーカストラップ(attachModal)に
+// 繋がっておらず、表示してもフォーカスは表示前の場所に残ったままだった(理由文言も
+// 「別の動画を選ぶ」ボタンもキーボードで辿り着く保証が無かった)。confirm/result の
+// 2モーダルと同じ仕組みに乗せ、開いたら即フォーカスを移す・Tabで外へ出さない・
+// Escapeで閉じる・閉じたら元の場所へ戻す、を揃える。
+const cantEditModal = attachModal($("cantedit-card"), closeCantEdit);
 function showCantEdit(reason) {
   hideEditing();
   $("btn-run").disabled = false;
@@ -354,15 +375,22 @@ function showCantEdit(reason) {
   const c = $("cantedit-card");
   c.classList.remove("hidden");
   requestAnimationFrame(() => c.classList.add("show"));
+  cantEditModal.open($("cantedit-retry")); // 初期フォーカスは再選択の主動線
 }
 function hideCantEdit() {
   const c = $("cantedit-card");
   c.classList.remove("show");
   setTimeout(() => c.classList.add("hidden"), 300);
+  cantEditModal.close();
 }
-$("cantedit-retry").addEventListener("click", () => {
+// Escapeで閉じたとき(=attachModalのonClose)も、ボタンクリック時と同じく
+// 「動画未選択」の状態へ戻す(カードだけ閉じてファイル選択済みのまま宙に浮かせない)。
+function closeCantEdit() {
   hideCantEdit();
   state.file = null; $("filebar").classList.add("hidden"); $("drop").classList.remove("hidden"); refresh();
+}
+$("cantedit-retry").addEventListener("click", () => {
+  closeCantEdit();
   $("file").click();   // すぐ選び直せるようファイル選択を開く
 });
 
@@ -432,11 +460,19 @@ function run() {
             if (!r.ok) return r.json().then((d) => Promise.reject(d.error || d.message || "候補取得失敗"));
             return r.json();
           })
-          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete))
+          // AUD-S-03: renderFailed(一部候補の書き出し失敗件数)もfillResultsへ渡す
+          // (これまでAPI応答に居ても画面が一切読んでいなかった)。
+          // AUD-S-04: digest(まとめて1本にした最終動画)もfillResultsへ渡す
+          // (これまでAPI応答に居ても画面が一切読んでいなかった)。
+          .then((data) => fillResults(jobId, jobToken, data.candidates || [], !!data.incomplete, data.renderFailed || 0, data.digest || null))
           .catch((msg) => showError(String(msg)));
       });
 
-      es.addEventListener("error", (ev) => {
+      // AUD-P1-10b: サーバーが送る業務/アプリケーションエラー(このジョブが失敗した、等)。
+      // ネイティブのEventSource "error" と衝突しない専用のイベント名(job-error)で届くので、
+      // ここは常に「もう続行できない終端」として扱ってよい(接続を閉じ、再接続はしない＝
+      // 再接続しても同じ理由でまた失敗するだけの結果が分かっている状況のため)。
+      es.addEventListener("job-error", (ev) => {
         es.close();
         let msg = "処理に失敗しました", code = null;
         try { const d = JSON.parse(ev.data); if (d.message) msg = d.message; code = d.code || null; } catch { /* ignore */ }
@@ -451,6 +487,24 @@ function run() {
         let msg = "サーバーが再起動したため、処理が中断されました。もう一度実行してください。";
         try { const d = JSON.parse(ev.data); if (d.message) msg = d.message; } catch { /* ignore */ }
         showError(msg);
+      });
+
+      // AUD-P1-10a: 伝送レベルの障害(EventSourceのネイティブerror)。業務エラーは上の
+      // job-errorイベントへ分離済みなので、ここへ来るのは接続そのものの問題だけになる。
+      // これには2種類あり、readyStateで区別できる。
+      //   ① readyState===CONNECTING: 接続済みストリームが途中で切れただけ(TCP切断・
+      //      サーバー再起動の瞬間など)。ブラウザは仕様上これを検知すると自動で再接続を
+      //      試みる。ここでes.close()を呼ぶとその自動再接続を握りつぶしてしまうため、
+      //      何もしない(閉じない)。再接続後はサーバーが購読時に現在のスナップショットを
+      //      即送る(AUD-P1-10c)ため、切断中に見逃した進捗もここで復旧する。
+      //   ② readyState===CLOSED: 接続そのものを一度も確立できなかった(認可エラー等で
+      //      HTTP応答が200/text-event-streamでなかった)場合、ブラウザは仕様上二度と
+      //      自動再接続しない。これは打つ手が無いので、ここで明示的に終端として画面へ伝える。
+      es.addEventListener("error", () => {
+        if (es.readyState === EventSource.CLOSED) {
+          showError("サーバーとの接続が切れました。もう一度お試しください。");
+        }
+        // readyState === CONNECTING の間は何もしない＝ブラウザの自動再接続に任せる。
       });
     })
     .catch((msg) => showError(String(msg)));
@@ -471,7 +525,7 @@ $("editing-error-close").addEventListener("click", hideEditing);
 let jobs = [];
 let curJob = -1;
 function activeJob() { return jobs[curJob] || null; }
-function addJob(jobId, jobToken, candidates, incomplete) {
+function addJob(jobId, jobToken, candidates, incomplete, renderFailed, digest) {
   const keep = (candidates || []).map((c) => ({
     h: c.hook || c.keepText || "（タイトル未取得）",
     d: fmtDuration(c.duration || 0),
@@ -487,6 +541,8 @@ function addJob(jobId, jobToken, candidates, incomplete) {
     keep,
     trash: [],   // エンジンは採用候補のみ返すため trash は空
     incomplete: !!incomplete, // P1-5: 区間選定の一部が失敗し、全編をカバーできていない場合true
+    renderFailed: Number(renderFailed) || 0, // AUD-S-03: 書き出しに失敗した候補の本数
+    digest: digest && digest.file ? digest : null, // AUD-S-04: まとめて1本にした最終動画(あれば)
   });
   curJob = jobs.length - 1;
 }
@@ -506,15 +562,35 @@ $("job-list").addEventListener("click", (e) => {
   renderJobList(); renderResults();
 });
 
+// AUD-S-04: digest(まとめて1本にした最終動画)の再生・DL導線。タブの外に置くので
+// 採用候補/使わない候補のどちらを見ていても常に見える。無ければ枠ごと隠す。
+function renderJobDigest(job) {
+  const el = $("job-digest");
+  if (!job || !job.digest) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  const src = withTokenQuery(`/api/clips/${job.jobId}/${encodeURIComponent(job.digest.file)}`, job.jobToken);
+  el.innerHTML =
+    `<b>まとめ動画（${job.digest.parts || job.keep.length}本を1本に結合）</b>` +
+    `<video controls preload="metadata" src="${esc(src)}"></video>` +
+    `<div class="job-digest-actions"><a class="clip-btn dl" id="job-digest-dl" href="${esc(src)}" download="${esc(job.digest.file)}">⬇ まとめ動画をDL</a></div>`;
+  el.classList.remove("hidden");
+}
+
 function renderResults() {
   const job = activeJob(); if (!job) return;
   const KEEP = job.keep, TRASH = job.trash;
+  renderJobDigest(job);
   $("keep-n").textContent = KEEP.length;
   $("trash-n").textContent = TRASH.length;
   $("tab-keep").innerHTML =
     // P1-5: 一部の区間選定に失敗している場合、成功扱いに見せず必ず明示する(黙って欠落させない)。
     (job.incomplete
       ? `<p class="reason warn">⚠ 動画の一部区間の解析に失敗したため、全編ではなく成功した範囲のみから選んでいます。</p>`
+      : "") +
+    // AUD-S-03: 一部候補の書き出し(レンダ)自体が失敗した場合も、本数が想定より
+    // 少ない理由をここで明示する(APIのJSONに数値が乗るだけでは画面に出ない=見た目上は
+    // 「たまたま少なく選ばれた」ように見えてしまい、失敗の事実が伝わらない)。
+    (job.renderFailed > 0
+      ? `<p class="reason warn">⚠ ${job.renderFailed}件の書き出しに失敗したため、成功した${KEEP.length}件のみを表示しています。</p>`
       : "") +
     `<p class="reason">あなたの設定をもとに、AIがそのまま使える部分を${KEEP.length}本選びました。短い・中身が薄い部分は「使わない候補」に入れています。</p>` +
     (KEEP.length
@@ -710,9 +786,9 @@ function openResult() {
   requestAnimationFrame(() => ov.classList.add("show"));
   resultModal.open($("result-close")); // 初期フォーカスは閉じるボタン
 }
-function fillResults(jobId, jobToken, candidates, incomplete) {
+function fillResults(jobId, jobToken, candidates, incomplete, renderFailed, digest) {
   hideEditing();              // 編集中オーバーレイを閉じる（結果パネルより前面なので先に）
-  addJob(jobId, jobToken, candidates, incomplete);  // 今回の結果を履歴に積む（過去分は残る）
+  addJob(jobId, jobToken, candidates, incomplete, renderFailed, digest);  // 今回の結果を履歴に積む（過去分は残る）
   renderJobList();
   renderResults();
   openResult();

@@ -97,8 +97,10 @@ try {
   );
 
   // O-1相当（SSE到達）: 既に完了(error)したジョブへ後から購読しても、
-  // 既存の replay ロジックで error イベントが即座に届くことを確認する
+  // 既存の replay ロジックで job-error イベントが即座に届くことを確認する
   // (subscribeJob の "race condition 対策" 経路。既存コードの回帰確認)。
+  // AUD-P1-10b: wireのイベント名は "error"(EventSourceのネイティブerrorと衝突する)から
+  // "job-error"へ変更済み。判定もあわせて更新する(内部の job.stage 値は "error" のまま)。
   const lines = [];
   let closed = false;
   subscribeJob(
@@ -108,8 +110,8 @@ try {
   );
   const body = lines.join("");
   report(
-    "完了後に購読しても error イベントがリプレイされる（画面が後から開いても失敗が伝わる）",
-    /event:\s*error/.test(body) && closed,
+    "完了後に購読しても job-error イベントがリプレイされる（画面が後から開いても失敗が伝わる）",
+    /event:\s*job-error/.test(body) && closed,
     `body=${body.slice(0, 200)}`
   );
 } finally {

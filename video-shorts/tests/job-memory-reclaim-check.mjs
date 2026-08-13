@@ -76,7 +76,7 @@ function waitForTerminal(jobId, timeoutMs = 15000) {
     let settled = false;
     let timer;
     const push = (line) => {
-      if (/^event:\s*(done|error|cancelled|timeout)/m.test(line)) {
+      if (/^event:\s*(done|job-error|cancelled|timeout)/m.test(line)) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);

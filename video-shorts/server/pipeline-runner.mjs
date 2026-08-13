@@ -180,7 +180,7 @@ export function cancelJob(jobId) {
 }
 
 /** ジョブとして終端状態を意味するイベント名一覧(SSE接続を閉じる基準)。 */
-const TERMINAL_EVENTS = ["error", "done", "cancelled", "timeout"];
+const TERMINAL_EVENTS = ["job-error", "done", "cancelled", "timeout"];
 
 /** SSE イベントを購読者全員に push。error/done/cancelled/timeout は接続も close する */
 function broadcast(jobId, payload, event = null) {
@@ -189,6 +189,13 @@ function broadcast(jobId, payload, event = null) {
   const line = event
     ? `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`
     : `data: ${JSON.stringify(payload)}\n\n`;
+  // AUD-P1-10c: 「今どの段階が進行中か」を表す進捗行(status付き・ログ行ではない)だけを
+  // 直近スナップショットとして憶えておく。これがあると、(a) POST応答からEventSource接続
+  // までの間に飛んだ進捗、(b) 切断中に飛んだ進捗を、後から購読した相手へ即座に届けられる
+  // （購読者0人の間にbroadcastしても、下のforは何もせず素通りして消えてしまうため）。
+  if (payload && payload.status && !event) {
+    job.lastEvent = line;
+  }
   for (const sub of job.subscribers) {
     try {
       sub.push(line);
@@ -196,7 +203,12 @@ function broadcast(jobId, payload, event = null) {
       // 切断済み購読者は無視
     }
   }
-  // 終端イベント（error / done / cancelled / timeout）は全購読者の SSE 接続を閉じて Set をクリア
+  // AUD-P1-10b: 終端イベント(job-error / done / cancelled / timeout)は全購読者の SSE 接続を
+  // 閉じて Set をクリアする。業務エラーの wire イベント名は"error"ではなく"job-error"を使う。
+  // EventSourceは接続断などのネイティブ"error"と、サーバーが"event: error"という名前で送った
+  // 独自イベントを、クライアント側では同じ addEventListener("error", ...) が受け取ってしまい
+  // 区別できない(前者は再接続すべき一時的な障害、後者は再接続しても無意味な終端)ため、
+  // 名前を分けてクライアントがネイティブerrorだけを伝送エラーとして扱えるようにする。
   if (TERMINAL_EVENTS.includes(event)) {
     for (const sub of job.subscribers) {
       try { sub.close(); } catch (_) {}
@@ -268,16 +280,17 @@ export function subscribeJob(jobId, push, close) {
     const disk = readState(path.join(WORK_ROOT, jobId));
     const diskStage = disk?.stage;
     if (diskStage === "done") {
-      jobs.set(jobId, { stage: "done", subscribers: new Set(), error: null, errorCode: null });
+      jobs.set(jobId, { stage: "done", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
     } else if (diskStage === "error" || diskStage === "cancelled" || diskStage === "timeout") {
       jobs.set(jobId, {
         stage: diskStage,
         subscribers: new Set(),
         error: disk.error || null,
         errorCode: disk.errorCode || null,
+        lastEvent: null,
       });
     } else {
-      jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null });
+      jobs.set(jobId, { stage: "interrupted", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
     }
   }
   const job = jobs.get(jobId);
@@ -286,7 +299,8 @@ export function subscribeJob(jobId, push, close) {
 
   // race condition 対策: 既に終了済み/中断済みならリプレイして即通知
   if (job.stage === "error") {
-    try { push(`event: error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
+    // AUD-P1-10b: wireのイベント名は job-error（内部の job.stage==="error" とは別物）。
+    try { push(`event: job-error\ndata: ${JSON.stringify({ message: job.error || "処理に失敗しました", code: job.errorCode || null })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
   } else if (job.stage === "done") {
@@ -305,6 +319,12 @@ export function subscribeJob(jobId, push, close) {
     try { push(`event: interrupted\ndata: ${JSON.stringify({ message: INTERRUPTED_MESSAGE })}\n\n`); } catch (_) {}
     try { close(); } catch (_) {}
     job.subscribers.delete(sub);
+  } else if (job.lastEvent) {
+    // AUD-P1-10c: まだ実行中(init/t/c/s/r/m)のジョブへの購読。POST応答〜EventSource接続の
+    // 間や、切断していた間に進捗が進んでいても、次の進捗が飛んでくるまで画面が更新されない
+    // (=見逃した進捗が復旧しない)。直近のスナップショットを接続直後に1回だけ届け、
+    // 見た目上の状態を現在地へ追いつかせる。
+    try { push(job.lastEvent); } catch (_) {}
   }
 }
 
@@ -684,12 +704,15 @@ export function startJob(jobId, inputAbsPath, opts) {
   // 開始のたびに必ずクリアする。
   resetControl(jobId);
   if (!existing) {
-    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null });
+    jobs.set(jobId, { stage: "init", subscribers: new Set(), error: null, errorCode: null, lastEvent: null });
   } else {
     // 購読者（SSE）は保持したまま状態だけリセットして再実行
     existing.stage = "init";
     existing.error = null;
     existing.errorCode = null;
+    // AUD-P1-10c: 前回実行分の古いスナップショットを持ち越さない(再実行直後に新規購読が
+    // 来た場合、前回ジョブの進捗を新しいジョブの状態として誤って見せてしまうのを防ぐ)。
+    existing.lastEvent = null;
   }
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
   const workDir = path.join(WORK_ROOT, jobId);
@@ -739,7 +762,9 @@ export function startJob(jobId, inputAbsPath, opts) {
             `[pipeline error] state.json への失敗記録に失敗 jobId=${jobId} ${writeErr?.stack ?? writeErr}\n`
           );
         }
-        broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, terminalStage);
+        // AUD-P1-10b: state.json/job.stage は内部的に "error" のままだが、SSE の wire イベント名は
+        // ネイティブEventSourceの"error"と衝突しない"job-error"へ変換する(cancelled/timeoutはそのまま)。
+        broadcast(jobId, { message: safeMessage, code: err?.code ?? null }, terminalStage === "error" ? "job-error" : terminalStage);
         // 制御レコードは既に使い終えたので片付ける(cancelJob()の対象から外れる)。
         resetControl(jobId);
       }

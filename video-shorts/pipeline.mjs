@@ -406,9 +406,12 @@ async function cmdRender(workDir, opts = {}) {
   const selectIncomplete = !!state.selectIncomplete;
   if (resolved.length > 0 && manifest.length === 0) {
     writeJson(path.join(outDir, "candidates.json"),
+      // AUD-S-03: failCountはここまで計算済みなのに、これまでcandidates.jsonへ一度も
+      // 書かれていなかった（ログにしか出ない）。一部候補の書き出し失敗を画面側が
+      // 検出・表示するための唯一の材料なので、他の2箇所のwriteJsonとあわせて含める。
       { id: state.id, mode, generated: 0, digest: null, candidates: [], incomplete: selectIncomplete,
         srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
-        srcSampleRate: srcSampleRate ?? null, orientation });
+        srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
     state.stage = "render_failed";
     state.candidates = 0;
     saveState(workDir, state);
@@ -435,9 +438,10 @@ async function cmdRender(workDir, opts = {}) {
 
   if (mode === "digest" && manifest.length > 0 && digest === null) {
     writeJson(path.join(outDir, "candidates.json"),
+      // AUD-S-03: 部分失敗件数(renderFailed)を持ち回る（詳細は下の主経路のwriteJson参照）。
       { id: state.id, mode, generated: manifest.length, digest: null, candidates: manifest, incomplete: selectIncomplete,
         srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
-        srcSampleRate: srcSampleRate ?? null, orientation });
+        srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
     state.stage = "render_failed";
     state.candidates = manifest.length;
     saveState(workDir, state);
@@ -447,10 +451,13 @@ async function cmdRender(workDir, opts = {}) {
   writeJson(path.join(outDir, "candidates.json"),
     // AUD-P1-02b: srcW/srcH（+ fps/標本化周波数）をここで持ち回る。recaption-stage.mjs は
     // 従来 state.srcW/state.srcH（本番のstate.jsonには存在しないフィールド）を参照しており、
-    // 常に undefined → 拡大ガード無しの既定解像度で焼き直され、初回レンダと解像度がずれていた。
+    // 常にundefined → 拡大ガード無しの既定解像度で焼き直され、初回レンダと解像度がずれていた。
+    // AUD-S-03: renderFailed(部分失敗件数)も併せて持ち回る。一部区間だけレンダに失敗しても
+    // (failCount>0でもmanifest.length>0なら)この主経路を通るため、失敗件数が
+    // webapp-mockup側へ渡る唯一の経路はここになる。
     { id: state.id, mode, generated: manifest.length, digest, candidates: manifest, incomplete: selectIncomplete,
       srcW, srcH, srcFps: srcFps ?? null, srcFpsRational: srcFpsRational ?? null,
-      srcSampleRate: srcSampleRate ?? null, orientation });
+      srcSampleRate: srcSampleRate ?? null, orientation, renderFailed: failCount });
   state.stage = "rendered";
   state.candidates = manifest.length;
   saveState(workDir, state);
@@ -463,7 +470,7 @@ async function cmdRender(workDir, opts = {}) {
   stageEnd(workDir, "render");
   log(summaryLine(readTiming(workDir)));
   log(`[DONE] ${manifest.length} 本生成 → ${outDir}\\candidates.json`);
-  log(`[NEXT] ui/index.html を開いて candidates.json を読み込み、採用/破棄を選別`);
+  log(`[NEXT] output/${path.basename(workDir)}/candidates.json と short-*.mp4 を確認し、採用/破棄を選別`);
 }
 
 function cmdStatus(workDir) {

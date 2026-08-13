@@ -194,7 +194,9 @@ try {
   createdJobId = jobId;
 
   const events = await collectEvents(jobId, jobToken, 15_000);
-  const gotError = /event:\s*error/.test(events.body);
+  // AUD-P1-10b: 業務エラーのwireイベント名は"error"ではなく"job-error"(ネイティブEventSourceの
+  // "error"との衝突を避けるための改名)。
+  const gotError = /event:\s*job-error/.test(events.body);
   report("前提: 偽pythonの異常終了によりジョブがerrorで終わる", gotError, events.body.slice(0, 500));
 
   // ── AUD-P1-05a: SSE配信本文に、チャンク境界で分割された秘密が現れない ──────
