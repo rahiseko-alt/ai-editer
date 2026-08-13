@@ -119,10 +119,10 @@
   "meta": {
     "title": "AI-Editer video-shorts ロードマップ",
     "active": "GOAL",
-    "next": "①claude/checkin-kqx1og をpush、draft PR作成、CI(ci-green/roadmap-required)の完走を確認する。②CIが緑になったら、P1-13〜P1-18の各criteria[].evidenceへ実際のCI run URLを記入し、status を doing→done へ更新する(basis-reviewerの反証は解消済みだが、evidenceは外部事実(CI run URL)でなければならないため、ローカルのテスト結果だけではdone化できない)。③P1-19(M-5用語辞書上限・M-7 SSEトークンURL露出・L-3 Range未対応・L-6 PORT=80認可)はtodo/backlogのまま残っている。設計判断(UX・互換性とのトレードオフ)を要するため、マスターの判断を仰いでから着手するかどうかを決める。④G-EDIT-MOSAIC-UI(凍結中・30葉)とSTAGE-2は引き続き未着手(①STAGE-1が納品できる状態になるまで着手しない方針は変更なし)。⑤G-EDIT-TRIM-D(人の耳による聴き比べ)は音声出力デバイスが無い環境では引き続き着手不可。",
+    "next": "①PR #105 をマージする。②G-EDIT-MOSAIC-UI(凍結中・30葉)とSTAGE-2は引き続き未着手(①STAGE-1が納品できる状態になるまで着手しない方針は変更なし)。③P1-19(M-5用語辞書上限・M-7 SSEトークンURL露出・L-3 Range未対応・L-6 PORT=80認可)はtodo/backlogのまま。設計判断(UX・互換性とのトレードオフ)を要するため、マスターの判断を仰いでから着手するかどうかを決める。④G-EDIT-TRIM-D(人の耳による聴き比べ)は音声出力デバイスが無い環境では引き続き着手不可。",
     "handoff": {
       "done": [
-        "2026-08-13の徹底監査セッション。サブエージェント3体(HTTPサーバ層/コマンド実行・メディア処理層/秘密情報・AI連携・テスト基盤)を並列起動し最新コードを調査、発見を自分でコード裏取り、高・中の項目は実機PoCで再現確認した(docs/audits/2026-08-13-security-audit.md)。H-1(JSONボディ無制限)・H-2(recaption同時実行制限なし)・H-3(APIキー漏洩導管)・H-4(concat.mjsのsymlink先回り)・M-1(静的配信のHost検査欠如)・M-2(セキュリティヘッダ皆無)・M-3(ジョブトークン平文永続化)・M-4(書き込み系エンドポイントのレート制限欠如)・M-6(鍵管理ポリシー文書の食い違い)・M-8(AI隔離作業場所のsymlink先回り)を実装で修正した。P1-13〜P1-19をdocs/roadmap.htmlのG-P1配下へ起票、basis-reviewerサブエージェントによる敵対的レビューで原子性違反(単一葉に複数の独立した受入事実が混在)と網羅性不足(M-2の一部・M-4がどの葉にも起票されていない)を反証され、24葉(P1-13〜P1-18・doing)+4葉(P1-19・todo/backlog)へ再構成した。security-*-check.mjs を12本新設し、各テストの主要な検証は実装前(H-1は上限チェックを一時的に無効化、H-4/M-8は本物のsymlink先回り攻撃を実際に設置)の状態で確実にFAILし、修正後にPASSすることを確認済み(\"probed\"探り)。既存の48本の回帰テストにも新規テストを追記し、typecheck/lint/build/pnpm audit/verify-roadmap-evidence がすべて緑であることを確認した。"
+        "2026-08-13の徹底監査セッション。サブエージェント3体(HTTPサーバ層/コマンド実行・メディア処理層/秘密情報・AI連携・テスト基盤)を並列起動し最新コードを調査、発見を自分でコード裏取り、高・中の項目は実機PoCで再現確認した(docs/audits/2026-08-13-security-audit.md)。H-1(JSONボディ無制限)・H-2(recaption同時実行制限なし)・H-3(APIキー漏洩導管)・H-4(concat.mjsのsymlink先回り)・M-1(静的配信のHost検査欠如)・M-2(セキュリティヘッダ皆無)・M-3(ジョブトークン平文永続化)・M-4(書き込み系エンドポイントのレート制限欠如)・M-6(鍵管理ポリシー文書の食い違い)・M-8(AI隔離作業場所のsymlink先回り)を実装で修正した。P1-13〜P1-19をdocs/roadmap.htmlのG-P1配下へ起票、basis-reviewerサブエージェントによる敵対的レビューで原子性違反(単一葉に複数の独立した受入事実が混在)と網羅性不足(M-2の一部・M-4がどの葉にも起票されていない)を反証され、24葉(P1-13〜P1-18・doing)+4葉(P1-19・todo/backlog)へ再構成した。security-*-check.mjs を12本新設し、各テストの主要な検証は実装前(H-1は上限チェックを一時的に無効化、H-4/M-8は本物のsymlink先回り攻撃を実際に設置)の状態で確実にFAILし、修正後にPASSすることを確認済み(\"probed\"探り)。既存の48本の回帰テストにも新規テストを追記し、typecheck/lint/build/pnpm audit/verify-roadmap-evidence がすべて緑であることを確認した。\n\n【追記】PR #105 (https://github.com/rahiseko-alt/ai-editer/pull/105) を作成し、CI(ci-green×2run・roadmap-required・CodeQL)が全て緑になったことを確認した。途中、自分自身が加えた修正(createIsolatedCwdの実装変更)がtests/smoke.mjsの既存テストの後始末コードの前提を壊し/tmp全体を再帰削除するバグを作り込んでいたことをCIが検出、修正してdocs/failures.mdに記録した(2026-08-13エントリ)。P1-13〜P1-18の20葉のcriteria[].evidenceへ実際のCI run URLを記入しstatusをdoing→doneへ更新した。"
       ],
       "trouble": [
         "①【訂正】当初「サンドボックス固有の/tmp不安定性」と誤って記録していたが、実際は自分自身のバグが原因だった。P1-18-B対応でsrc/claude-safety.mjsのcreateIsolatedCwdを固定名の中間ディレクトリ無しでos.tmpdir()直下へ作る実装に変えたのに、tests/smoke.mjsのP1-1-Cテストの後始末がpath.dirname(dirA)(=os.tmpdir()自身)を再帰削除する古い書き方のままだった。ローカル(root権限)ではfs.rmSync('/tmp', {recursive:true,force:true})が実害を出しながらも例外を出さず、以後のmkdtempSync呼び出しが断続的にENOENTになる形で誤魔化されていた。CI(root権限でないrunner)ではrmdir '/tmp'がEACCESで即座に失敗し、そこで真因が判明した。dirA/dirBを個別に削除する形へ修正し、修正後はsmoke.mjsが97 PASS/0 FAILで安定することを確認済み。詳細はdocs/failures.md 2026-08-13参照。②ローカル環境にtesseract-ocrが無くcaption-recaption-ocr-check.mjsが1件失敗する(CI(ci.yml)はtesseract-ocrを明示インストールするため実CIでは合格見込み)。③並列テスト実行時、bashのwhile read構文でファイルディスクリプタ0を子プロセスに奪われテストリストが破損する事故が2回発生(eval \"$cmd\" < /dev/null で解決)。④P1-13-A/Bのverifyを凍結する際、最初readBody()にreq.destroy()を呼ぶ実装を書いたところ413応答を書く前にソケットが閉じてECONNRESETになるバグを自作テストで発見・修正した(req.resume()で読み捨てる方式へ変更)。"
@@ -1024,13 +1024,13 @@
                       "theme": "大きすぎる直しリクエストが413で拒まれる",
                       "meaning": "字幕の直し等を保存するとき、巨大なデータを送りつけられても保存処理そのものに進まない",
                       "detail": "根拠(H-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:133-140のreadBody()はContent-Lengthも累積受信バイト数も見ずにボディ全量をメモリへ連結する。PUT /api/jobs/:id/captions と POST /api/jobs/:id/terms が対象。実機PoCで、正規に発行したjobTokenを使い80MB(83,886,101バイト)のJSONボディを送信したところ413等の拒否なく全量受信されたことを確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。413を返すことと、メモリを溜め込まないことは別々の実装ミスで独立に破れうる(全量バッファしてから413を返す実装は本葉には合格するが次葉P1-13-Bには落ちる)ため2葉に分けた。\n\n【2026-08-13 探り済み(probed)】readBody()の上限チェックだけを一時的に無効化した実装(H-1相当の脆弱な状態を再現)に対してsecurity-body-limit-check.mjsを実行したところ、5件中4件が正しくFAILすることを確認した(413が返らずステータス400になる・受信中のRSS増分が閾値10MBを大きく超えて実測82,751,488バイトに達する、の両方を検出)。その後、上限チェックを元に戻した現行実装に対して同じテストを実行したところ5 PASS/0 FAILで全て合格した。落ちるべき条件で落ち、直った実装では通ることを確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms へ上限を超えるサイズのJSONボディを送ると413が返る",
                           "verify": "実サーバーを起動し、正規のjobTokenで上限(MAX_JSON_BODY_BYTES)を超えるボディを両エンドポイントへ送信し、いずれも413が返ることを確認する。上限以下の正常なボディは従来どおり処理されることも対照として確認する",
                           "verifyCmd": "node video-shorts/tests/security-body-limit-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1040,13 +1040,13 @@
                       "theme": "上限超のボディが、受信中にメモリへ全量溜め込まれない",
                       "meaning": "413で断る実装であっても、断る前に巨大なデータを一旦メモリへ丸ごと確保してしまってはDoSを防いだことにならない",
                       "detail": "根拠(H-1、docs/audits/2026-08-13-security-audit.md): readBody()がContent-Lengthを見ずに全量を配列へpushしてからJSON.parseする実装だと、413を返す判定がJSON.parse失敗時にしか走らず、その前に受信済みバイトはメモリに残る。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。\n\n【2026-08-13 探り済み(probed)】P1-13-Aと同じ探り(readBody()の上限チェックを一時的に無効化)で、本葉のRSS増分assertionが実測82,751,488バイト(閾値10,485,760バイトの約8倍)で正しくFAILすることを確認した。修正を戻した現行実装では5 PASS/0 FAILで合格する(security-body-limit-check.mjs実行ログで確認)。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "上限を超えるサイズのボディを送信している最中、サーバープロセスのメモリ使用量が上限バイト数を大きく超えて増加しない(=全量をバッファしてから拒否する実装になっていない)",
                           "verify": "上限を大きく超えるボディ(上限の10倍以上)を送信しながらサーバープロセスのRSSを定期的にサンプリングし、ピークRSSが上限バイト数の数倍以内に収まることを確認する。対照として、全量バッファしてから413判定する偽実装ではRSSが送信量に比例して増え続けることを別途確認する",
                           "verifyCmd": "node video-shorts/tests/security-body-limit-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1056,13 +1056,13 @@
                       "theme": "字幕の焼き直しを連打しても、同時に動くffmpegの本数が増え続けない",
                       "meaning": "同じジョブに何度も焼き直しを指示しても、裏でffmpegが際限なく増え続けない",
                       "detail": "根拠(H-2、docs/audits/2026-08-13-security-audit.md): server/index.mjs:571-587のhandleRecaptionはisRunning(id)（パイプライン本編の実行中判定）しか見ず、pipeline-runner.mjs:260のconcurrencyGateにもレート制限にも一切乗らない。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。同時実行数の上限と、後述P1-13-Dの一時ファイル一意化は別々の直し方で別々に壊れうる(ジョブ横断の上限だけ付けても同一ジョブの2並列連打は防げない)ため2葉に分けた。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "焼き直しリクエストを複数同時に(異なるジョブへ)送っても、同時に生存するffmpeg子プロセスの本数が既定の上限を超えない",
                           "verify": "実サーバーを起動し、複数の異なるjobIdへrecaptionを並列送信して、同時に生存するffmpeg子プロセス数が上限(VS_MAX_CONCURRENT_JOBS)以下であることを確認する",
                           "verifyCmd": "node video-shorts/tests/security-recaption-flood-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1072,13 +1072,13 @@
                       "theme": "同一ジョブへ焼き直しを連打しても、一時ファイルが競合しない",
                       "meaning": "同じジョブに焼き直しを続けて指示しても、成果物が壊れたり、片方の処理が失敗したりしない",
                       "detail": "根拠(H-2、docs/audits/2026-08-13-security-audit.md): src/recaption-stage.mjs:78の一時ファイル名がジョブごとに固定のため、同一ジョブへの並列呼び出しは同じ一時ファイルへ競合する。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "同一jobIdへ焼き直しリクエストを同時に複数送ると、片方は明確なエラー(409等)で拒まれ、実行された方の成果物は壊れない",
                           "verify": "実サーバーを起動し、同一jobIdへrecaptionを同時に2回送信し、片方が409で拒まれること、もう片方の焼き直し結果(クリップファイル)が破損なく生成されることを確認する",
                           "verifyCmd": "node video-shorts/tests/security-recaption-flood-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1088,13 +1088,13 @@
                       "theme": "字幕保存・用語追加・焼き直しの書き込み系エンドポイントに、連打への歯止めがある",
                       "meaning": "字幕の保存や辞書への追加を連打されても、ディスク書き込みやffmpeg起動が際限なく積み上がらない",
                       "detail": "根拠(M-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:63,212のjobsRateLimiterはPOST /api/jobsのみを対象とし、PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms・POST /api/jobs/:id/recaptionの3つの書き込み系エンドポイントにはレート制限が一切無い(GET系のcandidates/events/clipsは読み取りのみで本葉の対象外とする)。コードレビューで確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms・POST /api/jobs/:id/recaptionのいずれも、短時間の連打(既定閾値超)に対してレート制限で429を返す",
                           "verify": "実サーバーを起動し、正規のjobTokenで3エンドポイントそれぞれへ閾値を超える回数を短時間に送信し、いずれも429が返ることを確認する。閾値以内のリクエストは従来どおり処理されることも対照として確認する",
                           "verifyCmd": "node video-shorts/tests/security-write-rate-limit-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1104,13 +1104,13 @@
                       "theme": "ヘッダの送信を長時間待たせる接続に、ソケットを占有され続けない",
                       "meaning": "ヘッダをだらだら送ってくる接続のせいで、他の人からの接続が受け付けられなくならない",
                       "detail": "根拠(L-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:698-709でserver.headersTimeoutが未設定でNode既定値(60秒)のまま。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。headersTimeoutとrequestTimeoutは別々の攻撃経路(ヘッダ送信の遅延/リクエスト全体の遅延)に対する別設定のため2葉に分けた。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーのheadersTimeoutが、Node既定値ではなく明示的な値に設定されている",
                           "verify": "実サーバーのhttp.ServerインスタンスのheadersTimeout値を確認し、明示的に設定された値であることを確認する",
                           "verifyCmd": "node video-shorts/tests/security-header-timeout-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1120,13 +1120,13 @@
                       "theme": "リクエスト全体の受信を長時間待たせる接続に、ソケットを占有され続けない",
                       "meaning": "本文をだらだら送ってくる接続のせいで、他の人からの接続が受け付けられなくならない",
                       "detail": "根拠(L-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:698-709でserver.requestTimeoutが未設定でNode既定値(300秒)のまま。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーのrequestTimeoutが、Node既定値ではなく明示的な値に設定されている",
                           "verify": "実サーバーのhttp.ServerインスタンスのrequestTimeout値を確認し、明示的に設定された値であることを確認する",
                           "verifyCmd": "node video-shorts/tests/security-header-timeout-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
@@ -1145,13 +1145,13 @@
                       "theme": "パイプラインの子プロセスに渡る環境変数が最小限である",
                       "meaning": "文字起こしや区間選定の裏で動くプログラムに、無関係な秘密情報まで渡さない",
                       "detail": "根拠(H-3前半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:143-149のspawnAndLogはenv: process.envを丸ごと子へ渡す。claude起動口(src/claude-safety.mjs)は既にallowlist化されている(P1-1-B)が、transcribe.py/pipeline.mjs select/renderの子プロセスには適用されていない。コードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、verify文言が対象箇所(3箇所)を明示していなかった点を反証され是正した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "transcribe.py・pipeline.mjs select・pipeline.mjs renderの3つの子プロセス呼び出しいずれも、渡される環境変数が必要なもの(実行に必須なPATH等の基本変数と、transcribe.pyに限りGROQ_API_KEY)だけに絞られている",
                           "verify": "3箇所それぞれの子プロセス呼び出しについて、実際に渡された環境変数一覧をダンプする偽実行体(偽python/偽node)を差し込み、渡された環境変数がallowlistの範囲内であることを個別に確認する。ANTHROPIC_API_KEY等の非allowlist変数をprocess.envに含めた状態で実行し、いずれの箇所にも渡らないことを対照として確認する",
                           "verifyCmd": "node video-shorts/tests/security-child-env-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1161,13 +1161,13 @@
                       "theme": "子プロセスのSSE配信経路に鍵が混ざっても、画面に届く前に隠される",
                       "meaning": "万が一プログラムの進捗ログに鍵が混ざっても、それがそのままブラウザの画面に残らない",
                       "detail": "根拠(H-3後半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:151-166で子のstdout/stderrを1行ずつSSEへbroadcastする。現状Python側は鍵を出力しないため実害は未発生だが、「出ない」ことを守る機械検査が無いことをコードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、criteria本文は「stderr/stdoutのいずれにも」漏れないと主張しているのにverifyがstderrしか検証していなかった点を反証され是正した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "子プロセスのstdout・stderrのどちらにAPIキー形式の文字列が含まれていても、SSE配信本文に生の鍵文字列が現れない(伏字化される)",
                           "verify": "GROQ_API_KEY形式の文字列をわざとstdoutへ出力する偽pythonと、stderrへ出力する偽pythonの両方を個別に差し込み、それぞれのケースでSSE配信内容を検査して鍵が伏字化されていることを確認する。対照として、伏字化処理を外した状態では両ケースとも同じ検査が確実に検出(FAIL)することを確認する",
                           "verifyCmd": "node video-shorts/tests/security-secret-redaction-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1177,13 +1177,13 @@
                       "theme": "子プロセスの異常終了時、保存されるエラー内容に鍵が残らない",
                       "meaning": "処理が失敗したとき、work/<id>/state.jsonに書かれるエラーメッセージに鍵が残らない",
                       "detail": "根拠(H-3後半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:169-174で異常終了時にstderr先頭400バイトをError.messageへ載せ、:287-313でwork/<id>/state.jsonへ永続化する。コードレビューで確認済み。P1-14-Bのbasis-reviewer指摘(atomic)を踏まえ、SSE配信経路とstate.json永続化経路は別々の実装箇所(前者はonLineコールバック、後者はcatchブロックのerr.message)であり独立に破れうるため別葉にした。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "子プロセスがAPIキー形式の文字列を含むstderrを出して異常終了しても、work/<id>/state.jsonのerrorフィールドに生の鍵文字列が現れない",
                           "verify": "GROQ_API_KEY形式の文字列を含むstderrを出して異常終了する偽pythonを差し込み、失敗後のwork/<id>/state.jsonのerrorフィールドを検査して鍵が伏字化されていることを確認する。対照として、伏字化処理を外した状態では同じ検査が確実に検出(FAIL)することを確認する",
                           "verifyCmd": "node video-shorts/tests/security-secret-redaction-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1193,13 +1193,13 @@
                       "theme": "鍵の保管ガードについて、文書の説明と実際の実装が一致している",
                       "meaning": "「こう守られています」という説明書きが、実際には存在しない仕組みを指していない",
                       "detail": "根拠(M-6、docs/audits/2026-08-13-security-audit.md): docs/key-management-policy.md:22が「親.gitignore + .claude/settings.json deny + secret-write-gate.mjsの三重ガード」と主張するが、secret-write-gate.mjsはリポジトリに存在せず、.claude/settings.jsonにpermissions.denyブロックも無い。実在するのは.gitignoreの1枚のみであることをfind/catで確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "docs/key-management-policy.mdが記述する保管ガードの内容が、実際にリポジトリ内に存在する仕組みと一致している",
                           "verify": "docs/key-management-policy.mdの記述と、.gitignore・.claude/settings.json・該当スクリプトの実在を突き合わせ、記述されている全ての仕組みが実在することを確認する",
                           "verifyCmd": "node video-shorts/tests/security-key-policy-doc-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
@@ -1218,13 +1218,13 @@
                       "theme": "画面を表示する入口にも、ホストの確認が効く",
                       "meaning": "見覚えのない名前を名乗ってアクセスしてきた相手には、合言葉入りの画面を渡さない",
                       "detail": "根拠(M-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:595-599のHost/Origin検査はpathnameが/api/で始まる場合のみ適用され、GET /（静的配信・index.html注入）は対象外。実機PoCで、Host: evil.example.comを付けたGET /が200で応答し、本文に実際の起動時トークンが埋め込まれて返ってくることを確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "許可されていないHostヘッダでGET /（または他の静的パス）へアクセスしても、起動時トークンが埋め込まれた本文が返らない",
                           "verify": "実サーバーへ許可外のHostヘッダを付けてGET /を送信し、レスポンスに起動時トークン文字列が含まれないことを確認する。正規のHost（127.0.0.1:port/localhost:port）では従来どおりトークンが埋め込まれて返ることも対照として確認する",
                           "verifyCmd": "node video-shorts/tests/security-static-host-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1234,13 +1234,13 @@
                       "theme": "ジョブの合言葉が、ディスクに平文のまま残り続けない",
                       "meaning": "作業フォルダを覗かれても、そこに書かれた合言葉をそのままコピーして使えない",
                       "detail": "根拠(M-3、docs/audits/2026-08-13-security-audit.md): server/security.mjs:72-75のpersistJobTokenがwork/<id>/job-token.txtへ平文で書き込み、TTL(既定24時間)まで残る。ソースコードで確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "work/<id>/job-token.txtに保存される値が平文のジョブトークンそのものではなく、照合にのみ使えるハッシュ値である",
                           "verify": "実際にジョブを作成し、work/<id>/job-token.txtの中身が発行されたjobTokenの文字列と一致しない（かつ再起動後の正規の再接続は引き続き成功する）ことを確認する。対照として、意図的にハッシュ化を外した実装ではファイル内容が平文トークンと一致することを確認する",
                           "verifyCmd": "node video-shorts/tests/security-job-token-hash-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
@@ -1259,13 +1259,13 @@
                       "theme": "外部から読み込まれるスクリプトが実行されないよう画面が守られている",
                       "meaning": "字幕エスケープ漏れ等が仮に起きても、それだけでは悪意あるスクリプトが動かない",
                       "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): grep -rn \"Content-Security-Policy\" server/ が0件。サーバー・HTMLともCSP設定なし。確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーが返す全レスポンスにContent-Security-Policyヘッダが付き、インラインスクリプト以外の外部由来スクリプト実行を制限する内容になっている",
                           "verify": "実サーバーへGET /とAPIレスポンスを取得し、Content-Security-Policyヘッダが存在し、script-src等が既定で外部オリジンを許可しない内容であることを確認する",
                           "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1275,13 +1275,13 @@
                       "theme": "ブラウザがファイルの中身を勝手に別の種類として解釈しない",
                       "meaning": "動画や字幕ファイルが、ブラウザの推測でスクリプトとして実行される余地をなくす",
                       "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): X-Content-Type-Options: nosniffが0件。確認済み。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーが返す全レスポンスにX-Content-Type-Options: nosniffヘッダが付く",
                           "verify": "実サーバーへ複数のエンドポイント(静的配信・API・クリップ配信)からレスポンスを取得し、いずれもnosniffヘッダを持つことを確認する",
                           "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1291,13 +1291,13 @@
                       "theme": "この画面を他サイトのiframeへ埋め込ませない",
                       "meaning": "偽サイトが本物の画面を透明なiframeで重ねて、クリックを乗っ取る余地をなくす",
                       "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): X-Frame-Optionsが0件。確認済み。2026-08-13のbasis-reviewerレビューで、M-2が挙げる4種のヘッダのうちX-Frame-OptionsとReferrer-Policyがどの葉にも起票されていなかった点を反証され追加した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーが返す全レスポンスにX-Frame-Options: DENYヘッダが付く",
                           "verify": "実サーバーへ複数のエンドポイントからレスポンスを取得し、いずれもX-Frame-Options: DENYヘッダを持つことを確認する",
                           "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1307,13 +1307,13 @@
                       "theme": "画面のURLが、外部サイトへのリンク経由で漏れない",
                       "meaning": "ジョブトークンを含むURLを開いている画面から外部リンクを踏んでも、そのURLが相手サイトへ伝わらない",
                       "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): Referrer-Policyが0件。確認済み。ジョブトークンがURLクエリに現れうる(M-7、P1-19-Bでbacklog)ため、Refererヘッダ経由の伝播を塞ぐ意味がある。2026-08-13のbasis-reviewerレビューで追加。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "サーバーが返す全レスポンスにReferrer-Policy: no-referrerヘッダが付く",
                           "verify": "実サーバーへ複数のエンドポイントからレスポンスを取得し、いずれもReferrer-Policy: no-referrerヘッダを持つことを確認する",
                           "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
@@ -1332,13 +1332,13 @@
                       "theme": "静的配信・クリップ配信がリンクの先を辿らない",
                       "meaning": "フォルダの中にこっそり置かれた「別の場所への案内」を、そのまま信じて配信しない",
                       "detail": "根拠(L-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:157-166(静的配信)・:408-413(クリップ配信)はfs.realpathSyncを呼ばず、symlinkを辿る。現状symlinkは0件だが、対策が無いことをコードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、対照実験(対策を外すと検出できることの確認)がverify文言に無かった点を反証され追記した。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "webapp-mockup/配下・output/<id>/配下にリポジトリ外を指すシンボリックリンクを置いても、その先の内容が配信されない",
                           "verify": "実際にリポジトリ外の秘密ファイルを指すシンボリックリンクをwebapp-mockup/・output/<id>/配下に作成し、そのパスへのGETリクエストが403等で拒否され内容が返らないことを確認する。対照として、realpath検査を外した実装では同じリクエストが200で内容を返す(検出できる)ことを確認する",
                           "verifyCmd": "node video-shorts/tests/security-symlink-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
@@ -1357,13 +1357,13 @@
                       "theme": "動画連結用の一時ファイルが、先回りされた罠を辿らない",
                       "meaning": "クリップをつなげる作業のための一時ファイルが、他人が仕込んだ「別のファイルへの案内」に化けていても、そのファイルを壊さない",
                       "detail": "根拠(H-4、docs/audits/2026-08-13-security-audit.md): src/concat.mjs:31のvs-concat-${pid}-${clips.length}.txtはプロセスIDとクリップ本数だけで決まる予測可能な名前。実機PoCで、このパスへ被害者ファイルを指すsymlinkを事前設置した状態でconcatClipsを呼んだところ、被害者ファイルの内容が完全に上書きされたことを確認済み（元の内容が消え、連結リストの内容に置き換わった）。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "concatClipsが使う一時ファイルのパスが実行のたびに予測不能であり、事前に設置されたシンボリックリンクの先を書き換えない",
                           "verify": "TMPDIRを専用ディレクトリへ差し替え、予測される一時ファイル名の位置へ攻撃者役が事前にシンボリックリンクを設置した状態でconcatClipsを呼び、リンク先ファイルの内容が変化しないことを確認する。対照として、修正前の実装(pid+本数のみの命名)では確かにリンク先が書き換わることも合わせて確認する",
                           "verifyCmd": "node video-shorts/tests/security-tmpdir-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     },
@@ -1373,13 +1373,13 @@
                       "theme": "AIの作業場所が、先回りされた罠を辿らない",
                       "meaning": "AIに文字起こしを校正させる際の隔離された作業フォルダが、他人が仕込んだ「別のフォルダへの案内」に化けていても、その別のフォルダの中で作業してしまわない",
                       "detail": "根拠(M-8、docs/audits/2026-08-13-security-audit.md、P1-1-C関連): src/claude-safety.mjs:43-47のcreateIsolatedCwdが使う親ディレクトリos.tmpdir()/video-shorts-claude-cwdは固定名。実機PoCで、このパスへ攻撃者制御ディレクトリを指すsymlinkを事前設置した状態でcreateIsolatedCwd(jobId)を呼んだところ、返されたパスの実体(fs.realpathSync)が攻撃者制御ディレクトリ配下を指すことを確認済み。P1-1-C(done)が主張する「AIの作業場所を隔離する」保証を、同一PC上の別プロセス・別ユーザーが崩せることを意味するため、新しい葉として起票する（P1-1-Cのcriteria/verify本文は凍結済みのため書き換えないが、detailへ本葉への参照を追記した）。",
-                      "status": "doing",
+                      "status": "done",
                       "criteria": [
                         {
                           "text": "createIsolatedCwdが返す作業ディレクトリのパスが実行のたびに予測不能であり、事前に設置されたシンボリックリンクの先を作業場所として使わない",
                           "verify": "TMPDIRを専用ディレクトリへ差し替え、予測される親ディレクトリ名の位置へ攻撃者役が事前にシンボリックリンクを設置した状態でcreateIsolatedCwdを呼び、返されたディレクトリの実体(realpath)が攻撃者制御下のディレクトリを指さないことを確認する。対照として、修正前の実装(固定名の親ディレクトリ)では確かに攻撃者制御下を指すことも合わせて確認する",
                           "verifyCmd": "node video-shorts/tests/security-tmpdir-check.mjs",
-                          "evidence": ""
+                          "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31673546895/job/94363083536"
                         }
                       ]
                     }
