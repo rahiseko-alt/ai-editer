@@ -835,7 +835,13 @@ t("P1-1-C: 実行cwdはジョブ専用の隔離ディレクトリになる", () 
     assert.ok(dirA.startsWith(os.tmpdir()), "OS tmpdir配下(リポジトリ外)に作られること");
     assert.ok(dirA.includes("smoke-job-A"), "ジョブ専用(jobId込み)のディレクトリであること");
   } finally {
-    fs.rmSync(path.dirname(dirA), { recursive: true, force: true });
+    // P1-18-B以降、createIsolatedCwdは固定名の中間ディレクトリを持たずos.tmpdir()直下に
+    // mkdtempで作る(symlink先回り対策)。そのためpath.dirname(dirA)はos.tmpdir()自身
+    // (例: /tmp)になり、それを再帰削除すると/tmp配下の無関係なファイルまで巻き込んで
+    // 消してしまう(実際にCIでEACCES: permission denied, rmdir '/tmp'を検出)。
+    // 自分が作った2つのディレクトリだけを個別に消す。
+    fs.rmSync(dirA, { recursive: true, force: true });
+    fs.rmSync(dirB, { recursive: true, force: true });
   }
 });
 
