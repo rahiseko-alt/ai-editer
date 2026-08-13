@@ -16,6 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveInside, safeBasename } from "./safe-path.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MOSAIC_CLI = path.join(HERE, "apply_mosaic_cli.py");
 
@@ -91,9 +93,14 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
   let failing = null;
   try {
     for (const t of targets) {
-      const src = path.join(outDir, t.entry.file);
-      const outName = mosaicName(t.entry.file);
-      const dst = path.join(outDir, outName);
+      // AUD-P1-01b: candidates.json の `file` を検証せず path.join() すると、
+      // "../../evil.mp4" のような値で成果物フォルダの外を読み書きできてしまう。
+      // 単純なbasename・許可拡張子のみを通し、I/Oの直前ごとに再度 resolveInside() する
+      // （parse直後の1回だけの検査に頼らないTOCTOU対策）。
+      const safeName = safeBasename(t.entry.file);
+      const src = resolveInside(outDir, safeName);
+      const outName = safeBasename(mosaicName(safeName));
+      const dst = resolveInside(outDir, outName);
       // 失敗した本人の書きかけも消す。made へ積むのは成功後なので、made だけを
       // 後始末の対象にすると、書き込みの途中で止まったとき（容量不足など）に
       // 壊れた -mosaic が素顔の隣に残る。納品はフォルダからのコピーで、
@@ -105,7 +112,7 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
         throw new Error(`顔モザイクの出力が生成されませんでした: ${outName}`);
       }
       failing = null;
-      made.push({ ...t, src, dst, outName });
+      made.push({ ...t, src, dst, outName, safeName });
       if (onLog) onLog(`[OK] 顔を隠しました: ${t.entry.file} → ${outName}`);
     }
   } catch (e) {
@@ -128,7 +135,9 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, onLog }) 
   try {
     fs.mkdirSync(stashDir, { recursive: true });
     for (const m of made) {
-      const stashed = path.join(stashDir, m.entry.file);
+      // AUD-P1-01b: 退避先(stashDir配下)も m.entry.file をそのまま使わず、検証済みの
+      // safeName を毎回 resolveInside() で解決してから使う（TOCTOU対策）。
+      const stashed = resolveInside(stashDir, m.safeName);
       fs.renameSync(m.src, stashed);
       moved.push({ from: stashed, to: m.src });
       const updated = { ...m.entry, file: m.outName, path: m.dst };
