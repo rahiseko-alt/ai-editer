@@ -111,17 +111,46 @@ export async function renderClip(p) {
   // 呼び出し側が渡さなければここで実測する。取れなければ buildTrimFilters が
   // 既定値へ落ちるが、式の中で aresample を掛けてその周波数へ揃えるので、
   // 切る位置の秒はどちらでも狙いどおりになる。
-  const sampleRate = p.keep && p.keep.length
-    ? (Number.isFinite(p.sampleRate) && p.sampleRate > 0
-      ? p.sampleRate
-      : await probeSampleRate(p.input).catch(() => null))
-    : null;
-  const trim = p.keep && p.keep.length
-    ? buildTrimFilters(p.keep, { fpsRational: p.fpsRational, sampleRate })
+  const trimNeeded = !!(p.keep && p.keep.length);
+  // keep（詰め）を使う経路だけ、音声標本化周波数と音声トラックの有無を実測する。
+  // trim を使わない経路は `-map 0:a?` が既に音声無し素材へ安全に対応済みなので不要（性能配慮）。
+  const [sampleRate, hasAudio] = trimNeeded
+    ? await Promise.all([
+      Number.isFinite(p.sampleRate) && p.sampleRate > 0
+        ? Promise.resolve(p.sampleRate)
+        : probeSampleRate(p.input).catch(() => null),
+      // probe自体が失敗した場合は「音声ありうる」という従来どおりの前提を維持する
+      // （失敗を「音声無し」と誤判定して音声を消してしまうより安全）。
+      probeHasAudio(p.input).catch(() => true),
+    ])
+    : [null, true];
+  const trim = trimNeeded
+    ? buildTrimFilters(p.keep, { fpsRational: p.fpsRational, sampleRate, hasAudio })
     : null;
   const videoIn = trim ? "[tvout]" : "[0:v]";
+
+  // === HDR→SDR変換 + 出力を8bit yuv420p BT.709へ強制（AUD-P1-09） ===
+  // 一般的なスマホ・SNSの再生環境は 10bit/BT.2020(HDR) 入力をそのまま渡すと拒否・色化けする。
+  // PQ(smpte2084)/HLG(arib-std-b67)伝達関数、またはBT.2020原色の素材だけ zscale+tonemap で
+  // SDR/BT.709へ変換してから8bit 4:2:0へ落とす。既にSDRの素材にtonemapを掛けると
+  // 不要な色変化を招くため、そちらは pix_fmt を yuv420p へ強制するだけに留める。
+  const colorInfo = await probeColorInfo(p.input).catch(() => null);
+  const hdr = isHdrColorInfo(colorInfo);
+  const colorChain = hdr
+    ? "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
+      + "tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,"
+    : "format=yuv420p,";
+
+  // === SAR/DAR正規化（AUD-P2-21） ===
+  // 素材のサンプルアスペクト比(SAR)が 1:1 でない（コーデック側の非正方形ピクセル）場合、
+  // coded width/height をそのまま fit すると実際の表示アスペクト比と異なる比率で押し込まれ、
+  // 横につぶれる/伸びる。scale フィルタが公開する `sar`（入力の実SAR）で物理的に正方形ピクセル
+  // へ伸縮してから setsar=1 で「もう正方形」と宣言し、そのあとで初めて TARGET へ fit/pad する。
+  // SAR=1:1（大半の素材）では trunc(iw*1/2)*2 は iw のままなので実質恒等。
+  const sarChain = "scale=trunc(iw*sar/2)*2:ih,setsar=1,";
+
   const scaleChain =
-    `${videoIn}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
+    `${videoIn}${sarChain}${colorChain}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
     `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,` +
     `setpts=PTS-STARTPTS` + assFilter + `[v]`;
   // 詰める式は映像と音声を1本の concat で繋ぐ（区間ごとの端数を継ぎ目で清算させるため）。
@@ -135,12 +164,18 @@ export async function renderClip(p) {
     "-t", String(dur),
     "-filter_complex", vf,
     "-map", "[v]",
-    // 詰める場合は詰めた音声を、詰めない場合はシークで切り出し済みの音声をそのまま map
-    // （無音素材でも落ちないよう ?）
-    ...(trim ? ["-map", "[taout]"] : ["-map", "0:a?"]),
+    // 詰める場合は詰めた音声を（音声トラックが無い素材では [taout] 自体を作らない＝AUD-S-02）、
+    // 詰めない場合はシークで切り出し済みの音声をそのまま map（無音素材でも落ちないよう ?）。
+    ...(trim ? (trim.hasAudio ? ["-map", "[taout]"] : []) : ["-map", "0:a?"]),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "20",
+    // HDR→SDR変換の有無に関わらず、出力は必ず8bit 4:2:0 + BT.709で書く（AUD-P1-09）。
+    // フィルタ側(colorChain)で既に yuv420p 化しているが、コンテナのタグ付けも明示して二重に保証する。
+    "-pix_fmt", "yuv420p",
+    "-color_primaries", "bt709",
+    "-color_trc", "bt709",
+    "-colorspace", "bt709",
     // 出力を等間隔のコマ列で書く。concat は区間ごとに「一番長いストリームの長さ」で次へ進むので、
     // 音声が映像より 1 標本だけ長い区間があると、次の区間の映像がコマ格子から 1 標本ぶん外れる。
     // cfr にしておくと、その 1 コマ未満の穴が複製で埋まり、絵と音の対応がずれない。
@@ -201,7 +236,38 @@ export function runFfmpeg(args) {
   });
 }
 
-/** ffprobe で width,height を取得（縦型検証用） */
+/**
+ * "32:27" のような比率文字列を {num,den} へ。未設定（"0:1" 等）・解釈不能なら
+ * 正方形ピクセル 1:1 を返す（ffprobe の sample_aspect_ratio は SAR 不明のとき "0:1" を返す）。
+ */
+function parseSar(raw) {
+  if (typeof raw === "string") {
+    const m = raw.trim().match(/^(\d+)\s*:\s*(\d+)$/);
+    if (m) {
+      const num = Number(m[1]);
+      const den = Number(m[2]);
+      if (num > 0 && den > 0) return { num, den };
+    }
+  }
+  return { num: 1, den: 1 };
+}
+
+/**
+ * ffprobe で width,height を取得（縦型検証用）。SAR/DAR正規化（AUD-P2-21）も併せて行う。
+ *
+ * 【なぜ csv ではなく json で読むか】ffprobe の csv 出力は `-show_entries` に指定した順序を
+ * 守らず、ffprobe 内部の正準フィールド順（width, height, sample_aspect_ratio, r_frame_rate,
+ * avg_frame_rate, ...）で並べ替えて返す（実測で確認済み）。位置でパースすると、
+ * 要求に無いフィールドが割り込む/要求順を変えるだけで無警告に列がずれる。json なら
+ * フィールド名で読むので、この並べ替えの影響を受けない。
+ *
+ * 【SAR/DAR正規化】コーデック側で非正方形ピクセル（SAR≠1:1）を使う素材は、coded な
+ * width/height だけを見ると実際の表示アスペクト比と異なる。sample_aspect_ratio を読み、
+ * 表示上の幅 = width * (SARnum/SARden) を displayWidth として返す。呼び出し側
+ * （computeCanvas の拡大ガード・fitの目標選び）は coded ではなくこちらを使うべき値。
+ * ※ フィルタグラフ自体の物理的な伸縮（実際に映像を歪みなく直す部分）は render-vertical.mjs
+ *   の renderClip 内で ffmpeg の `sar` 変数を使って行う（ここでの数値はJS側の判断材料用）。
+ */
 export function probeSize(file) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -210,8 +276,8 @@ export function probeSize(file) {
       // コマ数/秒も取る。詰めるときに区間の端をコマ境界へ揃えるのに要る
       // （揃えないと映像と音声で切れ方が違い、継ぎ目の数だけずれが積み上がる）。
       // r_frame_rate が 0/0 になる素材があるので avg_frame_rate も併せて取り、二段構えにする。
-      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate",
-      "-of", "csv=p=0",
+      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,sample_aspect_ratio",
+      "-of", "json",
       file,
     ];
     const proc = spawn("ffprobe", args, { windowsHide: true });
@@ -220,9 +286,16 @@ export function probeSize(file) {
     proc.on("error", (e) => reject(e));
     proc.on("close", (code) => {
       if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
-      const [wRaw, hRaw, rateRaw, avgRaw] = out.trim().split(",");
-      const w = Number(wRaw);
-      const h = Number(hRaw);
+      let stream;
+      try {
+        stream = JSON.parse(out).streams?.[0] ?? {};
+      } catch (e) {
+        return reject(new Error(`ffprobe(probeSize) json 解析失敗: ${e.message}`));
+      }
+      const w = Number(stream.width);
+      const h = Number(stream.height);
+      const rateRaw = stream.r_frame_rate;
+      const avgRaw = stream.avg_frame_rate;
       // r_frame_rate が取れなければ avg_frame_rate を使う。どちらも駄目なら null。
       const fps = parseFrameRate(rateRaw) ?? parseFrameRate(avgRaw);
       // 分数のままの姿も返す。詰めるときに ffmpeg の fps フィルタへ渡すのに要る。
@@ -231,7 +304,14 @@ export function probeSize(file) {
       const fpsRational = parseFrameRate(rateRaw) !== null
         ? normalizeFpsRational(rateRaw)
         : normalizeFpsRational(avgRaw);
-      resolve({ width: w, height: h, vertical: h > w, fps, fpsRational });
+      const sar = parseSar(stream.sample_aspect_ratio);
+      const displayWidth = Number.isFinite(w) && w > 0
+        ? Math.max(1, Math.round((w * sar.num) / sar.den))
+        : w;
+      resolve({
+        width: w, height: h, vertical: h > w, fps, fpsRational,
+        sarNum: sar.num, sarDen: sar.den, displayWidth, displayHeight: h,
+      });
     });
   });
 }
@@ -259,6 +339,76 @@ export function probeSampleRate(file) {
       resolve(Number.isFinite(sr) && sr > 0 ? sr : null);
     });
   });
+}
+
+/**
+ * ffprobe で音声ストリームが1本でも在るかを調べる（AUD-S-02）。
+ *
+ * `-select_streams a` に一致するストリームが無いと、ffprobe は exit code 0・stdout 空で
+ * 終わる（src/av-verify.mjs の P2-2 の知見と同じ）。よってこれを「そのまま数値化して
+ * 0 と誤認する」のではなく、出力が空かどうかで有無を判定する。
+ */
+export function probeHasAudio(file) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-v", "error", "-select_streams", "a",
+      "-show_entries", "stream=index", "-of", "csv=p=0", file,
+    ];
+    const proc = spawn("ffprobe", args, { windowsHide: true });
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.on("error", (e) => reject(e));
+    proc.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
+      resolve(out.trim().length > 0);
+    });
+  });
+}
+
+/**
+ * ffprobe で色情報（pix_fmt・原色・伝達関数・行列）を取得する（AUD-P1-09）。
+ * HDR判定（isHdrColorInfo）の入力に使う。読めなければ呼び出し側は catch して null 扱いにする。
+ */
+export function probeColorInfo(file) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=pix_fmt,color_primaries,color_transfer,color_space",
+      "-of", "json", file,
+    ];
+    const proc = spawn("ffprobe", args, { windowsHide: true });
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.on("error", (e) => reject(e));
+    proc.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`ffprobe code ${code}`));
+      let stream;
+      try {
+        stream = JSON.parse(out).streams?.[0] ?? {};
+      } catch (e) {
+        return reject(new Error(`ffprobe(probeColorInfo) json 解析失敗: ${e.message}`));
+      }
+      resolve({
+        pixFmt: stream.pix_fmt ?? null,
+        colorPrimaries: stream.color_primaries ?? null,
+        colorTransfer: stream.color_transfer ?? null,
+        colorSpace: stream.color_space ?? null,
+      });
+    });
+  });
+}
+
+/**
+ * color情報から HDR（PQ=smpte2084 / HLG=arib-std-b67 の伝達関数、または BT.2020 原色）と
+ * 判定できるか。どちらとも取れない・不明な素材は false（＝SDRとして扱い、tonemapは掛けない
+ * ＝不要な色変化を避ける）。
+ */
+export function isHdrColorInfo(info) {
+  if (!info) return false;
+  const transfer = String(info.colorTransfer || "").toLowerCase();
+  const primaries = String(info.colorPrimaries || "").toLowerCase();
+  return transfer.includes("2084") || transfer.includes("arib-std-b67") || transfer.includes("hlg")
+    || primaries.includes("2020");
 }
 
 /**
