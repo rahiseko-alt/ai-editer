@@ -77,6 +77,7 @@ function copyRel(rel) {
 const EXCLUDE = [
   /^__pycache__$/, /\.pyc$/, /\.wav$/, /\.tmp$/, /^scratch/,
   /^e2e-server\.mjs$/, // server 経路の e2e テスト（server は配布しないため不要）
+  /^e2e-manual-walkthrough\.mjs$/, // install/user-manual.html(配布しない)を検証する開発時テスト（客の手元では動かない）
   /^dist-slim-check\.mjs$/, // 配布物そのものを検査するテスト（dist/ を見るので客の手元では動かない）
   /^gen-editor-html\.mjs$/, // pipeline.mjs 未参照（R-1 で反映不要と判断済）
   /^\.vercel$/, // Vercel デプロイ設定（Web配布用・ローカル配布物には不要）

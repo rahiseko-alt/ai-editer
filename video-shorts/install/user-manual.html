@@ -72,6 +72,11 @@ ffmpeg -version</pre>
       <p>例として、作業名を <span class="kbd">myvideo</span> とします。上から順に実行してください。</p>
       <ol class="steps">
         <li>
+          <b>ジョブを作る</b>（動画ごとに作業フォルダを新規作成します。<span class="kbd">--mode</span>・<span class="kbd">--sub</span>・<span class="kbd">--orient</span> は毎回必須です。意味は4章「モードの選び方」参照）：
+          <pre class="cmd">node pipeline.mjs init 入力動画.mp4 --mode topic --sub off --orient 縦</pre>
+          <p class="fine">最後の行に <span class="kbd">work/入力動画-（ランダムな文字列）</span> のような作業フォルダのパスが表示されます。以降の手順に出てくる <span class="kbd">work/myvideo</span> は、この表示されたパスに読み替えてください。</p>
+        </li>
+        <li>
           <b>文字起こし</b>：
           <pre class="cmd">python src/transcribe.py 入力動画.mp4 work/myvideo/transcript.json</pre>
         </li>
