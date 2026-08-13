@@ -14,6 +14,7 @@ import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { hashToken } from "../server/security.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORT = 59179; // このテスト専用の固定ポート(他テストの通常起動ポート5178とは別)
@@ -76,7 +77,8 @@ try {
   fs.mkdirSync(WORK_DIR, { recursive: true });
   // POST /api/jobsを実際に叩かず、"以前のプロセスが発行し永続化した"状態を直接再現する
   // (P1-6の対象は再接続の認可/通知ロジックであり、実際の文字起こし～レンダリングは不要)。
-  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), JOB_TOKEN, "utf-8");
+  // P1-15-B: job-token.txtにはハッシュを保存する(persistJobToken参照)。
+  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), hashToken(JOB_TOKEN), "utf-8");
 
   // プロセスA: "再起動前"の起動時トークンを得るためだけに一度起動して停止する。
   const a = await startServer();

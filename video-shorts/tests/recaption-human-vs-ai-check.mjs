@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { runFfmpeg } from "../src/render-vertical.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { installFakeClaude } from "./helpers/fake-claude-main.mjs";
+import { hashToken } from "../server/security.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
@@ -213,7 +214,8 @@ try {
   // ── サーバー起動 ──────────────────────────────────────────
   const started = await startServer([]);
   server = started.child;
-  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), "l2-job-token", "utf-8");
+  // P1-15-B: job-token.txtにはハッシュを保存する(persistJobToken参照)。
+  fs.writeFileSync(path.join(WORK_DIR, "job-token.txt"), hashToken("l2-job-token"), "utf-8");
   const auth = "?jobToken=l2-job-token";
 
   // ── (2) 実HTTPで人の直しを重ねる（index1だけ）。index2は誰も触らない。 ─────────

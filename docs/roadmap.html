@@ -117,312 +117,312 @@
 
 <script type="application/json" id="roadmap-data">{
   "meta": {
-      "title": "AI-Editer video-shorts ロードマップ",
-      "active": "GOAL",
-      "next": "軌道修正チェックリストのC-1〜C-15・D-1〜D-6・C-6〜C-8はすべて解消済み(前回まで)。今回、G-EDIT-TRIM-A/B/C/Eの4葉をdone化した(criteria充足を独立検証サブエージェントが敵対的に確認し、CI最新main run https://github.com/rahiseko-alt/ai-editer/actions/runs/31615715059/job/94177876551 (commit 1c93d3bbc2c9767dea4d4f8dd07640bce61f5256) をevidenceとして記入)。\n\n【次にやること】\n1. G-EDIT-TRIM-Dは指標1(機械判定)はPASSだが、指標2(継ぎ目2の人の耳による聴き比べ)は本セッション環境にも音声出力デバイスが無く実施不可能なままstatus=doing継続。音声再生可能な環境(人間の実機等)での聴取確認が必要。\n2. G-EDIT-MOSAIC-UI(凍結中・30葉)とSTAGE-2(PWA/ブラウザ公開、frozen)は引き続き未着手。①(STAGE-1)が納品できる状態になるまで着手しない方針は変更なし。\n3. 持ち越し事項(D-7の実写素材探し、G-TESTINFRA-ESCAPEPATH-Bのアラート確認等)は未着手のまま。詳細はPR #100/#101の説明・過去のmeta.next履歴を参照。",
-      "handoff": {
-        "done": [
-          "G-EDIT-TRIM-A/B/C/Eの4葉について、独立検証サブエージェント(independent-verifier)4体を並行起動しcriteria充足を確認した(A:18 PASS、B/C共有:33 PASS、E:9 PASS、いずれもテストを自分で再実行したうえで変異実験・対照実験が機能していることを敵対的に確認済み)。CIの最新main実行(run 31615715059, commit 1c93d3bbc2c9767dea4d4f8dd07640bce61f5256, ubuntu-24.04, typecheck/lint/test/buildジョブ success)をevidenceとして各criteria[0].evidenceに記入し、4葉をstatus=doneへ更新した。G-EDIT-TRIM-Dは指標1(機械判定・二階差分z<2.5)は独立検証で継ぎ目1・継ぎ目2ともPASSしたが、指標2(継ぎ目2の人の耳による聴き比べ)は、Readツール(音声非対応)・ffplay(ALSAデバイス無しでエラー)・faster-whisper(ASR、両ファイルとも書き起こしが同一でクリック音検出に無効)・ffmpeg showwavespic(波形目視、視覚的に判別不能)のいずれの代替手段でも実施できないことを実地で確認し、構造的に実施不可能と再確認した。G-EDIT-TRIM-Dはstatus=doingのまま維持した。"
-        ],
-        "trouble": [
-          "G-EDIT-TRIM-Dの指標2(継ぎ目2・人の耳による聴き比べ)について、Readツール・ffplay(ALSAデバイス無し)・faster-whisper(ASR)・ffmpeg showwavespic(波形目視)の4手段いずれも「人の耳による最終判定」の代替にならないことを実地で再確認した。前セッションから継続する既知の構造的制約であり、音声出力デバイスを持つ環境(人間の実機など)でなければ解消できない。次回セッションでも同じ試行を繰り返さないよう、この事実を申し送る。"
-        ]
-      },
-      "updated": "2026-08-11",
-      "basisChanges": [
-        {
-          "id": "G-EDIT-CAPTION-E",
-          "criteriaHash": "526173ea8cd0479e3f8cc8d052167587b37aef58b9ff9a5916ea14e4764de0df",
-          "at": "2026-08-11",
-          "reason": "軌道修正C-6（2026-08-08の反証(15)(16)）により是正。(15)既に実装・実装済みテスト(tests/caption-api-check.mjsのgates配列)ではGET /api/jobs/:id/captions(読み取り口)も含めた4つの口を認可検査していたが、criteria.text/verifyの文言は『字幕保存・焼き直し・辞書追記の3口』としか書いておらず、実装が持つ保護と凍結した受入基準の記述が一致していなかった（他人のジョブのtranscriptを読める読み取り口を誰も受入判定していなかった）。文言をテストの実装範囲(4口)に合わせて拡張した。(16)verifyCmdが空で、実際に効いている検査(tests/caption-api-check.mjs)の名前がcriteriaのどこにも書かれていなかったため、verifyCmdへ追加した。いずれも判定の緩和は無い（既存の3口の合否条件は一字も変えていない。追加した読み取り口の検査も既存のtests/caption-api-check.mjsの同じgatesループに既に含まれており、新規のテスト追加は不要だった）。",
-          "note": "この葉は依然としてG-EDIT-CAPTION反証(3)『葉E は前例(P1-2-A/P1-2-B/P1-4-B)にならって3葉(または4葉)へ割る』の分割は未対応。今回はcriteria文言と実装範囲の不一致（反証15・16）のみを是正した。分割は軌道修正C-6の残課題として申し送る。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-A",
-          "criteriaHash": "c65e7b56d08352ff94bc19145e54bf0a3a23edd00309e801a47ac0eec748089f",
-          "at": "2026-08-11",
-          "reason": "軌道修正C-6（2026-08-08の反証(16)）により、実際に効いている機械検査(tests/caption-store-check.mjs)の名前がverify本文のどこにも書かれていなかったため、verify本文とverifyCmdへ追加した。判定の緩和は無い（画面操作を要する部分は引き続きindependent-verifierの観察のみが判定し、機械検査が肩代わりするのは保存・再読み込みの部分だけであることを明記した）。",
-          "note": null
-        },
-        {
-          "id": "G-EDIT-CAPTION-F",
-          "criteriaHash": "e84398eafb2712c1e0be1e6569daa2292e00c9da8112802c293ec237cf376816",
-          "at": "2026-08-11",
-          "reason": "軌道修正C-6（2026-08-08の反証(9)(16)）により是正。(9)verify本文が『既存エントリが壊れないこと』しか求めておらず、『追記が実際に1件増えていること』が条件に無かった（実装・既存テストtests/term-dictionary-check.mjsのF群は追記の成立自体も検査済みだったが、criteria本文には書かれていなかった）。追記の成立自体も検査対象であることをverify本文へ明記した。(16)verifyCmdが空だったため追加した。実装・実際の合否は変えていない（既存テストが元々検査していた内容を文言へ追記しただけ）。",
-          "note": null
-        },
-        {
-          "id": "G-EDIT-CAPTION-D",
-          "criteriaHash": "a8e1e2a23012337b0e49440e18a9ebc67defa9ac5495efbe19a45133b8abea8e",
-          "at": "2026-08-11",
-          "reason": "マスターの決定(D-3)により、CIにfaster-whisper(small)モデルを搭載して実測へ切り替えた。verifyが元々求めていた「同じ音声・同じ手順で2本流す」実測を、tests/term-apply-check.pyのreal_model_check()がsrc/transcribe.pyを実際にサブプロセスとして2回起動する形で満たすようにし、criteria[].verifyCmdを追加した（凍結済み音声素材tests/fixtures/trim-calibration/calibration.flacを使用。辞書にペアを入れた状態/外した状態を実モデルで比較。load_correctionsが常に{}を返す変異を当てて実際に3件FAILすることも確認済み）。text/verifyの受入内容（何を検証するか）は変更していない。「適用の部分だけを測る」から「実際の2回実行」へ実測範囲を強化する方向のみの変更。"
-        },
-        {
-          "id": "P0-5-A",
-          "criteriaHash": "f66488d2b4f6ac98bd4cb4bd84f8119fe0d4d894e2de312cd72a696f26f5c2cd",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（新規の永続テストvideo-shorts/tests/orient-render-check.mjsを追加し、startJob()経由でsize=16:9/9:16それぞれの実ジョブを流しffprobeで実出力解像度がORIENT定数と一致することを確認。resolveJobSettings()のorient分岐を意図的に壊した版に対してこのテストが実際にFAILすることも確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-2-F",
-          "criteriaHash": "d6bc4a8e0729036582efe0c619d84d210e18bee37863babbc2ab8e050b8eb1f3",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-2-G",
-          "criteriaHash": "b1f79d8116f0efc7e89d61bcb3bf1b23b754f62664ae2e0d78eed0eed9ce6925",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-2-H",
-          "criteriaHash": "49a0ecfabf8a3bfaaa60db83a85107bca83a025dca77afbd6b2397675b4efcbd",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-2-I",
-          "criteriaHash": "032e6fb0c9bc8adf9f827d18a0638ec97cc5ec9aa4f7d3d9d9c8b7fcfe720c6b",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-DELIVERY-CIGATE",
-          "criteriaHash": "235cdd6f58ec33b5b8270cb8ab579a6599bbabaffdf95ccb5d54ff961c405ccb",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（ci.ymlのgateステップを実物から抽出して実行する新規永続テストvideo-shorts/tests/ci-gate-hook-propagation-check.mjsを追加し6 PASSを確認、意図的に壊した版のci.ymlに対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-DELIVERY-FAILCLEAR",
-          "criteriaHash": "3f6c17356c6261128d3e6c474d0477a37e6e65fecc5b1884732e2dae9470dde0",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（session-start.shの失敗パスをモック環境で検証する新規永続テストvideo-shorts/tests/session-start-failure-visibility-check.mjsを追加し7 PASSを確認、修正前の既知の不具合(否定後の$?反転)を再現した版に対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-TRIM-E",
-          "criteriaHash": "2c57e4db86f575c4f5687855d3353f922aae0ef3e3f4451261d74b5a8f2ede21",
-          "at": "2026-08-09",
-          "reason": "verify文言がG-EDIT-TRIM-Aで是正済みの実物の既定(server/job-params.mjs:21、既定はtrim:\"none\")と食い違ったまま残っていた（横展開漏れ）。受入基準の中身(測る対象・許容誤差)は変えず、前提とする既定の表現だけをTRIM-Aに揃えて是正。ツリー見直し(basis-reviewer相当のサブエージェント)で検出。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-K1",
-          "criteriaHash": "245f63064725a6dd2fe305307b7bfd452e167e117690a6b1b3446eb76b7f2e61",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs導入（本セッション以前のPRで追加済み）により、doneへ遷移する葉はcriteria[].verifyCmdが必須になった。この葉のtext/verifyは着手前の凍結内容から変更していない。independent-verifierが実サーバーで検証した手順をvideo-shorts/tests/caption-ai-fix-served-check.mjsとして永続化したため、そのコマンドをverifyCmdへ追記した（受入基準の中身は変えていない）。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-F2",
-          "criteriaHash": "25801ec28d4dd3b526307fdaa49c1ed2f245a05ef6c55511845fc57372d27995",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/caption-ai-fail-halts-job-check.mjsをindependent-verifierが実行しPASSを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-L2",
-          "criteriaHash": "288951e5e4671fa4640b19914f0b760695a40fe96242d3286db19319f56d42b8",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/recaption-human-vs-ai-check.mjsをindependent-verifierが実行しPASSを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-A3",
-          "criteriaHash": "0f234c22335593e9504894b2b5e3123aeb300dbbddd2a43ee2ef2ba167bb718f",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-D2",
-          "criteriaHash": "064d235ffdb04a32dbfe1f2231d198d723833892dd90c97b3d8b4a9b97fd9433",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-M1",
-          "criteriaHash": "3a3be0519b51e858e9c735045ceb168b3819da330cc64cef4e389c56d2ef2cb2",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-M2",
-          "criteriaHash": "db8910c39dfdf04e45be4d2688821fbbf21d334b78b99533561878ea17594b7d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-AI-K2",
-          "criteriaHash": "95d020a4386a038324624adab8038e1ac0405fd0befef5926e0b133443d21688",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（independent-verifierが実サーバー+実ブラウザで新規作成したvideo-shorts/tests/webapp-ai-caption-progress-check.mjsを実行し8 PASSを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P0-5-C",
-          "criteriaHash": "31bc1aa6c6c04e2e98674a2a2ff31606ddc52f02fd2b8a316c8e0f55de52dd6d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/sub-none-render-check.mjsをffmpeg実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P0-5-D",
-          "criteriaHash": "b57aeb59abe721403923f8b8fd38ae8bc38d3c48d8abe36cde6ced5c0530e73d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/mosaic-job-wiring-check.mjsをffmpeg/opencv実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-9-D",
-          "criteriaHash": "f4afd30321ddc9ca77231e75bf7e269ac71310211adce3e2a995a6c6dc73928d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-9-E",
-          "criteriaHash": "7bb0f02dec38bdbf410e11c88bf38579a4fbdadd5200e8f5f612fb8b7fd98c09",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-10",
-          "criteriaHash": "3783431b2ee73d6548a8f687692f63bf92985fe5d26cd287d2d2ce34fb694260",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-11",
-          "criteriaHash": "b60cdee913c62410f94478d628fab6049a8a0d1f7c0e59a9f240d65e333c5c4d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（pnpm audit --audit-level moderateをローカル再実行し脆弱性0件を確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-12-A",
-          "criteriaHash": "1f6035138d0b9a1cd62a87eee03afa66c6698ceb0b4071ec2aafa7b29265b7d0",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/external-tool-version-pin-check.mjsとして機械化し20 PASS/0 FAILを確認済み。無指定サンプルに対する対照実験を含む）。text/verifyは変更していない。"
-        },
-        {
-          "id": "P1-12-B",
-          "criteriaHash": "3a48e29e902439c0fb7b2ab99c92834c67aa0117a15a248366209a733ad89159",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/consent-before-tool-install-check.mjsとして機械化し9 PASS/0 FAILを確認済み。文言除去した変異テキストに対する対照実験を含む）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-TESTINFRA-LINT",
-          "criteriaHash": "df2b7eaca8e1950e7f245d3dabdb787e0ef7f7bffac59eec36e3bdae0406b177",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のvideo-shorts/eslint.config.mjs+pnpm --filter video-shorts lintをローカル再実行しexit 0を確認、かつ意図的にno-unused-varsエラーを混入させるとexit 1になる検出力も確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-TESTINFRA-SCRIPTSLINT",
-          "criteriaHash": "ced5722dfd321fc0ff52be2c1fe15f5684526691682c0dc5452b6584eccda196",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のscripts/tsconfig.json+pnpm --filter scripts typecheckをローカル再実行しexit 0を確認、かつ意図的に未定義メソッド呼び出しを混入させるとTS2304でexit非0になる検出力も確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "M-1-E",
-          "criteriaHash": "91ab956372867e559536cd945c5d43f79059a4ac8b59296f61f1d80e6f5a949a",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Eの回帰テスト（末尾切り詰めmp4の対照実験含む）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "M-1-F",
-          "criteriaHash": "8e2e4f6c0597393ab436a02877750ca79619d7136e906428938a8e2a601f4239",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Fの回帰テスト（モデル退避/破損の両パターン×検出/識別モデル）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
-        },
-        {
-          "id": "M-4-H",
-          "criteriaHash": "ee1e6423b51f572adbe648625612627bca6a55298954680330225d939fc5870d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/delivery-face-scan-check.pyをopencv実機環境でローカル再実行し12 PASS/0 FAILを確認済み。混入ケースの検出(FAIL判定+終了コード1)と対照ケースの通過(PASS判定+終了コード0)、ファイル名でなく画素で判定する回帰防止も含む。criteria.verify文言自体はindependent-verifier必須を要求していないため、既存テストの再実行結果をそのままverifyCmdへ配線した）。text/verifyは変更していない。"
-        },
-        {
-          "id": "S-5",
-          "criteriaHash": "9badb8e37a7010caefe506c1e07308f4b778217ef225f5197888132e501aca6c",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。S-5該当のsrc/models・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyそれぞれの不在確認を含む）。text/verifyは変更していない。"
-        },
-        {
-          "id": "S-6",
-          "criteriaHash": "d27b8eaa1b9c648a3b9ca1cc8d0eb1da9a0bc3f6409f3d89fb640c08498cf78d",
-          "at": "2026-08-11",
-          "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。標準版・軽量版両方のSKILL.mdでmosaic:start/mosaic:endの不在を横断確認する検査を含む）。text/verifyは変更していない。"
-        },
-        {
-          "id": "G-EDIT-REFRAME-A",
-          "criteriaHash": "2c7ddf3fc8e9f1a86b73dd1a5f2a06f20e0e9473c6b9ddfc167a0f9bfb971598",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-8（2026-08-08の反証(1)）により是正。旧verifyの近黒定義Y≤24は、letterbox方式の帯色を真っ黒からRGB(28,28,28)/(32,32,32)/(40,40,40)へ変える適応的な実装にすり抜けられることが実測済みだった(いずれもグレーなのでBT.601 Y=RGB値そのもの、Y=28/32/40は全てY≤24を上回る)。近黒の定義をY≤55へ引き上げ、この3色を実際にpad色へ使った対照(tests/reframe-verify-check.pyへ追加)がいずれも黒帯として検出され不合格になることを確認した(ローカル実行で37 PASS/0 FAIL、新規追加した3件の対照テストも含む)。安全性の根拠: RF-R/RF-N/RF-Mが共有する背景(市松64px角、明側セルr=230固定)をnumpyで全画素実測すると、どの行も近黒(Y≤68)画素の最大比率は50.0%(98%を大きく下回る)であり、Y≤55は実際の映像を誤検出しない。verifyCmd(python3 video-shorts/tests/reframe-verify-check.py)も新規に追加した。判定の緩和は無い(検出できる帯色の範囲を広げる方向のみの変更。真っ黒の帯・9:16解像度確認・letterbox対照656pxの合否は一切変えていない)。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-C",
-          "criteriaHash": "421264d649f61b33a18cabcb9ce1a9e0280dc2a305ddc3699bf036b32c71e513",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-6（2026-08-08の反証(11)）により是正。旧criteria/verifyは(a)の『12文字』の数え方(UTF-16 .length／コードポイント数／見た目の文字数(書記素))を凍結しておらず、実装(src/term-dictionary.mjs isSingleTermのt.length)はUTF-16単位で数えているが、それが受入基準として明文化されていなかった。verify本文へ『String.prototype.length（UTF-16コード単位）で数える。コードポイント数でも見た目の文字数でもない』と明記し、3種の定義が食い違う2種類の入力(サロゲートペア文字7個/6個・結合文字(NFD分解形)7個)をtests/term-dictionary-check.mjsへ追加した(19件→22件)。サロゲートペア7個(コードポイント数・見た目とも7、UTF-16単位14)は現行実装で不合格になり、6個(UTF-16単位ちょうど12)は合格することを確認済み(ローカル実行22 PASS/0 FAIL)。判定の緩和は無い(実装の挙動(UTF-16単位で数える)をそのまま文言へ固定しただけで、既存の(a)〜(e)いずれの合否条件も変えていない)。"
-        },
-        {
-          "id": "G-EDIT-CAPTION-E",
-          "criteriaHash": "526173ea8cd0479e3f8cc8d052167587b37aef58b9ff9a5916ea14e4764de0df",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-6（2026-08-08の反証(3)）により是正。旧葉Eは「合言葉なし・他サイト由来・他人のジョブID」という独立して落ちうる3つの安全装置を1criteriaに束ねていた(実測: isAllowedApiOriginをreturn trueに固定しても14 PASS/4 FAILで、合言葉なし・他人のジョブID経由の判定は緑のまま通ってしまう)。前例P1-2-A（合言葉）/P1-2-B（Origin）/P1-4-B（ジョブの所有権）にならい、G-EDIT-CAPTION-E1（合言葉）/E2（Origin）/E3（ジョブの所有権）の3葉へ分割し、旧葉Eは削除した。実装・テスト(tests/caption-api-check.mjs)は旧葉Eの時点で既に3種を独立したアサーションとして持っていたため変更不要で、ロードマップ側の粒度をテストの実態に合わせただけ。判定の緩和は無い(3つの安全装置いずれの合否条件も一字も変えていない。E1/E2/E3のverifyCmdは旧葉Eと同じtests/caption-api-check.mjsを指す)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-E",
-          "criteriaHash": "4a9763e728ec7d8b33b2e87fa4c5ee68a956f8feaa03000b0b65335311877539",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(13)）により是正。旧verifyは『素材TVを処理した出力』としか書いておらず、素材TVは画面(/api/jobs)から流す実経路を指すため、音声認識(ASR)とAIによる区間選定(Claude呼び出し)という毎回結果が変わりうる非決定的な処理を経由するのか、それとも迂回するのかが明記されていなかった。G-EDIT-TRIM-Aが既に確立している解決(音声認識を通さずcalibration.jsonの設計値をそのまま使う)にならい、この葉のwordsも同じ凍結済み区間表を直接使い、区間選定(keep)もAI呼び出しを経由せず同じ入力からplanTrimが決定的に算出したものを使う、と明記した。判定の緩和は無い(字幕remapの正しさを測る条件は一字も変えていない。ASR/AIの精度自体はこの葉の受入事実ではないと明記しただけで、これはG-EDIT-TRIM-Aが既に同じ理由で対象外としている範囲と一致する)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-E",
-          "criteriaHash": "ee293f8f352d8e09470195e601c3417737319e06a0b3f11736b0c18e1b02f85d",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(8)(9)）により是正。着手前の調査で、この葉のverifyは一度も実行されたことが無いと判明した(criteriaにverifyCmdが無く、テストにも一切登場しない。tests/smoke.mjsのremapWords(の文字列grepだけがあったが、return words;と書いても通る無力な検査だった)。実機検証の結果、反証(8)(9)はいずれも実測で確認された。(8)恒真式：旧条件1(.assの表示中央フレームをOCR)は、.assがremapWords(この葉が検証したい対象そのもの)の出力から生成されそれをffmpegが焼くため、remapWordsがどう間違っても両辺に同じ誤りが乗る。実測: 字幕を一律+0.5秒ずらした偽物が旧条件1を4行中4行合格した(音声比では実際に0.47〜0.51秒遅れている)。(9)出荷既定のkaraokeスタイル(src/subtitle-styles.mjs)は1語ごとにDialogueイベントを出すがテキストは常に行全体(現在語だけ色を変える)で次のイベントでも同じ行が出続けるため、旧条件2(表示終了+0.2秒後は読めない)は正しい実装でも4行中2行が不合格になっていた。さらに最後の行は常にクリップ終端で終わるため+0.2秒後のフレームがどのスタイルでも存在しない(反証の指摘には無かった追加欠陥)。是正として、比較相手を.assから出力音声そのものへ変えた(発話開始時刻はremapWordsからもkeepスパンの再計算からも導かず、出力音声のRMSエンベロープから独立に測る)。旧条件2はkaraokeで原理的に成立しないため廃止し、受入事実を『字幕の表示開始が実際の発声時刻と一致する』の1つに絞った(AGENTS.md「1葉＝1事実」。件数一致は同じ結果の構成手段であり独立した受入事実ではないため葉は分割しない)。判定の緩和ではなく、実行不能だった旧検証を実際に機能する検証へ置き換えたもの(旧verifyは一度も実行されたことが無かったため『緩めた』対象が存在しない)。tests/trim-caption-sync-check.mjsを新設しverifyCmdへ設定、探り済みの記録(①偽物=remapWordsを恒等関数にすると4語中4語が不合格(diff 1.29〜6.63秒)②正しい実装の実測値=4語とも差0.038秒以内(3回再実行し毎回同じ値)③対照A(+0.5秒ずらし)・対照B(1語脱落)・対照C(+0.10秒ずらし)が実際に落ちることをテストに同梱)はG-EDIT-TRIM-Eのdetailに記録した。2026-08-12 basis-reviewerの1回目のレビューで、①の探り記録が実測と食い違っていたこと(4語中3語ではなく4語中4語が不合格)、および許容誤差±0.3秒では字幕が一律+0.10〜+0.29秒ずれる偽物を検出できない(偽の緑)ことの2件の反証を受け、①の記述を実測値へ訂正し、許容誤差を±0.08秒(RMS法自体の実測誤差0.038秒の約2.1倍)へ締め、対照Cを追加して2回目のレビューでこの2件が解消したことを確認した。"
-        },
-        {
-          "id": "G-EDIT-TRIM-B",
-          "criteriaHash": "c56759b7fc0d0a88eabc7a53c884a25da975be9881c154daace73328f0418de7",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(1)(2)(3)）により是正。この葉のverify(MFCC+DTW照合)は全履歴を走査してもこのリポジトリに一度も実装されたことが無いと判明した。着手前の調査で、旧verifyが凍結していた「探す側と同じ長さの窓を10msホップで滑らせDTW距離の最小値を採る」方式は、反証(1)が指摘するとおり部分残置(フィラー音声の75〜90%が残っていても検出できない)に構造的に盲目であり、素材も反証(2)(3)により重複語(index1/7が同じ「こんにちは」)・長さヒューリスティックで分離可能という欠陥を抱えていた。是正: (a)calibration.flac/jsonを作り直し(index6をあのー→なんか、index7をこんにちは→はいへ差し替え)、語4つをすべて異なる語にし、フィラー最長(なんか0.923秒)が語最短(はい0.772秒)を上回るようにした。(b)照合方法を開始・終了位置自由のsubsequence DTW(query全体を使い切ることを要求しつつtarget側の位置は固定しない)へ全面作り直し、video-shorts/tests/trim-filler-match-check.pyとして新規実装した(numpyのみ。scipy/librosa等の追加依存なし)。この新方式で、反証(1)が実測していた90%/75%残置のフィラーを、この新素材の2区間(index0/6)で再現し、いずれも「まだ含まれている」と正しく判定されることを実測で確認した(距離10.770/12.202、しきい値17.489未満)。25%/50%残置は検出できる場合とできない場合があり(index0の50%は検出できたがindex6の50%はできなかった)、受入事実として断定できる範囲を反証(1)が実測していた75%/90%に絞った(未達の範囲を偽って合格扱いにしない)。しきい値はcalibration.jsonのidentity_pairs_for_i(同一区間・AAC再エンコード対、上限10.770)とdifferent_word_pairs_for_ii(異なる語同士の対、下限24.209)の中点17.489として実測から算出した(旧方式の探り値10.022/14.84〜17.30はcommitされたコードから再現できず本改訂では使わない)。判定は「合格ラインの緩和」ではなく「検出できる範囲を実測に基づいて正確に記述する」方向の変更であり、反証(1)の指摘した欠陥は閉じた。status/doneはまだ据え置く(本人採点を避けるため。CIでのverifyCmd実行結果を見てから次回判断する)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-C",
-          "criteriaHash": "5be7a6e6092fb449e690ac865dfb2b2b70df999b920904c9a7f1a30d91c9993d",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。G-EDIT-TRIM-Bと同じ照合器(video-shorts/tests/trim-filler-match-check.py、subsequence DTW)・同じ校正・同じしきい値(17.489)を共有する。旧素材はindex1とindex7が同じ語「こんにちは」で重複しており、片方が丸ごと消えても距離2.69/5.82(旧しきい値10.022未満)で「含まれている」と誤判定していた(反証(2))。新素材はindex7を「はい」へ差し替え、語4つ(こんにちは/ありがとう/よろしく/はい)をすべて異なる語にした(different_word_pairs_for_iiで機械的に確認)。実測: 素材TAの出力に対する4語の距離はindex1=7.341/index3=11.701/index5=10.311/index7=9.463でいずれもしきい値17.489を下回り「含まれている」と正しく判定される。詳細な照合方法・校正根拠はG-EDIT-TRIM-Bのbasis変更記録を参照(両葉は同じ改訂の一部)。status/doneはまだ据え置く(本人採点を避けるため)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-A",
-          "criteriaHash": "4312722d14b69b77f82580fc44f9e52c160adde689497c2456896c6b9b028334",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。反証(2)(3)是正のためcalibration.flac/jsonを作り直した(index6をあのー→なんか、index7をこんにちは→はいへ差し替え)ことに伴い、この葉が参照する素材のSHA-256・区間の時刻・コマ数がすべて変わったための追随的な更新。index0〜5は旧素材と設計値(秒)が完全一致するため、この葉が検証する対象(「間を詰める」経路の尺・声の位置)そのものの受入事実は変えていない。新素材で実際に製品経路(probeSize→snapStart→planTrim→renderClip)を通して実測し直した値(素材TA=4.267秒/64コマ、素材TA-S=4.933秒/74コマ、寄与差3.466秒)へ数値を更新し、音声のSHA-256(9590ab1d...)・区間表のSHA-256(9cb743c2...)を新素材の値に差し替えた。基準の厳しさ・許容幅(±0.025秒/±0.030秒/±0.050秒)は変更していない。"
-        },
-        {
-          "id": "G-EDIT-TRIM-D",
-          "criteriaHash": "fd126b4dc4c5fa2479a0de519bdf3906a3d666d33242f3e5794d72fb218d089b",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。反証(2)(3)是正のためcalibration.flac/jsonを作り直したことに伴う追随的な更新。この葉が対象とする継ぎ目(index1こんにちは→3ありがとう→5よろしく→7の4区間の連結)の位置・段差の測り方(二階差分z-score)そのものは変更していない。音声のSHA-256を新素材の値(9590ab1d...)へ差し替え、index7の語が「こんにちは」から「はい」へ変わった旨をverify本文に反映した(継ぎ目の位置・判定方法には影響しない)。しきい値(z<2.5)・除外窓(±5ms)は変更していない。旧CIのevidence URLは差し替え前の素材で得られたものであるため、この葉のevidenceは一旦空にし、本PRのCI結果で埋め直す(二段階コミットの規律どおり)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-B",
-          "criteriaHash": "22aab36712a9e68f2b40969722a03c2b09bc1ea96d12926efedade873110fcf6",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（basis-reviewerの1回目レビュー、2026-08-12）で受けた反証への対応。反証(1): criteria.textが『75%以上の残置も含めて含まれていない』と書きつつ、verifyが実際に実測していたのは0%(正しい実装)と75%/90%(index0/6の2区間のみ)だけで、50〜74%残置の検出可否は確認されていなかった。basis-reviewerが独立に4フィラー×25/40/50/55/60/65/70%を実測したところ、検出できる境界はフィラーごとに異なり(50〜65%の間で揺れ、一部非単調)、25〜64%残置を『必ず検出できる』と主張することはできないと判明した。この指摘を自分でも独立に再現し(同じ実測値: filler6は60%で距離48.21(未検出)、65%で距離12.20(検出))、事実を確認した。是正: criteria.textを『65%以上の残置は必ず検出される(実測)。25〜64%残置の検出可否はフィラーの内容により異なり、この葉の受入事実の対象外(既知の限界)』へ書き換えた。verifyの対照(1)も、フィラー4区間×3水準(65%/75%/90%)の全12組み合わせでの実測へ拡張した(従来はindex0/6の2区間×75%/90%の4組み合わせのみ)。合格ラインを緩めたのではなく、実際に断定できる範囲を実測どおり正確に記述する方向の変更。"
-        },
-        {
-          "id": "G-EDIT-TRIM-C",
-          "criteriaHash": "70d0320a9cac78996fc559f8f7a62ff1afee23508e4044aa862e0531dc99eb18",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（basis-reviewerの1回目レビュー、2026-08-12）で受けた反証への対応。反証: この葉は『語が丸ごと1つ消えた壊れた実装』を実際に落とせることを示す実行記録を持たず、verifyの対照は『校正値から論理的に導かれるはず』という推論のみだった。basis-reviewerが独立にindex1/3/5/7それぞれを丸ごと欠落させた出力を合成して実測したところ、距離52.091/36.638/43.665/27.866でいずれも正しく検出されることを確認したが、この実行はこのPRの成果物には含まれていなかった。是正: video-shorts/tests/trim-filler-match-check.pyへ、語4区間それぞれを丸ごと欠落させた出力を実際に合成し検出することを確認する対照テストを追加した(同じ実測値52.091/36.638/43.665/27.866を自分でも再現して確認済み)。verifyの対照節をこの実行を参照する記述へ書き換えた。"
-        },
-        {
-          "id": "G-EDIT-TRIM-E",
-          "criteriaHash": "c606a5e88fd4c616c257ece00ab7926ce0211031b8017ac88b19e9f40d2b95d9",
-          "at": "2026-08-12",
-          "reason": "軌道修正C-7（basis-reviewerの2回目レビュー、2026-08-12）で受けた反証への対応。反証: この葉のverifyが『素材TA(…実測長11.402812秒)』という、2026-08-12のcalibration.flac/json作り直し(反証(2)(3)是正)で古くなった数値をそのまま参照していた。実際の音声実測長は11.052517秒(PR-1完了時点の11.402812秒から変わっている)。verify本文の該当箇所を実測値へ更新し、旧値をいつの時点の値だったか明記した(履歴として旧値そのものは残す)。判定ロジック・しきい値(TOL_SEC=0.08秒)は一切変更していない(素材の実際の長さを説明する数値の追随更新のみ)。"
-        },
-        {
-          "id": "G-EDIT-TRIM-A",
-          "criteriaHash": "c5259af7576f8732a5f0a574986e53c58d10900f669112be940ae4c0bcf6d347",
-          "at": "2026-08-13",
-          "reason": "done-gate(CI)の指摘への対応。この葉は元々criteria[0]にverifyCmdフィールドが無く、verify本文中に手順としてnode tests/trim-duration-check.mjsを実行する旨が書かれているだけだった。B/C/D/Eには既にverifyCmdフィールドがあり、この葉だけ機械が直接実行できる形になっていなかった。text/verifyの受入内容・判定ロジック・しきい値は一切変更せず、verifyCmdフィールド(\"node video-shorts/tests/trim-duration-check.mjs\")を追加しただけ。"
-        }
+    "title": "AI-Editer video-shorts ロードマップ",
+    "active": "GOAL",
+    "next": "①claude/checkin-kqx1og をpush、draft PR作成、CI(ci-green/roadmap-required)の完走を確認する。②CIが緑になったら、P1-13〜P1-18の各criteria[].evidenceへ実際のCI run URLを記入し、status を doing→done へ更新する(basis-reviewerの反証は解消済みだが、evidenceは外部事実(CI run URL)でなければならないため、ローカルのテスト結果だけではdone化できない)。③P1-19(M-5用語辞書上限・M-7 SSEトークンURL露出・L-3 Range未対応・L-6 PORT=80認可)はtodo/backlogのまま残っている。設計判断(UX・互換性とのトレードオフ)を要するため、マスターの判断を仰いでから着手するかどうかを決める。④G-EDIT-MOSAIC-UI(凍結中・30葉)とSTAGE-2は引き続き未着手(①STAGE-1が納品できる状態になるまで着手しない方針は変更なし)。⑤G-EDIT-TRIM-D(人の耳による聴き比べ)は音声出力デバイスが無い環境では引き続き着手不可。",
+    "handoff": {
+      "done": [
+        "2026-08-13の徹底監査セッション。サブエージェント3体(HTTPサーバ層/コマンド実行・メディア処理層/秘密情報・AI連携・テスト基盤)を並列起動し最新コードを調査、発見を自分でコード裏取り、高・中の項目は実機PoCで再現確認した(docs/audits/2026-08-13-security-audit.md)。H-1(JSONボディ無制限)・H-2(recaption同時実行制限なし)・H-3(APIキー漏洩導管)・H-4(concat.mjsのsymlink先回り)・M-1(静的配信のHost検査欠如)・M-2(セキュリティヘッダ皆無)・M-3(ジョブトークン平文永続化)・M-4(書き込み系エンドポイントのレート制限欠如)・M-6(鍵管理ポリシー文書の食い違い)・M-8(AI隔離作業場所のsymlink先回り)を実装で修正した。P1-13〜P1-19をdocs/roadmap.htmlのG-P1配下へ起票、basis-reviewerサブエージェントによる敵対的レビューで原子性違反(単一葉に複数の独立した受入事実が混在)と網羅性不足(M-2の一部・M-4がどの葉にも起票されていない)を反証され、24葉(P1-13〜P1-18・doing)+4葉(P1-19・todo/backlog)へ再構成した。security-*-check.mjs を12本新設し、各テストの主要な検証は実装前(H-1は上限チェックを一時的に無効化、H-4/M-8は本物のsymlink先回り攻撃を実際に設置)の状態で確実にFAILし、修正後にPASSすることを確認済み(\"probed\"探り)。既存の48本の回帰テストにも新規テストを追記し、typecheck/lint/build/pnpm audit/verify-roadmap-evidence がすべて緑であることを確認した。"
+      ],
+      "trouble": [
+        "①このセッションのサンドボックス環境で、node:test系のmkdtempSyncが実行から約90秒経過した時点で断続的にENOENT(/tmp配下)を返す既知の不安定性がある(smoke.mjs後半の2件のみ、2回とも同じ箇所で再現)。isolated mkdtemp呼び出し自体は正常動作すること、同じハッシュ化ロジックがcaption-api-check.mjsの実HTTP往復テストでは合格することを確認済みで、コードのバグではなくサンドボックス固有の環境フレークと判断した。実CIランナー(GitHub Actions)では発生しない想定。②ローカル環境にtesseract-ocrが無くcaption-recaption-ocr-check.mjsが1件失敗する(CI(ci.yml)はtesseract-ocrを明示インストールするため実CIでは合格見込み)。③並列テスト実行時、bashのwhile read構文でファイルディスクリプタ0を子プロセスに奪われテストリストが破損する事故が2回発生(eval \"$cmd\" < /dev/null で解決)。④P1-13-A/Bのverifyを凍結する際、最初readBody()にreq.destroy()を呼ぶ実装を書いたところ413応答を書く前にソケットが閉じてECONNRESETになるバグを自作テストで発見・修正した(req.resume()で読み捨てる方式へ変更)。"
       ]
     },
+    "updated": "2026-08-13",
+    "basisChanges": [
+      {
+        "id": "G-EDIT-CAPTION-E",
+        "criteriaHash": "526173ea8cd0479e3f8cc8d052167587b37aef58b9ff9a5916ea14e4764de0df",
+        "at": "2026-08-11",
+        "reason": "軌道修正C-6（2026-08-08の反証(15)(16)）により是正。(15)既に実装・実装済みテスト(tests/caption-api-check.mjsのgates配列)ではGET /api/jobs/:id/captions(読み取り口)も含めた4つの口を認可検査していたが、criteria.text/verifyの文言は『字幕保存・焼き直し・辞書追記の3口』としか書いておらず、実装が持つ保護と凍結した受入基準の記述が一致していなかった（他人のジョブのtranscriptを読める読み取り口を誰も受入判定していなかった）。文言をテストの実装範囲(4口)に合わせて拡張した。(16)verifyCmdが空で、実際に効いている検査(tests/caption-api-check.mjs)の名前がcriteriaのどこにも書かれていなかったため、verifyCmdへ追加した。いずれも判定の緩和は無い（既存の3口の合否条件は一字も変えていない。追加した読み取り口の検査も既存のtests/caption-api-check.mjsの同じgatesループに既に含まれており、新規のテスト追加は不要だった）。",
+        "note": "この葉は依然としてG-EDIT-CAPTION反証(3)『葉E は前例(P1-2-A/P1-2-B/P1-4-B)にならって3葉(または4葉)へ割る』の分割は未対応。今回はcriteria文言と実装範囲の不一致（反証15・16）のみを是正した。分割は軌道修正C-6の残課題として申し送る。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-A",
+        "criteriaHash": "c65e7b56d08352ff94bc19145e54bf0a3a23edd00309e801a47ac0eec748089f",
+        "at": "2026-08-11",
+        "reason": "軌道修正C-6（2026-08-08の反証(16)）により、実際に効いている機械検査(tests/caption-store-check.mjs)の名前がverify本文のどこにも書かれていなかったため、verify本文とverifyCmdへ追加した。判定の緩和は無い（画面操作を要する部分は引き続きindependent-verifierの観察のみが判定し、機械検査が肩代わりするのは保存・再読み込みの部分だけであることを明記した）。",
+        "note": null
+      },
+      {
+        "id": "G-EDIT-CAPTION-F",
+        "criteriaHash": "e84398eafb2712c1e0be1e6569daa2292e00c9da8112802c293ec237cf376816",
+        "at": "2026-08-11",
+        "reason": "軌道修正C-6（2026-08-08の反証(9)(16)）により是正。(9)verify本文が『既存エントリが壊れないこと』しか求めておらず、『追記が実際に1件増えていること』が条件に無かった（実装・既存テストtests/term-dictionary-check.mjsのF群は追記の成立自体も検査済みだったが、criteria本文には書かれていなかった）。追記の成立自体も検査対象であることをverify本文へ明記した。(16)verifyCmdが空だったため追加した。実装・実際の合否は変えていない（既存テストが元々検査していた内容を文言へ追記しただけ）。",
+        "note": null
+      },
+      {
+        "id": "G-EDIT-CAPTION-D",
+        "criteriaHash": "a8e1e2a23012337b0e49440e18a9ebc67defa9ac5495efbe19a45133b8abea8e",
+        "at": "2026-08-11",
+        "reason": "マスターの決定(D-3)により、CIにfaster-whisper(small)モデルを搭載して実測へ切り替えた。verifyが元々求めていた「同じ音声・同じ手順で2本流す」実測を、tests/term-apply-check.pyのreal_model_check()がsrc/transcribe.pyを実際にサブプロセスとして2回起動する形で満たすようにし、criteria[].verifyCmdを追加した（凍結済み音声素材tests/fixtures/trim-calibration/calibration.flacを使用。辞書にペアを入れた状態/外した状態を実モデルで比較。load_correctionsが常に{}を返す変異を当てて実際に3件FAILすることも確認済み）。text/verifyの受入内容（何を検証するか）は変更していない。「適用の部分だけを測る」から「実際の2回実行」へ実測範囲を強化する方向のみの変更。"
+      },
+      {
+        "id": "P0-5-A",
+        "criteriaHash": "f66488d2b4f6ac98bd4cb4bd84f8119fe0d4d894e2de312cd72a696f26f5c2cd",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（新規の永続テストvideo-shorts/tests/orient-render-check.mjsを追加し、startJob()経由でsize=16:9/9:16それぞれの実ジョブを流しffprobeで実出力解像度がORIENT定数と一致することを確認。resolveJobSettings()のorient分岐を意図的に壊した版に対してこのテストが実際にFAILすることも確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-F",
+        "criteriaHash": "d6bc4a8e0729036582efe0c619d84d210e18bee37863babbc2ab8e050b8eb1f3",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-G",
+        "criteriaHash": "b1f79d8116f0efc7e89d61bcb3bf1b23b754f62664ae2e0d78eed0eed9ce6925",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-H",
+        "criteriaHash": "49a0ecfabf8a3bfaaa60db83a85107bca83a025dca77afbd6b2397675b4efcbd",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-2-I",
+        "criteriaHash": "032e6fb0c9bc8adf9f827d18a0638ec97cc5ec9aa4f7d3d9d9c8b7fcfe720c6b",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsに含まれる実サーバー起動テストをローカルで再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-DELIVERY-CIGATE",
+        "criteriaHash": "235cdd6f58ec33b5b8270cb8ab579a6599bbabaffdf95ccb5d54ff961c405ccb",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（ci.ymlのgateステップを実物から抽出して実行する新規永続テストvideo-shorts/tests/ci-gate-hook-propagation-check.mjsを追加し6 PASSを確認、意図的に壊した版のci.ymlに対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-DELIVERY-FAILCLEAR",
+        "criteriaHash": "3f6c17356c6261128d3e6c474d0477a37e6e65fecc5b1884732e2dae9470dde0",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（session-start.shの失敗パスをモック環境で検証する新規永続テストvideo-shorts/tests/session-start-failure-visibility-check.mjsを追加し7 PASSを確認、修正前の既知の不具合(否定後の$?反転)を再現した版に対してこのテストがFAILすることも確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-TRIM-E",
+        "criteriaHash": "2c57e4db86f575c4f5687855d3353f922aae0ef3e3f4451261d74b5a8f2ede21",
+        "at": "2026-08-09",
+        "reason": "verify文言がG-EDIT-TRIM-Aで是正済みの実物の既定(server/job-params.mjs:21、既定はtrim:\"none\")と食い違ったまま残っていた（横展開漏れ）。受入基準の中身(測る対象・許容誤差)は変えず、前提とする既定の表現だけをTRIM-Aに揃えて是正。ツリー見直し(basis-reviewer相当のサブエージェント)で検出。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-K1",
+        "criteriaHash": "245f63064725a6dd2fe305307b7bfd452e167e117690a6b1b3446eb76b7f2e61",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs導入（本セッション以前のPRで追加済み）により、doneへ遷移する葉はcriteria[].verifyCmdが必須になった。この葉のtext/verifyは着手前の凍結内容から変更していない。independent-verifierが実サーバーで検証した手順をvideo-shorts/tests/caption-ai-fix-served-check.mjsとして永続化したため、そのコマンドをverifyCmdへ追記した（受入基準の中身は変えていない）。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-F2",
+        "criteriaHash": "25801ec28d4dd3b526307fdaa49c1ed2f245a05ef6c55511845fc57372d27995",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/caption-ai-fail-halts-job-check.mjsをindependent-verifierが実行しPASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-L2",
+        "criteriaHash": "288951e5e4671fa4640b19914f0b760695a40fe96242d3286db19319f56d42b8",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/recaption-human-vs-ai-check.mjsをindependent-verifierが実行しPASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-A3",
+        "criteriaHash": "0f234c22335593e9504894b2b5e3123aeb300dbbddd2a43ee2ef2ba167bb718f",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-D2",
+        "criteriaHash": "064d235ffdb04a32dbfe1f2231d198d723833892dd90c97b3d8b4a9b97fd9433",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-M1",
+        "criteriaHash": "3a3be0519b51e858e9c735045ceb168b3819da330cc64cef4e389c56d2ef2cb2",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-M2",
+        "criteriaHash": "db8910c39dfdf04e45be4d2688821fbbf21d334b78b99533561878ea17594b7d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/ai-caption-fix-check.mjsが該当ケースを含み71件全PASSであることを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-AI-K2",
+        "criteriaHash": "95d020a4386a038324624adab8038e1ac0405fd0befef5926e0b133443d21688",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（independent-verifierが実サーバー+実ブラウザで新規作成したvideo-shorts/tests/webapp-ai-caption-progress-check.mjsを実行し8 PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P0-5-C",
+        "criteriaHash": "31bc1aa6c6c04e2e98674a2a2ff31606ddc52f02fd2b8a316c8e0f55de52dd6d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/sub-none-render-check.mjsをffmpeg実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P0-5-D",
+        "criteriaHash": "b57aeb59abe721403923f8b8fd38ae8bc38d3c48d8abe36cde6ced5c0530e73d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/mosaic-job-wiring-check.mjsをffmpeg/opencv実機環境でローカル再実行しALL PASSを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-9-D",
+        "criteriaHash": "f4afd30321ddc9ca77231e75bf7e269ac71310211adce3e2a995a6c6dc73928d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-9-E",
+        "criteriaHash": "7bb0f02dec38bdbf410e11c88bf38579a4fbdadd5200e8f5f612fb8b7fd98c09",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/smoke.mjsをローカル再実行し96 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-10",
+        "criteriaHash": "3783431b2ee73d6548a8f687692f63bf92985fe5d26cd287d2d2ce34fb694260",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-11",
+        "criteriaHash": "b60cdee913c62410f94478d628fab6049a8a0d1f7c0e59a9f240d65e333c5c4d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（pnpm audit --audit-level moderateをローカル再実行し脆弱性0件を確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-12-A",
+        "criteriaHash": "1f6035138d0b9a1cd62a87eee03afa66c6698ceb0b4071ec2aafa7b29265b7d0",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/external-tool-version-pin-check.mjsとして機械化し20 PASS/0 FAILを確認済み。無指定サンプルに対する対照実験を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "P1-12-B",
+        "criteriaHash": "3a48e29e902439c0fb7b2ab99c92834c67aa0117a15a248366209a733ad89159",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（これまでコードレビューのみだった検証を、新規永続テストvideo-shorts/tests/consent-before-tool-install-check.mjsとして機械化し9 PASS/0 FAILを確認済み。文言除去した変異テキストに対する対照実験を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-TESTINFRA-LINT",
+        "criteriaHash": "df2b7eaca8e1950e7f245d3dabdb787e0ef7f7bffac59eec36e3bdae0406b177",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のvideo-shorts/eslint.config.mjs+pnpm --filter video-shorts lintをローカル再実行しexit 0を確認、かつ意図的にno-unused-varsエラーを混入させるとexit 1になる検出力も確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-TESTINFRA-SCRIPTSLINT",
+        "criteriaHash": "ced5722dfd321fc0ff52be2c1fe15f5684526691682c0dc5452b6584eccda196",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存のscripts/tsconfig.json+pnpm --filter scripts typecheckをローカル再実行しexit 0を確認、かつ意図的に未定義メソッド呼び出しを混入させるとTS2304でexit非0になる検出力も確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-1-E",
+        "criteriaHash": "91ab956372867e559536cd945c5d43f79059a4ac8b59296f61f1d80e6f5a949a",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Eの回帰テスト（末尾切り詰めmp4の対照実験含む）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-1-F",
+        "criteriaHash": "8e2e4f6c0597393ab436a02877750ca79619d7136e906428938a8e2a601f4239",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/face-mosaic-check.pyに含まれるM-1-Fの回帰テスト（モデル退避/破損の両パターン×検出/識別モデル）をopencv実機環境でローカル再実行し93 PASS/0 FAILを確認済み）。text/verifyは変更していない。"
+      },
+      {
+        "id": "M-4-H",
+        "criteriaHash": "ee1e6423b51f572adbe648625612627bca6a55298954680330225d939fc5870d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/delivery-face-scan-check.pyをopencv実機環境でローカル再実行し12 PASS/0 FAILを確認済み。混入ケースの検出(FAIL判定+終了コード1)と対照ケースの通過(PASS判定+終了コード0)、ファイル名でなく画素で判定する回帰防止も含む。criteria.verify文言自体はindependent-verifier必須を要求していないため、既存テストの再実行結果をそのままverifyCmdへ配線した）。text/verifyは変更していない。"
+      },
+      {
+        "id": "S-5",
+        "criteriaHash": "9badb8e37a7010caefe506c1e07308f4b778217ef225f5197888132e501aca6c",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。S-5該当のsrc/models・apply_mosaic_cli.py・face_mosaic.py・face_choices.pyそれぞれの不在確認を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "S-6",
+        "criteriaHash": "d27b8eaa1b9c648a3b9ca1cc8d0eb1da9a0bc3f6409f3d89fb640c08498cf78d",
+        "at": "2026-08-11",
+        "reason": "verify-done-gate.mjs対応でcriteria[].verifyCmdを追加（既存の永続テストvideo-shorts/tests/dist-slim-check.mjsをローカル再実行し19 PASS/0 FAILを確認済み。標準版・軽量版両方のSKILL.mdでmosaic:start/mosaic:endの不在を横断確認する検査を含む）。text/verifyは変更していない。"
+      },
+      {
+        "id": "G-EDIT-REFRAME-A",
+        "criteriaHash": "2c7ddf3fc8e9f1a86b73dd1a5f2a06f20e0e9473c6b9ddfc167a0f9bfb971598",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-8（2026-08-08の反証(1)）により是正。旧verifyの近黒定義Y≤24は、letterbox方式の帯色を真っ黒からRGB(28,28,28)/(32,32,32)/(40,40,40)へ変える適応的な実装にすり抜けられることが実測済みだった(いずれもグレーなのでBT.601 Y=RGB値そのもの、Y=28/32/40は全てY≤24を上回る)。近黒の定義をY≤55へ引き上げ、この3色を実際にpad色へ使った対照(tests/reframe-verify-check.pyへ追加)がいずれも黒帯として検出され不合格になることを確認した(ローカル実行で37 PASS/0 FAIL、新規追加した3件の対照テストも含む)。安全性の根拠: RF-R/RF-N/RF-Mが共有する背景(市松64px角、明側セルr=230固定)をnumpyで全画素実測すると、どの行も近黒(Y≤68)画素の最大比率は50.0%(98%を大きく下回る)であり、Y≤55は実際の映像を誤検出しない。verifyCmd(python3 video-shorts/tests/reframe-verify-check.py)も新規に追加した。判定の緩和は無い(検出できる帯色の範囲を広げる方向のみの変更。真っ黒の帯・9:16解像度確認・letterbox対照656pxの合否は一切変えていない)。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-C",
+        "criteriaHash": "421264d649f61b33a18cabcb9ce1a9e0280dc2a305ddc3699bf036b32c71e513",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-6（2026-08-08の反証(11)）により是正。旧criteria/verifyは(a)の『12文字』の数え方(UTF-16 .length／コードポイント数／見た目の文字数(書記素))を凍結しておらず、実装(src/term-dictionary.mjs isSingleTermのt.length)はUTF-16単位で数えているが、それが受入基準として明文化されていなかった。verify本文へ『String.prototype.length（UTF-16コード単位）で数える。コードポイント数でも見た目の文字数でもない』と明記し、3種の定義が食い違う2種類の入力(サロゲートペア文字7個/6個・結合文字(NFD分解形)7個)をtests/term-dictionary-check.mjsへ追加した(19件→22件)。サロゲートペア7個(コードポイント数・見た目とも7、UTF-16単位14)は現行実装で不合格になり、6個(UTF-16単位ちょうど12)は合格することを確認済み(ローカル実行22 PASS/0 FAIL)。判定の緩和は無い(実装の挙動(UTF-16単位で数える)をそのまま文言へ固定しただけで、既存の(a)〜(e)いずれの合否条件も変えていない)。"
+      },
+      {
+        "id": "G-EDIT-CAPTION-E",
+        "criteriaHash": "526173ea8cd0479e3f8cc8d052167587b37aef58b9ff9a5916ea14e4764de0df",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-6（2026-08-08の反証(3)）により是正。旧葉Eは「合言葉なし・他サイト由来・他人のジョブID」という独立して落ちうる3つの安全装置を1criteriaに束ねていた(実測: isAllowedApiOriginをreturn trueに固定しても14 PASS/4 FAILで、合言葉なし・他人のジョブID経由の判定は緑のまま通ってしまう)。前例P1-2-A（合言葉）/P1-2-B（Origin）/P1-4-B（ジョブの所有権）にならい、G-EDIT-CAPTION-E1（合言葉）/E2（Origin）/E3（ジョブの所有権）の3葉へ分割し、旧葉Eは削除した。実装・テスト(tests/caption-api-check.mjs)は旧葉Eの時点で既に3種を独立したアサーションとして持っていたため変更不要で、ロードマップ側の粒度をテストの実態に合わせただけ。判定の緩和は無い(3つの安全装置いずれの合否条件も一字も変えていない。E1/E2/E3のverifyCmdは旧葉Eと同じtests/caption-api-check.mjsを指す)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-E",
+        "criteriaHash": "4a9763e728ec7d8b33b2e87fa4c5ee68a956f8feaa03000b0b65335311877539",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(13)）により是正。旧verifyは『素材TVを処理した出力』としか書いておらず、素材TVは画面(/api/jobs)から流す実経路を指すため、音声認識(ASR)とAIによる区間選定(Claude呼び出し)という毎回結果が変わりうる非決定的な処理を経由するのか、それとも迂回するのかが明記されていなかった。G-EDIT-TRIM-Aが既に確立している解決(音声認識を通さずcalibration.jsonの設計値をそのまま使う)にならい、この葉のwordsも同じ凍結済み区間表を直接使い、区間選定(keep)もAI呼び出しを経由せず同じ入力からplanTrimが決定的に算出したものを使う、と明記した。判定の緩和は無い(字幕remapの正しさを測る条件は一字も変えていない。ASR/AIの精度自体はこの葉の受入事実ではないと明記しただけで、これはG-EDIT-TRIM-Aが既に同じ理由で対象外としている範囲と一致する)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-E",
+        "criteriaHash": "ee293f8f352d8e09470195e601c3417737319e06a0b3f11736b0c18e1b02f85d",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(8)(9)）により是正。着手前の調査で、この葉のverifyは一度も実行されたことが無いと判明した(criteriaにverifyCmdが無く、テストにも一切登場しない。tests/smoke.mjsのremapWords(の文字列grepだけがあったが、return words;と書いても通る無力な検査だった)。実機検証の結果、反証(8)(9)はいずれも実測で確認された。(8)恒真式：旧条件1(.assの表示中央フレームをOCR)は、.assがremapWords(この葉が検証したい対象そのもの)の出力から生成されそれをffmpegが焼くため、remapWordsがどう間違っても両辺に同じ誤りが乗る。実測: 字幕を一律+0.5秒ずらした偽物が旧条件1を4行中4行合格した(音声比では実際に0.47〜0.51秒遅れている)。(9)出荷既定のkaraokeスタイル(src/subtitle-styles.mjs)は1語ごとにDialogueイベントを出すがテキストは常に行全体(現在語だけ色を変える)で次のイベントでも同じ行が出続けるため、旧条件2(表示終了+0.2秒後は読めない)は正しい実装でも4行中2行が不合格になっていた。さらに最後の行は常にクリップ終端で終わるため+0.2秒後のフレームがどのスタイルでも存在しない(反証の指摘には無かった追加欠陥)。是正として、比較相手を.assから出力音声そのものへ変えた(発話開始時刻はremapWordsからもkeepスパンの再計算からも導かず、出力音声のRMSエンベロープから独立に測る)。旧条件2はkaraokeで原理的に成立しないため廃止し、受入事実を『字幕の表示開始が実際の発声時刻と一致する』の1つに絞った(AGENTS.md「1葉＝1事実」。件数一致は同じ結果の構成手段であり独立した受入事実ではないため葉は分割しない)。判定の緩和ではなく、実行不能だった旧検証を実際に機能する検証へ置き換えたもの(旧verifyは一度も実行されたことが無かったため『緩めた』対象が存在しない)。tests/trim-caption-sync-check.mjsを新設しverifyCmdへ設定、探り済みの記録(①偽物=remapWordsを恒等関数にすると4語中4語が不合格(diff 1.29〜6.63秒)②正しい実装の実測値=4語とも差0.038秒以内(3回再実行し毎回同じ値)③対照A(+0.5秒ずらし)・対照B(1語脱落)・対照C(+0.10秒ずらし)が実際に落ちることをテストに同梱)はG-EDIT-TRIM-Eのdetailに記録した。2026-08-12 basis-reviewerの1回目のレビューで、①の探り記録が実測と食い違っていたこと(4語中3語ではなく4語中4語が不合格)、および許容誤差±0.3秒では字幕が一律+0.10〜+0.29秒ずれる偽物を検出できない(偽の緑)ことの2件の反証を受け、①の記述を実測値へ訂正し、許容誤差を±0.08秒(RMS法自体の実測誤差0.038秒の約2.1倍)へ締め、対照Cを追加して2回目のレビューでこの2件が解消したことを確認した。"
+      },
+      {
+        "id": "G-EDIT-TRIM-B",
+        "criteriaHash": "c56759b7fc0d0a88eabc7a53c884a25da975be9881c154daace73328f0418de7",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(1)(2)(3)）により是正。この葉のverify(MFCC+DTW照合)は全履歴を走査してもこのリポジトリに一度も実装されたことが無いと判明した。着手前の調査で、旧verifyが凍結していた「探す側と同じ長さの窓を10msホップで滑らせDTW距離の最小値を採る」方式は、反証(1)が指摘するとおり部分残置(フィラー音声の75〜90%が残っていても検出できない)に構造的に盲目であり、素材も反証(2)(3)により重複語(index1/7が同じ「こんにちは」)・長さヒューリスティックで分離可能という欠陥を抱えていた。是正: (a)calibration.flac/jsonを作り直し(index6をあのー→なんか、index7をこんにちは→はいへ差し替え)、語4つをすべて異なる語にし、フィラー最長(なんか0.923秒)が語最短(はい0.772秒)を上回るようにした。(b)照合方法を開始・終了位置自由のsubsequence DTW(query全体を使い切ることを要求しつつtarget側の位置は固定しない)へ全面作り直し、video-shorts/tests/trim-filler-match-check.pyとして新規実装した(numpyのみ。scipy/librosa等の追加依存なし)。この新方式で、反証(1)が実測していた90%/75%残置のフィラーを、この新素材の2区間(index0/6)で再現し、いずれも「まだ含まれている」と正しく判定されることを実測で確認した(距離10.770/12.202、しきい値17.489未満)。25%/50%残置は検出できる場合とできない場合があり(index0の50%は検出できたがindex6の50%はできなかった)、受入事実として断定できる範囲を反証(1)が実測していた75%/90%に絞った(未達の範囲を偽って合格扱いにしない)。しきい値はcalibration.jsonのidentity_pairs_for_i(同一区間・AAC再エンコード対、上限10.770)とdifferent_word_pairs_for_ii(異なる語同士の対、下限24.209)の中点17.489として実測から算出した(旧方式の探り値10.022/14.84〜17.30はcommitされたコードから再現できず本改訂では使わない)。判定は「合格ラインの緩和」ではなく「検出できる範囲を実測に基づいて正確に記述する」方向の変更であり、反証(1)の指摘した欠陥は閉じた。status/doneはまだ据え置く(本人採点を避けるため。CIでのverifyCmd実行結果を見てから次回判断する)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-C",
+        "criteriaHash": "5be7a6e6092fb449e690ac865dfb2b2b70df999b920904c9a7f1a30d91c9993d",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。G-EDIT-TRIM-Bと同じ照合器(video-shorts/tests/trim-filler-match-check.py、subsequence DTW)・同じ校正・同じしきい値(17.489)を共有する。旧素材はindex1とindex7が同じ語「こんにちは」で重複しており、片方が丸ごと消えても距離2.69/5.82(旧しきい値10.022未満)で「含まれている」と誤判定していた(反証(2))。新素材はindex7を「はい」へ差し替え、語4つ(こんにちは/ありがとう/よろしく/はい)をすべて異なる語にした(different_word_pairs_for_iiで機械的に確認)。実測: 素材TAの出力に対する4語の距離はindex1=7.341/index3=11.701/index5=10.311/index7=9.463でいずれもしきい値17.489を下回り「含まれている」と正しく判定される。詳細な照合方法・校正根拠はG-EDIT-TRIM-Bのbasis変更記録を参照(両葉は同じ改訂の一部)。status/doneはまだ据え置く(本人採点を避けるため)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-A",
+        "criteriaHash": "4312722d14b69b77f82580fc44f9e52c160adde689497c2456896c6b9b028334",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。反証(2)(3)是正のためcalibration.flac/jsonを作り直した(index6をあのー→なんか、index7をこんにちは→はいへ差し替え)ことに伴い、この葉が参照する素材のSHA-256・区間の時刻・コマ数がすべて変わったための追随的な更新。index0〜5は旧素材と設計値(秒)が完全一致するため、この葉が検証する対象(「間を詰める」経路の尺・声の位置)そのものの受入事実は変えていない。新素材で実際に製品経路(probeSize→snapStart→planTrim→renderClip)を通して実測し直した値(素材TA=4.267秒/64コマ、素材TA-S=4.933秒/74コマ、寄与差3.466秒)へ数値を更新し、音声のSHA-256(9590ab1d...)・区間表のSHA-256(9cb743c2...)を新素材の値に差し替えた。基準の厳しさ・許容幅(±0.025秒/±0.030秒/±0.050秒)は変更していない。"
+      },
+      {
+        "id": "G-EDIT-TRIM-D",
+        "criteriaHash": "fd126b4dc4c5fa2479a0de519bdf3906a3d666d33242f3e5794d72fb218d089b",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（2026-08-08の反証(2)(3)）により是正。反証(2)(3)是正のためcalibration.flac/jsonを作り直したことに伴う追随的な更新。この葉が対象とする継ぎ目(index1こんにちは→3ありがとう→5よろしく→7の4区間の連結)の位置・段差の測り方(二階差分z-score)そのものは変更していない。音声のSHA-256を新素材の値(9590ab1d...)へ差し替え、index7の語が「こんにちは」から「はい」へ変わった旨をverify本文に反映した(継ぎ目の位置・判定方法には影響しない)。しきい値(z<2.5)・除外窓(±5ms)は変更していない。旧CIのevidence URLは差し替え前の素材で得られたものであるため、この葉のevidenceは一旦空にし、本PRのCI結果で埋め直す(二段階コミットの規律どおり)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-B",
+        "criteriaHash": "22aab36712a9e68f2b40969722a03c2b09bc1ea96d12926efedade873110fcf6",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（basis-reviewerの1回目レビュー、2026-08-12）で受けた反証への対応。反証(1): criteria.textが『75%以上の残置も含めて含まれていない』と書きつつ、verifyが実際に実測していたのは0%(正しい実装)と75%/90%(index0/6の2区間のみ)だけで、50〜74%残置の検出可否は確認されていなかった。basis-reviewerが独立に4フィラー×25/40/50/55/60/65/70%を実測したところ、検出できる境界はフィラーごとに異なり(50〜65%の間で揺れ、一部非単調)、25〜64%残置を『必ず検出できる』と主張することはできないと判明した。この指摘を自分でも独立に再現し(同じ実測値: filler6は60%で距離48.21(未検出)、65%で距離12.20(検出))、事実を確認した。是正: criteria.textを『65%以上の残置は必ず検出される(実測)。25〜64%残置の検出可否はフィラーの内容により異なり、この葉の受入事実の対象外(既知の限界)』へ書き換えた。verifyの対照(1)も、フィラー4区間×3水準(65%/75%/90%)の全12組み合わせでの実測へ拡張した(従来はindex0/6の2区間×75%/90%の4組み合わせのみ)。合格ラインを緩めたのではなく、実際に断定できる範囲を実測どおり正確に記述する方向の変更。"
+      },
+      {
+        "id": "G-EDIT-TRIM-C",
+        "criteriaHash": "70d0320a9cac78996fc559f8f7a62ff1afee23508e4044aa862e0531dc99eb18",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（basis-reviewerの1回目レビュー、2026-08-12）で受けた反証への対応。反証: この葉は『語が丸ごと1つ消えた壊れた実装』を実際に落とせることを示す実行記録を持たず、verifyの対照は『校正値から論理的に導かれるはず』という推論のみだった。basis-reviewerが独立にindex1/3/5/7それぞれを丸ごと欠落させた出力を合成して実測したところ、距離52.091/36.638/43.665/27.866でいずれも正しく検出されることを確認したが、この実行はこのPRの成果物には含まれていなかった。是正: video-shorts/tests/trim-filler-match-check.pyへ、語4区間それぞれを丸ごと欠落させた出力を実際に合成し検出することを確認する対照テストを追加した(同じ実測値52.091/36.638/43.665/27.866を自分でも再現して確認済み)。verifyの対照節をこの実行を参照する記述へ書き換えた。"
+      },
+      {
+        "id": "G-EDIT-TRIM-E",
+        "criteriaHash": "c606a5e88fd4c616c257ece00ab7926ce0211031b8017ac88b19e9f40d2b95d9",
+        "at": "2026-08-12",
+        "reason": "軌道修正C-7（basis-reviewerの2回目レビュー、2026-08-12）で受けた反証への対応。反証: この葉のverifyが『素材TA(…実測長11.402812秒)』という、2026-08-12のcalibration.flac/json作り直し(反証(2)(3)是正)で古くなった数値をそのまま参照していた。実際の音声実測長は11.052517秒(PR-1完了時点の11.402812秒から変わっている)。verify本文の該当箇所を実測値へ更新し、旧値をいつの時点の値だったか明記した(履歴として旧値そのものは残す)。判定ロジック・しきい値(TOL_SEC=0.08秒)は一切変更していない(素材の実際の長さを説明する数値の追随更新のみ)。"
+      },
+      {
+        "id": "G-EDIT-TRIM-A",
+        "criteriaHash": "c5259af7576f8732a5f0a574986e53c58d10900f669112be940ae4c0bcf6d347",
+        "at": "2026-08-13",
+        "reason": "done-gate(CI)の指摘への対応。この葉は元々criteria[0]にverifyCmdフィールドが無く、verify本文中に手順としてnode tests/trim-duration-check.mjsを実行する旨が書かれているだけだった。B/C/D/Eには既にverifyCmdフィールドがあり、この葉だけ機械が直接実行できる形になっていなかった。text/verifyの受入内容・判定ロジック・しきい値は一切変更せず、verifyCmdフィールド(\"node video-shorts/tests/trim-duration-check.mjs\")を追加しただけ。"
+      }
+    ]
+  },
   "nodes": [
     {
       "id": "GOAL",
@@ -563,7 +563,7 @@
                       "kind": "state",
                       "theme": "AIの作業場所を隔離する",
                       "meaning": "AIが他のお客様のファイルに触れない",
-                      "detail": "隔離された作業ディレクトリ(cwd)で実行する。claude-safety.mjsのcreateIsolatedCwd(jobId)(OS tmpdir配下・ジョブごとに別ディレクトリ)を両spawn呼び出しに適用(PR #14)。",
+                      "detail": "隔離された作業ディレクトリ(cwd)で実行する。claude-safety.mjsのcreateIsolatedCwd(jobId)(OS tmpdir配下・ジョブごとに別ディレクトリ)を両spawn呼び出しに適用(PR #14)。\n\n【2026-08-13追記・後続葉への参照】この葉が主張する「他のお客様のファイルに触れない」保証は、criteria/verify本文が対象にしていた「spawn呼び出しのcwdオプションが専用ディレクトリを指しているか」という静的な配線の話に限られる。2026-08-13の徹底監査(docs/audits/2026-08-13-security-audit.md M-8)で、createIsolatedCwdが使う親ディレクトリ名(video-shorts-claude-cwd)が固定名であるため、同一PC上の別プロセス・別ユーザーがそこへ先回りしてシンボリックリンクを設置すると、返される作業ディレクトリの実体(realpath)が攻撃者制御下を指すことを実機PoCで確認した。この「先回りされたリンクを辿らない」という別の受入事実は、本葉のcriteria/verify本文を書き換えず、新しい葉P1-18-Bとして起票し追跡する。",
                       "status": "done",
                       "criteria": [
                         {
@@ -1011,6 +1011,445 @@
                     }
                   ],
                   "detail": "根拠: uvx無指定版、npx -y ...@latestのように可変依存を事前承認で実行している。（docs/audits/2026-07-27-kosespark-test-review-proposal.md P1-12）"
+                },
+                {
+                  "id": "P1-13",
+                  "kind": "state",
+                  "theme": "少数のリクエストでサーバーが応答不能にならない",
+                  "meaning": "悪意あるリクエストを何本か送っただけで、サーバーが固まったり他の人が使えなくなったりしない",
+                  "children": [
+                    {
+                      "id": "P1-13-A",
+                      "kind": "state",
+                      "theme": "大きすぎる直しリクエストが413で拒まれる",
+                      "meaning": "字幕の直し等を保存するとき、巨大なデータを送りつけられても保存処理そのものに進まない",
+                      "detail": "根拠(H-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:133-140のreadBody()はContent-Lengthも累積受信バイト数も見ずにボディ全量をメモリへ連結する。PUT /api/jobs/:id/captions と POST /api/jobs/:id/terms が対象。実機PoCで、正規に発行したjobTokenを使い80MB(83,886,101バイト)のJSONボディを送信したところ413等の拒否なく全量受信されたことを確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。413を返すことと、メモリを溜め込まないことは別々の実装ミスで独立に破れうる(全量バッファしてから413を返す実装は本葉には合格するが次葉P1-13-Bには落ちる)ため2葉に分けた。\n\n【2026-08-13 探り済み(probed)】readBody()の上限チェックだけを一時的に無効化した実装(H-1相当の脆弱な状態を再現)に対してsecurity-body-limit-check.mjsを実行したところ、5件中4件が正しくFAILすることを確認した(413が返らずステータス400になる・受信中のRSS増分が閾値10MBを大きく超えて実測82,751,488バイトに達する、の両方を検出)。その後、上限チェックを元に戻した現行実装に対して同じテストを実行したところ5 PASS/0 FAILで全て合格した。落ちるべき条件で落ち、直った実装では通ることを確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms へ上限を超えるサイズのJSONボディを送ると413が返る",
+                          "verify": "実サーバーを起動し、正規のjobTokenで上限(MAX_JSON_BODY_BYTES)を超えるボディを両エンドポイントへ送信し、いずれも413が返ることを確認する。上限以下の正常なボディは従来どおり処理されることも対照として確認する",
+                          "verifyCmd": "node video-shorts/tests/security-body-limit-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-B",
+                      "kind": "state",
+                      "theme": "上限超のボディが、受信中にメモリへ全量溜め込まれない",
+                      "meaning": "413で断る実装であっても、断る前に巨大なデータを一旦メモリへ丸ごと確保してしまってはDoSを防いだことにならない",
+                      "detail": "根拠(H-1、docs/audits/2026-08-13-security-audit.md): readBody()がContent-Lengthを見ずに全量を配列へpushしてからJSON.parseする実装だと、413を返す判定がJSON.parse失敗時にしか走らず、その前に受信済みバイトはメモリに残る。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。\n\n【2026-08-13 探り済み(probed)】P1-13-Aと同じ探り(readBody()の上限チェックを一時的に無効化)で、本葉のRSS増分assertionが実測82,751,488バイト(閾値10,485,760バイトの約8倍)で正しくFAILすることを確認した。修正を戻した現行実装では5 PASS/0 FAILで合格する(security-body-limit-check.mjs実行ログで確認)。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "上限を超えるサイズのボディを送信している最中、サーバープロセスのメモリ使用量が上限バイト数を大きく超えて増加しない(=全量をバッファしてから拒否する実装になっていない)",
+                          "verify": "上限を大きく超えるボディ(上限の10倍以上)を送信しながらサーバープロセスのRSSを定期的にサンプリングし、ピークRSSが上限バイト数の数倍以内に収まることを確認する。対照として、全量バッファしてから413判定する偽実装ではRSSが送信量に比例して増え続けることを別途確認する",
+                          "verifyCmd": "node video-shorts/tests/security-body-limit-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-C",
+                      "kind": "state",
+                      "theme": "字幕の焼き直しを連打しても、同時に動くffmpegの本数が増え続けない",
+                      "meaning": "同じジョブに何度も焼き直しを指示しても、裏でffmpegが際限なく増え続けない",
+                      "detail": "根拠(H-2、docs/audits/2026-08-13-security-audit.md): server/index.mjs:571-587のhandleRecaptionはisRunning(id)（パイプライン本編の実行中判定）しか見ず、pipeline-runner.mjs:260のconcurrencyGateにもレート制限にも一切乗らない。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。同時実行数の上限と、後述P1-13-Dの一時ファイル一意化は別々の直し方で別々に壊れうる(ジョブ横断の上限だけ付けても同一ジョブの2並列連打は防げない)ため2葉に分けた。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "焼き直しリクエストを複数同時に(異なるジョブへ)送っても、同時に生存するffmpeg子プロセスの本数が既定の上限を超えない",
+                          "verify": "実サーバーを起動し、複数の異なるjobIdへrecaptionを並列送信して、同時に生存するffmpeg子プロセス数が上限(VS_MAX_CONCURRENT_JOBS)以下であることを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-recaption-flood-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-D",
+                      "kind": "state",
+                      "theme": "同一ジョブへ焼き直しを連打しても、一時ファイルが競合しない",
+                      "meaning": "同じジョブに焼き直しを続けて指示しても、成果物が壊れたり、片方の処理が失敗したりしない",
+                      "detail": "根拠(H-2、docs/audits/2026-08-13-security-audit.md): src/recaption-stage.mjs:78の一時ファイル名がジョブごとに固定のため、同一ジョブへの並列呼び出しは同じ一時ファイルへ競合する。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "同一jobIdへ焼き直しリクエストを同時に複数送ると、片方は明確なエラー(409等)で拒まれ、実行された方の成果物は壊れない",
+                          "verify": "実サーバーを起動し、同一jobIdへrecaptionを同時に2回送信し、片方が409で拒まれること、もう片方の焼き直し結果(クリップファイル)が破損なく生成されることを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-recaption-flood-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-E",
+                      "kind": "state",
+                      "theme": "字幕保存・用語追加・焼き直しの書き込み系エンドポイントに、連打への歯止めがある",
+                      "meaning": "字幕の保存や辞書への追加を連打されても、ディスク書き込みやffmpeg起動が際限なく積み上がらない",
+                      "detail": "根拠(M-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:63,212のjobsRateLimiterはPOST /api/jobsのみを対象とし、PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms・POST /api/jobs/:id/recaptionの3つの書き込み系エンドポイントにはレート制限が一切無い(GET系のcandidates/events/clipsは読み取りのみで本葉の対象外とする)。コードレビューで確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "PUT /api/jobs/:id/captions・POST /api/jobs/:id/terms・POST /api/jobs/:id/recaptionのいずれも、短時間の連打(既定閾値超)に対してレート制限で429を返す",
+                          "verify": "実サーバーを起動し、正規のjobTokenで3エンドポイントそれぞれへ閾値を超える回数を短時間に送信し、いずれも429が返ることを確認する。閾値以内のリクエストは従来どおり処理されることも対照として確認する",
+                          "verifyCmd": "node video-shorts/tests/security-write-rate-limit-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-F",
+                      "kind": "state",
+                      "theme": "ヘッダの送信を長時間待たせる接続に、ソケットを占有され続けない",
+                      "meaning": "ヘッダをだらだら送ってくる接続のせいで、他の人からの接続が受け付けられなくならない",
+                      "detail": "根拠(L-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:698-709でserver.headersTimeoutが未設定でNode既定値(60秒)のまま。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。headersTimeoutとrequestTimeoutは別々の攻撃経路(ヘッダ送信の遅延/リクエスト全体の遅延)に対する別設定のため2葉に分けた。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーのheadersTimeoutが、Node既定値ではなく明示的な値に設定されている",
+                          "verify": "実サーバーのhttp.ServerインスタンスのheadersTimeout値を確認し、明示的に設定された値であることを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-header-timeout-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-13-G",
+                      "kind": "state",
+                      "theme": "リクエスト全体の受信を長時間待たせる接続に、ソケットを占有され続けない",
+                      "meaning": "本文をだらだら送ってくる接続のせいで、他の人からの接続が受け付けられなくならない",
+                      "detail": "根拠(L-4、docs/audits/2026-08-13-security-audit.md): server/index.mjs:698-709でserver.requestTimeoutが未設定でNode既定値(300秒)のまま。コードレビューで確認済み。2026-08-13、basis-reviewerによる敵対的レビューで、この葉のverifyが独立して落ちうる複数の受入事実を1本にまとめていた点を反証され、原子まで分割した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーのrequestTimeoutが、Node既定値ではなく明示的な値に設定されている",
+                          "verify": "実サーバーのhttp.ServerインスタンスのrequestTimeout値を確認し、明示的に設定された値であることを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-header-timeout-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のH-1/H-2/L-4/M-4。2026-08-13の徹底監査で発見。既存のP1-2-D/Eはアップロード本体とジョブ作成のみを守り、字幕直し・用語追加・焼き直しの3エンドポイントは無防備だった。2026-08-13のbasis-reviewerレビューで単一葉が複数の独立した受入事実を含んでいた点、M-4(書き込み系エンドポイントのレート制限欠如)がどの葉にも起票されていなかった点を反証され、A〜Gの7葉へ分割・追加した。"
+                },
+                {
+                  "id": "P1-14",
+                  "kind": "state",
+                  "theme": "APIキーが画面・ログ・保存ファイルに出ない",
+                  "meaning": "文字起こしやAI連携に使う秘密の鍵が、間違った場所に表示されたり保存されたりしない",
+                  "children": [
+                    {
+                      "id": "P1-14-A",
+                      "kind": "state",
+                      "theme": "パイプラインの子プロセスに渡る環境変数が最小限である",
+                      "meaning": "文字起こしや区間選定の裏で動くプログラムに、無関係な秘密情報まで渡さない",
+                      "detail": "根拠(H-3前半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:143-149のspawnAndLogはenv: process.envを丸ごと子へ渡す。claude起動口(src/claude-safety.mjs)は既にallowlist化されている(P1-1-B)が、transcribe.py/pipeline.mjs select/renderの子プロセスには適用されていない。コードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、verify文言が対象箇所(3箇所)を明示していなかった点を反証され是正した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "transcribe.py・pipeline.mjs select・pipeline.mjs renderの3つの子プロセス呼び出しいずれも、渡される環境変数が必要なもの(実行に必須なPATH等の基本変数と、transcribe.pyに限りGROQ_API_KEY)だけに絞られている",
+                          "verify": "3箇所それぞれの子プロセス呼び出しについて、実際に渡された環境変数一覧をダンプする偽実行体(偽python/偽node)を差し込み、渡された環境変数がallowlistの範囲内であることを個別に確認する。ANTHROPIC_API_KEY等の非allowlist変数をprocess.envに含めた状態で実行し、いずれの箇所にも渡らないことを対照として確認する",
+                          "verifyCmd": "node video-shorts/tests/security-child-env-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-14-B",
+                      "kind": "state",
+                      "theme": "子プロセスのSSE配信経路に鍵が混ざっても、画面に届く前に隠される",
+                      "meaning": "万が一プログラムの進捗ログに鍵が混ざっても、それがそのままブラウザの画面に残らない",
+                      "detail": "根拠(H-3後半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:151-166で子のstdout/stderrを1行ずつSSEへbroadcastする。現状Python側は鍵を出力しないため実害は未発生だが、「出ない」ことを守る機械検査が無いことをコードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、criteria本文は「stderr/stdoutのいずれにも」漏れないと主張しているのにverifyがstderrしか検証していなかった点を反証され是正した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "子プロセスのstdout・stderrのどちらにAPIキー形式の文字列が含まれていても、SSE配信本文に生の鍵文字列が現れない(伏字化される)",
+                          "verify": "GROQ_API_KEY形式の文字列をわざとstdoutへ出力する偽pythonと、stderrへ出力する偽pythonの両方を個別に差し込み、それぞれのケースでSSE配信内容を検査して鍵が伏字化されていることを確認する。対照として、伏字化処理を外した状態では両ケースとも同じ検査が確実に検出(FAIL)することを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-secret-redaction-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-14-C",
+                      "kind": "state",
+                      "theme": "子プロセスの異常終了時、保存されるエラー内容に鍵が残らない",
+                      "meaning": "処理が失敗したとき、work/<id>/state.jsonに書かれるエラーメッセージに鍵が残らない",
+                      "detail": "根拠(H-3後半、docs/audits/2026-08-13-security-audit.md): server/pipeline-runner.mjs:169-174で異常終了時にstderr先頭400バイトをError.messageへ載せ、:287-313でwork/<id>/state.jsonへ永続化する。コードレビューで確認済み。P1-14-Bのbasis-reviewer指摘(atomic)を踏まえ、SSE配信経路とstate.json永続化経路は別々の実装箇所(前者はonLineコールバック、後者はcatchブロックのerr.message)であり独立に破れうるため別葉にした。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "子プロセスがAPIキー形式の文字列を含むstderrを出して異常終了しても、work/<id>/state.jsonのerrorフィールドに生の鍵文字列が現れない",
+                          "verify": "GROQ_API_KEY形式の文字列を含むstderrを出して異常終了する偽pythonを差し込み、失敗後のwork/<id>/state.jsonのerrorフィールドを検査して鍵が伏字化されていることを確認する。対照として、伏字化処理を外した状態では同じ検査が確実に検出(FAIL)することを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-secret-redaction-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-14-D",
+                      "kind": "state",
+                      "theme": "鍵の保管ガードについて、文書の説明と実際の実装が一致している",
+                      "meaning": "「こう守られています」という説明書きが、実際には存在しない仕組みを指していない",
+                      "detail": "根拠(M-6、docs/audits/2026-08-13-security-audit.md): docs/key-management-policy.md:22が「親.gitignore + .claude/settings.json deny + secret-write-gate.mjsの三重ガード」と主張するが、secret-write-gate.mjsはリポジトリに存在せず、.claude/settings.jsonにpermissions.denyブロックも無い。実在するのは.gitignoreの1枚のみであることをfind/catで確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "docs/key-management-policy.mdが記述する保管ガードの内容が、実際にリポジトリ内に存在する仕組みと一致している",
+                          "verify": "docs/key-management-policy.mdの記述と、.gitignore・.claude/settings.json・該当スクリプトの実在を突き合わせ、記述されている全ての仕組みが実在することを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-key-policy-doc-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のH-3/M-6。2026-08-13の徹底監査で発見。P1-1-Bはclaude起動口のenv allowlistのみを対象としており、文字起こし等の他の子プロセス経路とログ・保存ファイルへの伝播は対象外だった。2026-08-13のbasis-reviewerレビューでSSE配信経路とstate.json永続化経路の分割、verify文言の網羅性を是正した。"
+                },
+                {
+                  "id": "P1-15",
+                  "kind": "state",
+                  "theme": "合言葉が同じPCの別プログラムへ簡単に渡らない",
+                  "meaning": "起動のたびに変わる合言葉(トークン)が、無関係な別プログラムに読み取られたり、ディスクに残り続けたりしない",
+                  "children": [
+                    {
+                      "id": "P1-15-A",
+                      "kind": "state",
+                      "theme": "画面を表示する入口にも、ホストの確認が効く",
+                      "meaning": "見覚えのない名前を名乗ってアクセスしてきた相手には、合言葉入りの画面を渡さない",
+                      "detail": "根拠(M-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:595-599のHost/Origin検査はpathnameが/api/で始まる場合のみ適用され、GET /（静的配信・index.html注入）は対象外。実機PoCで、Host: evil.example.comを付けたGET /が200で応答し、本文に実際の起動時トークンが埋め込まれて返ってくることを確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "許可されていないHostヘッダでGET /（または他の静的パス）へアクセスしても、起動時トークンが埋め込まれた本文が返らない",
+                          "verify": "実サーバーへ許可外のHostヘッダを付けてGET /を送信し、レスポンスに起動時トークン文字列が含まれないことを確認する。正規のHost（127.0.0.1:port/localhost:port）では従来どおりトークンが埋め込まれて返ることも対照として確認する",
+                          "verifyCmd": "node video-shorts/tests/security-static-host-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-15-B",
+                      "kind": "state",
+                      "theme": "ジョブの合言葉が、ディスクに平文のまま残り続けない",
+                      "meaning": "作業フォルダを覗かれても、そこに書かれた合言葉をそのままコピーして使えない",
+                      "detail": "根拠(M-3、docs/audits/2026-08-13-security-audit.md): server/security.mjs:72-75のpersistJobTokenがwork/<id>/job-token.txtへ平文で書き込み、TTL(既定24時間)まで残る。ソースコードで確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "work/<id>/job-token.txtに保存される値が平文のジョブトークンそのものではなく、照合にのみ使えるハッシュ値である",
+                          "verify": "実際にジョブを作成し、work/<id>/job-token.txtの中身が発行されたjobTokenの文字列と一致しない（かつ再起動後の正規の再接続は引き続き成功する）ことを確認する。対照として、意図的にハッシュ化を外した実装ではファイル内容が平文トークンと一致することを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-job-token-hash-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のM-1/M-3。2026-08-13の徹底監査で発見。既存のP1-2-A/BはAPIエンドポイントのHost/Origin検査を対象にしており、静的配信の入口とディスク永続化は対象外だった。"
+                },
+                {
+                  "id": "P1-16",
+                  "kind": "state",
+                  "theme": "ブラウザ側の多層防御が効いている",
+                  "meaning": "画面のエスケープ処理が万一崩れても、それだけで乗っ取られない備えがある",
+                  "children": [
+                    {
+                      "id": "P1-16-A",
+                      "kind": "state",
+                      "theme": "外部から読み込まれるスクリプトが実行されないよう画面が守られている",
+                      "meaning": "字幕エスケープ漏れ等が仮に起きても、それだけでは悪意あるスクリプトが動かない",
+                      "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): grep -rn \"Content-Security-Policy\" server/ が0件。サーバー・HTMLともCSP設定なし。確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーが返す全レスポンスにContent-Security-Policyヘッダが付き、インラインスクリプト以外の外部由来スクリプト実行を制限する内容になっている",
+                          "verify": "実サーバーへGET /とAPIレスポンスを取得し、Content-Security-Policyヘッダが存在し、script-src等が既定で外部オリジンを許可しない内容であることを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-16-B",
+                      "kind": "state",
+                      "theme": "ブラウザがファイルの中身を勝手に別の種類として解釈しない",
+                      "meaning": "動画や字幕ファイルが、ブラウザの推測でスクリプトとして実行される余地をなくす",
+                      "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): X-Content-Type-Options: nosniffが0件。確認済み。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーが返す全レスポンスにX-Content-Type-Options: nosniffヘッダが付く",
+                          "verify": "実サーバーへ複数のエンドポイント(静的配信・API・クリップ配信)からレスポンスを取得し、いずれもnosniffヘッダを持つことを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-16-C",
+                      "kind": "state",
+                      "theme": "この画面を他サイトのiframeへ埋め込ませない",
+                      "meaning": "偽サイトが本物の画面を透明なiframeで重ねて、クリックを乗っ取る余地をなくす",
+                      "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): X-Frame-Optionsが0件。確認済み。2026-08-13のbasis-reviewerレビューで、M-2が挙げる4種のヘッダのうちX-Frame-OptionsとReferrer-Policyがどの葉にも起票されていなかった点を反証され追加した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーが返す全レスポンスにX-Frame-Options: DENYヘッダが付く",
+                          "verify": "実サーバーへ複数のエンドポイントからレスポンスを取得し、いずれもX-Frame-Options: DENYヘッダを持つことを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-16-D",
+                      "kind": "state",
+                      "theme": "画面のURLが、外部サイトへのリンク経由で漏れない",
+                      "meaning": "ジョブトークンを含むURLを開いている画面から外部リンクを踏んでも、そのURLが相手サイトへ伝わらない",
+                      "detail": "根拠(M-2、docs/audits/2026-08-13-security-audit.md): Referrer-Policyが0件。確認済み。ジョブトークンがURLクエリに現れうる(M-7、P1-19-Bでbacklog)ため、Refererヘッダ経由の伝播を塞ぐ意味がある。2026-08-13のbasis-reviewerレビューで追加。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "サーバーが返す全レスポンスにReferrer-Policy: no-referrerヘッダが付く",
+                          "verify": "実サーバーへ複数のエンドポイントからレスポンスを取得し、いずれもReferrer-Policy: no-referrerヘッダを持つことを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-headers-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のM-2。2026-08-13の徹底監査で発見。basis-reviewerレビューでM-2が挙げた4種のヘッダのうち2種(X-Frame-Options/Referrer-Policy)が未起票だった点を反証され、C/Dを追加した。"
+                },
+                {
+                  "id": "P1-17",
+                  "kind": "state",
+                  "theme": "配信するファイルが意図した場所の外を指さない",
+                  "meaning": "配布フォルダの外にあるファイルを、うっかり配信してしまわない",
+                  "children": [
+                    {
+                      "id": "P1-17-A",
+                      "kind": "state",
+                      "theme": "静的配信・クリップ配信がリンクの先を辿らない",
+                      "meaning": "フォルダの中にこっそり置かれた「別の場所への案内」を、そのまま信じて配信しない",
+                      "detail": "根拠(L-1、docs/audits/2026-08-13-security-audit.md): server/index.mjs:157-166(静的配信)・:408-413(クリップ配信)はfs.realpathSyncを呼ばず、symlinkを辿る。現状symlinkは0件だが、対策が無いことをコードレビューで確認済み。2026-08-13のbasis-reviewerレビューで、対照実験(対策を外すと検出できることの確認)がverify文言に無かった点を反証され追記した。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "webapp-mockup/配下・output/<id>/配下にリポジトリ外を指すシンボリックリンクを置いても、その先の内容が配信されない",
+                          "verify": "実際にリポジトリ外の秘密ファイルを指すシンボリックリンクをwebapp-mockup/・output/<id>/配下に作成し、そのパスへのGETリクエストが403等で拒否され内容が返らないことを確認する。対照として、realpath検査を外した実装では同じリクエストが200で内容を返す(検出できる)ことを確認する",
+                          "verifyCmd": "node video-shorts/tests/security-symlink-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のL-1。2026-08-13の徹底監査で発見。"
+                },
+                {
+                  "id": "P1-18",
+                  "kind": "state",
+                  "theme": "共有の一時置き場を横取りされない",
+                  "meaning": "他のプログラムと共有する一時フォルダに、先回りして罠を仕掛けられても被害が出ない",
+                  "children": [
+                    {
+                      "id": "P1-18-A",
+                      "kind": "state",
+                      "theme": "動画連結用の一時ファイルが、先回りされた罠を辿らない",
+                      "meaning": "クリップをつなげる作業のための一時ファイルが、他人が仕込んだ「別のファイルへの案内」に化けていても、そのファイルを壊さない",
+                      "detail": "根拠(H-4、docs/audits/2026-08-13-security-audit.md): src/concat.mjs:31のvs-concat-${pid}-${clips.length}.txtはプロセスIDとクリップ本数だけで決まる予測可能な名前。実機PoCで、このパスへ被害者ファイルを指すsymlinkを事前設置した状態でconcatClipsを呼んだところ、被害者ファイルの内容が完全に上書きされたことを確認済み（元の内容が消え、連結リストの内容に置き換わった）。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "concatClipsが使う一時ファイルのパスが実行のたびに予測不能であり、事前に設置されたシンボリックリンクの先を書き換えない",
+                          "verify": "TMPDIRを専用ディレクトリへ差し替え、予測される一時ファイル名の位置へ攻撃者役が事前にシンボリックリンクを設置した状態でconcatClipsを呼び、リンク先ファイルの内容が変化しないことを確認する。対照として、修正前の実装(pid+本数のみの命名)では確かにリンク先が書き換わることも合わせて確認する",
+                          "verifyCmd": "node video-shorts/tests/security-tmpdir-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-18-B",
+                      "kind": "state",
+                      "theme": "AIの作業場所が、先回りされた罠を辿らない",
+                      "meaning": "AIに文字起こしを校正させる際の隔離された作業フォルダが、他人が仕込んだ「別のフォルダへの案内」に化けていても、その別のフォルダの中で作業してしまわない",
+                      "detail": "根拠(M-8、docs/audits/2026-08-13-security-audit.md、P1-1-C関連): src/claude-safety.mjs:43-47のcreateIsolatedCwdが使う親ディレクトリos.tmpdir()/video-shorts-claude-cwdは固定名。実機PoCで、このパスへ攻撃者制御ディレクトリを指すsymlinkを事前設置した状態でcreateIsolatedCwd(jobId)を呼んだところ、返されたパスの実体(fs.realpathSync)が攻撃者制御ディレクトリ配下を指すことを確認済み。P1-1-C(done)が主張する「AIの作業場所を隔離する」保証を、同一PC上の別プロセス・別ユーザーが崩せることを意味するため、新しい葉として起票する（P1-1-Cのcriteria/verify本文は凍結済みのため書き換えないが、detailへ本葉への参照を追記した）。",
+                      "status": "doing",
+                      "criteria": [
+                        {
+                          "text": "createIsolatedCwdが返す作業ディレクトリのパスが実行のたびに予測不能であり、事前に設置されたシンボリックリンクの先を作業場所として使わない",
+                          "verify": "TMPDIRを専用ディレクトリへ差し替え、予測される親ディレクトリ名の位置へ攻撃者役が事前にシンボリックリンクを設置した状態でcreateIsolatedCwdを呼び、返されたディレクトリの実体(realpath)が攻撃者制御下のディレクトリを指さないことを確認する。対照として、修正前の実装(固定名の親ディレクトリ)では確かに攻撃者制御下を指すことも合わせて確認する",
+                          "verifyCmd": "node video-shorts/tests/security-tmpdir-check.mjs",
+                          "evidence": ""
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のH-4/M-8。2026-08-13の徹底監査で発見。P1-18-BはP1-1-C(done)が主張する保証を崩す実証だが、凍結済みcriteriaは書き換えず新しい葉として起票し、P1-1-Cのdetailへ参照を追記した。"
+                },
+                {
+                  "id": "P1-19",
+                  "kind": "state",
+                  "theme": "設計判断が必要な項目が、放置されず記録されている",
+                  "meaning": "すぐには直さないと決めた項目も、忘れられて宙に浮いたままにならない",
+                  "children": [
+                    {
+                      "id": "P1-19-A",
+                      "kind": "state",
+                      "theme": "用語辞書への書き込みに上限がある",
+                      "meaning": "1つのジョブから、全案件で使う用語辞書を無制限に太らせられない",
+                      "detail": "根拠(M-5、docs/audits/2026-08-13-security-audit.md): server/index.mjs:559-562・src/term-dictionary.mjs:115-127。全ジョブ共有の用語辞書へ、1ジョブのトークンだけで件数上限なく追記できる。2026-08-09のマスター決定で意図的な設計と記録されているため、今回は直さず件数上限の要否を含めて次回判断する。",
+                      "status": "todo",
+                      "criteria": [
+                        {
+                          "text": "用語辞書への追記件数に上限があるか、上限が不要な理由がroadmapに明記されている",
+                          "verify": "appendSafeTermの実装と用語辞書ファイルの運用方針を確認し、上限の有無とその根拠を判定する"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-19-B",
+                      "kind": "state",
+                      "theme": "SSEのジョブトークンが、URLに出ない形へ変わっている",
+                      "meaning": "字幕編集画面を開いている間、合言葉がアクセスログやブラウザ履歴に残り続けない",
+                      "detail": "根拠(M-7、docs/audits/2026-08-13-security-audit.md): server/security.mjs:34・webapp-mockup/app.js:23-28。EventSourceがカスタムヘッダを送れない制約に由来する構造的な設計のため、Cookie化等の代替設計が必要で今回のスコープでは直さない。",
+                      "status": "todo",
+                      "criteria": [
+                        {
+                          "text": "SSE購読時にジョブトークンがURLクエリ文字列に現れない代替の認可方式が導入されている",
+                          "verify": "SSE接続確立時のリクエストURL・ヘッダを確認し、トークンがクエリ文字列に含まれないことを確認する"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-19-C",
+                      "kind": "state",
+                      "theme": "動画配信がRangeリクエストを正しく扱う",
+                      "meaning": "長い動画クリップを、途中からシークして再生できる",
+                      "detail": "根拠(L-3、docs/audits/2026-08-13-security-audit.md): server/index.mjs:414-420。Accept-Ranges: bytesを返しながらRangeヘッダを処理していない(仕様違反)。",
+                      "status": "todo",
+                      "criteria": [
+                        {
+                          "text": "Rangeヘッダ付きリクエストに206 Partial Contentで正しい範囲を返すか、Accept-Ranges: bytesを名乗るのをやめる",
+                          "verify": "Rangeヘッダを付けたGET /api/clips/:id/:fileを送信し、206と正しいバイト範囲が返ることを確認する"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "P1-19-D",
+                      "kind": "state",
+                      "theme": "非標準ポートで起動してもAPIが使える",
+                      "meaning": "PORT環境変数を変えて起動しても、全APIが401にならない",
+                      "detail": "根拠(L-6、docs/audits/2026-08-13-security-audit.md): server/security.mjs:92-95のisAllowedHostが必ず:port付きを要求するため、PORT=80等ではブラウザがポート省略のHostを送り全API 401になる。",
+                      "status": "todo",
+                      "criteria": [
+                        {
+                          "text": "PORT環境変数を80番等の既定ポートへ変更して起動しても、正規のOriginからのAPIリクエストが401にならない",
+                          "verify": "PORT=80相当の状況を模してisAllowedHostにポート省略のHostヘッダを渡し、許可されることを確認する"
+                        }
+                      ]
+                    }
+                  ],
+                  "detail": "根拠: docs/audits/2026-08-13-security-audit.md のM-5/M-7/L-3/L-6。2026-08-13の徹底監査で発見したが、設計判断（互換性・UXとのトレードオフ）を要するため今回のスコープには含めず、backlogとして明記する。"
                 }
               ]
             },
@@ -2949,7 +3388,7 @@
                       "criteria": [
                         {
                           "text": "『間を詰める』を選んだ経路で処理した出力が、素材から《0.20秒以上の無音》と《言い淀み》だけを取り除いてつないだものになっている。長い間隙(0.5秒)を持つ素材TA では音声(a:0)の尺が 4.267秒(64コマ)、同じ語・同じ言い淀みをしきい値未満(0.10秒)の間隙で並べ直した素材TA-S では 4.933秒(74コマ)で、どちらも出力の中で声が鳴っている区間の位置が凍結した位置と一致する。両者の「詰めた量」の差 3.466秒 が、長い無音を詰めた寄与にあたる。",
-                          "verify": "node tests/trim-duration-check.mjs \u3092\u5b9f\u884c\u3057\u5168\u4ef6 PASS \u3067\u3042\u308b\u3053\u3068(pnpm test \u306b\u767b\u9332\u6e08\u307f)\u3002\n\n\u30102026-08-12 \u8ecc\u9053\u4fee\u6b63C-7\u53cd\u8a3c(2)(3)\u662f\u6b63\u3067\u7d20\u6750\u3092\u4f5c\u308a\u76f4\u3057\u305f\u3011\u65e7\u7d20\u6750\u306findex1/7\u304c\u540c\u3058\u8a9e\u300c\u3053\u3093\u306b\u3061\u306f\u300d\u306e\u91cd\u8907\u3067\u7247\u65b9\u6d88\u5931\u3092\u691c\u51fa\u3067\u304d\u305a(\u53cd\u8a3c(2))\u3001\u8a00\u3044\u6dc0\u307f(\u6700\u59270.813\u79d2)\u3068\u8a9e(\u6700\u5c0f1.057\u79d2)\u304c\u5b8c\u5168\u5206\u96e2\u3057\u3066\u304a\u308a\u300c0.9\u79d2\u672a\u6e80\u3092\u6368\u3066\u308b\u3060\u3051\u300d\u306e\u507d\u5b9f\u88c5\u306ekeep\u96c6\u5408\u304c\u88fd\u54c1planTrim\u306e\u51fa\u529b\u3068\u6587\u5b57\u5217\u30ec\u30d9\u30eb\u3067\u5b8c\u5168\u4e00\u81f4\u3057\u3066\u3044\u305f(\u53cd\u8a3c(3))\u3002index6\u3092\u300c\u3042\u306e\u30fc\u300d\u2192\u300c\u306a\u3093\u304b\u300d(FILLERS\u306b\u5b9f\u5728\u3059\u308b\u8a00\u3044\u6dc0\u307f\u306e\u3046\u3061\u5b9f\u6e2c\u30670.9\u79d2\u3092\u8d85\u3048\u308b\u3082\u306e\u3092\u63a1\u7528)\u3001index7\u3092\u300c\u3053\u3093\u306b\u3061\u306f\u300d\u2192\u300c\u306f\u3044\u300d(0.9\u79d2\u672a\u6e80\u306e\u77ed\u3044\u8a9e)\u3078\u5dee\u3057\u66ff\u3048\u3001\u8a9e4\u3064\u3092\u3059\u3079\u3066\u7570\u306a\u308b\u8a9e\u306b\u3057\u305f\u3002index0\u301c5\u306f\u5909\u66f4\u3057\u3066\u3044\u306a\u3044\u305f\u3081\u3001\u305d\u306e\u533a\u9593\u306e\u4f4d\u7f6e(1.313\u301c8.358\u79d2)\u306f\u65e7\u7d20\u6750\u3068\u5b8c\u5168\u306b\u4e00\u81f4\u3059\u308b\u3002\u4ee5\u4e0b\u306e\u6570\u5024\u306f\u3059\u3079\u3066\u3001\u65b0\u7d20\u6750\u3067\u5b9f\u969b\u306b\u88fd\u54c1\u7d4c\u8def(probeSize\u2192snapStart\u2192planTrim\u2192renderClip)\u3092\u901a\u3057\u3066\u5b9f\u6e2c\u3057\u305f\u5024\u3067\u3042\u308b(2026-08-12 basis-reviewer\u306e\u6307\u6458\u3092\u53d7\u3051\u3001\u3053\u306e\u8449\u3067\u306f\u624b\u8a08\u7b97\u3067\u306f\u306a\u304f\u5b9f\u884c\u7d50\u679c\u3092\u305d\u306e\u307e\u307e\u63a1\u7528\u3057\u305f\u3002\u8a73\u7d30\u306fdocs/failures.md 2026-08-12\u53c2\u7167)\u3002\n\n\u3010\u306a\u305c\u5c3a\u3060\u3051\u3067\u5224\u5b9a\u3057\u306a\u3044\u304b\u3011\u300c\u5c3a\u304c\u671f\u5f85\u3069\u304a\u308a\u300d\u306f\u3001\u4e00\u5207\u8a70\u3081\u305a\u306b\u672b\u5c3e\u3092\u5207\u308a\u843d\u3068\u3057\u305f\u3060\u3051\u306e\u5b9f\u88c5\u3067\u3082\u6210\u7acb\u3059\u308b(\u7a7a\u865a\u306b\u771f)\u3002\u5b9f\u6e2c: \u4e00\u5207\u8a70\u3081\u305a -t \u3092 4.267\u79d2 \u306b\u3059\u308b\u3060\u3051\u306e\u507d\u7269\u306f\u5c3a\u3082\u30b3\u30de\u6570\u3082\u4e00\u81f4\u3057\u305f\u3002\u305d\u3053\u3067\u51fa\u529b\u306e\u4e2d\u3067\u300c\u58f0\u304c\u9cf4\u3063\u3066\u3044\u308b\u533a\u9593\u300d\u306e\u4f4d\u7f6e\u3082\u6e2c\u308a\u3001\u51cd\u7d50\u3057\u305f\u4f4d\u7f6e\u3068\u7a81\u304d\u5408\u308f\u305b\u308b\u3002\u5c3a\u30fb\u7d99\u304e\u76ee\u306e\u4f4d\u7f6e\u30fb\u8a70\u3081\u305f\u5834\u6240\u304c1\u3064\u306e\u4e8b\u5b9f\u3068\u3057\u3066\u540c\u6642\u306b\u6c7a\u307e\u308b\u3002\n\n\u3010\u306a\u305c\u7d20\u6750\u30922\u3064\u4f7f\u3046\u304b\u3011\u51fa\u529b\u306e\u5c3a\u306f\u3001\u9593\u9699\u306e\u9577\u3055\u3092\u5909\u3048\u3066\u3082\u300c\u8a9e\u3060\u3051\u304c\u6b8b\u308b\u300d\u5b9f\u88c5\u3067\u306f\u5909\u308f\u3089\u306a\u3044\u305f\u3081\u3001\u9577\u3044\u9593\u9699\u306e\u7d20\u6750\u3060\u3051\u3067\u306f\u300c0.20\u79d2\u4ee5\u4e0a\u306e\u7121\u97f3\u3092\u8a70\u3081\u305f\u300d\u3053\u3068\u3092\u4e00\u5ea6\u3082\u691c\u8a3c\u3067\u304d\u306a\u3044\u3002\u3057\u304d\u3044\u5024\u672a\u6e80(0.10\u79d2)\u306e\u9593\u9699\u306b\u7f6e\u304d\u63db\u3048\u305f\u7d20\u6750TA-S \u3092\u540c\u3058\u8a2d\u5b9a\u3067\u901a\u3057\u3001\u9593\u9699\u304c\u6b8b\u308b\u3053\u3068\u307e\u3067\u898b\u3066\u521d\u3081\u3066\u3001\u9577\u3044\u7121\u97f3\u3092\u8a70\u3081\u305f\u91cf\u304c\u72ec\u7acb\u306b\u6c7a\u307e\u308b\u3002\u3053\u308c\u306f\u88fd\u54c1\u306e\u8a2d\u5b9a\u3092\u5207\u308a\u66ff\u3048\u308b\u5bfe\u7167\u3067\u306f\u306a\u3044(cutSilence:false \u306e\u3088\u3046\u306a\u30c6\u30b9\u30c8\u5c02\u7528\u306e\u5207\u308a\u66ff\u3048\u306f\u4f7f\u308f\u306a\u3044)\u3002\u8a2d\u5b9a\u306f\u51fa\u8377\u306e\u307e\u307e\u540c\u3058\u3067\u3001\u5165\u529b\u3060\u3051\u3092\u5dee\u3057\u66ff\u3048\u308b\u3002\n\n\u3010\u7d20\u6750(\u51cd\u7d50)\u3011\u97f3\u58f0\u306f tests/fixtures/trim-calibration/calibration.flac (SHA-256 9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165)\u3001\u533a\u9593\u8868\u306f calibration.json (SHA-256 9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58) \u3060\u3051\u3092\u7528\u3044\u308b\u3002\u7d20\u6750\u306e\u5168\u9577\u306f ffprobe \u306e\u5b9f\u6e2c 11.052517\u79d2 = \u533a\u9593\u8868\u306e\u6700\u7d42\u533a\u9593\u306e\u7d42\u308f\u308a 11.053\u79d2 \u3092\u6b63\u3068\u3057\u3001\u691c\u67fb\u304c\u6bce\u56de\u691c\u7b97\u3059\u308b(\u3053\u306e\u7d20\u6750\u306f\u4f5c\u6210\u6642\u304b\u3089duration_sec\u306b\u5b9f\u6e2c\u5024\u3092\u305d\u306e\u307e\u307e\u66f8\u3044\u3066\u3042\u308b\u305f\u3081\u3001\u65e7\u7d20\u6750\u306b\u3042\u3063\u305f\u300e\u8aac\u660e\u5024\u304c\u5b9f\u30d5\u30a1\u30a4\u30eb\u30680.500\u79d2\u98df\u3044\u9055\u3046\u300f\u3068\u3044\u3046\u65e2\u77e5\u306e\u8aa4\u308a\u306f\u5b58\u5728\u3057\u306a\u3044)\u3002\u3053\u306e\u7d20\u6750\u306b\u306f\u672b\u5c3e\u306e\u7121\u97f3\u304c\u5b58\u5728\u3057\u306a\u3044\u306e\u3067\u3001\u300c\u672b\u5c3e\u306e\u4f59\u97fb\u3092\u6b8b\u3059\u300d\u3053\u3068\u306f\u3053\u306e\u8449\u3067\u306f\u53d7\u3051\u5165\u308c\u306a\u3044(\u5225\u8449\u304c\u8981\u308b\u3002\u672a\u7740\u624b)\u3002\n\n\u3010\u7d20\u6750TA(\u691c\u67fb\u304c\u5408\u6210\u3059\u308b\u3002\u30b3\u30df\u30c3\u30c8\u3057\u306a\u3044)\u3011\u97f3\u58f0\u306f calibration.flac \u305d\u306e\u307e\u307e\u3002\u6620\u50cf\u306f ffmpeg \u306e color=c=black:s=320x180:r=15 \u3092 12.0\u79d2\u3002\u30b3\u30de\u6570/\u79d2\u3092 15 \u306b\u51cd\u7d50\u3059\u308b\u306e\u306f\u3001\u6b8b\u3059\u533a\u9593\u306e\u7aef\u3092\u30b3\u30de\u306e\u5883\u76ee\u3078\u63c3\u3048\u308b(G-EDIT-TRIM-F)\u305f\u3081\u671f\u5f85\u5024\u304c\u30b3\u30de\u6570/\u79d2\u3067\u5909\u308f\u308a\u3001\u53d6\u308c\u306a\u3044\u7d20\u6750\u3067\u306f\u63c3\u3048\u304c\u7d20\u901a\u308a\u3057\u3066\u5225\u306e\u6570\u5b57\u306b\u306a\u308b\u305f\u3081\u3002\u30b3\u30de\u6570/\u79d2\u306f\u691c\u67fb\u304c\u6570\u5b57\u3067\u6c7a\u3081\u6253\u3061\u305b\u305a\u3001\u88fd\u54c1\u306e probeSize(pipeline.mjs \u304c\u4f7f\u3046\u306e\u3068\u540c\u3058\u5b9f\u4f53)\u304b\u3089\u53d6\u308a\u300115 \u3067\u3042\u308b\u3053\u3068\u3092\u78ba\u304b\u3081\u308b\u3002\u7d75\u306e\u4e2d\u8eab\u306f\u5224\u5b9a\u306b\u4f7f\u308f\u306a\u3044(\u6e2c\u308b\u306e\u306f a:0)\u3002\n\u3010\u7d20\u6750TA-S(\u540c\u4e0a)\u3011\u540c\u30588\u533a\u9593\u3092 calibration.json \u306e start_sample/end_sample(\u6574\u6570\u6a19\u672c)\u3067\u5207\u308a\u51fa\u3057\u300122050Hz\u30fb\u30e2\u30ce\u30e9\u30eb\u306e\u7121\u97f3 0.10\u79d2(2205\u6a19\u672c)\u3092\u631f\u3093\u3067\u4e26\u3079\u76f4\u3057\u305f 8.253\u79d2 \u306e\u97f3\u58f0\u306b\u3001\u540c\u3058\u4f5c\u308a\u306e\u6620\u50cf 9.0\u79d2\u3002\n\n\u3010\u7d4c\u8def\u3011pipeline.mjs \u3068\u540c\u3058\u9806\u3067\u88fd\u54c1\u306e\u5b9f\u4f53\u3092\u547c\u3076: probeSize \u3067\u30b3\u30de\u6570/\u79d2 \u2192 snapStart \u3067\u5207\u308a\u51fa\u3057\u958b\u59cb\u3092\u63c3\u3048\u308b \u2192 planTrim \u3067\u6b8b\u3059\u533a\u9593\u3092\u6c7a\u3081\u308b \u2192 renderClip \u304c\u51fa\u8377\u3069\u304a\u308a\u306e\u8a2d\u5b9a(9:16 / libx264 / aac 192kbps)\u3067\u713c\u304f\u3002planTrim \u3078\u6e21\u3059\u8a9e\u306f\u51cd\u7d50\u6e08\u307f calibration.json \u306e\u8a2d\u8a08\u5024\u3092\u7528\u3044\u3001\u97f3\u58f0\u8a8d\u8b58\u306f\u901a\u3055\u306a\u3044(\u8a8d\u8b58\u5668\u304c\u8a00\u3044\u6dc0\u307f\u3092\u305d\u306e\u8868\u8a18\u3067\u72ec\u7acb\u3057\u305f\u8a9e\u3068\u3057\u3066\u51fa\u3059\u304b\u306f\u3001\u3053\u306e\u8449\u306e\u53d7\u5165\u4e8b\u5b9f\u3067\u306f\u306a\u3044\u3002\u8a8d\u8b58\u5668\u3092\u901a\u3059\u7d4c\u8def\u306e\u53d7\u5165\u306f\u5bfe\u8c61\u5916\u30fb\u5225\u8449\u672a\u7740\u624b)\u3002\n\n\u3010\u671f\u5f85\u5024(\u5b9f\u884c\u7d50\u679c\u3002\u7aef\u306f\u300c\u79d2\u00d715 \u3092\u56db\u6368\u4e94\u5165\u3057\u3066 15 \u3067\u5272\u308b\u300d\u898f\u5247\u3067\u30b3\u30de\u306e\u5883\u76ee\u3078\u4e38\u3081\u308b)\u3011\u6b8b\u3059\u3079\u304d\u306f kind=word \u306e4\u533a\u9593\u3060\u3051\u3002\u7d20\u6750TA: 1.313\u00d715=19.695\u219220 / 2.571\u00d715=38.565\u219239(19\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u30014.358\u00d715=65.370\u219265 / 5.415\u00d715=81.225\u219281(16\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u30017.228\u00d715=108.42\u2192108 / 8.358\u00d715=125.37\u2192125(17\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u300110.281\u00d715=154.215\u2192154 / 11.053\u00d715=165.795\u2192166(12\u30b3\u30de\u3001\u65b0: \u8a9e\u300c\u306f\u3044\u300d\u3076\u3093\u77ed\u3044)\u3002\u5408\u8a08 64\u30b3\u30de = 64/15 = 4.266667\u79d2\u3002\u7d20\u6750TA-S: \u9593\u9699 0.10\u79d2 \u306f\u8a70\u307e\u3089\u306a\u3044\u306e\u3067\u9593\u9699\u3054\u30681\u3064\u306b\u3064\u306a\u304c\u308a\u30010.813\u219212 / 2.271\u219234(22\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u30013.058\u219246 / 4.315\u219265(19\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u30015.128\u219277 / 6.458\u219297(20\u30b3\u30de\u3001\u65e7\u7d20\u6750\u3068\u540c\u3058)\u30017.381\u2192111 / 8.253\u2192124(13\u30b3\u30de\u3001\u65b0)\u3002\u5408\u8a08 74\u30b3\u30de = 74/15 = 4.933333\u79d2\u3002\u8a70\u3081\u305f\u91cf\u306f 11.053\u22124.266667=6.786333\u79d2 \u3068 8.253\u22124.933333=3.319667\u79d2 \u3067\u3001\u5dee\u306f 3.466666\u79d2(\u5b9f\u6e2c\u5024\u30d9\u30fc\u30b9\u3067\u306f6.799984\u79d2\u30683.333998\u79d2\u306e\u5dee3.465986\u79d2\u3002\u4e21\u8005\u306e\u98df\u3044\u9055\u3044\u306fAAC\u518d\u30a8\u30f3\u30b3\u30fc\u30c9\u306e\u6a19\u672c\u30d1\u30c7\u30a3\u30f3\u30b0\u5206\u3067\u3001\u5f8c\u8ff0\u306e\u8a31\u5bb9\u5e45TOL_CONTRIB=0.050\u79d2\u306b\u53ce\u307e\u308b)\u3002\u8a2d\u8a08\u4e0a\u306e\u9577\u3044\u7121\u97f3\u306f 0.5\u79d2\u00d77=3.500\u79d2 \u3067\u3001\u5dee\u7d040.033\u79d2(=\u534a\u30b3\u30de)\u304c\u30b3\u30de\u5883\u754c\u3078\u4e38\u3081\u305f\u3076\u3093\u306b\u3042\u305f\u308b(\u65e7\u7d20\u6750\u3068\u540c\u6c34\u6e96)\u3002\n\n\u3010\u58f0\u306e\u4f4d\u7f6e\u306e\u8aad\u307f\u65b9(\u56fa\u5b9a\u3002RMS_WIN/RMS_THR/MERGE_GAP/MIN_RUN\u306e\u6570\u5024\u306f\u65e7\u7d20\u6750\u3068\u540c\u3058)\u3011\u51fa\u529b\u3092 22050Hz\u30fb\u30e2\u30ce\u30e9\u30eb\u3078\u5fa9\u53f7\u3057\u300110ms \u7a93\u306e\u6700\u5927\u632f\u5e45\u304c\u30d5\u30eb\u30b9\u30b1\u30fc\u30eb\u306e 2% \u3092\u8d85\u3048\u308b\u6240\u3092\u300c\u9cf4\u3063\u3066\u3044\u308b\u300d\u3068\u3059\u308b\u30020.10\u79d2 \u672a\u6e80\u306e\u584a\u3092\u6368\u3066\u3066\u304b\u3089\u3001\u9593\u9694 0.10\u79d2 \u672a\u6e80\u306e\u584a\u3092\u3064\u306a\u3050\u3002\u671f\u5f85\u3059\u308b\u4f4d\u7f6e\u306f\u3001\u7d20\u6750TA \u304c [0.020,0.852][1.283,1.964][2.355,3.107][3.498,3.869]\u3001\u7d20\u6750TA-S \u304c [0.150,0.982][1.554,2.235][2.826,3.578][4.169,4.530]\u3002\n\n\u3010\u8a31\u5bb9\u5e45(\u65e7\u7d20\u6750\u3068\u540c\u3058\u6570\u5024\u30fb\u540c\u3058\u6839\u62e0)\u3011\u5c3a\u306f \u00b10.025\u79d2\u3002\u4f4d\u7f6e\u306f \u00b10.030\u79d2\u3002\u5bc4\u4e0e\u306e\u5dee\u306f \u00b10.050\u79d2\u3002\n\n\u3010\u5bfe\u7167(\u6709\u308b\u3068\u304d\u306b\u6709\u308b\u3068\u8a00\u3048\u308b\u3053\u3068)\u3011\u300c\u51fa\u529b\u306b\u9577\u3044\u7121\u97f3\u304c\u6b8b\u3063\u3066\u3044\u306a\u3044\u300d\u3092\u5408\u683c\u306e\u4e00\u90e8\u306b\u3059\u308b\u4ee5\u4e0a\u3001\u7121\u97f3\u3068\u767a\u8a71\u3092\u8aad\u307f\u5206\u3051\u3089\u308c\u308b\u3053\u3068\u3092\u5148\u306b\u793a\u3059\u3002\u8a70\u3081\u308b\u524d\u306e\u7d20\u6750TA / \u7d20\u6750TA-S \u304b\u3089\u3001\u58f0\u306e\u533a\u9593\u304c\u51cd\u7d50\u3069\u304a\u308a8\u500b\u305a\u3064\u8aad\u3081\u308b\u3053\u3068\u3092\u540c\u3058\u9053\u5177\u3067\u78ba\u304b\u3081\u308b\u3002\n\n\u3010\u5909\u7570\u5b9f\u9a13(\u691c\u67fb\u306b\u540c\u68b1\u3002\u3044\u305a\u308c\u3082\u843d\u3061\u308b\u3053\u3068\u3092\u5b9f\u6e2c\u6e08\u307f)\u3011(1)\u4e00\u5207\u8a70\u3081\u306a\u3044 (2)\u4e00\u5207\u8a70\u3081\u305a -t \u3092 4.267\u79d2 \u306b\u3059\u308b\u3060\u3051(\u5c3a\u3082\u30b3\u30de\u6570\u3082\u4e00\u81f4\u3059\u308b\u304c\u4f4d\u7f6e\u3067\u843d\u3061\u308b) (3)\u5c3a\u3082\u30b3\u30de\u6570\u3082\u5408\u3046\u304c\u6b8b\u3059\u5834\u6240\u304c\u9055\u3046(\u8a00\u3044\u6dc0\u307f4\u533a\u9593\u306e\u958b\u59cb\u30b3\u30de0/46/89/133\u304b\u3089\u3001\u6b63\u89e3\u3068\u540c\u3058\u5e4519/16/17/12\u30b3\u30de\u3060\u3051\u53d6\u308b\u3002\u30b3\u30de[0,19][46,62][89,106][133,145]=64\u30b3\u30de\u30022026-08-12\u7d20\u6750\u4f5c\u308a\u76f4\u3057\u306b\u3088\u308a\u3001\u30d5\u30a3\u30e9\u30fc\u533a\u9593\u305d\u306e\u3082\u306e\u306e\u5e45\u306e\u5408\u8a08(50\u30b3\u30de)\u304c\u6b63\u89e3\u306e\u5408\u8a08\u3068\u4e00\u81f4\u3057\u306a\u304f\u306a\u3063\u305f\u305f\u3081\u3001\u5e45\u3092\u305d\u308d\u3048\u76f4\u3057\u3066\u540c\u3058\u5909\u7570\u306e\u610f\u56f3\u3092\u4fdd\u3063\u305f) (4)\u30b3\u30de\u5883\u754c\u3078\u63c3\u3048\u306a\u3044 (5)\u3057\u304d\u3044\u5024\u672a\u6e80\u306e\u7121\u97f3\u307e\u3067\u8a70\u3081\u308b(\u7d20\u6750TA-S \u304cTA\u306e\u5c3a\u306b\u8fd1\u3065\u304f)\u3002\u3042\u308f\u305b\u3066\u5b9f\u88c5\u306e\u5fc3\u81d3\u90e8\u3092\u58ca\u3057\u305f\u6728\u3067\u3053\u306e\u691c\u67fb\u304c\u843d\u3061\u308b\u3053\u3068\u3092\u5b9f\u6e2c\u6e08\u307f\u3002\n\n\u3010\u6e2c\u5b9a\u74b0\u5883\u3011CI \u306e ubuntu-24.04\u30fbNode(.node-version\u6e96\u62e0)\u30fbffmpeg/ffprobe(\u5b9f\u969b\u306b\u4f7f\u308f\u308c\u305f\u30a4\u30e1\u30fc\u30b8\u7248\u3092 evidence \u306b\u6b8b\u3059)\u3002",
+                          "verify": "node tests/trim-duration-check.mjs を実行し全件 PASS であること(pnpm test に登録済み)。\n\n【2026-08-12 軌道修正C-7反証(2)(3)是正で素材を作り直した】旧素材はindex1/7が同じ語「こんにちは」の重複で片方消失を検出できず(反証(2))、言い淀み(最大0.813秒)と語(最小1.057秒)が完全分離しており「0.9秒未満を捨てるだけ」の偽実装のkeep集合が製品planTrimの出力と文字列レベルで完全一致していた(反証(3))。index6を「あのー」→「なんか」(FILLERSに実在する言い淀みのうち実測で0.9秒を超えるものを採用)、index7を「こんにちは」→「はい」(0.9秒未満の短い語)へ差し替え、語4つをすべて異なる語にした。index0〜5は変更していないため、その区間の位置(1.313〜8.358秒)は旧素材と完全に一致する。以下の数値はすべて、新素材で実際に製品経路(probeSize→snapStart→planTrim→renderClip)を通して実測した値である(2026-08-12 basis-reviewerの指摘を受け、この葉では手計算ではなく実行結果をそのまま採用した。詳細はdocs/failures.md 2026-08-12参照)。\n\n【なぜ尺だけで判定しないか】「尺が期待どおり」は、一切詰めずに末尾を切り落としただけの実装でも成立する(空虚に真)。実測: 一切詰めず -t を 4.267秒 にするだけの偽物は尺もコマ数も一致した。そこで出力の中で「声が鳴っている区間」の位置も測り、凍結した位置と突き合わせる。尺・継ぎ目の位置・詰めた場所が1つの事実として同時に決まる。\n\n【なぜ素材を2つ使うか】出力の尺は、間隙の長さを変えても「語だけが残る」実装では変わらないため、長い間隙の素材だけでは「0.20秒以上の無音を詰めた」ことを一度も検証できない。しきい値未満(0.10秒)の間隙に置き換えた素材TA-S を同じ設定で通し、間隙が残ることまで見て初めて、長い無音を詰めた量が独立に決まる。これは製品の設定を切り替える対照ではない(cutSilence:false のようなテスト専用の切り替えは使わない)。設定は出荷のまま同じで、入力だけを差し替える。\n\n【素材(凍結)】音声は tests/fixtures/trim-calibration/calibration.flac (SHA-256 9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165)、区間表は calibration.json (SHA-256 9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58) だけを用いる。素材の全長は ffprobe の実測 11.052517秒 = 区間表の最終区間の終わり 11.053秒 を正とし、検査が毎回検算する(この素材は作成時からduration_secに実測値をそのまま書いてあるため、旧素材にあった『説明値が実ファイルと0.500秒食い違う』という既知の誤りは存在しない)。この素材には末尾の無音が存在しないので、「末尾の余韻を残す」ことはこの葉では受け入れない(別葉が要る。未着手)。\n\n【素材TA(検査が合成する。コミットしない)】音声は calibration.flac そのまま。映像は ffmpeg の color=c=black:s=320x180:r=15 を 12.0秒。コマ数/秒を 15 に凍結するのは、残す区間の端をコマの境目へ揃える(G-EDIT-TRIM-F)ため期待値がコマ数/秒で変わり、取れない素材では揃えが素通りして別の数字になるため。コマ数/秒は検査が数字で決め打ちせず、製品の probeSize(pipeline.mjs が使うのと同じ実体)から取り、15 であることを確かめる。絵の中身は判定に使わない(測るのは a:0)。\n【素材TA-S(同上)】同じ8区間を calibration.json の start_sample/end_sample(整数標本)で切り出し、22050Hz・モノラルの無音 0.10秒(2205標本)を挟んで並べ直した 8.253秒 の音声に、同じ作りの映像 9.0秒。\n\n【経路】pipeline.mjs と同じ順で製品の実体を呼ぶ: probeSize でコマ数/秒 → snapStart で切り出し開始を揃える → planTrim で残す区間を決める → renderClip が出荷どおりの設定(9:16 / libx264 / aac 192kbps)で焼く。planTrim へ渡す語は凍結済み calibration.json の設計値を用い、音声認識は通さない(認識器が言い淀みをその表記で独立した語として出すかは、この葉の受入事実ではない。認識器を通す経路の受入は対象外・別葉未着手)。\n\n【期待値(実行結果。端は「秒×15 を四捨五入して 15 で割る」規則でコマの境目へ丸める)】残すべきは kind=word の4区間だけ。素材TA: 1.313×15=19.695→20 / 2.571×15=38.565→39(19コマ、旧素材と同じ)、4.358×15=65.370→65 / 5.415×15=81.225→81(16コマ、旧素材と同じ)、7.228×15=108.42→108 / 8.358×15=125.37→125(17コマ、旧素材と同じ)、10.281×15=154.215→154 / 11.053×15=165.795→166(12コマ、新: 語「はい」ぶん短い)。合計 64コマ = 64/15 = 4.266667秒。素材TA-S: 間隙 0.10秒 は詰まらないので間隙ごと1つにつながり、0.813→12 / 2.271→34(22コマ、旧素材と同じ)、3.058→46 / 4.315→65(19コマ、旧素材と同じ)、5.128→77 / 6.458→97(20コマ、旧素材と同じ)、7.381→111 / 8.253→124(13コマ、新)。合計 74コマ = 74/15 = 4.933333秒。詰めた量は 11.053−4.266667=6.786333秒 と 8.253−4.933333=3.319667秒 で、差は 3.466666秒(実測値ベースでは6.799984秒と3.333998秒の差3.465986秒。両者の食い違いはAAC再エンコードの標本パディング分で、後述の許容幅TOL_CONTRIB=0.050秒に収まる)。設計上の長い無音は 0.5秒×7=3.500秒 で、差約0.033秒(=半コマ)がコマ境界へ丸めたぶんにあたる(旧素材と同水準)。\n\n【声の位置の読み方(固定。RMS_WIN/RMS_THR/MERGE_GAP/MIN_RUNの数値は旧素材と同じ)】出力を 22050Hz・モノラルへ復号し、10ms 窓の最大振幅がフルスケールの 2% を超える所を「鳴っている」とする。0.10秒 未満の塊を捨ててから、間隔 0.10秒 未満の塊をつなぐ。期待する位置は、素材TA が [0.020,0.852][1.283,1.964][2.355,3.107][3.498,3.869]、素材TA-S が [0.150,0.982][1.554,2.235][2.826,3.578][4.169,4.530]。\n\n【許容幅(旧素材と同じ数値・同じ根拠)】尺は ±0.025秒。位置は ±0.030秒。寄与の差は ±0.050秒。\n\n【対照(有るときに有ると言えること)】「出力に長い無音が残っていない」を合格の一部にする以上、無音と発話を読み分けられることを先に示す。詰める前の素材TA / 素材TA-S から、声の区間が凍結どおり8個ずつ読めることを同じ道具で確かめる。\n\n【変異実験(検査に同梱。いずれも落ちることを実測済み)】(1)一切詰めない (2)一切詰めず -t を 4.267秒 にするだけ(尺もコマ数も一致するが位置で落ちる) (3)尺もコマ数も合うが残す場所が違う(言い淀み4区間の開始コマ0/46/89/133から、正解と同じ幅19/16/17/12コマだけ取る。コマ[0,19][46,62][89,106][133,145]=64コマ。2026-08-12素材作り直しにより、フィラー区間そのものの幅の合計(50コマ)が正解の合計と一致しなくなったため、幅をそろえ直して同じ変異の意図を保った) (4)コマ境界へ揃えない (5)しきい値未満の無音まで詰める(素材TA-S がTAの尺に近づく)。あわせて実装の心臓部を壊した木でこの検査が落ちることを実測済み。\n\n【測定環境】CI の ubuntu-24.04・Node(.node-version準拠)・ffmpeg/ffprobe(実際に使われたイメージ版を evidence に残す)。",
                           "verifyCmd": "node video-shorts/tests/trim-duration-check.mjs",
                           "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31615715059/job/94177876551"
                         }
@@ -2966,7 +3405,7 @@
                       "criteria": [
                         {
                           "text": "「間を詰める」を選んだ経路で処理した出力(素材TAの出力)に、calibration.jsonのフィラー区間(index0,2,4,6)の音声が含まれていない。後半だけを残すような部分的な残置は、65%以上(フィラー4区間すべてで実測済み)であれば必ず検出される。25〜64%残置の検出可否はフィラーの内容により異なり(実測で境界は50〜65%の間で揺れ、非単調な区間もある)、この葉の受入事実の対象外とする(既知の限界。未達の範囲を偽って合格扱いにしない)",
-                          "verify": "node tests/trim-plan-check.mjs (\u5bfe\u7167\u306e\u4e00\u90e8\u3092\u5171\u6709) \u3092\u901a\u3057\u305f\u3046\u3048\u3067 python3 tests/trim-filler-match-check.py \u3092\u5b9f\u884c\u3057\u5168\u4ef6 PASS \u3067\u3042\u308b\u3053\u3068(pnpm test \u306b\u767b\u9332\u6e08\u307f)\u3002\n\n\u30102026-08-12 \u8ecc\u9053\u4fee\u6b63C-7\u53cd\u8a3c(1)(2)(3)\u662f\u6b63\u3067\u7167\u5408\u65b9\u6cd5\u3092\u5168\u9762\u4f5c\u308a\u76f4\u3057\u305f\u3011\u65e7verify\u304c\u51cd\u7d50\u3057\u3066\u3044\u305f\u300c\u63a2\u3059\u5074\u3068\u540c\u3058\u9577\u3055\u306e\u7a93\u309210ms\u30db\u30c3\u30d7\u3067\u6ed1\u3089\u305b\u3001\u5404\u4f4d\u7f6e\u306eDTW\u8ddd\u96e2\u306e\u6700\u5c0f\u5024\u3092\u63a1\u308b\u300d\u65b9\u5f0f\u306f\u3001\u3053\u306e\u30ea\u30dd\u30b8\u30c8\u30ea\u306b\u4e00\u5ea6\u3082\u5b9f\u88c5\u3055\u308c\u305f\u3053\u3068\u304c\u306a\u304b\u3063\u305f(\u5168\u5c65\u6b74\u3092\u8d70\u67fb\u3057\u3066\u78ba\u8a8d\u6e08\u307f)\u3002\u53cd\u8a3c(1)\u306f\u3053\u306e\u65b9\u5f0f\u306e\u69cb\u9020\u4e0a\u306e\u6b20\u9665(\u90e8\u5206\u6b8b\u7f6e\u306b\u76f2\u76ee)\u3092\u6307\u6458\u3057\u3066\u304a\u308a\u3001\u7d20\u6750\u3082\u53cd\u8a3c(2)(3)\u306b\u3088\u308a\u91cd\u8907\u8a9e\u30fb\u9577\u3055\u5206\u96e2\u53ef\u80fd\u3068\u3044\u3046\u6b20\u9665\u3092\u62b1\u3048\u3066\u3044\u305f\u3002\u672c\u6539\u8a02\u3067\u7d20\u6750(calibration.flac/json\u30012026-08-12\u5dee\u3057\u66ff\u3048)\u3068\u7167\u5408\u65b9\u6cd5\u306e\u4e21\u65b9\u3092\u4f5c\u308a\u76f4\u3057\u305f\u3002\n\n\u3010\u306a\u305c\u7b49\u9577\u7a93\u30b9\u30e9\u30a4\u30c9DTW\u3092\u3084\u3081\u3001\u958b\u59cb\u30fb\u7d42\u4e86\u81ea\u7531(subsequence)DTW\u306b\u3057\u305f\u304b\u3011\u65e7\u65b9\u5f0f\u306f\u7a93\u306e\u9577\u3055=query\u306e\u9577\u3055\u306b\u56fa\u5b9a\u3059\u308b\u305f\u3081\u3001\u30d5\u30a3\u30e9\u30fc\u306e\u4e00\u90e8\u3060\u3051\u304c\u6b8b\u3063\u305f\u51fa\u529b\u3067\u306f\u7a93\u306e\u4e2d\u306b\u6b8b\u7f6e\u533a\u9593+\u5225\u5185\u5bb9\u304c\u6df7\u3056\u308a\u6574\u5408\u304c\u4e71\u308c\u3001\u5927\u90e8\u5206(75\u301c90%)\u304c\u6b8b\u3063\u3066\u3044\u3066\u3082\u300c\u542b\u307e\u308c\u3066\u3044\u306a\u3044\u300d\u3068\u8aa4\u5224\u5b9a\u3057\u305f(\u53cd\u8a3c(1)\u306e\u5b9f\u6e2c: 90%\u6b8b\u7f6e10.97\u301c15.45\u300175%\u6b8b\u7f6e17.09\u301c17.49\u3001\u3044\u305a\u308c\u3082\u65e7\u3057\u304d\u3044\u502410.022\u3092\u4e0a\u56de\u308a\u8aa4\u3063\u3066\u5408\u683c)\u3002\u3053\u306e\u6570\u5024\u306fcommit\u3055\u308c\u305f\u30b3\u30fc\u30c9\u304b\u3089\u518d\u73fe\u3067\u304d\u306a\u3044\u65e7\u6587\u8a00\u306e\u8ee2\u8a18\u3067\u3042\u308a\u672c\u6539\u8a02\u3067\u306f\u4f7f\u308f\u306a\u3044\u3002\u65b0\u65b9\u5f0f\u306fquery\u306e\u5168\u30d5\u30ec\u30fc\u30e0\u3092\u4f7f\u3044\u5207\u308b\u3053\u3068\u3092\u8981\u6c42\u3057\u3064\u3064target\u5074\u306e\u958b\u59cb\u30fb\u7d42\u4e86\u4f4d\u7f6e\u3092\u56fa\u5b9a\u3057\u306a\u3044(D[0,j]=C[0,j]\u3001D[i,0]=C[i,0]+D[i-1,0]\u3001D[i,j]=C[i,j]+min(D[i-1,j],D[i,j-1],D[i-1,j-1])\u3001\u8ddd\u96e2=min_j D[N-1,j]/N)\u3002\u30d5\u30a3\u30e9\u30fc\u306e\u4e00\u90e8\u304c\u6b8b\u3063\u3066\u3044\u3066\u3082\u6b8b\u308a\u306equery\u30d5\u30ec\u30fc\u30e0\u304ctarget\u306e\u5225\u5185\u5bb9\u3078\u5f37\u5236\u7684\u306b\u6574\u5408\u3055\u305b\u3089\u308c\u30b3\u30b9\u30c8\u304c\u7a4d\u307f\u4e0a\u304c\u308b\u305f\u3081\u3001\u90e8\u5206\u6b8b\u7f6e\u3092\u691c\u51fa\u3067\u304d\u308b\u3002\n\n\u3010\u7279\u5fb4\u91cf\u30fb\u7167\u5408\u65b9\u6cd5(\u56fa\u5b9a)\u301125ms\u7a93(round(0.025\u00d722050)=551\u6a19\u672c)\u30fb10ms\u30db\u30c3\u30d7(round(0.010\u00d722050)=220\u6a19\u672c)\u30fb13\u6b21\u5143MFCC(26\u30e1\u30eb\u30d5\u30a3\u30eb\u30bf\u30fbDCT-II\u3002scipy/librosa\u7b49\u306e\u65b0\u898f\u4f9d\u5b58\u306f\u8ffd\u52a0\u305b\u305anumpy\u306e\u307f\u3067\u5b9f\u88c5)\u3002\u6bd4\u8f03\u306f\u4e0a\u8a18\u306esubsequence DTW\u3002\u6ce2\u5f62\u306e\u4e00\u81f4\u306f\u4f7f\u308f\u306a\u3044(AAC\u518d\u30a8\u30f3\u30b3\u30fc\u30c9\u3067\u540c\u3058\u97f3\u58f0\u3067\u3082\u6ce2\u5f62\u306f\u4e00\u81f4\u3057\u306a\u3044\u305f\u3081)\u3002\u5b9f\u88c5: video-shorts/tests/trim-filler-match-check.py\u3002\n\n\u3010\u7d20\u6750(\u51cd\u7d50)\u3011\u97f3\u58f0\u306f tests/fixtures/trim-calibration/calibration.flac (SHA-256 9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165)\u3001\u533a\u9593\u8868\u306f calibration.json (SHA-256 9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58)\u3002\u30d5\u30a3\u30e9\u30fc\u533a\u9593\u306findex 0(\u3048\u30fc\u3068 0.000-0.813s)/2(\u3042\u306e\u30fc 3.071-3.858s)/4(\u3048\u30fc\u3068 5.915-6.728s)/6(\u306a\u3093\u304b 8.858-9.781s)\u3002\u8a9e4\u3064(index1\u3053\u3093\u306b\u3061\u306f/3\u3042\u308a\u304c\u3068\u3046/5\u3088\u308d\u3057\u304f/7\u306f\u3044)\u306f\u3059\u3079\u3066\u7570\u306a\u308b\u8a9e\u3067\u3001\u8a00\u3044\u6dc0\u307f\u306e\u6700\u9577(\u306a\u3093\u304b0.923\u79d2)\u304c\u8a9e\u306e\u6700\u77ed(\u306f\u30440.772\u79d2)\u3088\u308a\u9577\u3044\u305f\u3081\u3001\u5358\u7d14\u306a\u9577\u3055\u3057\u304d\u3044\u5024\u3067\u306f\u5206\u96e2\u3067\u304d\u306a\u3044(\u53cd\u8a3c(2)(3)\u662f\u6b63\u6e08\u307f\u3002tests/trim-plan-check.mjs\u306e\u300c\u5bfe\u7167\u300d\u53c2\u7167)\u3002\n\n\u3010\u5224\u5b9a\u5bfe\u8c61(\u7d20\u6750TA\u306e\u51fa\u529b)\u3011video-shorts/tests/trim-filler-audio-helper.mjs \u304c\u672c\u7269\u306ebuildTrimFilters(src/trim-plan.mjs)\u3092KEEP=[\u8a9e1,3,5,7]\u3067\u547c\u3073\u3001SEAM_FADE_SEC(5ms)\u30d5\u30a7\u30fc\u30c9\u4ed8\u304d\u3067\u7d50\u5408\u3057AAC 192kbps\u3078\u66f8\u304d\u51fa\u3059(trim-seam-glitch-check.mjs=G-EDIT-TRIM-D\u3068\u540c\u3058\u300c\u97f3\u58f0\u306e\u307f\u306e\u7d4c\u8def\u300d\u3002fpsRational\u306f\u6e21\u3055\u306a\u3044)\u3002\u3053\u306e\u30b9\u30af\u30ea\u30d7\u30c8\u306ftrim\u306e\u6c7a\u5b9a\u30ed\u30b8\u30c3\u30af\u3092\u4e00\u5207\u518d\u5b9f\u88c5\u305b\u305a\u3001\u5b9f\u88c5\u30b3\u30fc\u30c9\u3092\u305d\u306e\u307e\u307e\u547c\u3076\u3002\n\n\u3010\u3057\u304d\u3044\u5024(\u5148\u306b\u6c7a\u3081\u3001\u5b9f\u88c5\u5f8c\u306b\u52d5\u304b\u3055\u306a\u3044\u3002\u5b9f\u6e2c)\u3011(i)calibration.json\u306eidentity_pairs_for_i(8\u533a\u9593\u3059\u3079\u3066)\u306b\u3064\u3044\u3066\u3001\u5404\u533a\u9593\u3092\u5358\u72ec\u3067AAC 192kbps\u518d\u30a8\u30f3\u30b3\u30fc\u30c9\u3057\u305f\u97f3\u58f0\u3092\u4f5c\u308a\u3001\u5143\u306e\u540c\u3058\u533a\u9593\u306eMFCC\u3092query\u3068\u3057\u3066subsequence DTW\u8ddd\u96e2\u3092\u6e2c\u3063\u305f8\u4ef6\u306e\u6700\u5927\u5024=10.770\u3002(ii)different_word_pairs_for_ii(text[i]\u2260text[j]\u306e\u516827\u7d44)\u306b\u3064\u3044\u3066\u3001\u533a\u9593i\u306equery\u3092\u533a\u9593j\u306e\u5358\u72ecAAC\u518d\u30a8\u30f3\u30b3\u30fc\u30c9\u97f3\u58f0\u3078\u7167\u5408\u3057\u305f27\u4ef6\u306e\u6700\u5c0f\u5024=24.209(\u6700\u592769.978)\u3002(i)\u306e\u4e0a\u965010.770\u304c(ii)\u306e\u4e0b\u965024.209\u3092\u4e0b\u56de\u308a\u5206\u96e2\u3067\u304d\u308b\u3053\u3068\u3092\u78ba\u8a8d\u6e08\u307f(\u3053\u306e2\u5024\u304c\u91cd\u306a\u308b\u5834\u5408\u306f\u3057\u304d\u3044\u5024\u3092\u52d5\u304b\u3055\u305a\u7279\u5fb4\u91cf\u30fb\u6bd4\u8f03\u65b9\u6cd5\u3092\u898b\u76f4\u3059\u3001\u3068\u3044\u3046\u51cd\u7d50\u6642\u306e\u65b9\u91dd\u3069\u304a\u308a)\u3002\u3057\u304d\u3044\u5024=(10.770+24.209)/2=17.489\u3002\n\n\u3010\u5b9f\u6e2c(\u7d20\u6750TA\u306e\u51fa\u529b\u306b\u5bfe\u3059\u308b\u8ddd\u96e2)\u3011\u30d5\u30a3\u30e9\u30fc: index0=35.373 / index2=26.355 / index4=35.298 / index6=48.555(\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u502417.489\u3092\u4e0a\u56de\u308a\u300c\u542b\u307e\u308c\u3066\u3044\u306a\u3044\u300d)\u3002\u8a9e: index1=7.341 / index3=11.701 / index5=10.311 / index7=9.463(\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u5024\u3092\u4e0b\u56de\u308a\u300c\u542b\u307e\u308c\u3066\u3044\u308b\u300d)\u3002\n\n\u3010\u5bfe\u7167(1)\u30fb\u53cd\u8a3c(1)\u662f\u6b63\u306e\u5b9f\u8a3c(\u6709\u308b\u3068\u304d\u306b\u6709\u308b\u3068\u8a00\u3048\u308b\u3053\u3068)\u3011\u30d5\u30a3\u30e9\u30fc\u306e\u5f8c\u534a\u3060\u3051\u3092\u524a\u3063\u305f\u534a\u7aef\u30ab\u30c3\u30c8(\u5148\u982dretain%\u3060\u3051\u3092\u6b8b\u3059)\u3092\u3001\u30d5\u30a3\u30e9\u30fc4\u533a\u9593\u3059\u3079\u3066(index0,2,4,6)\u00d73\u6c34\u6e96(65%/75%/90%)\u306e\u516812\u7d44\u307f\u5408\u308f\u305b\u3067\u5b9f\u969b\u306b\u5408\u6210\u3057\u3001\u540c\u4e00\u306e\u3057\u304d\u3044\u5024\u3067\u300c\u307e\u3060\u542b\u307e\u308c\u3066\u3044\u308b\u300d(\u8ddd\u96e2<\u3057\u304d\u3044\u5024)\u3068\u5224\u5b9a\u3055\u308c\u308b\u3053\u3068\u3092\u78ba\u8a8d\u3057\u305f(\u5b9f\u6e2c: index0 65/75/90%=10.770(\u540c\u4e00\u5024)\u3001index2=6.174(\u540c\u4e00\u5024)\u3001index4=10.459(\u540c\u4e00\u5024)\u3001index6=12.202(\u540c\u4e00\u5024)\u3002retain%\u9593\u3067\u5024\u304c\u4e00\u81f4\u3059\u308b\u306e\u306f\u3001subsequence DTW\u304c\u77ed\u304f\u306a\u3063\u305f\u6b8b\u7f6e\u533a\u9593\u3078query\u3092\u6642\u9593\u4f38\u7e2e\u3057\u3066\u6574\u5408\u3067\u304d\u308b\u305f\u3081)\u3002\n\n\u3010known limit\u30fb2026-08-12 basis-reviewer\u306e\u6307\u6458\u3067\u5224\u660e\u301125\u301c64%\u6b8b\u7f6e\u30924\u30d5\u30a3\u30e9\u30fc\u00d77\u6bb5\u968e(25/40/50/55/60/65/70%)\u3067\u5b9f\u6e2c\u3057\u305f\u3068\u3053\u308d\u3001\u691c\u51fa\u3067\u304d\u308b\u5883\u754c\u306f\u30d5\u30a3\u30e9\u30fc\u3054\u3068\u306b\u7570\u306a\u308a(index0\u306f50%\u304b\u3089\u691c\u51fa\u3001index2\u306f60%\u304b\u3089\u3001index4\u306f60%\u304b\u3089\u3001index6\u306f65%\u304b\u3089)\u3001\u304b\u3064\u4e00\u90e8\u306f\u975e\u5358\u8abf(index6: 50%=\u8ddd\u96e240.77(\u672a\u691c\u51fa)\u219260%=\u8ddd\u96e248.21(\u672a\u691c\u51fa\u300150%\u3088\u308a\u60aa\u5316)\u219265%=\u8ddd\u96e212.20(\u691c\u51fa))\u3060\u3063\u305f\u30024\u30d5\u30a3\u30e9\u30fc\u3059\u3079\u3066\u3067\u78ba\u5b9f\u306b\u691c\u51fa\u3067\u304d\u308b\u3068\u5b9f\u6e2c\u3067\u78ba\u8a8d\u3067\u304d\u305f\u6700\u5c0f\u306e\u6b8b\u7f6e\u7387\u306f65%\u300225\u301c64%\u6b8b\u7f6e\u306e\u691c\u51fa\u53ef\u5426\u306f\u3053\u306e\u8449\u306e\u53d7\u5165\u4e8b\u5b9f\u306e\u5bfe\u8c61\u5916\u3068\u3057\u3001criteria.text\u81ea\u4f53\u306b\u3053\u306e\u7bc4\u56f2\u3092\u660e\u8a18\u3057\u305f(\u672a\u9054\u306e\u7bc4\u56f2\u3092\u507d\u3063\u3066\u5408\u683c\u6271\u3044\u306b\u3057\u306a\u3044\u3002\u65ad\u5b9a\u3067\u304d\u308b\u7bc4\u56f2\u3092\u5b9f\u6e2c\u3069\u304a\u308a\u306b\u6b63\u78ba\u306b\u8a18\u8ff0\u3059\u308b)\u3002\n\n\u3010\u5bfe\u7167(2)\u3011\u4f55\u3082\u8a70\u3081\u306a\u3044(\u51688\u533a\u9593\u304c\u6b8b\u308b)\u507d\u5b9f\u88c5(\u7d20\u6750\u3092\u305d\u306e\u307e\u307eAAC\u518d\u30a8\u30f3\u30b3\u30fc\u30c9\u3057\u305f\u3060\u3051)\u306f\u3001\u30d5\u30a3\u30e9\u30fc4\u533a\u9593\u3059\u3079\u3066\u304c\u300c\u307e\u3060\u542b\u307e\u308c\u3066\u3044\u308b\u300d\u3068\u6b63\u3057\u304f\u5224\u5b9a\u3055\u308c\u308b(\u5b9f\u6e2c\u8ddd\u96e2: index0=10.770/index2=8.808/index4=12.872/index6=9.644\u3001\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u5024\u672a\u6e80)\u3002\n\n\u3010\u5bfe\u7167(3)\u30fb2026-08-12 basis-reviewer\u306e\u6307\u6458\u3067\u8ffd\u52a0\u3011\u8a9e(index1,3,5,7)\u304cKEEP\u304b\u3089\u4e38\u3054\u30681\u3064\u8131\u843d\u3057\u305f\u51fa\u529b\u3092\u3001\u8131\u843d\u30d1\u30bf\u30fc\u30f34\u901a\u308a\u305d\u308c\u305e\u308c\u3067\u5b9f\u969b\u306b\u5408\u6210\u3057\u3001\u8131\u843d\u3057\u305f\u8a9e\u306e\u8ddd\u96e2\u304c\u3057\u304d\u3044\u5024\u3092\u4e0a\u56de\u308b(=\u300c\u542b\u307e\u308c\u3066\u3044\u306a\u3044\u300d\u3068\u6b63\u3057\u304f\u5224\u5b9a\u3055\u308c\u308b)\u3053\u3068\u3092\u78ba\u8a8d\u3057\u305f(\u5b9f\u6e2c: index1\u8131\u843d\u664252.091/index3\u8131\u843d\u664236.638/index5\u8131\u843d\u664243.665/index7\u8131\u843d\u664227.866\u3001\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u502417.489\u3092\u4e0a\u56de\u308b)\u3002G-EDIT-TRIM-C\u304c\u540c\u3058\u5b9f\u884c\u30fb\u540c\u3058\u5bfe\u7167\u3092\u5171\u6709\u3059\u308b\u3002\n\n\u3010\u5408\u5426\u3011\u30d5\u30a3\u30e9\u30fc4\u533a\u9593\u3059\u3079\u3066\u306e\u8ddd\u96e2\u304c\u3057\u304d\u3044\u5024\u3092\u4e0a\u56de\u308b\u3053\u3068(B)\u3001\u304b\u3064\u8a9e4\u533a\u9593\u3059\u3079\u3066\u306e\u8ddd\u96e2\u304c\u3057\u304d\u3044\u5024\u3092\u4e0b\u56de\u308b\u3053\u3068(C\u3002\u540c\u3058\u5b9f\u884c\u30fb\u540c\u3058\u3057\u304d\u3044\u5024\u3067\u5224\u5b9a\u3059\u308b\u3002B/C\u306f\u540c\u3058\u7167\u5408\u5668\u306e\u51fa\u529b\u3092\u5225\u306e\u89d2\u5ea6\u304b\u3089\u898b\u3066\u3044\u308b\u3060\u3051\u3067\u3001\u6821\u6b63\u30fb\u3057\u304d\u3044\u5024\u306f\u5171\u6709\u3059\u308b)\u3002\u52a0\u3048\u3066\u5bfe\u7167(1)(2)(3)\u304c\u3059\u3079\u3066\u671f\u5f85\u3069\u304a\u308a\u3067\u3042\u308b\u3053\u3068\u3002\n\n\u3010\u6e2c\u5b9a\u74b0\u5883\u3011CI \u306e ubuntu-24.04\u30fbPython 3.12\u30fbnumpy(video-shorts/requirements.txt\u306eopencv-python-headless\u7d4c\u7531\u3002scipy/librosa\u7b49\u306e\u8ffd\u52a0\u4f9d\u5b58\u306a\u3057)\u30fbffmpeg/ffprobe(\u5b9f\u969b\u306b\u4f7f\u308f\u308c\u305f\u30a4\u30e1\u30fc\u30b8\u7248\u3092evidence\u306b\u6b8b\u3059)\u3002",
+                          "verify": "node tests/trim-plan-check.mjs (対照の一部を共有) を通したうえで python3 tests/trim-filler-match-check.py を実行し全件 PASS であること(pnpm test に登録済み)。\n\n【2026-08-12 軌道修正C-7反証(1)(2)(3)是正で照合方法を全面作り直した】旧verifyが凍結していた「探す側と同じ長さの窓を10msホップで滑らせ、各位置のDTW距離の最小値を採る」方式は、このリポジトリに一度も実装されたことがなかった(全履歴を走査して確認済み)。反証(1)はこの方式の構造上の欠陥(部分残置に盲目)を指摘しており、素材も反証(2)(3)により重複語・長さ分離可能という欠陥を抱えていた。本改訂で素材(calibration.flac/json、2026-08-12差し替え)と照合方法の両方を作り直した。\n\n【なぜ等長窓スライドDTWをやめ、開始・終了自由(subsequence)DTWにしたか】旧方式は窓の長さ=queryの長さに固定するため、フィラーの一部だけが残った出力では窓の中に残置区間+別内容が混ざり整合が乱れ、大部分(75〜90%)が残っていても「含まれていない」と誤判定した(反証(1)の実測: 90%残置10.97〜15.45、75%残置17.09〜17.49、いずれも旧しきい値10.022を上回り誤って合格)。この数値はcommitされたコードから再現できない旧文言の転記であり本改訂では使わない。新方式はqueryの全フレームを使い切ることを要求しつつtarget側の開始・終了位置を固定しない(D[0,j]=C[0,j]、D[i,0]=C[i,0]+D[i-1,0]、D[i,j]=C[i,j]+min(D[i-1,j],D[i,j-1],D[i-1,j-1])、距離=min_j D[N-1,j]/N)。フィラーの一部が残っていても残りのqueryフレームがtargetの別内容へ強制的に整合させられコストが積み上がるため、部分残置を検出できる。\n\n【特徴量・照合方法(固定)】25ms窓(round(0.025×22050)=551標本)・10msホップ(round(0.010×22050)=220標本)・13次元MFCC(26メルフィルタ・DCT-II。scipy/librosa等の新規依存は追加せずnumpyのみで実装)。比較は上記のsubsequence DTW。波形の一致は使わない(AAC再エンコードで同じ音声でも波形は一致しないため)。実装: video-shorts/tests/trim-filler-match-check.py。\n\n【素材(凍結)】音声は tests/fixtures/trim-calibration/calibration.flac (SHA-256 9590ab1d5c3b084e999bb434cf4e6a6c7c13778a20b30d85cde1088b4ffe9165)、区間表は calibration.json (SHA-256 9cb743c2f9ff730e223c7f8cfc3879faa3f366593f6233cb79e6efe83625dc58)。フィラー区間はindex 0(えーと 0.000-0.813s)/2(あのー 3.071-3.858s)/4(えーと 5.915-6.728s)/6(なんか 8.858-9.781s)。語4つ(index1こんにちは/3ありがとう/5よろしく/7はい)はすべて異なる語で、言い淀みの最長(なんか0.923秒)が語の最短(はい0.772秒)より長いため、単純な長さしきい値では分離できない(反証(2)(3)是正済み。tests/trim-plan-check.mjsの「対照」参照)。\n\n【判定対象(素材TAの出力)】video-shorts/tests/trim-filler-audio-helper.mjs が本物のbuildTrimFilters(src/trim-plan.mjs)をKEEP=[語1,3,5,7]で呼び、SEAM_FADE_SEC(5ms)フェード付きで結合しAAC 192kbpsへ書き出す(trim-seam-glitch-check.mjs=G-EDIT-TRIM-Dと同じ「音声のみの経路」。fpsRationalは渡さない)。このスクリプトはtrimの決定ロジックを一切再実装せず、実装コードをそのまま呼ぶ。\n\n【しきい値(先に決め、実装後に動かさない。実測)】(i)calibration.jsonのidentity_pairs_for_i(8区間すべて)について、各区間を単独でAAC 192kbps再エンコードした音声を作り、元の同じ区間のMFCCをqueryとしてsubsequence DTW距離を測った8件の最大値=10.770。(ii)different_word_pairs_for_ii(text[i]≠text[j]の全27組)について、区間iのqueryを区間jの単独AAC再エンコード音声へ照合した27件の最小値=24.209(最大69.978)。(i)の上限10.770が(ii)の下限24.209を下回り分離できることを確認済み(この2値が重なる場合はしきい値を動かさず特徴量・比較方法を見直す、という凍結時の方針どおり)。しきい値=(10.770+24.209)/2=17.489。\n\n【実測(素材TAの出力に対する距離)】フィラー: index0=35.373 / index2=26.355 / index4=35.298 / index6=48.555(いずれもしきい値17.489を上回り「含まれていない」)。語: index1=7.341 / index3=11.701 / index5=10.311 / index7=9.463(いずれもしきい値を下回り「含まれている」)。\n\n【対照(1)・反証(1)是正の実証(有るときに有ると言えること)】フィラーの後半だけを削った半端カット(先頭retain%だけを残す)を、フィラー4区間すべて(index0,2,4,6)×3水準(65%/75%/90%)の全12組み合わせで実際に合成し、同一のしきい値で「まだ含まれている」(距離<しきい値)と判定されることを確認した(実測: index0 65/75/90%=10.770(同一値)、index2=6.174(同一値)、index4=10.459(同一値)、index6=12.202(同一値)。retain%間で値が一致するのは、subsequence DTWが短くなった残置区間へqueryを時間伸縮して整合できるため)。\n\n【known limit・2026-08-12 basis-reviewerの指摘で判明】25〜64%残置を4フィラー×7段階(25/40/50/55/60/65/70%)で実測したところ、検出できる境界はフィラーごとに異なり(index0は50%から検出、index2は60%から、index4は60%から、index6は65%から)、かつ一部は非単調(index6: 50%=距離40.77(未検出)→60%=距離48.21(未検出、50%より悪化)→65%=距離12.20(検出))だった。4フィラーすべてで確実に検出できると実測で確認できた最小の残置率は65%。25〜64%残置の検出可否はこの葉の受入事実の対象外とし、criteria.text自体にこの範囲を明記した(未達の範囲を偽って合格扱いにしない。断定できる範囲を実測どおりに正確に記述する)。\n\n【対照(2)】何も詰めない(全8区間が残る)偽実装(素材をそのままAAC再エンコードしただけ)は、フィラー4区間すべてが「まだ含まれている」と正しく判定される(実測距離: index0=10.770/index2=8.808/index4=12.872/index6=9.644、いずれもしきい値未満)。\n\n【対照(3)・2026-08-12 basis-reviewerの指摘で追加】語(index1,3,5,7)がKEEPから丸ごと1つ脱落した出力を、脱落パターン4通りそれぞれで実際に合成し、脱落した語の距離がしきい値を上回る(=「含まれていない」と正しく判定される)ことを確認した(実測: index1脱落時52.091/index3脱落時36.638/index5脱落時43.665/index7脱落時27.866、いずれもしきい値17.489を上回る)。G-EDIT-TRIM-Cが同じ実行・同じ対照を共有する。\n\n【合否】フィラー4区間すべての距離がしきい値を上回ること(B)、かつ語4区間すべての距離がしきい値を下回ること(C。同じ実行・同じしきい値で判定する。B/Cは同じ照合器の出力を別の角度から見ているだけで、校正・しきい値は共有する)。加えて対照(1)(2)(3)がすべて期待どおりであること。\n\n【測定環境】CI の ubuntu-24.04・Python 3.12・numpy(video-shorts/requirements.txtのopencv-python-headless経由。scipy/librosa等の追加依存なし)・ffmpeg/ffprobe(実際に使われたイメージ版をevidenceに残す)。",
                           "verifyCmd": "python3 video-shorts/tests/trim-filler-match-check.py",
                           "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31615715059/job/94177876551"
                         }
@@ -2982,7 +3421,7 @@
                       "criteria": [
                         {
                           "text": "「間を詰める」を選んだ経路で処理した出力(素材TAの出力)に、calibration.jsonの語区間(index1,3,5,7)の音声がすべて含まれている",
-                          "verify": "python3 tests/trim-filler-match-check.py \u3092\u5b9f\u884c\u3057\u5168\u4ef6 PASS \u3067\u3042\u308b\u3053\u3068(pnpm test \u306b\u767b\u9332\u6e08\u307f\u3002G-EDIT-TRIM-B\u3068\u540c\u3058\u5b9f\u884c\u30fb\u540c\u3058\u7167\u5408\u5668\u306e\u51fa\u529b\u3092\u5171\u6709\u3059\u308b)\u3002\n\n\u3010\u3053\u306e\u8449\u306e\u53d7\u5165\u4e8b\u5b9f\u3011\u7d20\u6750TA\u306e\u51fa\u529b(buildTrimFilters\u3092\u901a\u3057\u305f\u6b63\u3057\u3044\u5b9f\u88c5\u306e\u51fa\u529b)\u306b\u3001calibration.json\u306e\u8a9e\u533a\u9593(index1\u3053\u3093\u306b\u3061\u306f/3\u3042\u308a\u304c\u3068\u3046/5\u3088\u308d\u3057\u304f/7\u306f\u3044)\u306e\u97f3\u58f0\u304c\u3059\u3079\u3066\u542b\u307e\u308c\u3066\u3044\u308b\u3002\u7279\u5fb4\u91cf\u30fb\u7167\u5408\u65b9\u6cd5\u30fb\u7d20\u6750\u30fb\u3057\u304d\u3044\u5024\u306e\u8a73\u7d30(subsequence DTW\u30fb25ms\u7a9310ms\u30db\u30c3\u30d713\u6b21\u5143MFCC\u30fb\u3057\u304d\u3044\u502417.489\u306e\u7b97\u51fa\u6839\u62e0)\u306fG-EDIT-TRIM-B\u306everify\u3092\u53c2\u7167(2026-08-12\u53cd\u8a3c(1)(2)(3)\u662f\u6b63\u3067\u4e21\u8449\u3068\u3082\u540c\u3058\u7167\u5408\u5668\u3092\u65b0\u898f\u5b9f\u88c5\u3057\u3001\u6821\u6b63\u3060\u3051\u3092\u5171\u6709\u3059\u308b)\u3002\n\n\u30102026-08-12\u662f\u6b63\u306e\u8981\u70b9(\u53cd\u8a3c(2)\u56fa\u6709)\u3011\u65e7\u7d20\u6750\u306findex1\u3068index7\u304c\u540c\u3058\u8a9e\u300c\u3053\u3093\u306b\u3061\u306f\u300d\u3067\u91cd\u8907\u3057\u3066\u304a\u308a\u3001\u7247\u65b9\u304c\u4e38\u3054\u3068\u6d88\u3048\u3066\u3082\u8ddd\u96e22.69/5.82(\u65e7\u3057\u304d\u3044\u502410.022\u672a\u6e80)\u3067\u300c\u542b\u307e\u308c\u3066\u3044\u308b\u300d\u3068\u8aa4\u5224\u5b9a\u3057\u3066\u3044\u305f(\u53cd\u8a3c(2))\u3002\u65b0\u7d20\u6750\u306findex7\u3092\u300c\u306f\u3044\u300d\u3078\u5dee\u3057\u66ff\u3048\u3001\u8a9e4\u3064\u3092\u3059\u3079\u3066\u7570\u306a\u308b\u8a9e\u306b\u3057\u305f(different_word_pairs_for_ii\u3067\u6a5f\u68b0\u7684\u306b\u78ba\u8a8d)\u3002\n\n\u3010\u5b9f\u6e2c(\u7d20\u6750TA\u306e\u51fa\u529b\u306b\u5bfe\u3059\u308b\u8ddd\u96e2\u3002\u3057\u304d\u3044\u502417.489)\u3011index1=7.341 / index3=11.701 / index5=10.311 / index7=9.463\u3002\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u5024\u3092\u4e0b\u56de\u308a\u300c\u542b\u307e\u308c\u3066\u3044\u308b\u300d\u3068\u6b63\u3057\u304f\u5224\u5b9a\u3055\u308c\u308b\u3002\n\n\u3010\u5bfe\u7167(\u6709\u308b\u3068\u304d\u306b\u6709\u308b\u3068\u8a00\u3048\u308b\u3053\u3068)\u3011G-EDIT-TRIM-B\u306everify\u304c\u5b9f\u884c\u3059\u308b\u300c\u4f55\u3082\u8a70\u3081\u306a\u3044\u507d\u5b9f\u88c5\u300d\u300c\u30d5\u30a3\u30e9\u30fc\u534a\u7aef\u6b8b\u7f6e\u300d\u306e\u5bfe\u7167\u3068\u540c\u30581\u56de\u306e\u5b9f\u884c\u3092\u5171\u6709\u3059\u308b\u3002\u52a0\u3048\u3066\u3053\u306e\u8449\u56fa\u6709\u306e\u5bfe\u7167\u3068\u3057\u3066\u30012026-08-12 basis-reviewer\u306e\u6307\u6458\u3092\u53d7\u3051\u3001\u8a9e(index1,3,5,7)\u304cKEEP\u304b\u3089\u4e38\u3054\u30681\u3064\u8131\u843d\u3057\u305f\u51fa\u529b\u3092\u8131\u843d\u30d1\u30bf\u30fc\u30f34\u901a\u308a\u305d\u308c\u305e\u308c\u3067\u5b9f\u969b\u306b\u5408\u6210\u3057\u3001\u8131\u843d\u3057\u305f\u8a9e\u306e\u8ddd\u96e2\u304c\u3057\u304d\u3044\u5024\u3092\u4e0a\u56de\u308b(=\u300c\u542b\u307e\u308c\u3066\u3044\u306a\u3044\u300d\u3068\u6b63\u3057\u304f\u5224\u5b9a\u3055\u308c\u308b)\u3053\u3068\u3092\u5b9f\u6e2c\u3067\u78ba\u8a8d\u3057\u305f(\u5b9f\u6e2c: index1\u8131\u843d\u664252.091/index3\u8131\u843d\u664236.638/index5\u8131\u843d\u664243.665/index7\u8131\u843d\u664227.866\u3001\u3044\u305a\u308c\u3082\u3057\u304d\u3044\u502417.489\u3092\u4e0a\u56de\u308b\u3002\u5f93\u6765\u306f\u300c\u6821\u6b63\u5024\u304b\u3089\u8ad6\u7406\u7684\u306b\u5c0e\u304b\u308c\u308b\u300d\u3068\u3044\u3046\u63a8\u8ad6\u306e\u307f\u3067\u3001\u5b9f\u969b\u306b\u8a9e\u3092\u6b20\u843d\u3055\u305b\u305f\u51fa\u529b\u3092\u5408\u6210\u3057\u3066\u843d\u3068\u3059\u5b9f\u884c\u8a18\u9332\u304c\u7121\u304b\u3063\u305f\u3002\u3053\u306e\u5bfe\u7167\u3067\u305d\u306e\u6b20\u843d\u3092\u57cb\u3081\u305f)\u3002\n\n\u3010\u6e2c\u5b9a\u74b0\u5883\u3011G-EDIT-TRIM-B\u3068\u540c\u3058(CI \u306e ubuntu-24.04\u30fbPython 3.12\u30fbnumpy\u30fbffmpeg/ffprobe\u3002\u5b9f\u969b\u306b\u4f7f\u308f\u308c\u305f\u30a4\u30e1\u30fc\u30b8\u7248\u3092evidence\u306b\u6b8b\u3059)\u3002",
+                          "verify": "python3 tests/trim-filler-match-check.py を実行し全件 PASS であること(pnpm test に登録済み。G-EDIT-TRIM-Bと同じ実行・同じ照合器の出力を共有する)。\n\n【この葉の受入事実】素材TAの出力(buildTrimFiltersを通した正しい実装の出力)に、calibration.jsonの語区間(index1こんにちは/3ありがとう/5よろしく/7はい)の音声がすべて含まれている。特徴量・照合方法・素材・しきい値の詳細(subsequence DTW・25ms窓10msホップ13次元MFCC・しきい値17.489の算出根拠)はG-EDIT-TRIM-Bのverifyを参照(2026-08-12反証(1)(2)(3)是正で両葉とも同じ照合器を新規実装し、校正だけを共有する)。\n\n【2026-08-12是正の要点(反証(2)固有)】旧素材はindex1とindex7が同じ語「こんにちは」で重複しており、片方が丸ごと消えても距離2.69/5.82(旧しきい値10.022未満)で「含まれている」と誤判定していた(反証(2))。新素材はindex7を「はい」へ差し替え、語4つをすべて異なる語にした(different_word_pairs_for_iiで機械的に確認)。\n\n【実測(素材TAの出力に対する距離。しきい値17.489)】index1=7.341 / index3=11.701 / index5=10.311 / index7=9.463。いずれもしきい値を下回り「含まれている」と正しく判定される。\n\n【対照(有るときに有ると言えること)】G-EDIT-TRIM-Bのverifyが実行する「何も詰めない偽実装」「フィラー半端残置」の対照と同じ1回の実行を共有する。加えてこの葉固有の対照として、2026-08-12 basis-reviewerの指摘を受け、語(index1,3,5,7)がKEEPから丸ごと1つ脱落した出力を脱落パターン4通りそれぞれで実際に合成し、脱落した語の距離がしきい値を上回る(=「含まれていない」と正しく判定される)ことを実測で確認した(実測: index1脱落時52.091/index3脱落時36.638/index5脱落時43.665/index7脱落時27.866、いずれもしきい値17.489を上回る。従来は「校正値から論理的に導かれる」という推論のみで、実際に語を欠落させた出力を合成して落とす実行記録が無かった。この対照でその欠落を埋めた)。\n\n【測定環境】G-EDIT-TRIM-Bと同じ(CI の ubuntu-24.04・Python 3.12・numpy・ffmpeg/ffprobe。実際に使われたイメージ版をevidenceに残す)。",
                           "verifyCmd": "python3 video-shorts/tests/trim-filler-match-check.py",
                           "evidence": "https://github.com/rahiseko-alt/ai-editer/actions/runs/31615715059/job/94177876551"
                         }
@@ -3365,7 +3804,7 @@
       "detail": "【このゴールで作るのは第1段階（①）だけ】2026-08-09 マスター指示。ゴール直下は「使い方の違い」で ①②③ に分岐する（①＝Claude Code / Codex の拡張機能、②＝PWA、③＝SaaS）。本文は①のことだけを書く。\n①＝Claude Code / Codex のアプリの上で動く拡張機能。LLMの設定をしなくても動く。\n　お客様にとって：アプリを開くだけで使える。AIの鍵を預ける必要も、使うほど増える料金もない。\n　売る側にとって：鍵と課金の責任を負わずにそのまま売れる。\nいまツリーで分解しているのは①だけで、その中身は STAGE-1 配下にある。\n\n【補足：未来枝②（PWA）・③（SaaS）は初めから凍結】\n・①が完成して納品できる状態にならないと②③へは進まない（順番は固定）。\n・②のボトルネックは①、③のボトルネックは②。\n・②③は凍結中なので言語化分解（criteria/verify）もしない。中身はここにもノードにも書かない（解凍するときに初めて原子分解する）。\n\n【段階と制約の関係（ここを読み違えると判断を誤る）】\nいまツリーに凍結されている制約の多くは、恒久の法ではなく第1段階のものである。具体的には\nM-4-C（導入手順が増えない＝pip install だけ）、S-1 と G-EDIT-QUALITY-C（軽い配布物が30MB以内）、\nG-EDIT-QUALITY-D（外部ダウンロード遮断・キャッシュ無し・ホストにあってよいのは ffmpeg/ffprobe/python3 だけ）。\nこれらは「客のパソコンで動く」ことから来ており、第3段階（管理下の1環境）では消える。\n2026-08-08、この取り違えによって外部OSSの採否の結論を4件誤った（詳細は下の軌道修正チェックリストの背景）。\n判断のたびに「この制約は何段階のものか」を確認すること。個別ノードへの段階の明記は軌道修正 C-2 で行う。\n\n【いまツリーにある子ノードは、すべて第1段階の中身である】\nG-P0 / G-P1 / G-P2（監査の是正）、G-TESTINFRA（テスト基盤）、G-DELIVERY（PCが無くてもクラウドで完結）、\nG-MOSAIC（顔を隠して配れる）、G-SLIM（軽い配布物）、G-EDITOR（編集者の手作業を減らす）。\n第2段階・第3段階の葉はまだ描いていない。着手の入力が揃っていないため、いま原子分解しない\n（描くのは、第1段階が閉じるか、マスターが段階を上げると判断したとき）。\n\n【この段階の受入】第1段階が閉じたと言えるのは、上記の子ノードがすべて done になったとき。\n\n【第1段階の確定範囲（従来の記載を維持）】2026-07-28 マスター指示により「docs/audits/2026-07-27-kosespark-test-review-proposal.md のP0-5・P1全12件・P2全9件を全て改善する」を確定範囲とする（うちP0-1〜4・P0-6とP1-7/P2-9(Writerエンジン)を除く。Writer側は今回このリポジトリへ未取り込みのためスコープ外）。2026-08-04 マスター指示により G-MOSAIC（顔モザイク機能）を範囲に追加。\n\n======================================================================\n【軌道修正チェックリスト】2026-08-08 記録。**上書き禁止**。\nここに置いてあるのは、meta.next が checkin-checkout スキルの規定で毎セッション上書きされるため\n（SKILL.md「前回の値を消してから、今回の値を上書きする：meta.next ＝ ③次回やる事」）。\nGOAL の detail は上書き対象ではないので、ここが正。meta.next からはここを指すだけにする。\n状態([ ]→[x])と実施記録だけ更新し、本文・受入基準は消さない・緩めない。\n全項目が [x] になったら軌道修正は完了とし、そこで改めてゴールへ向かう作戦会議を行う。\n======================================================================\n\n■ なぜ軌道修正が要るのか（背景）\n2026-08-08、G-EDITOR（編集者の手作業を減らす5機能・50葉）の基準へ、着手前の探りを初めて走らせた。\n出た反証は41件で、CAPTION 16件は G-EDIT-CAPTION の detail、TRIM 14件は G-EDIT-TRIM の detail、\nREFRAME 11件は G-EDIT-REFRAME の detail に全件転記してある（要約だけ書いて中身を書かなかったため、\n検証で「判定不能」と指摘され転記した）。\n決定的だったのは、実装を1行も書かないまま緑にできる葉が多数あったこと。実例：\n・G-EDIT-CAPTION-E は全要求に404を返すだけの15行のサーバで、凍結文言どおりの検査が18項目すべて合格。\n・G-EDIT-TRIM-A/B/C は「0.9秒より短い区間を捨てるだけ」の偽物で3葉とも合格。\n  凍結素材の言い淀みが 0.787〜0.813秒、語が 1.057〜1.258秒で 0.9秒に完全分離していたため。\n・G-EDIT-REFRAME は帯の色を 0x1c1c1c にするだけ／顔を一切見ない決め打ちのパンで4葉中3葉が合格。\nあわせて、誰も受け入れていない製品の不具合が2件みつかった（C-3・C-4）。\nさらに、この案件のゴールが3段階（第1段階=Claude Code/Codex アプリ上で動く → 第2段階=LLMをAPI呼び出し\n→ 第3段階=SaaS）であることがマスターから示されたが、2026-08-08 時点でロードマップのノードの\ncriteria/detail にその記述は1件も無かった。第1段階限定の制約（30MB・キーレス・外部DL遮断）を\n恒久の法として扱っており、実際にこの取り違えで外部OSS採否の結論を4件誤った。\n\n■ この整理整頓で「やらない」と決めたこと（蒸し返さないための記録）\n・顔モザイク（G-EDIT-MOSAIC-UI）配下：2026-08-08 マスター指示により凍結中。指示があるまで\n  criteria/verify/実装に触れない。PR #44 でマージ済みだが基準は未完了（28葉中14葉が検証済み）。\n  解除の可否は D-1。→ C-15 で MOSAIC-UI の detail 側にも記録する。\n・G-EDIT-REFRAME の実装：反証11件が未解消なので着手条件そのものが不成立。基準を直すまで実装しない。\n  加えて C と F は実写素材が未調達（D-7）。\n・外部OSSのコード取り込み（Editly / ClipsAI）：第1段階では技術的に不可能。実測は C-12。\n  MoneyPrinterTurbo だけは理由が違い、技術的不可能性ではなく「同梱BGMがYouTube由来で権利未確認\n  （作者自身が README に中国語で明記）」という素材の権利問題。コードだけなら取れる余地があるので、\n  再検討するならその点から議論すること（検証で「技術的に不可能と括るのは事実と違う」と指摘された）。\n・全面移住（OpenCut / MoneyPrinterTurbo へ乗り換え）：2026-08-08 に確認した時点で、OpenCut は\n  全面書き直し中・外部コントリビュート受付停止・目当ての機能（Editor API / MCP Server / Headless /\n  Batch rendering）は全部 planned。MoneyPrinterTurbo は「テキスト→動画生成」でカテゴリが違う\n  （こちらは「長編動画→切り抜き」）。移住すればテスト4,733行\n  （wc -l video-shorts/tests/*.mjs video-shorts/tests/*.py）と顔モザイク2,853行\n  （src/face_mosaic.py 531 + src/apply_mosaic_cli.py 209 + src/apply-mosaic-stage.mjs 182 +\n  tests/face-mosaic-check.py 1093 + tests/mosaic-ui-check.py 838）を捨てる。\n  ※外部リポジトリの状態は数週で変わるので、再検討するときは取得日を更新して測り直すこと。\n・編集指示書パイプライン（Excel/CSV→JSON→一括レンダリング）：第1段階では不要。\n  第1段階では LLM 自身が操作面なので、指示書は「ループの中に人間の相手をするエージェントが居なくなったとき」\n  ＝第2・第3段階で初めて効く。【復帰条件】第2段階（LLMをAPI呼び出しで動かす）に入った時点で再検討する。\n\n■ 第0段：前提（これが決まらないと C-12 と一部の反証が判定不能）\n[x] C-1 GOAL に3段階を書く\n    なぜ：3段階の記述が無く、第1段階限定の制約が恒久の法と誤読された（実害：OSS採否の結論を4件誤った）。\n    やること：GOAL ノードに3段階を書き、各段階を非エンジニアが読める1行にする。\n    受入基準：(1)3段階すべてが GOAL に書かれている (2)各段階が「いつやるか」ではなく「何が嬉しいか」で\n    書かれている (3)マスターの承認を得た文言である。\n    実施記録：2026-08-08、GOAL の theme / meaning / detail を3段階の形へ書き換えた（このノードの冒頭）。\n    受入基準(1)(2)は満たしている。2026-08-11、マスターに冒頭の文言（theme/meaning/detail冒頭の3段階説明）を提示し「承認する」と明示的な承認を得た。(3)も満たしたため [x] にする。\n[x] C-2 凍結済み条件に段階タグを付ける\n    なぜ：第1段階限定の制約を恒久の法と読み違える事故を文言で防ぐため。\n    やること：M-4-C / S-1 / G-EDIT-QUALITY-C / G-EDIT-QUALITY-D の各 detail に段階を明記。\n    受入基準：4ノードすべての detail に段階が書かれ、かつ criteria/verify 本文は一字も変えていない。\n    実施記録：2026-08-11、M-4-C / S-1 / G-EDIT-QUALITY-C / G-EDIT-QUALITY-D の各detailへ\n    「この制約は第1段階限定」である旨を追記した（GOAL detailの【段階と制約の関係】を参照する形）。\n    criteria/verify本文は一字も変えていない（G-EDIT-QUALITY-Dのみverify本文へnodeを許可リストへ追加した\n    是正＝軌道修正C-10を別途行ったが、これはstatus:todoのノードの着手前の言語化でありC-2とは独立の理由）。\n\n■ 第A段：ゴールと独立に着手できる（最優先）\n[x] C-3 製品不具合：詰めるほど絵と音がずれる\n    なぜ：trim はコマ境界へ丸め、atrim はサンプル精度で切るため継ぎ目ごとにずれが累積する。\n    【再現条件（これを書かないと符号すら変わる）】素材=15fps、区間長=29/30秒、開始オフセット=1/30秒（半コマ）、\n    「継ぎ目N個」は接合部でなく区間の数。この条件で 2個 -67ms / 5個 -167ms / 10個 -333ms / 20個 -673ms。\n    同じ区間長でオフセット0（コマ境界）にすると符号が反転して +660ms、区間長61/60秒・オフセット1/60秒では -320ms。\n    直す対象は video-shorts/src/trim-plan.mjs の buildTrimFilters()。\n    受入基準：【当初案は検証で却下された】「出力の映像と音声の尺の差が1コマ未満」は、壊れたコードに\n    ffmpeg の -shortest を1個足すだけで満たせる（実測 diff 0.7ms で合格。音声を末尾で切っただけで、\n    時間軸の中の累積ずれは残る）。「一切詰めない」偽物も diff 60.0ms で合格する。\n    → 終端の尺差ではなく、各継ぎ目の直後で「映像に焼いたコマ番号」と「音声に埋めた同期信号」の時刻差が\n    全継ぎ目で1コマ未満であることを測る基準に置き換えること（コマ番号の焼き込みは素材R-Mで実績あり）。\n    加えて素材・fps・区間の開始位置と長さ・「継ぎ目N個」の語義を凍結すること。\n    実施記録：2026-08-09セッションで既に完了していた（G-EDIT-TRIM-Fとして新設・trim-plan.mjsのconcatを\n    映像用/音声用の2本から1本へ統合し、trim=start_frame/end_frame・atrim=start_sample/end_sampleの\n    整数指定へ変更）。受入基準どおり「映像に焼いたコマ番号」と「音声の同期信号」の食い違いを測る方式に\n    なっており、しかも1コマ未満ではなく食い違い0コマを要求する（受入基準より厳格）。2026-08-11、本セッションで\n    tests/trim-sync-check.pyを実際にローカル実行し32 PASS/0 FAILを再確認した（継ぎ目0.000msを維持）。\n    チェックボックスが[x]になっていなかったのみのため、本セッションで[x]にする。\n[x] C-4 製品不具合：一般的すぎる語が用語辞書に登録できる\n    なぜ：judgeTermPair('の','ノ') が {ok:true}（『は』『です』『ました』も同様）。用語辞書は\n    src/transcribe.py の apply_corrections で単純置換されるため全案件に効き、1件入ると以後すべての\n    書き起こしが壊れる（実測：きょうのはなし → きょうノはなし）。\n    直す対象は video-shorts/src/term-dictionary.mjs の judgeTermPair（判定側）。\n    受入基準：【当初案は検証で却下された】「『の』『は』『です』『ました』が拒否される」は、その4語だけを\n    拒否リストに入れれば満たせる。実測で 'が' 'を' 'に' 'から' 'て' は {ok:true} のまま素通りし、\n    製品の壊れ方は1ミリも直らない。\n    → 「一般語」を列挙ではなく機械可読な出典で凍結すること（品詞が助詞・助動詞・接尾辞なら拒否、\n    または頻度辞書の上位N語）。そのうえで「4語以外の助詞（が/を/に/から/て）も拒否される」対照を必須にする。\n    実施記録：2026-08-08の初回対応（held-outによる安全判定）はこの受入基準を満たしていたが、\n    2026-08-09にマスターが方針そのものを変更した（E-4参照：「辞書はそんなに重要ではない。LLMが文脈で\n    修正する。網羅を目指すのは無能の証拠」との明示的な決定）。その結果、G-EDIT-CAPTION-Cは\n    一般語の安全判定を撤廃し形式チェック(12文字以内・重複拒否等)のみに全面作り直しされた。\n    C-4が指していたjudgeTermPair('の','ノ')等の個別バグは、この設計変更によって「バグ」ではなく\n    「マスターが明示的に受け入れた既知の挙動」になった（tests/term-dictionary-check.mjsの\n    「ふつうの日本語の語も登録できる（2026-08-09の決定）」というテストが対照としてこれを固定している）。\n    したがって当初のC-4の受入基準（列挙ではなく機械可読な出典で一般語を拒否する）はもはや目指す状態ではない。\n    製品不具合としては解消済み（意図的な設計）と判断し[x]にする。\n[x] C-5 「凍結前の探り3本」を関所として明文化する\n    なぜ：41件の反証は、凍結前に使い捨ての探りを走らせていれば大半が事前に出た。探りを1回走らせただけで\n    41件と製品不具合2件が出ている。この手順が無いと同じ反証が再生産される。\n    やること：3本＝(1)何も作っていない偽物を当てる（その合格条件を満たす最も安上がりな実装していない実装を\n    自分で作り、通らないことを確かめる）(2)正しい実装での値を1回測る（誰も満たせない数字を凍結していないか）\n    (3)意図的に壊したものを当てる（検出手段そのものが効いているか）。\n    受入基準：【当初案は検証で却下された】「AGENTS.md に3本が書かれている」等はすべて文書の状態で、\n    機械強制がゼロ（scripts/verify-roadmap-evidence.mjs は AGENTS.md を見ない）。しかも\n    docs/failures.md に「AGENTS.md に明文化されている規律を、自分で書いた verify に適用し忘れた」と\n    自認が既にある＝同じ場所に文章を足しても再発する。\n    → 受入基準に「基準を凍結する PR で、3本の探りの実行記録（偽物のコードまたはコマンドと出力）が\n    evidence に添付されていなければ basis-reviewer が objection を返す」という、PR単位で落ちる条件を加えること。\n    実施記録：2026-08-11、.claude/agents/basis-reviewer.md の判定項目を3点から4点へ拡張し、\n    4点目「探り済み（probed）」として3本の探りの実行記録がこの凍結対象について添付されているかを\n    明示的な確認項目にした（この葉自体を含む。実装が大掛かりになる場合はbasis-reviewer.mdへの追記だけでもよい\n    という指示に従った軽量な対応）。受入基準が要求する「実行記録が無ければbasis-reviewerがobjectionを返す」\n    という判定規則をルーブリックへ明記した。\n\n■ 第B段：基準の反証を潰す（41件。中身は各ノードの detail に全件ある）\n[x] C-6 G-EDIT-CAPTION の反証16件 → 中身は G-EDIT-CAPTION の detail\n    受入基準：16件すべてについて「反映した」か「マスター判断で見送った（理由つき）」が記録され、未処理0件。\n    葉E は前例（P1-2-A/P1-2-B/P1-4-B）にならって3葉へ割る。\n    実施記録：2026-08-11、16件全件の処理状況をG-EDIT-CAPTIONのdetailへ記録した。うち14件は反映済み\n    （番号(1)(2)(4)(5)(6)(7)(8)(9)(10)(12)(13)(14)(15)(16)）。2026-08-12、(11)「葉Cの12文字カウント方式\n    (UTF-16/コードポイント/見た目)の凍結」を反映(G-EDIT-CAPTION-Cのcriteria/verify参照)。続けて(3)\n    「葉Eを前例にならって3(4)葉へ割る」も反映し、G-EDIT-CAPTION-E1(合言葉)/E2(Origin)/E3(ジョブの\n    所有権)の3葉へ分割、旧葉Eは削除した(meta.basisChanges参照)。16件全件が処理済み（未処理0件）と\n    なったため[x]にする。\n[x] C-7 G-EDIT-TRIM の反証14件 → 中身は G-EDIT-TRIM の detail\n    受入基準：14件すべて処理が記録され未処理0件。加えて作り直した素材で「言い淀みを実装していない偽物」が\n    落ちることを実測で示す。\n    実施記録：2026-08-11、14件全件の処理状況をG-EDIT-TRIMのdetailへ記録した。うち7件は反映済み\n    （番号(4)(5)(6)(7)(10)(11)(14)）。2026-08-12、(12)「trim-plan-check.mjsの堂々巡り」と(13)「葉Eの\n    非決定性の扱い」も反映した（tests/trim-plan-check.mjs、G-EDIT-TRIM-E参照）。同日さらに(8)(9)\n    （葉Eの検証を恒真式から出力音声との実測比較へ全面作り直し。PR #101）、続けて(1)(2)(3)\n    （calibration.flac/jsonの作り直しと葉B/Cのsubsequence DTW再実装。PR #102）も反映し、\n    14件全件の処理が完了した（未処理0件）ため[x]にする。ただし葉B/C/D/Eはcriteria再凍結の\n    みでdone化はしていない（本人採点の禁止。CIでの実行結果を見てから次回判断する）。\n[x] C-8 G-EDIT-REFRAME の反証11件 → 中身は G-EDIT-REFRAME の detail\n    受入基準：11件すべて処理が記録され未処理0件。かつ「何も作っていない実装」を当てて4葉すべてが落ちることを実測で示す。\n    実施記録：2026-08-11、11件全件の処理状況をG-EDIT-REFRAMEのdetailへ記録した。うち10件は反映済み\n    （番号(2)(3)(4)(5)(6)(7)(8)(9)(10)(11)）で、A/B/D/D2/E/G/G2/G3/H/H2/H3の11葉がCI evidence付きで\n    done化されている。2026-08-12、残る(1)（黒帯の色を輝度25〜40程度の薄いグレーへ変える適応的な実装\n    への耐性）も反映した。G-EDIT-REFRAME-Aの近黒定義をY≤55へ引き上げ、決め打ちグレー3色\n    (RGB(28,28,28)/(32,32,32)/(40,40,40))を実際にpad色へ使った対照をtests/reframe-verify-check.py\n    へ追加し、いずれも不合格になることを確認した（ローカル実行37 PASS/0 FAIL）。「何も作っていない実装」\n    が落ちることは、A/B/D/D2/Eの各verifyに既存のletterbox対照・決め打ちパン対照・常時重心追従対照として\n    既に組み込まれておりそれぞれ不合格を確認済み。11件全件が処理済み（未処理0件）のため[x]にする。\n\n■ 第C段：仕組みの穴\n[x] C-9 ライセンス検査を作り直す\n    なぜ：tests/face-mosaic-check.py:631 が LICENSES = [\"LICENSE-yunet.txt\",\"LICENSE-sface.txt\"] の\n    ハードコード2件で、第三者部品を足しても緑のまま。かつ build-dist.mjs の MOSAIC_FILES が\n    tests/face-mosaic-check.py ごと除外するので slim には検査自体が無い。現状 slim は第三者部品を\n    1つも積んでいないので違反ではないが、字幕スタイル等を入れた瞬間に無表示で出荷される。\n    受入基準：【当初案は検証で却下された】「一覧に部品を1件足して検査が落ちる」は、一覧駆動の21行の\n    スクリプトで満たせてしまい、dist に置いたのに一覧へ登録し忘れた部品は永久に検出されない\n    （実測：slim に fonts/NotoSansJP.ttf を無表示で置いても PASS）。\n    → 「dist に第三者部品のファイルを1つ置き、一覧には登録せずに検査が落ちる」へ書き換え、\n    検査を「一覧を歩く」から「dist を歩いて未登録ファイルを見つける」へ反転させること。\n    M-4-B は criteria が「同梱モデルの」に限定されているため書き換えず、新規ノードとして足す。\n    実施記録：2026-08-11、video-shorts/src/models/THIRD_PARTY.jsonを正本として新設し、\n    tests/face-mosaic-check.pyのMODELS/LICENSES配列をこの正本から動的に導出するよう変更した。\n    新規ノードM-4-Iを追加し、dist の src/models を実際に os.listdir で歩いて正本に無いファイルが\n    無いかを検査する方式へ反転させた。有るときに有ると言える対照（その場でダミーの未登録ファイルを\n    置いて検出できることを確認してから消す）も組み込んだ。ローカルで96 PASS/0 FAILを確認済み。\n    M-4-I自体はCI evidence未取得のためstatus:doingのまま（次回セッションでの確認事項として残す）。\n[x] C-10 G-EDIT-QUALITY-D の許可リストを実態に合わせる\n    なぜ：許可リストが「ffmpeg / ffprobe / python3 の3つだけ」だが製品本体は Node で動く\n    （start-here.md が node -v の確認を客に案内）。字義通りには現行製品自体が不合格になる。\n    受入基準：現行製品がその条件で合格し、かつ「配布物に入れるべきものを入れていない実装」は落ちる。\n    実施記録：2026-08-11、G-EDIT-QUALITY-Dのverify本文の許可リストへnodeを追加した\n    （ffmpeg/ffprobe/python3/nodeの4つに拡張。status:todoのため直接編集、basisChanges宣言は不要）。\n    実測で製品コードがnpmパッケージを1つも使わずNode.js組み込みモジュールとローカル相対importだけで\n    動くことを確認した（許可リストの拡張が抜け道にならないことの根拠）。この葉自体（外部遮断環境での\n    実機検証）はまだtodoのまま。C-10のスコープは許可リストの文言の是正のみ。\n[x] C-11 ffmpeg を配布物に同梱しないことを凍結する\n    なぜ：手元の ffmpeg は --enable-gpl（--enable-nonfree は無し）＝GPL版。いまは未同梱なので安全だが、\n    M-4-C（導入手順を増やさない）が構造的に同梱への圧力を生む。同梱した瞬間にGPLの再配布者になる。\n    ※「Windows顧客が入れる gyan.dev ビルドは GPLv3」は 2026-08-08 に公式記載で確認したが、\n    再検討時は取得し直すこと。\n    受入基準：dist 配下に ffmpeg/ffprobe の実行バイナリが存在しないことを機械が検査する。\n    実施記録：2026-08-11、新規ノードS-7を追加し、tests/dist-slim-check.mjsへ標準版・軽量版どちらの\n    distも再帰的に歩いてffmpeg/ffprobe(大小文字区別なし・.exe含む)という名前のファイルが無いことを\n    確認する検査を追加した。有るときに有ると言える対照（その場でダミーのffmpegファイルを置いて検出できる\n    ことを確認してから消す）も組み込んだ。ローカルで22 PASS/0 FAILを確認済み。S-7自体はCI evidence\n    未取得のためstatus:doingのまま（次回セッションでの確認事項として残す）。\n[x] C-13 出荷される既定と TRIM の verify の矛盾を解く【2026-08-08 検証で追加】\n    なぜ：G-EDIT-TRIM-A/D/E の verify は「出荷される通常設定（無音カット・言い淀みカットとも有効）」と\n    凍結しているが、実物の既定は server/job-params.mjs:21 で trim==='on' ? 'on' : 'none' ＝ 詰めない。\n    出荷既定のまま処理すれば出力は約11.4秒で、5.203秒どころか4.703秒にもならない。D-4 はこの矛盾に触れていない。\n    受入基準：verify の記述と実装の既定が一致し、他人が意図を知らずに実行しても同じ合否になる。\n    実施記録：2026-08-09セッションで既に是正済みと確認した。G-EDIT-TRIM-A/D/Eいずれのcriteria/verify\n    本文にも「出荷される通常設定」という文言はもう存在せず（2026-08-11、全ノードをgrepして確認）、\n    「『間を詰める』を選んだ経路」という実物の既定(trim:\"none\")と整合する表現へ統一されている。\n    チェックボックスが[x]になっていなかったのみのため、本セッションで[x]にする。\n[x] C-14 素材TV・素材Q が 11.903秒 前提で壊れている【2026-08-08 検証で追加】\n    なぜ：calibration.flac の実測は ffprobe で 11.402812秒（calibration.json は 11.903 と書いている）。\n    G-EDITOR の detail が凍結した素材TVの根拠文「179コマ目の提示時刻 178/15＝11.867秒は音声長11.903秒より\n    前なので -shortest でも映像は切れない」は 11.867 > 11.403 で偽になる。素材Qは「flac×5＋0.485秒＝60.000秒」\n    （5×11.903+0.485）だが実ファイルでは 5×11.402812+0.485＝57.499秒で60秒素材にならない。\n    素材Q は G-EDIT-QUALITY-B（処理時間）の凍結素材なので、D-4 の判断は QUALITY にも波及する。\n    受入基準：素材TV・素材Q の凍結文が実ファイルと一致する。D-4 の決定と整合している。\n    実施記録：2026-08-11、G-EDITORのdetailにある素材TV・素材Qの説明を実測値(11.402812秒)に合わせて\n    是正した。素材TVは映像11.933秒・音声11.402812秒で0.530521秒差、旧文の「-shortestでも映像は切れない」\n    根拠が誤りだったことを明記して正しい理由（音声側の処理量を測るためそもそも-shortestを使わない）へ\n    書き換えた。素材Qは末尾の無音を2.985940秒へ訂正し60.000000秒ちょうどになるようにした。影響範囲を\n    確認した結果、G-EDIT-MOSAIC-UI配下の凍結されたcriteria/verifyには11.903という数値は埋め込まれて\n    おらず(素材TVという名前の参照のみ)、凍結中のノードには一切触れていない。G-EDIT-TRIM-Aの判断待ち\n    事項(c)も解決済みとして更新した。D-4の決定（コマ単位の許容誤差方式へ再設計済み）とも整合している。\n[x] C-15 モザイク凍結の指示を MOSAIC-UI の detail へ記録する【2026-08-08 検証で追加】\n    なぜ：凍結の指示がこのチェックリストにしか無く、G-EDIT-MOSAIC-UI の detail に書かれていない（grep で確認）。\n    受入基準：G-EDIT-MOSAIC-UI の detail に、凍結の日付・指示者・解除条件（D-1）が書かれている。\n    実施記録：2026-08-11、G-EDIT-MOSAIC-UIのdetailへ凍結開始日(2026-08-08)・指示者(マスター)・\n    解除条件(GOAL detailのD-1)・D-1の判断結果(2026-08-11、「no」＝凍結を維持)を明記した。\n    criteria/verify/実装のいずれにも触れていない（凍結は維持したまま）。\n\n■ 第D段：外部OSSの扱いを記録する\n[x] C-12 4候補の段階別判定をノードへ記録する\n    なぜ：「却下」として記録すると段階が上がったとき誰も掘り返さない。理由を書かずに保管すると同じ調査を繰り返す。\n    実測（2026-08-08 取得）：Editly＝canvas/gl がネイティブ拡張で3OS不可・Node22で実際にビルド失敗\n    （Issue #332/#334 が2026-03から未解決）・Cairo/Pango経由でLGPLの再リンク義務・gl-transitions は\n    125個の .glsl 中に非MIT2件と著者65名 ／ ClipsAI＝torch wheel 502MB（30MBの16.7倍）・\n    texttiler.py に torch 参照34箇所で剥がせない・HFトークンがリフレーム機能そのものに必須・\n    最終コミット2024-01-17 ／ MoneyPrinterTurbo＝同梱BGMがYouTube由来で権利未確認 ／\n    AI Video Captions＝実体はデータでなく subtitles.py 306行+subtitle_utils.py 159行+config、\n    OFLフォント4種の同梱義務、実在人物名（Hormozi/MrBeast）の表示名リスク。\n    受入基準：4候補すべてについて「第1段階で入れない理由（実測値つき）」と「第3段階の候補か否か」が\n    ノードの detail に書かれている。\n    実施記録：2026-08-11、4候補すべてについてノードのdetailへ転記した。Editly・ClipsAIはG-EDIT-REFRAME\n    のdetailへ、MoneyPrinterTurboはG-EDITORのdetailへ、AI Video CaptionsはG-EDIT-CAPTIONのdetailへ、\n    それぞれ「第1段階で入れない理由（実測値つき）」と「第3段階の候補か否か」を明記した。\n\n■ マスターの判断待ち（軌道修正と並行。判断が無いと該当項目が閉じられない）\n[x] D-1 顔モザイクの凍結を解くか。解くなら basis-reviewer の13巡目からやり直す。\n    マスター決定（2026-08-11）：「no」（解かない。凍結を維持する）。\n    実施記録：2026-08-11、決定をこのチェックリストへ記録した。G-EDIT-MOSAIC-UI配下は引き続き凍結中で、\n    criteria/verify/実装のいずれにも触れていない（本セッションでの変更はこの記録のみ）。\n[x] D-2 G-EDIT-CAPTION-B の確かめ方。CIへ tesseract-ocr を入れるか、見本画像との照合へ verify を改めるか。\n    マスター決定（2026-08-11）：「文字認識ツール(tesseract-ocr)を入れて実際に読ませる」。\n    実施記録：2026-08-11、.github/workflows/ci.ymlへ tesseract-ocr / tesseract-ocr-jpn の導入手順を追加し、\n    video-shorts/tests/caption-recaption-ocr-check.mjs を新設した（status:「todo」だったため凍結対象外・自由に更新）。\n    実サーバー・実ffmpegで(1)編集なしでの焼き直し(対照)→OCRで旧文字が読める、(2)PUT /captionsで人が字幕を直す、\n    (3)POST /recaptionで焼き直し→OCRで新文字が読め旧文字が読めない、を確認する。詳細・evidenceは\n    G-EDIT-CAPTION-B のdetail/criteria参照。\n[x] D-3 G-EDIT-CAPTION-D の通し確認。音声認識の模型をCIへ置くか、verify を改めるか。\n    ただし「適用の部分だけを測る形へ改める」案は合格ラインを下げる向きなので採らない。\n    マスター決定（2026-08-11）：「音声認識モデルを置いて実際に認識させる」。\n    実施記録：2026-08-11、.github/workflows/ci.ymlへ faster-whisper(small)モデルのキャッシュ\n    (actions/cache、初回のみダウンロード)とインストール手順を追加し、tests/term-apply-check.py を\n    実際に src/transcribe.py をサブプロセスとして2回起動する形へ拡張した（凍結済み音声素材\n    tests/fixtures/trim-calibration/calibration.flac を使用。辞書にペアを入れた状態/外した状態の\n    2回、実モデルで文字起こしし比較）。criteria/verifyの本文（受入内容）は変えず、verifyCmdのみ追加。\n    凍結済みの葉のcriteria変更にあたるためmeta.basisChangesへ正当化宣言を追加した。詳細・evidenceは\n    G-EDIT-CAPTION-D のdetail/criteria参照。\n[x] D-4 G-EDIT-TRIM-A の 5.203秒。凍結素材では誰も満たせない（実測4.703秒）。\n    期待値を4.703秒へ直すか、音声を作り直して末尾に0.5秒を足すか。前者は calibration.json の、\n    後者は flac の SHA-256 が変わり B・C の verify に波及する。さらに C-14 のとおり素材TV・素材Qにも波及する。\n    なお 5.203 を 4.703 へ直すと A の対照が本番と同じ数字になって無力化するので、対照の設計もやり直すこと。\n    決定・実施記録（2026-08-11）：マスター指示によりゼロベースで再検討した結果、この問題は\n    既に2026-08-09セッションで正しく再設計・凍結済みと判明した。秒ではなくコマ単位で許容誤差を\n    測る方式へ変わっており、5.203秒という数値はもう使われていない（calibration.flac/jsonのSHA-256は\n    無変更）。ローカルで tests/trim-plan-check.mjs（20 PASS/0 FAIL）・tests/trim-duration-check.mjs\n    （18 PASS/0 FAIL）を実行し緑を確認した。追加対応不要としてマスター承認を得たため [x] にする。\n[x] D-5 G-EDIT-TRIM-D の測り方。継ぎ目の段差ではなく音声そのものの傾きを測っており、正しい実装も\n    フェード無しの対照も同じ18.54%で区別できない。加えて復号サンプリング周波数が未凍結で、\n    96kHzで読めば4.79%、192kHzなら2.40%で自動的に合格する（44100Hz=10.03% / 22050Hz=18.46%）。\n    相対の測り方へ改めるか、耳での判定へ改めるか。\n    実施記録：2026-08-11、3回の改訂を経て両方を採用（相対の測り方=二階差分z-score・baseline=クリップ全体 と、耳での判定=継ぎ目2に限りindependent-verifierの聴き比べ、を併用）。docs/roadmap.htmlのG-EDIT-TRIM-Dのcriteria.text/verifyを更新し、永続テストvideo-shorts/tests/trim-seam-glitch-check.mjsを新設(ローカルで10 PASS/0 FAIL)。ただしindependent-verifierによる実際の聴取確認は本セッションでは実行できず(Agent/Taskツール無し・音声再生手段無し)、G-EDIT-TRIM-Dのstatusはdoneにせずdoingのまま次回セッションへ持ち越した。\n[x] D-6 字幕スタイル（AI Video Captions）を移植するか。第1段階でも技術的に可能だが、実体はコード465行、\n    加えてOFLフォント4種の同梱義務と、実在人物名を表示名から外す作業が付く。\n    マスター決定（2026-08-11）：今回は後回し（スコープ外）。動的字幕演出以外の、問題のない機能を優先する。\n    実施記録：2026-08-11、決定をこのチェックリストへ記録した。実装・移植には一切着手していない。\n    再検討する場合は改めてこの葉を開く。\n[ ] D-7 G-EDIT-REFRAME-C / F の実写素材を調達するか【2026-08-08 検証で追加】\n    両ノードの detail に「口の動きが見える2人の実写が必要で、リポジトリの public domain 静止画からは\n    合成できない。出典・ライセンス・正解区間・SHA-256 を確定するまで着手しない」と明記されている。\n    素材調達は費用・権利・肖像の判断を伴うのでマスター事項。\n\n■ 判断待ちから外したもの\n[x] G-EDIT-TRIM-E の「文字認識が要るので未達」は誤りだった。葉B の MFCC+DTW の滑らせ検索が一致位置も\n    返すため、文字認識なしで語の開始時刻を測れる（実測誤差 こんにちは 0.000s / ありがとう -0.008s /\n    よろしく +0.005s、許容±0.3秒に対し十分小さい）。ただし葉E には別の反証があるので C-7 で処理する。\n\n■ 完了済み\n[x] 整理整頓そのもの（やる事とやらない事の仕分け）。本チェックリストがその成果物。\n[x] 反証41件の記録。CAPTION 16件は G-EDIT-CAPTION の detail、TRIM 14件は G-EDIT-TRIM の detail、\n    REFRAME 11件は G-EDIT-REFRAME の detail（PR #45 でマージ済み）。\n[x] 外部OSS4候補の敵対検証（4視点）と、CAPTION/TRIM への探り。結果は各項目へ反映済み。\n[x] 本チェックリストを basis-reviewer に掛け、反証14件を受けて修正した（C-3/C-4/C-5/C-9 の受入基準は\n    「何もしていない実装で合格できる」と実証されたため書き換え、C-13/C-14/C-15/D-7 を追加、\n    反証30件の中身を各ノードへ転記、置き場所を上書きされる meta.next からこの GOAL detail へ移した）。\n======================================================================\n\n【2026-08-08 実施記録】\nC-3 完了。planTrim が返す残す区間の端をコマの境目へ揃えるようにした(snapToFrames)。fps は probeSize が r_frame_rate から取る。fmt の桁を3→6桁へ。受入は G-EDIT-TRIM-F を新設し tests/trim-sync-check.py(7件)で測る。却下された『尺の差』ではなく、コマごとに絵と音の対応を突き合わせる。ずれは6コマ→0コマ。対照2本(揃えない/-shortest)がいずれも落ちることを確認済み。\nC-4 完了。ただし1回目の実装(b5f9489)は動いておらず、公式サブ2種の検証で判明してやり直した。判定対象を『任意の部分文字列』から『直す前の語そのもの』へ狭め、同梱の一般的な日本語の素材に出てくる語は載せない方式にした。受入は G-EDIT-CAPTION-C を書き換え tests/term-safety-check.py(16件)で測る。判定に使う素材と検証に使う素材を別物にし(held-out)、両方の SHA-256 を凍結した。経緯と根因は docs/failures.md 2026-08-08 を参照。\n\n━━━ 2026-08-08 セッション終了時点の判断待ち（次に読む人はここから）━━━\n\n【E-1】GOAL の3段階の文言（軌道修正 C-1）→ 2026-08-11 **閉じた（マスター承認済み）**\n  文言（このノードの冒頭）をマスターへ提示し、「承認する」との回答を得た。C-1 を [x] にした。\n\n【E-2】G-EDIT-TRIM-A の基準の作り直し\n  残す区間の端をコマの境目へ揃えるようにした結果、区間ごとの長さが最大 ±1/fps 動く。\n  15fps・残す区間4本なら最悪 ±0.27秒で、A の『±0.1秒で一致』を実装が正しくても破りうる。\n  (a)丸めを織り込んだ期待値と許容幅へ直す (b)素材の fps を凍結する、の2点が要る。\n  既存の『5.203秒は実現不可能』も未解決のまま同じ葉に残っている。\n\n【E-3】可変フレームレート素材（画面録画）の A/V 同期\n  G-EDIT-TRIM-F の対象外として凍結した。r_frame_rate は可変のとき最大値を返し、\n  実際のコマは k/fps の格子に乗らないため、揃えても継ぎ目の数だけずれる（実測 20区間で -12.5コマ）。\n  landscape の主用途が画面録画なので実在の条件。別の葉を立てる必要がある（未着手）。\n\n【E-4】用語辞書に残る危険（G-EDIT-CAPTION-C）→ 2026-08-09 **閉じた（危険を受け入れると決めた）**\n  マスター決定（原文）：「辞書はそんなに重要ではない。理由は LLM が修正するからだ。辞書というのは機械的に\n  正解を出すための機能である。だから網羅しなくてはいけない。しかし、LLM が字幕をチェックし、文脈からおかしい点を\n  修正すればよい。正直、必要性すら疑問である。また、今回は編集機能だ。人間の確認も通る。なのに辞書の精度に\n  労力を割くのは無能の証拠である。俺の案は世間にある平均的な辞書を実装。変換ミスは AI が直すから辞書の精度は\n  並で良いと定義する事である。」\n  → 素材による安全判定（common-japanese.txt / term-safety-check.mjs / held-out.txt）は削除し、\n    辞書は世間並みの形式チェックと重複拒否だけにした。「高速」「ました」等も登録でき、他の案件が壊れうる。\n    **その危険は受け入れる。**\n  → 字幕の正しさの責任は「AI が字幕を文脈で見て、おかしい点を直す」へ移る。加えて編集機能なので人間の確認も通る。\n    **その葉はまだ作っていない**（どの段階に置くかがマスターの判断待ち）。次に作る。\n\n【E-5】未処理のまま残っている反証\n  G-EDITOR 配下の反証41件（CAPTION 16 / TRIM 14 / REFRAME 11）のうち、\n  今回のセッションで閉じたのは C-3・C-4 に関わる分だけ。残りは未着手。\n  軌道修正チェックリストの C-5（凍結前の探りを関所にする）も未着手。\n\n【E-6】区間を広げる代償に上限が無い（2026-08-08 追加）\n  MIN_KEEP_FRAMES=2 は1コマ区間で映像のコマが落ちるのを防ぐために入れたが、広げるぶん詰まり方が甘くなる。\n  independent-verifier の実測: 短い言い淀みの速射（0.10秒＋隙間0.05秒）で詰めが 4.067s → 2.200s（46%減、区間33→12）。\n  1コマ未満の隙間が133msの残置区間になり、言い淀みの音が可聴で残る。\n  G-EDIT-TRIM-F の criteria（同期・コマ落ち）の範囲外で、どの葉もこの量に上限を置いていない。\n  案：詰めた結果が「揃えない場合の何割以上」であることを受入条件にする葉を立てる。"
     }
   ],
-  "updated": "2026-08-11"
+  "updated": "2026-08-13"
 }</script>
 
 <div class="wrap">

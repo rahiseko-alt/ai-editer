@@ -44,6 +44,7 @@ import {
   persistJobToken,
   loadPersistedJobToken,
   restoreJobToken,
+  hashToken,
 } from "../server/security.mjs";
 import { summarizeChunkResults } from "../server/claude-select.mjs";
 
@@ -1231,7 +1232,20 @@ t("P1-6: ジョブトークンをworkDirへ永続化し、再読込で同じ値�
   try {
     assert.strictEqual(loadPersistedJobToken(workDir), null, "永続化前はnull");
     persistJobToken(workDir, "persisted-token-value");
-    assert.strictEqual(loadPersistedJobToken(workDir), "persisted-token-value");
+    assert.strictEqual(loadPersistedJobToken(workDir), hashToken("persisted-token-value"));
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+t("P1-15-B: workDirへ永続化されるジョブトークンは平文ではなくハッシュである", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "video-shorts-p1-15-b-"));
+  try {
+    persistJobToken(workDir, "plaintext-should-not-appear");
+    const raw = fs.readFileSync(path.join(workDir, "job-token.txt"), "utf-8").trim();
+    assert.notStrictEqual(raw, "plaintext-should-not-appear",
+      "job-token.txtに平文のトークンがそのまま書かれている");
+    assert.strictEqual(raw, hashToken("plaintext-should-not-appear"));
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

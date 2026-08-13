@@ -17,6 +17,9 @@ import {
   unsubscribeJob,
   isRunning,
   activeJobIds,
+  beginRecaption,
+  endRecaption,
+  runGated,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
@@ -40,6 +43,8 @@ import {
   createSignatureSniffer,
   createRateLimiter,
   MAX_UPLOAD_BYTES,
+  MAX_JSON_BODY_BYTES,
+  hashToken,
 } from "./security.mjs";
 import {
   resolveTtlSeconds,
@@ -54,6 +59,9 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const STATIC_ROOT = path.join(ROOT, "webapp-mockup");
 const WORK_ROOT = path.join(ROOT, "work");
 const OUT_ROOT = path.join(ROOT, "output");
+// P1-17-A: symlink追随防止用にrealpathを起動時に1回だけ解決してキャッシュする
+// (毎リクエストでのrealpathSync呼び出しを避けるため)。
+const STATIC_ROOT_REAL = fs.realpathSync(STATIC_ROOT);
 
 // P1-2(A): 起動ごとに変わるトークン。正規のページ(index.html)にのみ埋め込んで配布する。
 const SERVER_TOKEN = generateStartupToken();
@@ -61,6 +69,11 @@ process.stderr.write(`[ai-editer] startup token (このプロセス限り有効)
 
 // P1-2(E): ジョブ起動(POST /api/jobs)へのレート制限。単一利用者のローカルツール前提の固定ウィンドウ。
 const jobsRateLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
+
+// P1-13-E: 字幕保存・用語追加・焼き直しの書き込み系エンドポイントへのレート制限。
+// jobsRateLimiterと違いキーをjobId単位にする(P1-2-Eの"global"固定キーだと、1つのジョブへの
+// 連打が無関係な別ジョブの正規リクエストまで429にしてしまうため)。
+const writeRateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 
 // P2-4(A/B): ジョブの寿命管理。既定値はVS_JOB_TTL_SECONDS/VS_STORAGE_QUOTA_BYTESで上書きできる
 // （job-lifecycle.mjs 参照。客のPC上でwork/outputが際限なく溜まるのを防ぐ）。
@@ -130,12 +143,46 @@ function jsonRes(res, status, body) {
 }
 
 // ── リクエストボディを読み切る（小データ用） ────────────────
-function readBody(req) {
+// P1-13-A: maxBytes を超えるボディは、全量を溜め切る前に打ち切って拒否する
+// (字幕の直し・用語追加は本来数百バイト程度で足りるため、上限超はDoS意図とみなす)。
+class BodyTooLargeError extends Error {
+  constructor(maxBytes) {
+    super(`リクエスト本文が上限(${maxBytes}バイト)を超えています`);
+    this.name = "BodyTooLargeError";
+  }
+}
+
+function readBody(req, { maxBytes = MAX_JSON_BODY_BYTES } = {}) {
   return new Promise((resolve, reject) => {
+    // req.destroy() はソケットそのものを破棄するため、呼び出し側が413レスポンスを
+    // 書く前に接続が切れてクライアントには ECONNRESET しか届かない(413を書けない)。
+    // ソケットは生かしたまま、以降のチャンクをバッファへ積まない(=メモリを増やさない)
+    // だけにすることで、413応答を正常に返しつつメモリ上限も守る。
+    const declared = Number(req.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      req.resume(); // 残りのボディは消費するだけで捨てる(蓄積しない)
+      return reject(new BodyTooLargeError(maxBytes));
+    }
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
+    let received = 0;
+    let rejected = false;
+    req.on("data", (c) => {
+      received += c.length;
+      if (rejected) return; // 上限超過後のチャンクは消費するだけで捨てる(蓄積しない)
+      if (received > maxBytes) {
+        rejected = true;
+        reject(new BodyTooLargeError(maxBytes));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (rejected) return;
+      resolve(Buffer.concat(chunks));
+    });
+    req.on("error", (e) => {
+      if (!rejected) reject(e);
+    });
   });
 }
 
@@ -163,6 +210,20 @@ function serveStatic(req, res) {
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
     res.writeHead(404);
     return res.end("Not Found");
+  }
+
+  // P1-17-A: シンボリックリンクの先がwebapp-mockup外を指していないか実体で確認する
+  // (上のprefix検査はreqPathの文字列だけを見ており、リンクの追随までは検出できない)。
+  let real;
+  try {
+    real = fs.realpathSync(resolved);
+  } catch (_) {
+    res.writeHead(404);
+    return res.end("Not Found");
+  }
+  if (!real.startsWith(STATIC_ROOT_REAL + path.sep) && real !== STATIC_ROOT_REAL) {
+    res.writeHead(403);
+    return res.end("Forbidden");
   }
 
   const ext = path.extname(resolved).toLowerCase();
@@ -411,6 +472,20 @@ function handleClip(req, res, jobId, file) {
     return res.end("Not Found");
   }
 
+  // P1-17-A: symlinkの先がoutput外を指していないか実体で確認する。OUT_ROOTはジョブが
+  // 一度も作られていない状態では存在しないため、realpathはここで都度解決する。
+  try {
+    const outRootReal = fs.realpathSync(OUT_ROOT);
+    const real = fs.realpathSync(clipPath);
+    if (!real.startsWith(outRootReal + path.sep) && real !== outRootReal) {
+      res.writeHead(403);
+      return res.end("Forbidden");
+    }
+  } catch (_) {
+    res.writeHead(404);
+    return res.end("Not Found");
+  }
+
   const stat = fs.statSync(clipPath);
   res.writeHead(200, {
     "Content-Type": "video/mp4",
@@ -457,9 +532,12 @@ function isAuthorizedForJob(req, url, jobId) {
   if (!id) return false;
   const jobToken = extractJobToken(req, url.searchParams);
   if (isValidJobToken(id, jobToken)) return true;
-  const persisted = loadPersistedJobToken(path.join(WORK_ROOT, id));
-  if (persisted && isValidToken(jobToken, persisted)) {
-    restoreJobToken(id, persisted);
+  // P1-15-B: ディスクの job-token.txt にはハッシュのみが入っている(persistJobToken参照)。
+  // 候補トークンを同じくハッシュ化してから比較する。一致すれば平文の候補値(=正規のトークン
+  // そのもの)をメモリのregistryへ再登録する(restoreJobTokenはハッシュではなく平文を保持する)。
+  const persistedHash = loadPersistedJobToken(path.join(WORK_ROOT, id));
+  if (persistedHash && jobToken && isValidToken(hashToken(jobToken), persistedHash)) {
+    restoreJobToken(id, jobToken);
     return true;
   }
   return false;
@@ -514,7 +592,8 @@ async function handlePutCaptions(req, res, jobId) {
   let body;
   try {
     body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
-  } catch (_) {
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return jsonRes(res, 413, { error: e.message });
     return jsonRes(res, 400, { error: "本文が JSON ではありません" });
   }
   let transcript;
@@ -546,7 +625,8 @@ async function handlePostTerms(req, res, jobId) {
   let body;
   try {
     body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
-  } catch (_) {
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return jsonRes(res, 413, { error: e.message });
     return jsonRes(res, 400, { error: "本文が JSON ではありません" });
   }
   let result;
@@ -575,14 +655,24 @@ async function handleRecaption(req, res, jobId) {
     // 走っている最中に焼き直すと、同じファイルを2つの工程が書き合う。
     return jsonRes(res, 409, { error: "このジョブはまだ処理中です。終わってから焼き直してください" });
   }
+  // P1-13-B: 同一ジョブへの並列な焼き直しリクエストは、一時ファイル名の競合を招くため拒否する。
+  if (!beginRecaption(id)) {
+    return jsonRes(res, 409, { error: "このジョブは既に焼き直し中です。終わってからもう一度試してください" });
+  }
   try {
-    const r = await recaptionStage({
-      workDir: path.join(WORK_ROOT, id),
-      outDir: path.join(OUT_ROOT, id),
-    });
+    // 本編ジョブと同じ同時実行数ゲートを共有し、焼き直し由来のffmpeg起動が
+    // 際限なく積み上がらないようにする(P1-13-B)。
+    const r = await runGated(() =>
+      recaptionStage({
+        workDir: path.join(WORK_ROOT, id),
+        outDir: path.join(OUT_ROOT, id),
+      }),
+    );
     return jsonRes(res, 200, { ok: true, ...r });
   } catch (e) {
     return jsonRes(res, 500, { error: e.message });
+  } finally {
+    endRecaption(id);
   }
 }
 
@@ -592,10 +682,26 @@ async function handleRequest(req, res) {
   const { pathname } = url;
   const method = req.method.toUpperCase();
 
+  // P1-16-A/B/C/D: CSP・nosniff・X-Frame-Options・Referrer-Policyを全レスポンスへ付ける。
+  // writeHead呼び出しより前にsetHeaderしておけば、後続の各ハンドラのwriteHead(status, {...})
+  // とマージされる(Node http仕様)。
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'",
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+
   if (pathname.startsWith("/api/")) {
     if (!isAllowedApiOrigin(req)) {
       return jsonRes(res, 401, { error: "Unauthorized" });
     }
+  } else if (!isAllowedHost(req.headers.host, PORT)) {
+    // P1-15-A: 静的配信(GET /等)にもHost検査を課す。ここを素通りさせると、別名ホストを
+    // 名乗るだけの同一PC上の別プロセスが index.html 経由で起動時トークンを取得できてしまう。
+    return jsonRes(res, 401, { error: "Unauthorized" });
   }
 
   // POST /api/jobs（新規ジョブ作成。まだジョブが存在せず起動時トークンでのみ認可する）
@@ -634,6 +740,9 @@ async function handleRequest(req, res) {
     const id = decodeId(capMatch[1]);
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
     if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (method === "PUT" && !writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
     return method === "GET"
       ? handleGetCaptions(req, res, id)
       : handlePutCaptions(req, res, id);
@@ -645,6 +754,9 @@ async function handleRequest(req, res) {
     const id = decodeId(termMatch[1]);
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
     if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (!writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
     return handlePostTerms(req, res, id);
   }
 
@@ -654,6 +766,9 @@ async function handleRequest(req, res) {
     const id = decodeId(recapMatch[1]);
     if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
     if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (!writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
     return handleRecaption(req, res, id);
   }
 
@@ -703,6 +818,16 @@ const server = http.createServer((req, res) => {
     }
   });
 });
+
+// P1-13-C: だらだらとヘッダ・ボディを送り続ける接続にソケットを占有され続けないよう、
+// Node既定値任せにせず明示的な値を設定する。
+// headersTimeout はヘッダ受信のみに掛かるため、20秒あれば正規のリクエストには十分。
+// requestTimeout は動画アップロード(最大500MB、低速回線での完了まで)を壊さないよう、
+// Node既定(300秒)より長い10分を明示する(値そのものより「上限が明示されている」ことが
+// 目的。既定値のままだと将来のNodeバージョン更新で黙って変わりうる)。
+// なお requestTimeout はレスポンスヘッダ送信後の接続(SSE購読等)には適用されない。
+server.headersTimeout = 20_000;
+server.requestTimeout = 600_000;
 
 server.listen(PORT, "127.0.0.1", () => {
   process.stderr.write(`[ai-editer] server listening on http://127.0.0.1:${PORT}\n`);
