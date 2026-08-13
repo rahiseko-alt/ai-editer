@@ -15,9 +15,12 @@ PyTorch や onnxruntime は不要。
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 import re
+import shutil
 import sys
+import tempfile
 from dataclasses import dataclass, field
 
 try:
@@ -107,6 +110,84 @@ class Track:
     votes: dict[str, int] = field(default_factory=dict)
 
 
+def ascii_safe_cache_path(source_path: str) -> str:
+    """source_path のバイトを ASCII のみのパスへコピーし、そのパスを返す（AUD-P1-08）。
+
+    Windows 版 OpenCV の ONNX 読み込み系 API（`FaceDetectorYN.create()` /
+    `FaceRecognizerSF.create()`）は、対象ファイルが実在してサイズも正しくても、
+    絶対パスに非ASCII文字（日本語など）が含まれていると `Can't read ONNX file` で
+    失敗する（Linux の OpenCV では起きない、Windows+OpenCV 固有の制限）。
+    呼び出し前にモデルの内容を ASCII のみの一時パスへコピーし、そちらを渡す。
+
+    source_path が既に ASCII のみなら、コピーせずそのまま返す（無駄な複製をしない）。
+    """
+    try:
+        source_path.encode("ascii")
+        return source_path
+    except UnicodeEncodeError:
+        pass
+
+    cache_dir = os.path.join(tempfile.gettempdir(), "video-shorts-ascii-model-cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    # 内容が変わっても同じ名前を再利用してしまわないよう、パス自体をハッシュ化した
+    # ASCII のみのファイル名にする（元パスに依存しない安定な対応付け）。
+    digest = hashlib.sha256(os.path.abspath(source_path).encode("utf-8")).hexdigest()
+    ext = os.path.splitext(source_path)[1]
+    cache_path = os.path.join(cache_dir, f"{digest}{ext}")
+    src_size = os.path.getsize(source_path)
+    if not os.path.exists(cache_path) or os.path.getsize(cache_path) != src_size:
+        # 直接 cache_path へ書くと、コピー中に別プロセスが読みに来た場合や
+        # コピー中断時に壊れたファイルが残りうる。同ディレクトリへ書いてから
+        # rename する（state.json の atomic write と同じ考え方）。
+        fd, tmp_path = tempfile.mkstemp(dir=cache_dir, prefix=f"{digest}.", suffix=".tmp")
+        os.close(fd)
+        try:
+            shutil.copyfile(source_path, tmp_path)
+            os.replace(tmp_path, cache_path)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+    return cache_path
+
+
+def imread_unicode(path: str, flags: int = cv2.IMREAD_COLOR):
+    """cv2.imread の代わり（AUD-P1-08）。
+
+    Windows 版 OpenCV の cv2.imread はパスに非ASCII文字（日本語など）が含まれると
+    読めないことがある。np.fromfile（Python レベルのファイルオープンなので非ASCIIパスでも
+    問題ない）でバイト列を読み、cv2.imdecode でデコードすることで回避する。
+    読めなければ cv2.imread と同じく None を返す（例外にしない）。
+    """
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+    except OSError:
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, flags)
+
+
+def imwrite_unicode(path: str, image) -> bool:
+    """cv2.imwrite の代わり（AUD-P1-08）。
+
+    書き込み側も同じ制限を受けうるため、cv2.imencode でエンコードしたバイト列を
+    ndarray.tofile（Python レベルのファイル書き込み）でパスへ書く。
+    cv2.imwrite と同じく、成功したら True、失敗したら False を返す（例外にしない）。
+    """
+    ext = os.path.splitext(path)[1] or ".png"
+    ok, buf = cv2.imencode(ext, image)
+    if not ok:
+        return False
+    try:
+        buf.tofile(path)
+    except OSError:
+        return False
+    return True
+
+
 def create_detector(width: int, height: int, model_path: str = MODEL_PATH):
     """YuNet 検出器を作る。model_path が無ければ理由の分かる例外にする（サイレント失敗禁止）。"""
     if not os.path.exists(model_path):
@@ -114,7 +195,8 @@ def create_detector(width: int, height: int, model_path: str = MODEL_PATH):
             f"顔検出モデルが見つかりません: {model_path}\n"
             "配布物に同梱されているはずのファイルです。src/models/ を確認してください。"
         )
-    det = cv2.FaceDetectorYN.create(model_path, "", (width, height), SCORE_THRESHOLD, NMS_THRESHOLD, 5000)
+    safe_path = ascii_safe_cache_path(model_path)
+    det = cv2.FaceDetectorYN.create(safe_path, "", (width, height), SCORE_THRESHOLD, NMS_THRESHOLD, 5000)
     det.setInputSize((width, height))
     return det
 
@@ -146,7 +228,8 @@ def create_recognizer(model_path: str = RECOGNIZER_PATH):
             f"顔識別モデルが見つかりません: {model_path}\n"
             "配布物に同梱されているはずのファイルです。src/models/ を確認してください。"
         )
-    return cv2.FaceRecognizerSF.create(model_path, "")
+    safe_path = ascii_safe_cache_path(model_path)
+    return cv2.FaceRecognizerSF.create(safe_path, "")
 
 
 def face_signature(image, raw_face, recognizer=None):
@@ -167,7 +250,7 @@ def register_person(image_path, name="target", detector=None, recognizer=None):
 
     顔が写っていなければ理由の分かる例外にする（黙って「登録できた」ことにしない）。
     """
-    image = cv2.imread(image_path)
+    image = imread_unicode(image_path)
     if image is None:
         raise FileNotFoundError(f"参照する顔写真が読めません: {image_path}")
     h, w = image.shape[:2]
@@ -452,7 +535,7 @@ def write_review_images(frames, indices, out_dir, prefix="review"):
         if not (0 <= i < len(frames)):
             continue
         path = os.path.join(out_dir, f"{prefix}-{i:06d}.png")
-        if not cv2.imwrite(path, frames[i]):
+        if not imwrite_unicode(path, frames[i]):
             # imwrite は失敗しても例外を出さず False を返す。書けていないパスを
             # 「書き出した」として返すと、確認したつもりの取りこぼしが生まれる。
             raise OSError(f"確認用の静止画を書き出せませんでした: {path}")
@@ -525,7 +608,7 @@ def write_face_choices(frames, out_dir, detect_every: int = DETECT_EVERY_DEFAULT
         if w < 2 or h < 2:
             continue
         path = os.path.join(out_dir, f"face-{n}.png")
-        if not cv2.imwrite(path, frames[frame_i][y : y + h, x : x + w]):
+        if not imwrite_unicode(path, frames[frame_i][y : y + h, x : x + w]):
             raise OSError(f"顔の切り出し画像を書き出せませんでした: {path}")
         out.append({"index": n, "path": path, "track_id": tid})
     return out

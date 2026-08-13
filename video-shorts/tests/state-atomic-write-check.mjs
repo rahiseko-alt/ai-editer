@@ -24,11 +24,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fork } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
 const ATOMIC_MODULE = path.join(ROOT, "src", "atomic-json.mjs");
+// import指定子には生のファイルシステムパスではなく file:// URL を渡す（AUD-P2-18b）。
+// Windowsの絶対パス（ドライブ文字+バックスラッシュ、例 C:\foo\bar.mjs）をそのまま
+// import指定子に埋め込むと、"C:" がURLスキームだと誤認されて
+// ERR_UNSUPPORTED_ESM_URL_SCHEME で落ちる（有効なのは file:// URL か相対/裸指定子のみ）。
+// pathToFileURL() を通せば、OSに関わらず常に有効な import 指定子になる。
+const ATOMIC_MODULE_SPECIFIER = pathToFileURL(ATOMIC_MODULE).href;
 
 let pass = 0, fail = 0;
 async function t(name, fn) {
@@ -82,7 +88,7 @@ await t("②atomic実装: renameを試みる直前に強制終了しても、元
 
   const childScript = `
 import fs from "node:fs";
-import { writeJsonAtomically } from ${JSON.stringify(ATOMIC_MODULE)};
+import { writeJsonAtomically } from ${JSON.stringify(ATOMIC_MODULE_SPECIFIER)};
 const statePath = process.argv[2];
 const realRename = fs.renameSync;
 fs.renameSync = (...args) => {
