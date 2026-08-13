@@ -3807,7 +3807,8 @@
         {
          "text": "候補manifestのfileに../../を含む値が入っていても、recaptionの出力(rename等)が成果物ディレクトリの外へ及ばない",
          "verify": "../../を含むfileを持つcandidates.jsonを用意し、recaption-stage.mjs経由のrecaptionを実行する。境界外の対象ファイルが書き換わらないことを確認する。対照として、修正前のコード(basename限定を入れない版)では境界外ファイルが実際に書き換わることを確認する。",
-         "evidence": "47398d0b7d3c8f6369e5df957172e166b1a8cfb6"
+         "evidence": "47398d0b7d3c8f6369e5df957172e166b1a8cfb6",
+         "verifyCmd": "node video-shorts/tests/recaption-path-traversal-check.mjs"
         }
        ]
       },
@@ -3822,7 +3823,8 @@
         {
          "text": "候補manifestのfileに../../を含む値が入っていても、mosaic確定処理の読み取り・移動が成果物ディレクトリの外へ及ばない",
          "verify": "../../を含むfileを持つcandidates.jsonを用意し、apply-mosaic-stage.mjs経由のmosaic確定を実行する。境界外の対象ファイルが読み取られない・移動されないことを確認する。対照として、修正前のコードでは境界外ファイルが実際に読み取られる/移動されることを確認する。",
-         "evidence": "33d044da217a0455e9365563e241db2e4d8664a3"
+         "evidence": "33d044da217a0455e9365563e241db2e4d8664a3",
+         "verifyCmd": "node video-shorts/tests/mosaic-path-traversal-check.mjs"
         }
        ]
       },
@@ -3837,7 +3839,8 @@
         {
          "text": "4秒の入力を1秒へ詰めた候補について、字幕を編集してrecaptionを実行した後の出力尺が1秒のままである(4秒へ戻らない)",
          "verify": "4秒の素材をtrim編集で1秒に詰めたcandidateを作り、字幕を編集してrecaption APIを呼ぶ。生成された動画をffprobeで測り、durationが約1.000秒であること（4.000秒に戻っていないこと）を確認する。",
-         "evidence": "483addefc435d7dfc7b8e080e4952fae909d8b28"
+         "evidence": "483addefc435d7dfc7b8e080e4952fae909d8b28",
+         "verifyCmd": "node video-shorts/tests/recaption-render-plan-check.mjs"
         }
        ]
       },
@@ -3852,7 +3855,8 @@
         {
          "text": "字幕を編集してrecaptionを実行した後の出力解像度が、初回renderの出力解像度と一致する(srcW/srcH参照に起因する値化けが起きない)",
          "verify": "候補を初回renderし、出力解像度をffprobeで記録する。字幕を編集してrecaption APIを呼び、生成された動画の解像度をffprobeで測る。初回renderの解像度と一致することを確認する。対照として、srcW/srcHをmanifestに保存しない現行実装では解像度が初回と異なり得ることを確認する。",
-         "evidence": "483addefc435d7dfc7b8e080e4952fae909d8b28"
+         "evidence": "483addefc435d7dfc7b8e080e4952fae909d8b28",
+         "verifyCmd": "node video-shorts/tests/recaption-render-plan-check.mjs"
         }
        ]
       },
@@ -3867,7 +3871,8 @@
         {
          "text": "TTLを超えたジョブでも、recaptionが実行中の間はwork/outputディレクトリがTTL sweepで削除されない",
          "verify": "ジョブのTTLを経過させた状態でrecaptionを開始し、実行中(recaptioningJobsに登録された状態)に毎時sweep相当の掃除処理を走らせる。対象のwork/outputディレクトリが削除されずに残ることを確認する。対照として、recaptioningJobsを無視する現行実装では削除されることを確認する。",
-         "evidence": "d3a9bbcd6f81c3070949735d918d8aa40ebc5386"
+         "evidence": "d3a9bbcd6f81c3070949735d918d8aa40ebc5386",
+         "verifyCmd": "node video-shorts/tests/recaption-ttl-protection-check.mjs"
         }
        ]
       },
@@ -3882,7 +3887,8 @@
         {
          "text": "TTLを超えたジョブでも、recaptionが共有実行ゲートで実行待ちの間はwork/outputディレクトリがTTL sweepで削除されない",
          "verify": "ジョブのTTLを経過させた状態で、共有実行ゲートの上限に達した状況を作ってrecaptionを実行待ちにし、待機中に毎時sweep相当の掃除処理を走らせる。対象のwork/outputディレクトリが削除されずに残ることを確認する。対照として、待機中IDを無視する現行実装では削除されることを確認する。",
-         "evidence": "d3a9bbcd6f81c3070949735d918d8aa40ebc5386"
+         "evidence": "d3a9bbcd6f81c3070949735d918d8aa40ebc5386",
+         "verifyCmd": "node video-shorts/tests/recaption-ttl-protection-check.mjs"
         }
        ]
       },
@@ -3897,7 +3903,8 @@
         {
          "text": "src/配下にgit未追跡のファイルを置いた状態でbuild-dist.mjsを実行しても、そのファイルが生成されたdistへ含まれない",
          "verify": "src/配下にgit未追跡のダミーファイル(例: customer-secret.txt)を置いた状態でbuild-dist.mjsを実行し、生成されたdist配下にそのファイルが存在しないことを確認する。対照として、現行実装ではdistへコピーされることを確認する。",
-         "evidence": "ead81ed6da60d419997d7482529add6918984721"
+         "evidence": "ead81ed6da60d419997d7482529add6918984721",
+         "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs"
         }
        ]
       },
@@ -3912,7 +3919,8 @@
         {
          "text": "APIキー相当の秘密文字列を、子プロセスの出力ストリームの途中(チャンク境界)で分割して流しても、伏字化後にSSEイベントとして配信される内容に元の鍵が現れない",
          "verify": "既知の秘密文字列を複数のチャンク分割位置(鍵の途中でstdoutが分割される位置を複数パターン)で子プロセス出力として流し、redactSecrets()適用後のSSEイベントを調べる。元の秘密文字列が含まれないことを確認する。対照として、分割せず1チャンクで流した場合は現行実装でも伏字化に成功することを確認する。",
-         "evidence": "369cd6609ab805407a379bdc8a88a7f47a2eb507"
+         "evidence": "369cd6609ab805407a379bdc8a88a7f47a2eb507",
+         "verifyCmd": "node video-shorts/tests/security-secret-redaction-stream-check.mjs"
         }
        ]
       },
@@ -3927,7 +3935,8 @@
         {
          "text": "APIキー相当の秘密文字列を、子プロセスの出力ストリームの途中(チャンク境界)で分割して流しても、伏字化後にstate.jsonへ永続化される内容に元の鍵が現れない",
          "verify": "既知の秘密文字列を複数のチャンク分割位置で子プロセス出力として流し、redactSecrets()適用後のstate.jsonを調べる。元の秘密文字列が含まれないことを確認する。対照として、分割せず1チャンクで流した場合は現行実装でも伏字化に成功することを確認する。",
-         "evidence": "369cd6609ab805407a379bdc8a88a7f47a2eb507"
+         "evidence": "369cd6609ab805407a379bdc8a88a7f47a2eb507",
+         "verifyCmd": "node video-shorts/tests/security-secret-redaction-stream-check.mjs"
         }
        ]
       },
@@ -3942,7 +3951,8 @@
         {
          "text": "モザイク確定処理の、元動画のstash移動が完了した直後・candidates.json書き込みが完了する前のタイミングでプロセスを強制終了しても、再起動後にcandidates.jsonがパース可能で、参照先ファイルが実在する状態に復元できる",
          "verify": "モザイク確定処理を実行し、apply-mosaic-stage.mjsのstash移動完了直後（manifest書き込み前）でプロセスをkillするテストを作る。再起動後にcandidates.jsonをJSON.parseでき、記載された各fileが実際に存在することを確認する。対照として、現行の直接truncate上書き実装では、同じタイミングでkillするとcandidates.jsonが壊れる、または存在しないファイルを指すことを確認する。",
-         "evidence": "0440f9a2ac22026858364d1394a1170034f8fdf7"
+         "evidence": "0440f9a2ac22026858364d1394a1170034f8fdf7",
+         "verifyCmd": "node video-shorts/tests/mosaic-atomic-crash-check.mjs"
         }
        ]
       },
@@ -3957,7 +3967,8 @@
         {
          "text": "配布ZIPを展開した状態で、user-manual.htmlに書かれた手順を上から順に実行すると、pipeline initからselectまでの間で「state.json がありません」エラーにならない",
          "verify": "build-dist.mjsで生成したdistを展開し、user-manual.htmlの手順を上から実行するE2Eスクリプトを実行する。state.jsonがありませんエラーで停止しないことを確認する。",
-         "evidence": "0879d0b528f1b750fef696ee8f1b3b94185705d4"
+         "evidence": "0879d0b528f1b750fef696ee8f1b3b94185705d4",
+         "verifyCmd": "node video-shorts/tests/e2e-manual-walkthrough.mjs"
         }
        ]
       },
@@ -3972,7 +3983,8 @@
         {
          "text": "配布ZIPを展開した状態で、user-manual.htmlが案内するファイルパスが実際にdist配下に存在し、記載通りに開ける",
          "verify": "build-dist.mjsで生成したdistを展開し、user-manual.html内でユーザーが開くよう案内されているファイルパスを特定する。そのパスがdist配下に実在し、記載の手順通りに開けることを確認する(マニュアル側の案内先を書き換える修正・distへファイルを追加する修正のいずれで直っていても合格とする)。",
-         "evidence": "d576ac76177558913d2662da3e91945faf10c9e2"
+         "evidence": "d576ac76177558913d2662da3e91945faf10c9e2",
+         "verifyCmd": "node video-shorts/tests/manual-output-reference-check.mjs"
         }
        ]
       },
@@ -3987,7 +3999,8 @@
         {
          "text": "日本語を含む絶対パス配下に配置したWindows環境で、face_mosaic.pyのFaceDetectorYN.create()がONNXモデルの読み込みに成功する",
          "verify": "Windows環境で日本語文字を含む絶対パス(例: C:\\ユーザー\\テスト\\)配下にリポジトリを配置し、face_mosaic.pyを実行してFaceDetectorYN.create()を呼ぶ。Can't read ONNX fileエラーにならず初期化に成功することを確認する。対照として、現行実装では同条件でエラーになることを確認する。",
-         "evidence": "33a2fff0d2e40ac41c61b3aaa30dc4e13d5d44f3"
+         "evidence": "33a2fff0d2e40ac41c61b3aaa30dc4e13d5d44f3",
+         "verifyCmd": "python3 video-shorts/tests/face-mosaic-check.py"
         }
        ]
       },
@@ -4002,7 +4015,8 @@
         {
          "text": "10-bit/BT.2020(HDR)の入力素材をrenderすると、出力がyuv420p(8-bit)かつBT.709で書き出される",
          "verify": "10-bit/BT.2020のHDR素材をrender-vertical.mjs経由でrenderし、出力ファイルをffprobeで調べる。pix_fmtがyuv420pであり、color_primaries/transferがBT.709相当であることを確認する。対照として、現行実装ではyuv420p10le/BT.2020のまま出力されることを確認する。",
-         "evidence": "568da5a10ec6ad8ec1c618ff3c44ec58d3f9f96c"
+         "evidence": "568da5a10ec6ad8ec1c618ff3c44ec58d3f9f96c",
+         "verifyCmd": "node video-shorts/tests/hdr-tonemap-check.mjs"
         }
        ]
       },
@@ -4017,7 +4031,8 @@
         {
          "text": "SSE接続が一時的に切断されても、UIが自動的に再接続し、切断中に見逃した進捗を購読直後のsnapshotで取り戻せる",
          "verify": "ジョブ実行中にSSE接続をネットワーク層で強制切断し、切断中に少なくとも1段階の工程が進む長さ(サーバー側の進捗イベントが1件以上発生する状態)を作る。UIが手動操作なしで再接続すること、および切断中に発生した進捗が購読直後のsnapshotとして表示に反映されることを確認する。対照として、snapshot送出を無効にした版では切断中の進捗が表示に反映されないことを確認する。",
-         "evidence": "9fce0c01a4511153f350f22934b60d6c2a6c81c7"
+         "evidence": "9fce0c01a4511153f350f22934b60d6c2a6c81c7",
+         "verifyCmd": "node video-shorts/tests/webapp-sse-reconnect-check.mjs"
         }
        ]
       },
@@ -4032,7 +4047,8 @@
         {
          "text": "サーバーが業務エラー(4xx/5xx応答)を返した場合はEventSourceを閉じるが、通信切断(transport error)の場合は閉じずに自動再接続を試みる",
          "verify": "業務エラー(例: 存在しないジョブIDへの購読で4xx応答)を発生させ、EventSourceが閉じて再接続を試みないことを確認する。別途、通信のみを強制切断させ、EventSourceが閉じずに自動再接続を試みることを確認する。",
-         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050"
+         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050",
+         "verifyCmd": "node video-shorts/tests/sse-business-error-check.mjs"
         }
        ]
       },
@@ -4047,7 +4063,8 @@
         {
          "text": "ジョブ開始のPOSTリクエストへの応答からEventSource接続までの間にサーバーが送った初期進捗イベントも、UIの表示に反映される(取りこぼされない)",
          "verify": "POST /api/jobsへの応答からEventSource接続までの間に、サーバー側で意図的に初期進捗イベント(順番待ち等)を送出させる遅延を再現する。EventSource接続後のUI表示に、その間に送られたイベントの内容が反映されていることを確認する。",
-         "evidence": "9a0495eb18c97c6fe316e4e5fb5af458271a2bc0"
+         "evidence": "9a0495eb18c97c6fe316e4e5fb5af458271a2bc0",
+         "verifyCmd": "node video-shorts/tests/sse-snapshot-check.mjs"
         }
        ]
       },
@@ -4062,7 +4079,8 @@
         {
          "text": "ハングさせた子プロセス(ffmpeg等)を持つジョブに対してキャンセルAPIを呼ぶと、その子プロセスが停止し、実行枠が解放されて後続ジョブが進行する",
          "verify": "意図的にハングするffmpeg呼び出し(例: 標準入力を待ち続けるコマンド)を含むジョブを開始し、キャンセルAPIを呼ぶ。該当子プロセスがOSレベルで終了していること、実行枠が解放され後続にキューされたジョブが開始されることを確認する。",
-         "evidence": "0d11d8a6f1753fe99aa77cafc4e7d079b3469d41"
+         "evidence": "0d11d8a6f1753fe99aa77cafc4e7d079b3469d41",
+         "verifyCmd": "node video-shorts/tests/job-cancel-timeout-check.mjs"
         }
        ]
       },
@@ -4077,7 +4095,8 @@
         {
          "text": "意図的にハングさせた子プロセス(ffmpeg等)を持つジョブは、誰もキャンセルAPIを呼ばなくても、工程別に定めたdeadlineを超えた時点で自動的にtimeout終端状態になり、実行枠が解放される",
          "verify": "意図的にハングするffmpeg呼び出しを含むジョブを開始し、キャンセルAPIを一切呼ばずに放置する。工程別deadlineの経過後、ジョブがtimeout相当の終端状態になり、該当子プロセスが停止し、実行枠が解放されて後続ジョブが進行することを確認する。",
-         "evidence": "0d11d8a6f1753fe99aa77cafc4e7d079b3469d41"
+         "evidence": "0d11d8a6f1753fe99aa77cafc4e7d079b3469d41",
+         "verifyCmd": "node video-shorts/tests/job-cancel-timeout-check.mjs"
         }
        ]
       },
@@ -4092,7 +4111,8 @@
         {
          "text": "recaption実行中に字幕PUTで新しい字幕を保存すると、その回のrecaptionが完了した時点の動画が新しい字幕の内容で書き出される(古いsnapshotのまま焼かれない)",
          "verify": "実動画でrecaptionを開始した直後に、ASS生成前後を見計らって新しい字幕内容でPUT /captionsを送る。両リクエストが200で完了した後、生成された動画に埋め込まれた字幕が、PUTで保存した新しい内容と一致することを確認する。対照として、現行実装では旧字幕のまま焼かれることを確認する(2026-08-13裏取りE2E #3で確認済みの再現条件を踏襲)。",
-         "evidence": "c5b2129ebbc5246fefa35b15fbdc2cff4ebba34a"
+         "evidence": "c5b2129ebbc5246fefa35b15fbdc2cff4ebba34a",
+         "verifyCmd": "node video-shorts/tests/caption-recaption-lock-check.mjs"
         }
        ]
       },
@@ -4107,7 +4127,8 @@
         {
          "text": "マウスを使わずTabキーだけでページを操作したとき、動画アップロード操作にフォーカスが到達し、Enter/Spaceでファイル選択ダイアログを開ける",
          "verify": "Chromeでキーボードのみ(Tabキー)を使い、webapp-mockupのトップページを操作する。動画アップロード領域にフォーカスリングが表示され、Enter/Spaceキーでファイル選択が開くことを確認する。",
-         "evidence": "c844a57ac12d362be89c9ccde57d75393d3f2d0b"
+         "evidence": "c844a57ac12d362be89c9ccde57d75393d3f2d0b",
+         "verifyCmd": "node video-shorts/tests/webapp-upload-keyboard-check.mjs"
         }
        ]
       },
@@ -4122,7 +4143,8 @@
         {
          "text": "consent.htmlの同意画面から、同意対象として名指しされている契約書の確定本文へ実際に到達できる(閲覧できない文書への同意を求めない)",
          "verify": "consent.htmlを開き、「第10版」等で名指しされている契約書へのリンクまたは表示内容を辿る。確定版(素案・要確定と明記されていない本文)が実際に閲覧できることを確認する。到達できない場合は、同意操作(同意ボタン等)が無効化されていることを確認する。",
-         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050"
+         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050",
+         "verifyCmd": "node video-shorts/tests/consent-contract-unavailable-check.mjs"
         }
        ]
       },
@@ -4137,7 +4159,8 @@
         {
          "text": "Windows環境のOneDrive同期フォルダ配下・日本語を含むパスに配置した状態で、期限切れジョブのディレクトリに対しjob-lifecycle.mjsの削除処理を実行しても、Nodeプロセスがクラッシュせず削除が完了する",
          "verify": "上記の素材の作り方に従い、実際にOneDriveクライアントが同期しているフォルダ配下(日本語を含む絶対パス)にリポジトリを配置する。期限切れ相当のジョブディレクトリを作り、job-lifecycle.mjsの削除処理(fs.rmSync相当)を実行する。プロセスが終了コード-1073740791等でクラッシュせず、ディレクトリが削除されることを確認する。対照として、%TEMP%等のASCIIパス・OneDrive非同期フォルダでは現行実装でもクラッシュしないことを確認する。",
-         "evidence": "c3b2aa5483d67fb1b6442bd4be837f715ee90583"
+         "evidence": "c3b2aa5483d67fb1b6442bd4be837f715ee90583",
+         "verifyCmd": "node video-shorts/tests/job-ttl-isolated-removal-check.mjs"
         }
        ]
       },
@@ -4152,7 +4175,8 @@
         {
          "text": "stage: renderedまで完了したジョブのstate.jsonが存在する状態でサーバーを再起動し、そのジョブをSSE購読すると、doneイベントが返る(interruptedにならない)",
          "verify": "候補生成まで完了したジョブのstate.json(stage: rendered、candidates: 2件相当)を用意し、サーバーを再起動する。当該ジョブをSSE購読し、返るイベントがdoneであり、event: interruptedにならないことを確認する(2026-08-13裏取りE2E#1の再現条件を踏襲)。",
-         "evidence": "fe1a3e221c483b43efaba99d91a3f007a8323431"
+         "evidence": "fe1a3e221c483b43efaba99d91a3f007a8323431",
+         "verifyCmd": "node video-shorts/tests/restart-done-state-check.mjs"
         }
        ]
       },
@@ -4167,7 +4191,8 @@
         {
          "text": "build-dist.mjsで生成した配布ZIPの中に.claude/hooks/session-start.shが含まれる",
          "verify": "build-dist.mjsでdistを生成し、.claude/hooks/session-start.shが含まれることを確認する。",
-         "evidence": "2c69344dcaffa29115065568aa08ece7e520a163"
+         "evidence": "2c69344dcaffa29115065568aa08ece7e520a163",
+         "verifyCmd": "node video-shorts/tests/dist-slim-check.mjs"
         }
        ]
       },
@@ -4182,7 +4207,8 @@
         {
          "text": "build-dist.mjsで生成したdistディレクトリ直下に配置した状態で.claude/hooks/session-start.shを実行すると、video-shorts/requirements.txt等の参照パスが解決でき、エラーにならない",
          "verify": "build-dist.mjsでdistを生成し、そのdist配下に実際に移動した状態で.claude/hooks/session-start.shを実行する。requirements.txt等の参照パスがdist配置で解決でき、エラーにならないことを確認する。",
-         "evidence": "393b23558236349d5382e4e6cf2fc089094614dd"
+         "evidence": "393b23558236349d5382e4e6cf2fc089094614dd",
+         "verifyCmd": "node video-shorts/tests/session-start-requirements-path-check.mjs"
         }
        ]
       },
@@ -4197,7 +4223,8 @@
         {
          "text": "python3コマンドが存在せずpythonコマンドのみ存在する環境で、既定のテストコマンド内のPython検査がpython3固定起動によって失敗しない",
          "verify": "python3という名前のコマンドが存在しない(pythonのみ存在する)環境を用意し、video-shorts配下の既定テストコマンドを実行する。python3固定起動が原因のコマンド未検出エラーが出ないことを確認する。",
-         "evidence": "516bb6f68d32e6871858b28ac17ebd03b1d0fb91"
+         "evidence": "516bb6f68d32e6871858b28ac17ebd03b1d0fb91",
+         "verifyCmd": "node video-shorts/tests/py-launcher-fallback-check.mjs"
         }
        ]
       },
@@ -4212,7 +4239,8 @@
         {
          "text": "Windows形式の絶対パス(ドライブレター・バックスラッシュを含む)上でvideo-shorts/tests/state-atomic-write-check.mjsを実行しても、ERR_UNSUPPORTED_ESM_URL_SCHEMEで失敗しない",
          "verify": "Windows環境(またはWindows形式の絶対パスを模した環境)でstate-atomic-write-check.mjsを実行する。ERR_UNSUPPORTED_ESM_URL_SCHEMEを出さずに完走することを確認する。",
-         "evidence": "2f200b29616e0c618e3086aa3d18a43ef0496867"
+         "evidence": "2f200b29616e0c618e3086aa3d18a43ef0496867",
+         "verifyCmd": "node video-shorts/tests/state-atomic-write-check.mjs"
         }
        ]
       },
@@ -4227,7 +4255,8 @@
         {
          "text": "external-tool-version-pin-check.mjsが.github/workflows配下の全workflowファイルを検査対象にし、roadmap-required.ymlのようなバージョン指定無しのapt installを検出してFAILする",
          "verify": "roadmap-required.ymlに版指定なしのapt install ffmpeg相当の行がある状態でexternal-tool-version-pin-check.mjsを実行し、FAILすることを確認する。修正後、全workflowファイルが走査対象に含まれることをスクリプトの実装で確認する。",
-         "evidence": "fe445cd09f0e8668cd16de2c491afd706a6cac22"
+         "evidence": "fe445cd09f0e8668cd16de2c491afd706a6cac22",
+         "verifyCmd": "node video-shorts/tests/external-tool-version-pin-check.mjs"
         }
        ]
       },
@@ -4242,7 +4271,8 @@
         {
          "text": "終了状態(done/error/interrupted等)になってから、実装で定めた保持時間(既定10分)を過ぎたジョブは、jobs Mapから自動的に削除される",
          "verify": "保持時間を短い値(例: 数秒)に設定できる状態でレート制限に抵触しない間隔で20件のジョブを投入し、全件を完了させる。保持時間の経過後にjobs Mapを調べ、経過済みジョブが残っていないことを確認する。対照として、回収処理を無効化した版では同条件で全件がMapに残ることを確認する。",
-         "evidence": "a88c0e8d362cbd1a28fd8eeee7f5c3a96169cd1e"
+         "evidence": "a88c0e8d362cbd1a28fd8eeee7f5c3a96169cd1e",
+         "verifyCmd": "node video-shorts/tests/job-memory-reclaim-check.mjs"
         }
        ]
       },
@@ -4257,7 +4287,8 @@
         {
          "text": "待ちqueueの長さに上限(具体的な最大件数として実装で定めた値)があり、上限に達した状態でジョブを追加投入すると、上限超過を理由に4xx応答で拒否される(キューへ無制限に積み増されない)",
          "verify": "実装で定めたqueue上限件数ちょうどまでジョブを投入して全件をqueueに滞留させ(実行が進まないよう共有実行ゲートを占有させた状態を作る)、さらに1件追加投入する。追加分が上限超過を理由に4xx応答で拒否され、queueの長さが上限件数を超えないことを確認する。",
-         "evidence": "a88c0e8d362cbd1a28fd8eeee7f5c3a96169cd1e"
+         "evidence": "a88c0e8d362cbd1a28fd8eeee7f5c3a96169cd1e",
+         "verifyCmd": "node video-shorts/tests/job-queue-cap-http-check.mjs"
         }
        ]
       },
@@ -4272,7 +4303,8 @@
         {
          "text": "SAR 32:27(display 16:9、coded 720x480)の非正方形ピクセル素材をlandscapeへrenderすると、出力の人物・文字の縦横比がdisplay比率(16:9相当)で維持される",
          "verify": "SAR 32:27・coded 720x480の素材を用意しrender-vertical.mjsでlandscape出力する。出力フレームの縦横比を、既知の基準パターン(円や正方形マーカーなど)を含む素材で確認し、横方向へ圧縮されていないことを確認する。対照として、現行実装ではcoded寸法基準で圧縮されることを確認する。",
-         "evidence": "75c94e92adf404510abb066975e1df63a7e1b5c7"
+         "evidence": "75c94e92adf404510abb066975e1df63a7e1b5c7",
+         "verifyCmd": "node video-shorts/tests/sar-normalize-check.mjs"
         }
        ]
       },
@@ -4287,7 +4319,8 @@
         {
          "text": "360x640のcanvasに20文字の単一wordを字幕としてrenderしても、字幕のピクセルがcanvas左右端の外側へはみ出さない",
          "verify": "canvas解像度360x640で、20文字程度の区切れない単一word(bold)を字幕としてsubtitle-styles.mjs/srt-builder.mjs経由でrenderする。出力フレームを調べ、字幕のピクセルがcanvas幅の範囲内に収まっている(左右端でクリップしていない)ことを確認する。",
-         "evidence": "d3bcf8002db0577701421f2897d3b6a3f332a1b5"
+         "evidence": "d3bcf8002db0577701421f2897d3b6a3f332a1b5",
+         "verifyCmd": "node video-shorts/tests/subtitle-canvas-fit-check.mjs"
         }
        ]
       },
@@ -4302,7 +4335,8 @@
         {
          "text": "no-speech等で「編集できません」カードが表示されたとき、キーボードフォーカスがそのカード内(理由テキストまたは再選択ボタン)へ移動する",
          "verify": "no-speechと判定される素材でジョブを実行し、「編集できません」カードを表示させる。表示直後のdocument.activeElementがカード内の要素であること、Tabキーでカード内の再選択ボタンへ到達できることを確認する。",
-         "evidence": "d7203563facf34e01bf5c675371769a0936b0e65"
+         "evidence": "d7203563facf34e01bf5c675371769a0936b0e65",
+         "verifyCmd": "node video-shorts/tests/webapp-cantedit-focus-check.mjs"
         }
        ]
       },
@@ -4317,7 +4351,8 @@
         {
          "text": "結果タブを切り替えたとき、表示されているpanelに対応するタブのaria-selected属性がtrueになり、他タブがfalseになる",
          "verify": "webapp-mockupの結果画面でタブをクリックして切り替え、DOM上の各タブ要素のaria-selected属性値を調べる。表示中panelに対応するタブだけがtrueであることを確認する。",
-         "evidence": "1b94c73d3726b34ba41dd0ae3f2957020425eb4e"
+         "evidence": "1b94c73d3726b34ba41dd0ae3f2957020425eb4e",
+         "verifyCmd": "node video-shorts/tests/webapp-tab-aria-selected-check.mjs"
         }
        ]
       },
@@ -4332,7 +4367,8 @@
         {
          "text": "res.write()がfalseを返す(受信側が遅い)SSE購読者に対し、drainイベントを待たずに追加送信を続けない",
          "verify": "SSE購読者のレスポンスを人工的に遅延させ(consumer側でreadを止める等)res.write()がfalseを返す状況を作る。サーバー側の送信処理がdrainイベントを待ってから次を送っている(バッファが際限なく蓄積しない)ことを、実装コードとメモリ使用量の両面で確認する。",
-         "evidence": "f865035e4a0b9126778753c9cbc2b786c3a3fe6a"
+         "evidence": "f865035e4a0b9126778753c9cbc2b786c3a3fe6a",
+         "verifyCmd": "node video-shorts/tests/sse-backpressure-check.mjs"
         }
        ]
       },
@@ -4347,7 +4383,8 @@
         {
          "text": "video-shorts/tests/security-recaption-flood-check.mjsが、ffmpeg子プロセスを一度も観測できなかった場合(peakFfmpeg=0)にPASSではなくFAILする",
          "verify": "security-recaption-flood-check.mjsの監視機構を意図的に無効化する(観測不能な状態を再現する)か、Windows環境で実行してpeakFfmpegが0になる状況を作る。そのときテストがPASSではなくFAILすることを確認する。",
-         "evidence": "e352443a586796e2e0a90e00d22cb49efaa70b0d"
+         "evidence": "e352443a586796e2e0a90e00d22cb49efaa70b0d",
+         "verifyCmd": "node video-shorts/tests/security-recaption-flood-check.mjs"
         }
        ]
       },
@@ -4362,7 +4399,8 @@
         {
          "text": "consent.htmlで同意操作を完了すると、画面上の受領表示(receipt)へキーボードフォーカスが移動するか、aria-liveで完了が通知される",
          "verify": "Chromeで同意フローを最後まで実行し、完了直後のdocument.activeElementと受領表示要素の役割(role)・aria-live属性を調べる。フォーカス移動またはaria-live通知のいずれかにより、完了が読み上げ利用者にも伝わることを確認する。",
-         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050"
+         "evidence": "1643aa95c1189e192b6c09a3e3f957dce4e54050",
+         "verifyCmd": "node video-shorts/tests/consent-receipt-focus-check.mjs"
         }
        ]
       },
@@ -4377,7 +4415,8 @@
         {
          "text": "音声トラックを持たない動画に対してkeep指定でrenderClip()を直接呼んでも、存在しない音声streamの参照によるffmpegエラーで失敗しない",
          "verify": "音声トラックの無いmp4を用意し、trim-plan.mjs/render-vertical.mjsのrenderClip()相当をkeep指定で直接呼ぶ(no-speech判定を経由しない直接呼び出し)。ffmpegが[0:a]不在のエラーで失敗せず、動画が出力されることを確認する。",
-         "evidence": "0b1df8f73ed2b00f52ea51bba90ece49cdd614f3"
+         "evidence": "0b1df8f73ed2b00f52ea51bba90ece49cdd614f3",
+         "verifyCmd": "node video-shorts/tests/silent-audio-render-check.mjs"
         }
        ]
       },
@@ -4392,7 +4431,8 @@
         {
          "text": "render段で一部の候補だけが失敗した場合、webapp-mockupの画面表示(DOM上に実際に描画される要素)に「生成できなかった候補がある」ことが分かる情報が含まれる(APIレスポンスに含まれるだけでは合格としない)",
          "verify": "複数候補のうち一部だけがrenderで失敗する状況(例: 1候補分の入力を意図的に壊す)を作り、ジョブを実行する。完了後のwebapp-mockup画面のDOMを調べ、失敗があったことを示す文言またはインジケーターが実際に描画されていることを確認する。APIレスポンスのJSONに情報が含まれているだけで画面に表示されない場合は不合格とする。",
-         "evidence": "8cdc0eb244343134daf58b97b8e3da4ddb69e18f"
+         "evidence": "8cdc0eb244343134daf58b97b8e3da4ddb69e18f",
+         "verifyCmd": "node video-shorts/tests/webapp-render-fail-dom-check.mjs"
         }
        ]
       },
@@ -4407,7 +4447,8 @@
         {
          "text": "candidates APIがdigestフィールドを返すジョブについて、webapp-mockupの結果画面からdigest動画を再生またはダウンロードできる",
          "verify": "digestを生成する設定でジョブを実行し、完了後のwebapp-mockup結果画面を確認する。APIレスポンスのdigestに対応する動画が画面上から再生またはダウンロードできることを確認する。",
-         "evidence": "03e1aaab1cbea80dd4726b5dfd95ca6ae5aecf8c"
+         "evidence": "03e1aaab1cbea80dd4726b5dfd95ca6ae5aecf8c",
+         "verifyCmd": "node video-shorts/tests/webapp-digest-check.mjs"
         }
        ]
       }
