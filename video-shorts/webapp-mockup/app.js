@@ -34,6 +34,14 @@ const drop = $("drop"), fileInput = $("file");
 ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, () => drop.classList.remove("drag")));
 drop.addEventListener("drop", (ev) => { ev.preventDefault(); const f = ev.dataTransfer.files?.[0]; if (f) setFile(f); });
 fileInput.addEventListener("change", (ev) => { const f = ev.target.files?.[0]; if (f) setFile(f); });
+// AUD-P1-13: 見た目上のアップロード枠は<label>で、リンク先の<input type=file>はhiddenのため
+// クリックでしか開けなかった(Tab移動もEnter/Spaceでの起動も出来ない)。tabindex="0"で
+// フォーカス可能にした上で、Enter/Spaceでもファイル選択を起動できるようにする。
+drop.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") return;
+  ev.preventDefault();
+  fileInput.click();
+});
 $("clear-file").addEventListener("click", () => {
   state.file = null; $("filebar").classList.add("hidden"); drop.classList.remove("hidden"); refresh();
 });
