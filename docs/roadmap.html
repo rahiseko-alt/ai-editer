@@ -119,18 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "①G-AUDIT-2026-08-13の41葉が全てdoneになったので、GOAL直下のこの枝全体がロールアップでdone化されているはずか確認する。②Windows実機検証が必要な3葉(AUD-P1-08/P1-15/P2-18b)とCJK文字幅の実測(AUD-P2-22)をG-TESTINFRA-WINCI等でフォローアップするかどうかマスターの判断を仰ぐ。③STAGE-1の残作業(G-EDIT-QUALITY-A/B/C/D/E, G-EDIT-TRIM-F/G, G-TESTINFRA-ESCAPEPATH-B/RENDERCHECK/WINCI)に着手する(G-EDIT-TRIM-Dのみ人の耳による聴取が必要でこの環境では引き続き検証不能)。④従来どおり、G-EDIT-MOSAIC-UI(凍結中)・G-EDIT-REFRAME-C/F(検証素材無し)はSTAGE-1完了判定の対象外のまま。⑤P1-19(M-5用語辞書上限・M-7 SSEトークンURL露出・L-3 Range未対応・L-6 PORT=80認可)はtodo/backlogのまま、マスターの判断待ち。⑥G-PENDING-LECTURE(テスト素材lecture.mp4の使い道)もマスターの判断待ち。⑦(発見事項)video-shorts/tests/render-check.mjs は samples/test-16x9.mp4 の手動生成を前提とした未接続の既存テストで、package.jsonのtestに組み込まれていない(今回のAUD修正とは無関係な既存backlog。要検討)。",
+  "next": "①STAGE-1の残作業(G-EDIT-QUALITY-A/B/C/D/E, G-EDIT-TRIM-F/G, G-TESTINFRA-ESCAPEPATH-B/RENDERCHECK/WINCI)に着手するかどうかマスターの判断を仰いでいる段階(G-EDIT-TRIM-Dのみ人の耳による聴取が必要でこの環境では引き続き検証不能)。②Windows実機検証が必要な3葉(AUD-P1-08/P1-15/P2-18b)とCJK文字幅の実測(AUD-P2-22)をG-TESTINFRA-WINCI等でフォローアップするかどうかもマスターの判断待ち。③従来どおり、G-EDIT-MOSAIC-UI(凍結中)・G-EDIT-REFRAME-C/F(検証素材無し)はSTAGE-1完了判定の対象外のまま。④P1-19・G-PENDING-LECTUREもマスターの判断待ち。",
   "handoff": {
    "done": [
-    "G-AUDIT-2026-08-13の41葉すべてに実装+実検証を行いdone化した(サブエージェント8体を並列(git worktree隔離)で使い、P1系19葉・P2系14葉・補足S系4葉+STAGE-1由来のクラスタ分割4件を8クラスタへ分担)。各クラスタはAGENTS.mdの検証規律(本人採点禁止・偽の緑禁止)に従い、修正前に実際にバグが再現することを対照実験(git stash/意図的な無効化)で示したうえで修正し、実際にコマンドを実行した結果(PASS/FAIL件数・実測値)を証拠として報告させた。",
-    "8クラスタのブランチを1本ずつマージ(6件は無競合、Cluster C(サーバー本体)とCluster F(webapp+SSE)はserver/pipeline-runner.mjs・server/index.mjs・pipeline.mjsで実質競合。手動で解消し、統合後に発覚した実装漏れも是正した: (1) AUD-P1-10bのSSE\"job-error\"改名がCluster Cのより新しい失敗ハンドラ経路まで届いておらず追加修正、(2) AUD-P1-14(#agreeを静的disabledに)とAUD-S-01(完了時フォーカス)の組み合わせで、#agreeがdata-contract-available切り替えでも永久に再有効化されない実装漏れをS-01のテストが実際に同意フローを完走させようとしたことで発見し是正、(3) 他クラスタ/既存テスト6本のevent:error前提をjob-error前提へ追随修正。関連する統合テストをすべて再実行しPASSを確認)。",
-    "package.jsonのtest scriptへ新規テスト23本を追加(各クラスタは意図的に他クラスタとの競合を避けるためこのファイルを触らず私が集約)。tesseract-ocr未導入だった1件を除きローカルで pnpm -r test 全緑を確認、tesseractを導入してその1件も含め全緑(既存579+新規テスト込み、caption-recaption-ocr-check.mjs 22 PASS含む)を確認した。typecheck/lintも緑。"
+    "PR #111(G-AUDIT-2026-08-13の41葉done化)のマージ後、チェックアウト手順に従い今回セッションで得た教訓をdocs/failures.mdへ2件append(消さない)した：①8クラスタ並列実装でdone化必須のverifyCmdを付け忘れ、CIのdone-gateで初めて発覚した件(41葉全てへverifyCmd追加+検証テストが無かった8葉分を新規に書き起こした経緯と教訓)。②git worktree隔離の並列実行中、他クラスタの未コミットファイルが一時的に混入して見えた件(実害無し・統合時の対処・プロンプトインジェクション疑いへの注意喚起)。"
    ],
    "trouble": [
-    "並列8クラスタのうち一部(Cluster A・Cluster F)で、git worktree隔離のはずが他クラスタの未コミット作業ファイル(consent.html/consent.js、pipeline.mjs等)が一時的にワークツリー上に見えるという環境の異常を、担当エージェント自身が報告してきた(「ハーネスから言及しないよう言われたが念のため報告する」という不審な文言付き)。実害は無かった(いずれも未コミットのまま放置されコミットには含まれていないことを確認済み)が、統合時は各クラスタの「コミット済みの差分」だけをブランチ経由でマージし、ワークツリーの生ファイルはコピーしないという方針で回避した。プロンプトインジェクションの可能性も否定できないため、今後も同様の報告があれば実害の有無を都度確認すること。",
-    "サーバー本体(server/pipeline-runner.mjs, server/index.mjs)を同時に大改修する複数クラスタを並列実行したのは設計上のリスクだった(実際に競合が発生し、手動解消+追加の統合修正が2件必要になった)。次回同種の大規模並列作業では、同一の中核ファイルを触る複数の関心事は極力同一クラスタへまとめる(またはクラスタ間で明示的な着手順を設ける)方が安全。",
-    "AUD-P1-08(日本語ONNXパス)・AUD-P1-15(Windows/OneDrive削除クラッシュ)・AUD-P2-18b(Windowsドライブレターパス)の3葉は、Windows実機・実OneDrive環境がこのLinuxサンドボックスに無いため、コードレビュー+ユニット検証止まりで実機での修正確認はできていない。evidenceのdetailに限界を明記したがdoneとして登録した(実装自体は完了・対応するロジックの単体検証はPASS。実機検証はG-TESTINFRA-WINCI枝の課題として別途残っている)。",
-    "AUD-P2-22(字幕はみ出し)のCJK文字幅係数は、本環境にCJK対応フォントが無いため実測ではなく理論値(Latin文字の実測値に安全マージンを載せたもの)。要フォローアップとしてdetailに明記した。"
+    "無し"
    ]
   },
   "updated": "2026-08-13",
