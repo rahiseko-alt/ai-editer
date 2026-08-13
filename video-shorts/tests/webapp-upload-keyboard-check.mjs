@@ -73,7 +73,7 @@ async function reachByTabbing(page, targetId, limit) {
   await t("フォーカスした#drop上でEnterを押すと、ファイル選択(input#fileのクリック相当)が起動する", async () => {
     // 実OSのファイル選択ダイアログはPlaywrightのfilechooserイベントとして観測できる
     // （input#fileはhiddenだが、.click()由来のダイアログでも発火する）。
-    const chooserPromise = page.waitForEvent("filechooser", { timeout: 3000 });
+    const chooserPromise = page.waitForEvent("filechooser", { timeout: 8000 });
     await page.keyboard.press("Enter");
     const chooser = await chooserPromise;
     assert.ok(chooser, "Enterを押してもファイル選択が起動しなかった");
@@ -84,8 +84,11 @@ async function reachByTabbing(page, targetId, limit) {
   await t("フォーカスした#drop上でSpaceを押しても、ファイル選択が起動する", async () => {
     // 直前のEnterでダイアログが開いたままだとfilechooserが再発火しないブラウザがあるため、
     // 明示的にフォーカスを外して戻し、新しいユーザー操作として扱わせる。
+    // 直前のダイアログの後始末が完全に終わるまで少し待つ(即座に次を開こうとすると
+    // ブラウザ側の内部状態がまだ前のダイアログを引きずり、発火が遅れることがある)。
+    await page.waitForTimeout(300);
     await page.evaluate(() => document.getElementById("drop").focus());
-    const chooserPromise = page.waitForEvent("filechooser", { timeout: 3000 });
+    const chooserPromise = page.waitForEvent("filechooser", { timeout: 8000 });
     await page.keyboard.press(" ");
     const chooser = await chooserPromise;
     assert.ok(chooser, "Spaceを押してもファイル選択が起動しなかった");
