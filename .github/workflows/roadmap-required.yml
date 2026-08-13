@@ -68,7 +68,10 @@ jobs:
       - name: Install ffmpeg (verifyCmdが実機ffmpegを使う場合に備える。版はquality同様ubuntu-24.04固定)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          # AUD-P2-19: ci.yml / measure-leak-rate.yml と同じ版を明示指定する(無指定だと
+          # ミラー側の更新で黙って違う版が入りうる。external-tool-version-pin-check.mjs が
+          # .github/workflows/ 配下を再帰的に検査してこの無指定を検知する)。
+          sudo apt-get install -y -qq ffmpeg=7:6.1.1-3ubuntu5
       - name: Install opencv (verifyCmdが顔検出系テストを使う場合に備える)
         run: |
           spec=$(grep -E '^opencv-python-headless' video-shorts/requirements.txt)

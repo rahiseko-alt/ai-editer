@@ -59,24 +59,111 @@ function readRepoFile(relPath) {
   }
 }
 
-// ---- (b)/(c) apt-get install の ffmpeg/zip がバージョン固定されている workflow 群 ----
-function checkAptPin(relPath, pkgNames) {
-  const text = readRepoFile(relPath);
-  for (const pkg of pkgNames) {
-    // 実物: パッケージ名=版 の形でその workflow 内に出現するか。
-    const pinnedRe = new RegExp(`\\b${pkg}=\\S+`);
-    report(`P1-12-A: ${relPath} の apt-get install に ${pkg}=版 の固定指定がある`, pinnedRe.test(text));
-    // 対照: 「パッケージ名の直後に=が無い無指定呼び出し」を、この正規表現が
-    // 誤って固定済みと判定しないことを確認する(検知手段が"無いとき無いと言える"ことの裏付け)。
-    const unpinnedSample = `sudo apt-get install -y -qq ${pkg} zip`;
-    report(
-      `P1-12-A: 対照 - ${relPath}想定 「${pkg}」単体(無指定)は固定判定にならない`,
-      !pinnedRe.test(unpinnedSample.replace(new RegExp(`${pkg}=\\S+`), pkg)),
-    );
+// ---- (b) .github/workflows/ 配下の全 *.yml / *.yaml を再帰的に検査し、apt/pip の
+// 無指定インストールが無いことを確認する ----
+//
+// 【AUD-P2-19で塞ぐ穴】旧実装(P1-12-A)は ci.yml と measure-leak-rate.yml だけを
+// ハードコードでスキャンしていたため、それ以外の workflow (roadmap-required.yml 等)に
+// 無指定の apt install があってもこのチェックの視界に入らず、素通りしていた
+// (docs/audits/adversarial-review-2026-08-13.md AUD-P2-19)。
+// 対処: ハードコードのファイル一覧をやめ、.github/workflows/ 配下の *.yml / *.yaml を
+// 再帰的に列挙して全ファイルを検査する。
+{
+  const WORKFLOWS_DIR = path.join(REPO_ROOT, ".github", "workflows");
+
+  function listWorkflowFiles(dir) {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...listWorkflowFiles(full));
+      } else if (entry.isFile() && /\.ya?ml$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
   }
+
+  // apt-get/apt の install 行から、無指定(バージョン未固定)のパッケージトークンを拾う。
+  // remove/update/upgrade は対象外(パッケージを新規に持ち込まないため版固定は不要)。
+  function findUnpinnedAptInstalls(text) {
+    const hits = [];
+    const re = /^[ \t]*(?:sudo\s+)?apt(?:-get)?\s+(install|remove|update|upgrade)\b(.*)$/gm;
+    let m;
+    while ((m = re.exec(text))) {
+      const [line, action, rest] = m;
+      if (action !== "install") continue;
+      for (const tok of rest.trim().split(/\s+/).filter(Boolean)) {
+        if (tok.startsWith("-")) continue; // フラグ(-y, -qq 等)
+        if (tok.includes("=")) continue; // パッケージ=版 で固定済み
+        hits.push(`${tok} (行: ${line.trim()})`);
+      }
+    }
+    return hits;
+  }
+
+  // pip install 行から、無指定のパッケージトークンを拾う。"$spec" のような変数経由の
+  // インストールは、その変数を requirements.txt から `==` 付きで抜き出す前提(上の(a)で
+  // requirements.txt 側を検査済み)のため対象外とする。
+  function findUnpinnedPipInstalls(text) {
+    const hits = [];
+    const re = /^[ \t]*(?:python3?\s+-m\s+)?pip3?\s+install\b(.*)$/gm;
+    let m;
+    while ((m = re.exec(text))) {
+      const [line, rest] = m;
+      for (const tok of rest.trim().split(/\s+/).filter(Boolean)) {
+        if (tok.startsWith("-")) continue; // フラグ(-r 等)
+        if (/^["']?\$/.test(tok)) continue; // 変数参照(例: "$spec")
+        if (tok.includes("==")) continue; // パッケージ==版 で固定済み
+        hits.push(`${tok} (行: ${line.trim()})`);
+      }
+    }
+    return hits;
+  }
+
+  const files = listWorkflowFiles(WORKFLOWS_DIR);
+  report(
+    "P2-19: .github/workflows/ 配下の再帰列挙が.ymlファイルを検出できている(対照)",
+    files.length > 0,
+    `files=${files.length}`,
+  );
+
+  // 対照: 検知に使う正規表現自身が「わざと無指定にした文字列」を検知できることを先に確認する
+  // (AGENTS.md 検証の規律「無いことの確認には対照実験が要る」)。
+  report(
+    "P2-19: 対照 - apt無指定検知の正規表現は無指定サンプル(apt-get install ffmpeg)を検知できる",
+    findUnpinnedAptInstalls("sudo apt-get install -y -qq ffmpeg").length > 0,
+  );
+  report(
+    "P2-19: 対照 - apt無指定検知の正規表現は版固定済みサンプルを誤検知しない",
+    findUnpinnedAptInstalls("sudo apt-get install -y -qq ffmpeg=7:6.1.1-3ubuntu5").length === 0,
+  );
+  report(
+    "P2-19: 対照 - apt remove/update は無指定でも検知対象にならない(パッケージを新規導入しないため)",
+    findUnpinnedAptInstalls("sudo apt-get remove -y ffmpeg\nsudo apt-get update -qq").length === 0,
+  );
+  report(
+    "P2-19: 対照 - pip無指定検知の正規表現は無指定サンプル(pip install foo)を検知できる",
+    findUnpinnedPipInstalls("python -m pip install foo").length > 0,
+  );
+  report(
+    "P2-19: 対照 - pip無指定検知の正規表現は変数経由(\"$spec\")のインストールを誤検知しない",
+    findUnpinnedPipInstalls('python -m pip install "$spec"').length === 0,
+  );
+
+  const allUnpinned = [];
+  for (const file of files) {
+    const rel = path.relative(REPO_ROOT, file);
+    const text = fs.readFileSync(file, "utf8");
+    for (const hit of findUnpinnedAptInstalls(text)) allUnpinned.push(`${rel}: apt ${hit}`);
+    for (const hit of findUnpinnedPipInstalls(text)) allUnpinned.push(`${rel}: pip ${hit}`);
+  }
+  report(
+    `P2-19: .github/workflows/ 配下(${files.length}ファイル)に無指定のapt/pipインストールが残っていない(実=${allUnpinned.length}件)`,
+    allUnpinned.length === 0,
+    allUnpinned.join(" | "),
+  );
 }
-checkAptPin(".github/workflows/ci.yml", ["ffmpeg", "zip"]);
-checkAptPin(".github/workflows/measure-leak-rate.yml", ["ffmpeg"]);
 
 // ---- (d) session-start.sh: FFMPEG_PIN が具体的な版で、実際に install へ渡っている ----
 {
