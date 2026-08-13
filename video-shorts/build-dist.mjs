@@ -77,6 +77,7 @@ function copyRel(rel) {
 const EXCLUDE = [
   /^__pycache__$/, /\.pyc$/, /\.wav$/, /\.tmp$/, /^scratch/,
   /^e2e-server\.mjs$/, // server 経路の e2e テスト（server は配布しないため不要）
+  /^e2e-manual-walkthrough\.mjs$/, // install/user-manual.html(配布しない)を検証する開発時テスト（客の手元では動かない）
   /^dist-slim-check\.mjs$/, // 配布物そのものを検査するテスト（dist/ を見るので客の手元では動かない）
   /^gen-editor-html\.mjs$/, // pipeline.mjs 未参照（R-1 で反映不要と判断済）
   /^\.vercel$/, // Vercel デプロイ設定（Web配布用・ローカル配布物には不要）
@@ -84,14 +85,42 @@ const EXCLUDE = [
 ];
 const excluded = (name) => EXCLUDE.some((re) => re.test(name));
 
-// ディレクトリを除外フィルタ付きで再帰コピー
+// AUD-P1-04: 「ディレクトリを丸ごと再帰コピーし、除外リストに載っている名前だけ弾く」方式だと、
+// 除外リストが想定していない場所（例: src/ 直下に置かれた誰かの作業用の秘密ファイル）に
+// git 未追跡（untracked）のファイルが1つ紛れ込むだけで、それがそのまま配布物へ入ってしまう。
+// 「untracked ファイルは構造的に配布物へ入り得ない」ようにするため、コピー対象は
+// ファイルシステムの再帰列挙ではなく `git ls-files`（＝git が追跡しているファイルのみ）から作る。
+function gitTrackedFiles(relDir) {
+  let out;
+  try {
+    // -z: NUL区切り。空白やUnicode正規化を含むファイル名でも壊れず1件ずつ取り出すため。
+    out = execFileSync("git", ["ls-files", "-z", relDir], { cwd: SRC });
+  } catch (e) {
+    // ここで黙ってファイルシステム再帰コピーへフォールバックすると、このfixの意味
+    // （untracked ファイルの混入を構造的に防ぐ）が失われるため、fail-closedで停止する。
+    throw new Error(
+      `git ls-files に失敗しました。配布ビルドは git 管理下のチェックアウトが前提です: ${e.message}`,
+    );
+  }
+  return out.toString("utf-8").split("\0").filter(Boolean);
+}
+
+// git が追跡しているファイルだけをコピー（未追跡ファイルは列挙にすら出てこないので混入し得ない）。
 function copyDirFiltered(relDir) {
-  for (const entry of fs.readdirSync(path.join(SRC, relDir), { withFileTypes: true })) {
-    if (excluded(entry.name)) continue;
-    const rel = path.join(relDir, entry.name);
+  for (const rel of gitTrackedFiles(relDir)) {
+    // 既存の EXCLUDE 判定はディレクトリ再帰の各階層で「その階層の名前」を見ていたので、
+    // 経路のどのセグメント（__pycache__ 等のディレクトリ名を含む）にも同じ判定を適用する。
+    const segments = rel.split("/");
+    if (segments.some((seg) => excluded(seg))) continue;
     if (SLIM && isMosaicPath(rel)) continue;
-    if (entry.isDirectory()) copyDirFiltered(rel);
-    else copyRel(rel);
+    const from = path.join(SRC, rel);
+    if (!fs.existsSync(from)) continue; // 削除済みだがまだcommitされていない等、作業木に無いtracked pathはスキップ
+    // symlink は fail-closed（追わない・コピーしない）。追跡させると symlink の指し先が
+    // 配布物の外（例: 開発者のホーム配下の機密ファイル）を指していても気付けないため。
+    if (fs.lstatSync(from).isSymbolicLink()) {
+      throw new Error(`配布ビルド中止: symlink はコピーできません（fail-closed）: ${rel}`);
+    }
+    copyRel(rel);
   }
 }
 
@@ -116,6 +145,34 @@ for (const f of ALLOWLIST_ROOT_FILES) {
 }
 // 2. src / tests / skill（pyc・__pycache__ 除外）
 for (const d of ALLOWLIST_DIRS) copyDirFiltered(d);
+
+// 2b. AUD-P2-17a: .claude/hooks/session-start.sh（PCを持たないクラウドセッション利用者向けの
+//     自動プロビジョニングフック）。start-here.md 冒頭は「このフックがセッション開始時に
+//     ffmpeg と文字起こしライブラリを自動導入済み」と明言しているため、配布物に無いと
+//     start-here.md の記述自体が嘘になる。video-shorts/ の外（リポジトリルート直下）に
+//     置かれたファイルなので、src/tests/skill と同じ allowlist の枠組みでは拾えない別経路として
+//     明示的にコピーする（.claude/ の他のファイル（agents/・skills/・settings.json・
+//     check-uncommitted.sh 等）はこのテンプレリポジトリ自身の統治用で客の配布物には無関係の
+//     ため、session-start.sh 1本だけを対象にする）。
+const REPO_ROOT = path.join(SRC, "..");
+const HOOK_REL = path.join(".claude", "hooks", "session-start.sh");
+const hookFrom = path.join(REPO_ROOT, HOOK_REL);
+{
+  // AUD-P1-04と同じ理由でfail-closed: git未追跡やsymlinkなら配布ビルドを止める。
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", HOOK_REL], { cwd: REPO_ROOT, stdio: "pipe" });
+  } catch {
+    throw new Error(`配布ビルド中止: ${HOOK_REL} が見つからない、またはgit未追跡です`);
+  }
+  if (fs.lstatSync(hookFrom).isSymbolicLink()) {
+    throw new Error(`配布ビルド中止: symlink はコピーできません（fail-closed）: ${HOOK_REL}`);
+  }
+  const hookTo = path.join(DEST, HOOK_REL);
+  ensureDir(path.dirname(hookTo));
+  fs.copyFileSync(hookFrom, hookTo);
+  fs.chmodSync(hookTo, 0o755);
+}
+
 // 3. 版刻印（再現性のため git hash を記録・.gitignore で追跡外の dist の出所を明示）
 let ver = "unknown";
 try {
