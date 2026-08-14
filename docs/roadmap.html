@@ -122,10 +122,10 @@
   "next": "G-EDIT-CAPTION-STYLE(字幕スタイル自由指定)は12葉すべて実装・検証・done化・PR #116作成まで完了。次はPR #116がCI緑になり次第マージする。マージ後の次の一手はロードマップの続き(G-P0/G-P1/G-P2/G-EDIT-REFRAME-C/F等の残りtodo葉、または新たにマスターから依頼される案件)。",
   "handoff": {
    "done": [
-    "字幕スタイル自由指定(G-EDIT-CAPTION-STYLE、GOAL配下)を原子ツリー確定→実装→検証→全12葉done化まで完了。詳細(実装内容・commit対応・修正経緯)は当該ノードのdetail/criteriaを参照。PR #116作成済み、CodeRabbitの指摘を受けて追加修正(既定書体解決時のfail-fast漏れ・prototype pollution耐性・検査対象をgit管理下ファイルに限定 等)を実施中。"
+    "字幕スタイル自由指定(G-EDIT-CAPTION-STYLE、GOAL配下)を原子ツリー確定→実装→検証→全12葉done化まで完了。詳細(実装内容・commit対応・修正経緯)は当該ノードのdetail/criteriaを参照。PR #116作成済み、CodeRabbitの指摘を受けて追加修正(既定書体解決時のfail-fast漏れ・prototype pollution耐性・検査対象をgit管理下ファイルに限定 等)を実施済み。"
    ],
    "trouble": [
-    "詳細はdocs/failures.md 2026-08-14「字幕スタイル自由指定の実装で判明した2件」を参照(前セッション残骸によるテスト誤検知と恒久修正／BorderStyle=3の描画方式判明によるverify訂正)。"
+    "詳細はdocs/failures.md 2026-08-14「字幕スタイル自由指定の実装で判明した2件」を参照(前セッション残骸によるテスト誤検知と恒久修正／BorderStyle=3の描画方式判明によるverify訂正)。①PR #115がsquash-mergeされた後、このブランチをorigin/mainへ再同期しないまま作業を続けたため、docs/roadmap.htmlのmeta.next/meta.handoffでPR #116にマージ衝突が発生した(git merge-base はsquash元の旧commitのまま止まっており、squash後のmainコミットと独立した変更として競合した)。git merge origin/main で解消(SHAを保つためrebaseではなくmergeを使用)。教訓: PRがマージされたら、たとえ同じセッション内で作業を続ける場合でも、次のコミット前に一度origin/mainへ同期する。"
    ]
   },
   "updated": "2026-08-14",
