@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M1・M2・M3・M5完了・push済み(最新commit 081e769)。次はM4(尺の指示口。--min-secは実装済みのため、state経由での指示受け口とおまかせ時の上限を追加)→M6(一度に聞く。SKILL.mdの改訂)→M7(3経路E2E)。M3で判明した既知の未対応：サーバー経由(経路B/画面)はcmdInitのフォント確認を通らない可能性があり、M7の3経路E2Eで確認予定。",
+  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M1・M2・M3・M4・M5完了・push済み(最新commit 3f9a1f1)。次はM6(一度に聞く。SKILL.mdの改訂)→M7(3経路E2E)。M4完了時、実素材(work/horiguchi-*)で--duration-min 3を使った実レンダリングを確認中。",
   "handoff": {
    "done": [
-    "計画のM1・M2・M3・M5を実装・push済み(前回セッションからの続き)。M3(commit 081e769): 既定フォント\"Yu Gothic UI\"(Windows専用)がこの環境に存在せずfontconfigが黙って中国語フォントへ代替していた問題を修正。既定をIPAGothicへ変更し、src/font-check.mjsを新設(fc-listの実在フォント一覧との完全一致で判定。fc-matchは指定名が無くても必ず何か返すため単独では「無い」と断定できない)。pipeline.mjs cmdInitで、字幕ありの場合は文字起こし前にフォント実在を確認し無ければ止まるようにした。検査15件(font-check.mjs)。smoke.mjs(97件)・REFRAME検証(37件)・字幕関連テストが全て緑であることを確認済み。"
+    "計画のM1〜M5を実装・push済み。M4(commit 3f9a1f1): 「話題毎」モードで区間を強制結合したあと上限が無かったため実素材で1本が7分10秒になっていた問題を修正。resolveTargetDuration()(--duration-minから下限70%/上限130%を決定)とcapSegmentDuration()(上限超えを語の途中で切らず等分割)をsnap-boundaries.mjsへ新設し、cmdRenderへ配線した。指示が無い「おまかせ」でも1本が素材全体の1/3を超えないようにした。検査19件、実測された区間(179.0秒・429.9秒。実素材の初回処理の実際の値)を使い3分/1分指定で中央値2倍以上・各本±30%以内・おまかせで素材1/3以内を確認済み。実素材(work/horiguchi-31d6adecee7642633c8a830515583562)で--duration-min 3を使った実レンダリングも実行し最終確認中。"
    ],
    "trouble": [
-    "無し。M3実装時、サーバー経由(画面/HTTP)の経路はcmdInitのフォント確認を通らないことに気づいた(pipeline-runner.mjs等がpipeline.mjsの内部関数を直接呼ぶ可能性があり、CLIのcmdInitを経由しない)。今回はMilestoneの範囲(pipeline.mjsのみ)に留め、この経路差はM7(3経路E2E)で確認する方針とした(スコープを勝手に広げない)。"
+    "無し。"
    ]
   },
   "updated": "2026-08-14",
