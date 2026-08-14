@@ -24,9 +24,11 @@ import {
 } from "./src/snap-boundaries.mjs";
 import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
 import { wordsInRange, buildAss, DEFAULT_FONT } from "./src/srt-builder.mjs";
-import { checkFontAvailable } from "./src/font-check.mjs";
+import { checkFontAvailable, checkBundledFont } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
-import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
+import {
+  getStyle, listStyles, listFonts, DEFAULT_SUBTITLE_STYLE, resolveCaptionStyle,
+} from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, probeSampleRate, clipName, computeCanvas } from "./src/render-vertical.mjs";
 import { concatClips } from "./src/concat.mjs";
 import { DEFAULT_MODE, getMode, isValidMode } from "./src/select-modes.mjs";
@@ -264,10 +266,31 @@ export async function renderSegment({
   return { segStart, keep, assWords, clipDuration, cutSeconds };
 }
 
+/**
+ * caption-* 系フラグ(書体/文字色/縁取り色/内側縁取り/背景帯)から、resolveCaptionStyle() に
+ * 渡す overrides を組み立てる。フラグが1つも無ければ null(=従来どおり subStyle 文字列のまま使う。
+ * resolveCaptionStyle() 越しにしない＝挙動を変えない)。
+ * @param {{captionFont?: string, captionFill?: string, captionOutlineColor?: string,
+ *          captionInner?: string, captionBand?: string}} flags
+ * @returns {object | null}
+ */
+function buildCaptionOverrides(flags) {
+  const { captionFont, captionFill, captionOutlineColor, captionInner, captionBand } = flags;
+  if (!captionFont && !captionFill && !captionOutlineColor && !captionInner && !captionBand) return null;
+  const overrides = {};
+  if (captionFont) overrides.fontKey = captionFont;
+  if (captionFill) overrides.fillHex = captionFill;
+  if (captionOutlineColor) overrides.outlineColorHex = captionOutlineColor;
+  if (captionInner && captionInner !== "off") overrides.innerOutline = { enabled: true, colorHex: captionInner };
+  if (captionBand && captionBand !== "off") overrides.box = { enabled: true, colorHex: captionBand };
+  return overrides;
+}
+
 async function cmdRender(workDir, opts = {}) {
   const {
     flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
     exportPreset = DEFAULT_EXPORT, exportOverrides = {},
+    captionFont, captionFill, captionOutlineColor, captionInner, captionBand,
   } = opts;
   if (!getExportPreset(exportPreset)) {
     const avail = listExportPresets().map((e) => `${e.key}（${e.label}）`).join(" / ");
@@ -280,6 +303,28 @@ async function cmdRender(workDir, opts = {}) {
   if (!noSub && !getStyle(subStyle)) {
     const avail = listStyles().map((s) => `${s.key}（${s.label}）`).join(" / ");
     die(`未知の字幕スタイル: ${subStyle}\n  利用可能: ${avail}`);
+  }
+  // G-EDIT-CAPTION-STYLE: 書体・文字色・縁取り色・内側縁取り・背景帯の自由カスタマイズ。
+  // 1つでも指定されていれば resolveCaptionStyle() で合成したオブジェクトを使う。
+  // 未指定なら従来どおり subStyle(文字列キー)のまま渡し、挙動を変えない。
+  const captionOverrides = buildCaptionOverrides({
+    captionFont, captionFill, captionOutlineColor, captionInner, captionBand,
+  });
+  let resolvedCaptionStyle = null;
+  if (!noSub && captionOverrides) {
+    try {
+      resolvedCaptionStyle = resolveCaptionStyle(subStyle, captionOverrides);
+    } catch (e) {
+      die(e.message);
+    }
+    // 書体が同梱されているか(fail-fast): システムフォントへ無言でフォールバックさせない
+    // （G-EDIT-CAPTION-STYLE-FALLBACK。docs/failures.md 2026-08-14のYu Gothic UI事故と同種の
+    // 再発防止）。レンダリング(文字起こし後の重い処理)を始める前にここで止める。
+    // --caption-font を指定していない場合も resolveCaptionStyle() は既定書体(DEFAULT_FONT_KEY)
+    // へ解決するため、実際に使われる書体キー(resolvedCaptionStyle.fontKey)を常に確認する
+    // （--caption-font以外だけ指定したときに検証が抜けるのを防ぐ）。
+    const bundled = checkBundledFont(resolvedCaptionStyle.fontKey);
+    if (!bundled.ok) die(bundled.reason);
   }
   stageStart(workDir, "render");
   const transcript = readJson(path.join(workDir, "transcript.json"));
@@ -411,7 +456,7 @@ async function cmdRender(workDir, opts = {}) {
         trim: state.trim === "on",
         subtitle: noSub ? null : {
           path: path.join(workDir, `clip-${i + 1}.ass`),
-          style: subStyle, width: canvas.w, height: canvas.h,
+          style: resolvedCaptionStyle ?? subStyle, width: canvas.w, height: canvas.h,
         },
         exportPreset, exportOverrides, fit,
         output: outFile,
@@ -560,16 +605,25 @@ async function main() {
           acodec: flagValue(rest, "--acodec", undefined),
           abitrate: flagValue(rest, "--abitrate", undefined),
         },
+        // G-EDIT-CAPTION-STYLE: 書体/文字色/縁取り色/内側縁取り/背景帯（全て省略可・任意組合せ）。
+        captionFont: flagValue(rest, "--caption-font", undefined),
+        captionFill: flagValue(rest, "--caption-fill", undefined),
+        captionOutlineColor: flagValue(rest, "--caption-outline-color", undefined),
+        captionInner: flagValue(rest, "--caption-inner", undefined),
+        captionBand: flagValue(rest, "--caption-band", undefined),
       });
     case "status": return cmdStatus(arg);
     case "styles":
       listStyles().forEach((s) => log(`  ${s.key}\t${s.label} — ${s.description}`));
       return;
+    case "fonts":
+      listFonts().forEach((f) => log(`  ${f.key}\t${f.label} — ${f.description}`));
+      return;
     case "exports":
       listExportPresets().forEach((e) => log(`  ${e.key}\t${e.label} — ${e.description}`));
       return;
     default:
-      log("usage: node pipeline.mjs <init|captionfix|select|render|status|styles> ...");
+      log("usage: node pipeline.mjs <init|captionfix|select|render|status|styles|fonts|exports> ...");
       log("  init       <input.mp4> --mode <topic|digest> --sub <on|off> --orient <縦|横>");
       log("  captionfix <workDir>（文字起こしの変換ミスをAIが直す。select の前）");
       log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
@@ -580,6 +634,13 @@ async function main() {
       log("             [--export <用途>]（書き出し設定。youtube|sns|x|archive|light|standard）");
       log("             [--crf <0-51>] [--vcodec <名>] [--enc-preset <名>] [--acodec <名>] [--abitrate <例:128k>]");
       log("               （個別指定。--export の上から1項目ずつ上書きできる）");
+      log("             [--caption-font <kaku|maru|mincho|hand|marker>]（字幕の書体。省略時は既定）");
+      log("             [--caption-fill <#RRGGBB>]（文字色。省略時はスタイルの既定色）");
+      log("             [--caption-outline-color <#RRGGBB>]（外側縁取り色。省略時は黒）");
+      log("             [--caption-inner <#RRGGBB|off>]（内側の二重縁取り。省略時はoff）");
+      log("             [--caption-band <#RRGGBB(AA)|off>]（背景帯。省略時はoff）");
+      log("  styles     選べる字幕スタイル(mode)の一覧を表示する");
+      log("  fonts      選べる書体の一覧を表示する");
       log("  exports    書き出しプリセットの一覧を表示する");
       process.exit(1);
   }

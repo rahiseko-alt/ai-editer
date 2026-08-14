@@ -13,6 +13,8 @@
 // 言えるときに実際に「存在しない」と言える＝AGENTS.mdの対照の規律を満たす）。
 
 import { spawnSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { getFont, fontFilePath } from "./subtitle-styles.mjs";
 
 /**
  * fc-list が使えるかどうか。
@@ -63,4 +65,41 @@ export function checkFontAvailable(fontName) {
       `日本語フォント（例: IPAGothic）を導入するか、導入済みのフォント名を指定してください。` +
       `このまま進めると、字幕が別の言語の字形で無言のまま焼かれます。`,
   };
+}
+
+/**
+ * 字幕スタイルの書体キー(subtitle-styles.mjs の FONT_CATALOG)が、実際に
+ * video-shorts/src/fonts/ に同梱ファイルとして存在するかを確認する（G-EDIT-CAPTION-STYLE-FALLBACK）。
+ *
+ * fc-list を使う checkFontAvailable() とは別の検査（同梱ttfを直接ファイルとして確認する）。
+ * 書体選択は「システムに入っているかもしれないフォント名」ではなく「このリポジトリに
+ * 同梱した特定のttfファイル」を指すため、システムのフォント一覧に依存せず判定できる。
+ * 存在しないキー・ファイルが欠落している場合は無言でフォールバックせず fail-fast する。
+ * @param {string} fontKey
+ * @returns {{ ok: boolean, reason: string }}
+ */
+export function checkBundledFont(fontKey) {
+  const font = getFont(fontKey);
+  if (!font) {
+    return {
+      ok: false,
+      reason: `字幕の書体キー「${fontKey}」は存在しません。選べる書体を確認してください。`,
+    };
+  }
+  const filePath = fontFilePath(fontKey);
+  if (!filePath || !existsSync(filePath)) {
+    return {
+      ok: false,
+      reason: `書体「${font.label}」の同梱フォントファイル(${font.file})が見つかりません。` +
+        `video-shorts/src/fonts/ に配置されているか確認してください。` +
+        `このまま進めると、指定した書体とは違う字形で無言のまま焼かれます。`,
+    };
+  }
+  if (statSync(filePath).size === 0) {
+    return {
+      ok: false,
+      reason: `書体「${font.label}」の同梱フォントファイル(${font.file})が空です（壊れています）。`,
+    };
+  }
+  return { ok: true, reason: "" };
 }

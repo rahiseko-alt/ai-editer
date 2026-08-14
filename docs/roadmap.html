@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "字幕スタイルの自由指定(フォント書体/文字色(中)/縁取り色(外)/内側縁取り/背景帯)をマスターと合意した仕様どおりに実装する。① src/subtitle-styles.mjsを固定3プリセット(karaoke/pop/bold)から可変フィールド(font family/base/outline/innerOutline/box/boxColor等)へ拡張。② 5書体(角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black・手書き風=Kosugi Maru・マーカー風=Yusei Magic)のフォントファイルをリポジトリへ同梱しfontsdirで読み込む(system fontに頼らない。副次効果でWindows配布物のフォント欠如リスクも解消)。③ SKILL.mdの手順2項目3(字幕の有無)を「あり→おすすめ/詳細決めるの分岐→詳細ならa.書体/b.文字色/c.縁取り色/d.内側縁取り/e.背景帯」の順で聞く形へ改訂(マスター承認済みの構成)。④ pipeline.mjs/render-vertical.mjs/srt-builder.mjsへの配線とテスト。実装前の段階(フォントのリサーチ・5+2書体の実サンプル画像生成・聞き方の構成をマスターと3往復で合意)はこのセッションで完了済み・まだコード化していない。",
+  "next": "G-EDIT-CAPTION-STYLE(字幕スタイル自由指定)は12葉すべて実装・検証・done化・PR #116作成まで完了。次はPR #116がCI緑になり次第マージする。マージ後の次の一手はロードマップの続き(G-P0/G-P1/G-P2/G-EDIT-REFRAME-C/F等の残りtodo葉、または新たにマスターから依頼される案件)。",
   "handoff": {
    "done": [
-    "計画のM1〜M7を実装・PR #114としてマージ済み(squash commit 5779c55、main)。マージ前にマスターから実際に「字幕なし・見どころ1分・縦動画」を依頼され、digestモードで生成・提出→「黒帯だらけで映像が小さい」の指摘→computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し字幕なしはcover(黒帯を残さない中央crop-fill)を既定にする修正(tests/nosub-cover-fit-check.mjs 8 tests、検出力を修正の一時取り消しで確認)→「字幕がしょぼい、プレミアプロ並みにできないか」の指摘→outline/shadowを強化(karaoke: 9→14/4→8等)。縦(1080x1920)・横(1920x1080)ともマスターへ再提出し、CI(ci-green/roadmap-required等)全緑を確認してPRをdraft解除→マージまで完了。マージ後、マスターの「SNSで映えるフォントをリサーチしろ」指示でWeb検索・実際のfc-list確認(この環境はIPAGothicのみでBoldウェイト無し、という構造的な弱さを発見)を行い、Google Fonts(OFL)から候補をダウンロードしfonttools varLib.instancerでBlackウェイトを実体化、実素材フレーム背景に5パターン(角ゴシック/丸ゴシック/フラット黒帯/手書き風/二重縁取りインパクト)→マスターの指摘で角ゴシックを1つに整理・明朝体とマーカー風を追加調査し計7パターンを実際にffmpeg drawtextで焼いて画像提出。聞き方の構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)をマスターと3往復ですり合わせ合意済み。実装はまだ未着手(次回)。"
+    "字幕スタイル自由指定(G-EDIT-CAPTION-STYLE、GOAL配下)を原子ツリー確定→実装→検証→全12葉done化まで完了。詳細(実装内容・commit対応・修正経緯)は当該ノードのdetail/criteriaを参照。PR #116のCodeRabbitレビューで背景帯(BAND-ON/OFF)の実装が実際には塗りつぶしになっていない欠陥を指摘され(自分の最初の反論は誤りだった)、ASSのBorderStyle=3から\\p1描画コマンドへ書き直して根本修正・再検証済み。"
    ],
    "trouble": [
-    "無し(PR #114のマージ・フォントリサーチともにトラブルなく完了)。"
+    "詳細はdocs/failures.md 2026-08-14「字幕スタイル自由指定の実装で判明した2件」を参照(前セッション残骸によるテスト誤検知と恒久修正／背景帯のBorderStyle=3実装が実際には機能していなかった欠陥とCodeRabbitの指摘による発覚・根本修正)。①PR #115がsquash-mergeされた後、このブランチをorigin/mainへ再同期しないまま作業を続けたため、docs/roadmap.htmlのmeta.next/meta.handoffでPR #116にマージ衝突が発生した(git merge-base はsquash元の旧commitのまま止まっており、squash後のmainコミットと独立した変更として競合した)。git merge origin/main で解消(SHAを保つためrebaseではなくmergeを使用)。教訓: PRがマージされたら、たとえ同じセッション内で作業を続ける場合でも、次のコミット前に一度origin/mainへ同期する。"
    ]
   },
   "updated": "2026-08-14",
@@ -4476,6 +4476,195 @@
          "verify": "digestを生成する設定でジョブを実行し、完了後のwebapp-mockup結果画面を確認する。APIレスポンスのdigestに対応する動画が画面上から再生またはダウンロードできることを確認する。",
          "evidence": "03e1aaab1cbea80dd4726b5dfd95ca6ae5aecf8c",
          "verifyCmd": "node video-shorts/tests/webapp-digest-check.mjs"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "G-EDIT-CAPTION-STYLE",
+     "kind": "state",
+     "theme": "字幕のスタイル(書体・文字色・縁取り色・内側縁取り・背景帯)を自由に選べる",
+     "meaning": "「普通の字幕」しか選べず、プレミアプロ風の見た目を求められても応えられない状態を無くす",
+     "detail": "2026-08-14 マスターの「SNSで映えるフォントをリサーチしろ」指示を受け、実環境のfc-list確認(IPAGothicのみ・Boldウェイト無し)→Google Fonts(OFL)から候補取得→fonttools varLib.instancerでBlackウェイト実体化→実素材フレームへ7パターンをffmpeg drawtextで焼いて提出、の3往復でマスターと聞き方構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)に合意。着手前のこのタイミングで原子ツリーを確定する(AGENTS.md「案件の絶対起点」)。\n\n【実装まとめ】①原子ツリー: 機能軸(書体5+文字色+縁取り色+内側縁取り+背景帯on/off)・経路軸(ヒアリング配線)・故障モード軸(フォント欠落fail-fast)の12葉(commit 6e2ce21, 98e1e8e)。②書体同梱: 角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black(可変フォントをfonttools varLib.instancerでBlackウェイト実体化・name table補正)・手書き風=Kosugi Maru・マーカー風=Yusei Magic(上流にBlack無し)をvideo-shorts/src/fonts/へOFL-1.1/Apache-2.0ライセンス文言・THIRD_PARTY.json付きで同梱(commit 98e1e8e)。③src/subtitle-styles.mjs:resolveCaptionStyle()でプリセットへ書体/文字色/縁取り色/内側縁取り/背景帯を合成、hexToAss()で#RRGGBB(AA)→ASS変換(commit 411e305)。④src/font-check.mjs:checkBundledFont()で同梱フォント欠落をfail-fast検知。⑤src/srt-builder.mjs:内側縁取りはCaption Dialogue行を外側/内側2レイヤーへ複製する技法(ASSは1スタイル1縁取り色までのため)。背景帯は当初ASSのBorderStyle=3(不透明ボックス)で実装したが(commit 411e305)、この環境のffmpeg(6.1.1)同梱libassでは塗りつぶした矩形にならず右下だけの細い縁しか描かれないことが目視確認(スクリーンショットの実際の比較)で判明し、その時点のverify(画素数閾値500px)はこの壊れた見た目でも通ってしまう不十分な検査だった。PR #116のCodeRabbitレビューで「criteria.textが着手後に変わっている」と指摘を受け、単なる検出手法の言い換えでは説明が付かないと再検証した結果、上記の実装バグを発見。BorderStyle=3をやめ、ASSの描画コマンド(\\p1〜\\p0のベクター描画)で直接矩形を塗る方式(buildBackgroundBand()、字幕の安全エリア幅いっぱい・フォントサイズ基準の高さの帯をLayer -1に1本描く)へ書き直し、verifyも「矩形外周の充填率90%以上」という目視と対応する基準へ改めた(詳細はdocs/failures.md 2026-08-14参照)。⑥pipeline.mjs:--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-bandを追加(--sub-styleと同じ「render時指定」設計)。render-vertical.mjsのass filterへfontsdir(常時)を追加(commit a65cbac)。⑦SKILL.md手順2項目3を「あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯」へ改訂、色は#RRGGBB(AA)形式のみ受け付ける(commit e3c98af, 後続修正)。⑧caption-style-{font,color,inner,band,hearing,fallback}-check.mjs(計6ファイル)をpnpm testへ登録(commit 30a98a8)。\n\n【PR #116のCodeRabbit指摘への対応】(a)resolveCaptionStyle()が既定書体(kaku)へ解決するケースで、--caption-fontを明示しないとfail-fastが素通りしていた欠陥を修正(resolveCaptionStyle()を先に実行しresolvedCaptionStyle.fontKeyを常に検証する順序へ変更)。(b)getFont()が__proto__等の継承プロパティキーを誤って返しうる問題をObject.hasOwn()で修正。(c)caption-style-hearing/fallback-check.mjsがffmpeg/ffprobe不在時にexit(0)で黙ってスキップしていたのをexit(1)のFAILへ変更(サイレントフェイル禁止)。(d)SKILL.mdの色ヒアリングを色名可→#RRGGBB(AA)必須の文言へ修正。(e)tests/external-tool-version-pin-check.mjsがファイルシステム再帰列挙でgitignore対象の生成物(output/work配下の実素材mp4)まで読み誤検知していた問題を、git ls-files方式(build-dist.mjsと同じ考え方)へ書き換えて恒久修正(削除だけの応急処置から昇格)。",
+     "children": [
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-KAKU",
+       "kind": "state",
+       "theme": "角ゴシック書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「角ゴシック」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/NotoSansJP-Black.ttf(SHA-256: 63a34f5646cc2a8d7781638221eded85dd77c7104e2c02e15708633abbb8e657、システムにインストール済みのフォントではなく同梱ファイル)がfontsdir経由で使われ、出力フレームの字形が他の書体(丸ゴシック等)の同一テキストのレンダリングとピクセル単位で異なる(=実際にその書体が焼かれた証拠)。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 角ゴシックケースを実行する。同一テキスト(区間: 半角+全角混在の固定文字列'字幕テストABC123')・同一位置で角ゴシック指定と丸ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分(RGB各chが閾値10以上異なるピクセル数)が1000px以上であることを確認する(=フォント切替が実際に出力へ反映されている対照)。あわせてvideo-shorts/src/fonts/NotoSansJP-Black.ttfのSHA-256が63a34f5646cc2a8d7781638221eded85dd77c7104e2c02e15708633abbb8e657と一致し、レンダリングコマンドのfontsdirがvideo-shorts/src/fontsを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font kaku",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MARU",
+       "kind": "state",
+       "theme": "丸ゴシック書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「丸ゴシック」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/MPLUSRounded1c-Black.ttf(SHA-256: 7409964207251dab6315577128d3f6e9fd637d1fa7b0af771bb4cc029f07a4dd)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 丸ゴシックケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で丸ゴシック指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/MPLUSRounded1c-Black.ttfのSHA-256が7409964207251dab6315577128d3f6e9fd637d1fa7b0af771bb4cc029f07a4ddと一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font maru",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MINCHO",
+       "kind": "state",
+       "theme": "明朝体書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「明朝体」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/NotoSerifJP-Black.ttf(SHA-256: a19cc17fc0d9ff71331a8d779c5c41f1b4c0ee9b6491b190787cf290bfaef546)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 明朝体ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で明朝体指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/NotoSerifJP-Black.ttfのSHA-256がa19cc17fc0d9ff71331a8d779c5c41f1b4c0ee9b6491b190787cf290bfaef546と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font mincho",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-HAND",
+       "kind": "state",
+       "theme": "手書き風書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「手書き風」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/KosugiMaru-Regular.ttf(SHA-256: 4b8d0022c8dadd090ef67cd1f71f130714767af7806cba2eb4ebe4b0271c1d68)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 手書き風ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で手書き風指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/KosugiMaru-Regular.ttfのSHA-256が4b8d0022c8dadd090ef67cd1f71f130714767af7806cba2eb4ebe4b0271c1d68と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font hand",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MARKER",
+       "kind": "state",
+       "theme": "マーカー風書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「マーカー風」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/YuseiMagic-Regular.ttf(SHA-256: 82098615f39ed9da6a8ccc674b9006e49c70dd5b775a7a1697f6bedd22ce25a2)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の マーカー風ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置でマーカー風指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/YuseiMagic-Regular.ttfのSHA-256が82098615f39ed9da6a8ccc674b9006e49c70dd5b775a7a1697f6bedd22ce25a2と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font marker",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-COLOR-FILL",
+       "kind": "state",
+       "theme": "文字色(中の塗り色)を指定した色で実際に焼ける",
+       "meaning": "色を選んでも既定の白のまま焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで文字色(fill)に既定(白)以外の色を指定してレンダリングすると、出力フレーム中で最も多く現れる非背景色(=文字の塗り面積が縁取りより広いため優勢色になる)が指定した色と許容誤差内で一致し、既定色で焼いた場合の優勢色とは異なる。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の fillケースを実行する。縁取りを細く(2px)した上でfill色を2パターン(既定の白／指定色の赤)で実際にffmpegレンダリングし、フレームの色ヒストグラムで最頻出の非背景色(優勢色)がそれぞれ白・赤と一致すること、2パターンの優勢色が異なることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis fill",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-COLOR-OUTLINE",
+       "kind": "state",
+       "theme": "外側の縁取り色を指定した色で実際に焼ける",
+       "meaning": "縁取り色を選んでも既定の黒のまま焼かれてしまわない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで外側縁取り色に既定(黒)以外の色(青 #0000FF)を指定してレンダリングすると、出力フレーム全体で青(許容誤差20/ch)に一致する画素が、縁取り相当の面積(500px以上)で実際に現れる。既定(黒)のまま焼いたフレームには同じ青画素がほぼ現れない(50px未満)。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の outlineケースを実行する。outline幅を太く(20px)した上で、outline色を2パターン(既定の黒／指定色の青)で実際にffmpegレンダリングし、フレーム全体で青画素数を数える。既定側は黒縁取りが背景(黒)と同化し見分けが付かないため、直接比較ではなく「既定側にはほぼ現れず(50px未満)、青指定側には縁取り相当の面積(500px以上)で現れる」という対照で確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis outline",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-INNER",
+       "kind": "state",
+       "theme": "内側の縁取り(二重縁取り)をオンにすると、外側と別の色の縁がもう1本内側に入る",
+       "meaning": "「中外シャドウ」のような二重縁取りが無く、プレミアプロ風の袋文字にできない状態を無くす",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで内側縁取り(innerOutline)をオンにし外側と異なる色(内側=黄 #FFFF00)を指定してレンダリングすると、出力フレーム全体で黄色(許容誤差20/ch)に一致する画素が200px以上、帯として実際に検出できる。内側縁取りをオフにした場合の同条件フレームでは、同じ黄色の画素が20px未満(ほぼ皆無)しか現れない。",
+         "verify": "video-shorts/tests/caption-style-inner-check.mjs を実行する。innerOutline ON(内側=黄・外側=黒・外側幅20px)とOFFの2パターンを実際にffmpegレンダリングし、フレーム全体で黄色に一致する画素数を数える。ONで200px以上・OFFで20px未満であることを確認する(検出力の対照)。",
+         "verifyCmd": "node video-shorts/tests/caption-style-inner-check.mjs",
+         "evidence": "411e305"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-BAND-ON",
+       "kind": "state",
+       "theme": "背景帯をオンにすると、指定した色の帯が文字の後ろに実際に焼ける",
+       "meaning": "背景帯を求められても、透明な背景のままで応えられない状態を無くす",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで背景帯(box)をオンにし色(#102040・不透明)を指定してレンダリングすると、字幕の安全エリア幅いっぱい・フォントサイズ基準の高さを持つ帯の矩形が、指定した帯色でほぼ塗りつぶされた状態で実際に焼ける(矩形の外周=文字が来ない領域を許容誤差20/chでサンプリングし充填率90%以上)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色(#102040)を指定して実際にffmpegレンダリングし、buildBackgroundBand()と同じ式で求めた帯の矩形の外周(文字が来ないはずの領域)をグリッド状にサンプリングして帯色との一致率(充填率)を求め、90%以上であることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode on",
+         "evidence": "2e7cb2f"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-BAND-OFF",
+       "kind": "state",
+       "theme": "背景帯をオフにすると、文字の背後に帯が残らず映像がそのまま透けて見える",
+       "meaning": "帯なしを選んだのに帯が残ってしまう状態を無くす",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、帯をオンにしたときに塗りつぶされるはずの矩形(帯なしのcriteriaと同じ座標)が、帯色でほぼ塗られていない(同じ充填率の測り方で5%未満)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありで実際にffmpegレンダリングし、on側と同じ帯の矩形・同じ充填率の測り方で帯色との一致率を求め、5%未満であることを確認する(対照: onケースでは同じ測り方で90%以上を確認済み=検出力の裏付け)。",
+         "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode off",
+         "evidence": "2e7cb2f"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-HEARING",
+       "kind": "state",
+       "theme": "ヒアリングで書体・文字色・縁取り色・内側縁取り・背景帯を選ぶと、その通りにレンダリングへ渡る",
+       "meaning": "画面(チャット)で選んだ設定が無視され、既定のまま焼かれてしまう状態を無くす",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "pipeline.mjs render に --caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band の5項目をCLI引数として指定してレンダリングすると(既存の--sub-styleと同じ「render時に指定する」設計に合わせる。init時のstate.jsonには保存しない)、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour(Style行)・内側縁取り用の2重Dialogue・帯用の\\p1描画Dialogue(Layer -1)の値が、指定した5項目と一致する。",
+         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定し、node pipeline.mjs init→select→render をend-to-endで実際にCLI実行し、生成されたwork/<id>/clip-1.assの実際の値(Style行のFontname/PrimaryColour/OutlineColour、帯用DialogueのLayer/\\1c/\\p1、内側縁取り用の2重DialogueのLayer/\\3c)を、CLIに渡した指定値から独立に計算した期待値と突き合わせ、全項目が一致することを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-hearing-check.mjs",
+         "evidence": "2e7cb2f"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FALLBACK",
+       "kind": "state",
+       "theme": "指定した書体のフォントファイルが同梱物に無いとき、無言で別書体に化けずエラーで止まる",
+       "meaning": "2026-08-14以前にWindows用フォント名が存在せず無言で中国語フォントに化けた事故(docs/failures.md)と同じ種類の欠陥を、この新しい書体選択機能で再発させない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕スタイルで存在しない/破損した書体キーまたは同梱フォントファイルが見つからない状態を指定してpipeline.mjsを実行すると、レンダリングは開始されず、日本語の分かりやすいエラーメッセージと共に0以外の終了コードで停止する。",
+         "verify": "video-shorts/tests/caption-style-fallback-check.mjs を実行する。(1) 存在しない書体キーを指定した場合、(2) 同梱フォントファイルパスを一時的に欠落させた場合、の2ケースでpipeline.mjsを実行し、いずれも非ゼロ終了・エラーメッセージに書体名が含まれることを確認する。対照として、正しい書体キー・実在するフォントファイルの場合は同じ経路が正常終了することも確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-fallback-check.mjs",
+         "evidence": "a65cbac"
         }
        ]
       }

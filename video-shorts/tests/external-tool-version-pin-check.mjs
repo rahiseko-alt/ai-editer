@@ -22,6 +22,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -192,27 +193,33 @@ function readRepoFile(relPath) {
 
   /** @type {string[]} */
   const hits = [];
-  function walk(dir) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name.startsWith(".git")) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.isFile()) {
-        // このチェックスクリプト自身のサンプル文字列を誤検知しないよう除外する。
-        if (full === path.join(HERE, "external-tool-version-pin-check.mjs")) continue;
-        let content;
-        try {
-          content = fs.readFileSync(full, "utf8");
-        } catch {
-          continue; // バイナリ等は読めなくてよい(uvx/npx呼び出しは書けないファイル)。
-        }
-        const matches = [...content.matchAll(unpinnedCallRe)];
-        for (const m of matches) hits.push(`${path.relative(REPO_ROOT, full)}: ${m[0].trim()}`);
-      }
-    }
+  // git管理下のファイルだけを対象にする(build-dist.mjsのgitTrackedFiles()と同じ考え方)。
+  // 以前はファイルシステムを再帰列挙していたため、.gitignore対象の生成物(output/・work/配下の
+  // 実素材mp4等)まで拾ってしまい、mp4バイナリ中の偶然のバイト列("uvx"に一致)を無指定呼び出しと
+  // 誤検知していた(docs/failures.md 2026-08-14)。git ls-filesはgitignore対象を列挙に含めない
+  // ため、生成物を都度削除しなくても構造的に誤検知し得なくなる。
+  let trackedFiles;
+  try {
+    trackedFiles = execFileSync("git", ["ls-files", "-z"], { cwd: VIDEO_SHORTS_ROOT })
+      .toString("utf-8").split("\0").filter(Boolean);
+  } catch (e) {
+    throw new Error(`git ls-files に失敗しました。この検査はgit管理下のチェックアウトが前提です: ${e.message}`);
   }
-  walk(VIDEO_SHORTS_ROOT);
+  for (const rel of trackedFiles) {
+    const segments = rel.split("/");
+    if (segments.some((seg) => seg === "node_modules" || seg.startsWith(".git"))) continue;
+    const full = path.join(VIDEO_SHORTS_ROOT, rel);
+    // このチェックスクリプト自身のサンプル文字列を誤検知しないよう除外する。
+    if (full === path.join(HERE, "external-tool-version-pin-check.mjs")) continue;
+    let content;
+    try {
+      content = fs.readFileSync(full, "utf8");
+    } catch {
+      continue; // 削除済みだが未commit等でworking treeに無い、またはバイナリ等は読めなくてよい。
+    }
+    const matches = [...content.matchAll(unpinnedCallRe)];
+    for (const m of matches) hits.push(`${path.relative(REPO_ROOT, full)}: ${m[0].trim()}`);
+  }
   report(
     `P1-12-A: video-shorts配下にuvx/npxの無指定呼び出しが残っていない(実=${hits.length}件)`,
     hits.length === 0,
