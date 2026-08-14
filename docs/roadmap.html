@@ -122,10 +122,10 @@
   "next": "G-EDIT-CAPTION-STYLE(字幕スタイル自由指定)は12葉すべて実装・検証・done化・PR #116作成まで完了。次はPR #116がCI緑になり次第マージする。マージ後の次の一手はロードマップの続き(G-P0/G-P1/G-P2/G-EDIT-REFRAME-C/F等の残りtodo葉、または新たにマスターから依頼される案件)。",
   "handoff": {
    "done": [
-    "字幕スタイル自由指定(G-EDIT-CAPTION-STYLE、GOAL配下)を原子ツリー確定→実装→検証→全12葉done化まで完了。詳細(実装内容・commit対応・修正経緯)は当該ノードのdetail/criteriaを参照。PR #116作成済み、CodeRabbitの指摘を受けて追加修正(既定書体解決時のfail-fast漏れ・prototype pollution耐性・検査対象をgit管理下ファイルに限定 等)を実施済み。"
+    "字幕スタイル自由指定(G-EDIT-CAPTION-STYLE、GOAL配下)を原子ツリー確定→実装→検証→全12葉done化まで完了。詳細(実装内容・commit対応・修正経緯)は当該ノードのdetail/criteriaを参照。PR #116のCodeRabbitレビューで背景帯(BAND-ON/OFF)の実装が実際には塗りつぶしになっていない欠陥を指摘され(自分の最初の反論は誤りだった)、ASSのBorderStyle=3から\\p1描画コマンドへ書き直して根本修正・再検証済み。"
    ],
    "trouble": [
-    "詳細はdocs/failures.md 2026-08-14「字幕スタイル自由指定の実装で判明した2件」を参照(前セッション残骸によるテスト誤検知と恒久修正／BorderStyle=3の描画方式判明によるverify訂正)。①PR #115がsquash-mergeされた後、このブランチをorigin/mainへ再同期しないまま作業を続けたため、docs/roadmap.htmlのmeta.next/meta.handoffでPR #116にマージ衝突が発生した(git merge-base はsquash元の旧commitのまま止まっており、squash後のmainコミットと独立した変更として競合した)。git merge origin/main で解消(SHAを保つためrebaseではなくmergeを使用)。教訓: PRがマージされたら、たとえ同じセッション内で作業を続ける場合でも、次のコミット前に一度origin/mainへ同期する。"
+    "詳細はdocs/failures.md 2026-08-14「字幕スタイル自由指定の実装で判明した2件」を参照(前セッション残骸によるテスト誤検知と恒久修正／背景帯のBorderStyle=3実装が実際には機能していなかった欠陥とCodeRabbitの指摘による発覚・根本修正)。①PR #115がsquash-mergeされた後、このブランチをorigin/mainへ再同期しないまま作業を続けたため、docs/roadmap.htmlのmeta.next/meta.handoffでPR #116にマージ衝突が発生した(git merge-base はsquash元の旧commitのまま止まっており、squash後のmainコミットと独立した変更として競合した)。git merge origin/main で解消(SHAを保つためrebaseではなくmergeを使用)。教訓: PRがマージされたら、たとえ同じセッション内で作業を続ける場合でも、次のコミット前に一度origin/mainへ同期する。"
    ]
   },
   "updated": "2026-08-14",
@@ -4486,7 +4486,7 @@
      "kind": "state",
      "theme": "字幕のスタイル(書体・文字色・縁取り色・内側縁取り・背景帯)を自由に選べる",
      "meaning": "「普通の字幕」しか選べず、プレミアプロ風の見た目を求められても応えられない状態を無くす",
-     "detail": "2026-08-14 マスターの「SNSで映えるフォントをリサーチしろ」指示を受け、実環境のfc-list確認(IPAGothicのみ・Boldウェイト無し)→Google Fonts(OFL)から候補取得→fonttools varLib.instancerでBlackウェイト実体化→実素材フレームへ7パターンをffmpeg drawtextで焼いて提出、の3往復でマスターと聞き方構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)に合意。着手前のこのタイミングで原子ツリーを確定する(AGENTS.md「案件の絶対起点」)。\n\n【実装まとめ】①原子ツリー: 機能軸(書体5+文字色+縁取り色+内側縁取り+背景帯on/off)・経路軸(ヒアリング配線)・故障モード軸(フォント欠落fail-fast)の12葉(commit 6e2ce21, 98e1e8e)。②書体同梱: 角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black(可変フォントをfonttools varLib.instancerでBlackウェイト実体化・name table補正)・手書き風=Kosugi Maru・マーカー風=Yusei Magic(上流にBlack無し)をvideo-shorts/src/fonts/へOFL-1.1/Apache-2.0ライセンス文言・THIRD_PARTY.json付きで同梱(commit 98e1e8e)。③src/subtitle-styles.mjs:resolveCaptionStyle()でプリセットへ書体/文字色/縁取り色/内側縁取り/背景帯を合成、hexToAss()で#RRGGBB(AA)→ASS変換(commit 411e305)。④src/font-check.mjs:checkBundledFont()で同梱フォント欠落をfail-fast検知。⑤src/srt-builder.mjs:BorderStyle=3(背景帯)、内側縁取りはCaption Dialogue行を外側/内側2レイヤーへ複製する技法(ASSは1スタイル1縁取り色までのため)。実装中にBorderStyle=3の帯がグリフ単位の矩形の集まりで単一の連続長方形にならないと判明し、BAND-ON/OFF・INNER・COLOR-FILL/OUTLINEのverifyを単一座標サンプリングから画素数ベースの検出へ、状態がまだtodoのうちに訂正した(詳細はdocs/failures.md 2026-08-14参照。基準凍結後の緩和ではない)。⑥pipeline.mjs:--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-bandを追加(--sub-styleと同じ「render時指定」設計)。render-vertical.mjsのass filterへfontsdir(常時)を追加(commit a65cbac)。⑦SKILL.md手順2項目3を「あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯」へ改訂、色は#RRGGBB(AA)形式のみ受け付ける(commit e3c98af, 後続修正)。⑧caption-style-{font,color,inner,band,hearing,fallback}-check.mjs(計6ファイル)をpnpm testへ登録(commit 30a98a8)。\n\n【PR #116のCodeRabbit指摘への対応】(a)resolveCaptionStyle()が既定書体(kaku)へ解決するケースで、--caption-fontを明示しないとfail-fastが素通りしていた欠陥を修正(resolveCaptionStyle()を先に実行しresolvedCaptionStyle.fontKeyを常に検証する順序へ変更)。(b)getFont()が__proto__等の継承プロパティキーを誤って返しうる問題をObject.hasOwn()で修正。(c)caption-style-hearing/fallback-check.mjsがffmpeg/ffprobe不在時にexit(0)で黙ってスキップしていたのをexit(1)のFAILへ変更(サイレントフェイル禁止)。(d)SKILL.mdの色ヒアリングを色名可→#RRGGBB(AA)必須の文言へ修正。(e)tests/external-tool-version-pin-check.mjsがファイルシステム再帰列挙でgitignore対象の生成物(output/work配下の実素材mp4)まで読み誤検知していた問題を、git ls-files方式(build-dist.mjsと同じ考え方)へ書き換えて恒久修正(削除だけの応急処置から昇格)。",
+     "detail": "2026-08-14 マスターの「SNSで映えるフォントをリサーチしろ」指示を受け、実環境のfc-list確認(IPAGothicのみ・Boldウェイト無し)→Google Fonts(OFL)から候補取得→fonttools varLib.instancerでBlackウェイト実体化→実素材フレームへ7パターンをffmpeg drawtextで焼いて提出、の3往復でマスターと聞き方構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)に合意。着手前のこのタイミングで原子ツリーを確定する(AGENTS.md「案件の絶対起点」)。\n\n【実装まとめ】①原子ツリー: 機能軸(書体5+文字色+縁取り色+内側縁取り+背景帯on/off)・経路軸(ヒアリング配線)・故障モード軸(フォント欠落fail-fast)の12葉(commit 6e2ce21, 98e1e8e)。②書体同梱: 角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black(可変フォントをfonttools varLib.instancerでBlackウェイト実体化・name table補正)・手書き風=Kosugi Maru・マーカー風=Yusei Magic(上流にBlack無し)をvideo-shorts/src/fonts/へOFL-1.1/Apache-2.0ライセンス文言・THIRD_PARTY.json付きで同梱(commit 98e1e8e)。③src/subtitle-styles.mjs:resolveCaptionStyle()でプリセットへ書体/文字色/縁取り色/内側縁取り/背景帯を合成、hexToAss()で#RRGGBB(AA)→ASS変換(commit 411e305)。④src/font-check.mjs:checkBundledFont()で同梱フォント欠落をfail-fast検知。⑤src/srt-builder.mjs:内側縁取りはCaption Dialogue行を外側/内側2レイヤーへ複製する技法(ASSは1スタイル1縁取り色までのため)。背景帯は当初ASSのBorderStyle=3(不透明ボックス)で実装したが(commit 411e305)、この環境のffmpeg(6.1.1)同梱libassでは塗りつぶした矩形にならず右下だけの細い縁しか描かれないことが目視確認(スクリーンショットの実際の比較)で判明し、その時点のverify(画素数閾値500px)はこの壊れた見た目でも通ってしまう不十分な検査だった。PR #116のCodeRabbitレビューで「criteria.textが着手後に変わっている」と指摘を受け、単なる検出手法の言い換えでは説明が付かないと再検証した結果、上記の実装バグを発見。BorderStyle=3をやめ、ASSの描画コマンド(\\p1〜\\p0のベクター描画)で直接矩形を塗る方式(buildBackgroundBand()、字幕の安全エリア幅いっぱい・フォントサイズ基準の高さの帯をLayer -1に1本描く)へ書き直し、verifyも「矩形外周の充填率90%以上」という目視と対応する基準へ改めた(詳細はdocs/failures.md 2026-08-14参照)。⑥pipeline.mjs:--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-bandを追加(--sub-styleと同じ「render時指定」設計)。render-vertical.mjsのass filterへfontsdir(常時)を追加(commit a65cbac)。⑦SKILL.md手順2項目3を「あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯」へ改訂、色は#RRGGBB(AA)形式のみ受け付ける(commit e3c98af, 後続修正)。⑧caption-style-{font,color,inner,band,hearing,fallback}-check.mjs(計6ファイル)をpnpm testへ登録(commit 30a98a8)。\n\n【PR #116のCodeRabbit指摘への対応】(a)resolveCaptionStyle()が既定書体(kaku)へ解決するケースで、--caption-fontを明示しないとfail-fastが素通りしていた欠陥を修正(resolveCaptionStyle()を先に実行しresolvedCaptionStyle.fontKeyを常に検証する順序へ変更)。(b)getFont()が__proto__等の継承プロパティキーを誤って返しうる問題をObject.hasOwn()で修正。(c)caption-style-hearing/fallback-check.mjsがffmpeg/ffprobe不在時にexit(0)で黙ってスキップしていたのをexit(1)のFAILへ変更(サイレントフェイル禁止)。(d)SKILL.mdの色ヒアリングを色名可→#RRGGBB(AA)必須の文言へ修正。(e)tests/external-tool-version-pin-check.mjsがファイルシステム再帰列挙でgitignore対象の生成物(output/work配下の実素材mp4)まで読み誤検知していた問題を、git ls-files方式(build-dist.mjsと同じ考え方)へ書き換えて恒久修正(削除だけの応急処置から昇格)。",
      "children": [
       {
        "id": "G-EDIT-CAPTION-STYLE-FONT-KAKU",
@@ -4616,10 +4616,10 @@
        "status": "done",
        "criteria": [
         {
-         "text": "字幕スタイルで背景帯(box)をオンにし色(#102040・不透明)を指定してレンダリングすると、出力フレーム全体で指定した帯色(許容誤差20/ch)に一致する画素が500px以上、面積を持って実際に検出できる(ASSのBorderStyle=3はグリフ単位の矩形の集まりで単一の連続長方形にはならないため、単一座標のサンプリングではなく画素数で判定する)。",
-         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色(#102040)を指定して実際にffmpegレンダリングし、フレーム全体を走査して帯色に一致する画素数が500px以上であることを確認する。あわせてbbox(min_val=24)で取得した帯込みの画素範囲の面積が、帯なしで同文字列を焼いた場合の文字だけの画素範囲の面積より1.3倍以上大きいことも確認する(=帯が文字の外側にもはみ出して描かれている証拠)。",
+         "text": "字幕スタイルで背景帯(box)をオンにし色(#102040・不透明)を指定してレンダリングすると、字幕の安全エリア幅いっぱい・フォントサイズ基準の高さを持つ帯の矩形が、指定した帯色でほぼ塗りつぶされた状態で実際に焼ける(矩形の外周=文字が来ない領域を許容誤差20/chでサンプリングし充填率90%以上)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色(#102040)を指定して実際にffmpegレンダリングし、buildBackgroundBand()と同じ式で求めた帯の矩形の外周(文字が来ないはずの領域)をグリッド状にサンプリングして帯色との一致率(充填率)を求め、90%以上であることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode on",
-         "evidence": "411e305"
+         "evidence": "2e7cb2f"
         }
        ]
       },
@@ -4631,10 +4631,10 @@
        "status": "done",
        "criteria": [
         {
-         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、帯をオンにしたときに検出される帯色(#102040)に一致する画素が、出力フレーム全体で20px未満(ほぼ皆無)しか現れない(=帯が実際に描かれていない証拠)。",
-         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありで実際にffmpegレンダリングし、帯onのケースで使う帯色(#102040、許容誤差20/ch)に一致する画素数を数え、20px未満であることを確認する(対照: 帯onのケースでは同じ数え方で500px以上検出できることをon側の検査で確認済み=検出力の裏付け)。",
+         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、帯をオンにしたときに塗りつぶされるはずの矩形(帯なしのcriteriaと同じ座標)が、帯色でほぼ塗られていない(同じ充填率の測り方で5%未満)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありで実際にffmpegレンダリングし、on側と同じ帯の矩形・同じ充填率の測り方で帯色との一致率を求め、5%未満であることを確認する(対照: onケースでは同じ測り方で90%以上を確認済み=検出力の裏付け)。",
          "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode off",
-         "evidence": "411e305"
+         "evidence": "2e7cb2f"
         }
        ]
       },
@@ -4646,10 +4646,10 @@
        "status": "done",
        "criteria": [
         {
-         "text": "pipeline.mjs render に --caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band の5項目をCLI引数として指定してレンダリングすると(既存の--sub-styleと同じ「render時に指定する」設計に合わせる。init時のstate.jsonには保存しない)、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour/BackColour/BorderStyle等の値が、指定した5項目と一致する。",
-         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定し、node pipeline.mjs init→select→render をend-to-endで実際にCLI実行し、生成されたwork/<id>/clip-1.assの実際の値(Fontname/PrimaryColour/OutlineColour/BackColour/BorderStyle)を、CLIに渡した指定値から独立に計算した期待値と突き合わせ、全項目が一致することを確認する。",
+         "text": "pipeline.mjs render に --caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band の5項目をCLI引数として指定してレンダリングすると(既存の--sub-styleと同じ「render時に指定する」設計に合わせる。init時のstate.jsonには保存しない)、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour(Style行)・内側縁取り用の2重Dialogue・帯用の\\p1描画Dialogue(Layer -1)の値が、指定した5項目と一致する。",
+         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定し、node pipeline.mjs init→select→render をend-to-endで実際にCLI実行し、生成されたwork/<id>/clip-1.assの実際の値(Style行のFontname/PrimaryColour/OutlineColour、帯用DialogueのLayer/\\1c/\\p1、内側縁取り用の2重DialogueのLayer/\\3c)を、CLIに渡した指定値から独立に計算した期待値と突き合わせ、全項目が一致することを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-hearing-check.mjs",
-         "evidence": "a65cbac"
+         "evidence": "2e7cb2f"
         }
        ]
       },
