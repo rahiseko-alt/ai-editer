@@ -193,6 +193,14 @@ function buildHeader(W, H, font, st, align, scale) {
   const hookShadow = scaleToken(4, scale);
   const hookMarginLR = scaleToken(40, scale);
   const hookMarginV = scaleToken(150, scale);
+  // 縁取り色: 既定は黒(&H00000000)。resolveCaptionStyle() で上乗せされていればそれを使う
+  // （2026-08-14 追加。旧実装は縁取り色が常に固定で、Style行に書かず単に未指定=黒だった）。
+  const outlineColor = st.outlineColor ?? "&H00000000";
+  // 背景帯(box): st.box.enabled のときだけ BorderStyle=3（不透明ボックス背景）にし、
+  // BackColour に指定色を使う。無効時は従来どおり BorderStyle=1（縁取りのみ・背景なし）。
+  const boxEnabled = st.box?.enabled === true;
+  const borderStyle = boxEnabled ? 3 : 1;
+  const backColour = boxEnabled ? st.box.color : "&H00000000";
   return `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${W}
@@ -201,11 +209,49 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},&H00000000,&H00000000,1,1,${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${scaleToken(st.marginV, scale)},1
+Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},${backColour},1,${borderStyle},${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${scaleToken(st.marginV, scale)},1
 Style: Hook,${font},${hookFontSize},&H0000FFFF,&H00111111,&H00000000,1,1,${hookOutline},${hookShadow},8,${hookMarginLR},${hookMarginLR},${hookMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
+}
+
+/**
+ * 内側縁取り(二重縁取り)を、Captionスタイルの各Dialogue行を2枚重ねに複製することで実現する。
+ * ASSの1つのStyleは縁取りを1色しか持てないため、以下の「重ね貼り」技法を使う:
+ *   Layer 0（背面・外側）: 幅=st.outline(スケール後)・色=st.outlineColor で、文字色も
+ *     outlineColorと同じ単色にして塗りつぶす（外側の縁だけが輪として見える下地）。
+ *   Layer 1（前面・内側）: 幅=st.innerOutline.width(スケール後)・色=st.innerOutline.color で、
+ *     文字色は元のまま(karaokeのハイライト等はそのまま活きる)。
+ * ASSはLayer番号が大きいほど後から(上に)描画されるため、Layer1がLayer0の上に重なり、
+ * 外側の縁の輪だけが内側の縁の外にリングとして残る。
+ * @param {string[]} events "Dialogue: 0,...,Caption,,0,0,0,,text" 形式の行の配列(Hookを含む)
+ * @param {object} st resolveCaptionStyle() が返すスタイル
+ * @param {number} scale computeSubtitleScale() の結果
+ * @returns {string[]}
+ */
+function applyInnerOutline(events, st, scale) {
+  if (!st.innerOutline?.enabled) return events;
+  const re = /^Dialogue: 0,([^,]+),([^,]+),Caption,,0,0,0,,(.*)$/;
+  const outerW = scaleToken(st.outline, scale);
+  const innerW = scaleToken(st.innerOutline.width, scale);
+  const outerColor = st.outlineColor ?? "&H00000000";
+  const innerColor = st.innerOutline.color;
+  const out = [];
+  for (const line of events) {
+    const m = re.exec(line);
+    if (!m) {
+      out.push(line);
+      continue;
+    }
+    const [, start, end, text] = m;
+    const outerText = text.replace(/\{\\c[^}]*\}/g, "");
+    out.push(
+      `Dialogue: 0,${start},${end},Caption,,0,0,0,,{\\bord${outerW}\\shad0\\3c${outerColor}\\1c${outerColor}}${outerText}`,
+    );
+    out.push(`Dialogue: 1,${start},${end},Caption,,0,0,0,,{\\bord${innerW}\\3c${innerColor}}${text}`);
+  }
+  return out;
 }
 
 /** karaoke: 行を出しつつ、現在の単語だけ highlight 色で 1 語ずつ移動表示 */
@@ -275,10 +321,12 @@ function lineEvents(relWords, maxChars, maxCols) {
 export function buildAss(relWords, hook, duration, opts = {}) {
   const W = opts.width ?? 1080;
   const H = opts.height ?? 1920;
-  const fontMain = opts.fontMain ?? DEFAULT_FONT;
   const styleRef = opts.style ?? DEFAULT_SUBTITLE_STYLE;
   const st =
     typeof styleRef === "object" ? styleRef : getStyle(styleRef) || getStyle(DEFAULT_SUBTITLE_STYLE);
+  // resolveCaptionStyle() 由来のスタイルは st.fontFamily を持つ（書体選択・G-EDIT-CAPTION-STYLE）。
+  // 持たない場合(旧来のプリセットそのまま・テスト等)は opts.fontMain / DEFAULT_FONT にフォールバック。
+  const fontMain = st.fontFamily ?? opts.fontMain ?? DEFAULT_FONT;
   const align = st.mode === "pop" ? 5 : 2; // pop=画面中央 / それ以外=下中央
   const maxChars = opts.maxChars ?? (st.mode === "karaoke" ? 14 : 18);
 
@@ -305,6 +353,8 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   if (st.mode === "karaoke") events = events.concat(karaokeEvents(relWords, st, maxChars, maxCols));
   else if (st.mode === "pop") events = events.concat(popEvents(relWords, duration, maxCols));
   else events = events.concat(lineEvents(relWords, maxChars, maxCols));
+
+  events = applyInnerOutline(events, st, scale);
 
   return `${header}\n${events.join("\n")}\n`;
 }

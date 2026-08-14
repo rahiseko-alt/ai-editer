@@ -4572,8 +4572,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで文字色(fill)に既定(白)以外の色を指定してレンダリングすると、出力フレームの文字内部のピクセル色が指定した色と許容誤差内で一致し、既定色で焼いた場合のフレームとはピクセル値が異なる。",
-         "verify": "video-shorts/tests/caption-style-color-check.mjs の fillケースを実行する。fill色を2パターン(既定の白／指定色の赤)でそれぞれ実際にffmpegレンダリングし、文字中心付近をサンプリングしたRGBが指定色と一致すること、2パターンの結果が異なることを確認する。",
+         "text": "字幕スタイルで文字色(fill)に既定(白)以外の色を指定してレンダリングすると、出力フレーム中で最も多く現れる非背景色(=文字の塗り面積が縁取りより広いため優勢色になる)が指定した色と許容誤差内で一致し、既定色で焼いた場合の優勢色とは異なる。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の fillケースを実行する。縁取りを細く(2px)した上でfill色を2パターン(既定の白／指定色の赤)で実際にffmpegレンダリングし、フレームの色ヒストグラムで最頻出の非背景色(優勢色)がそれぞれ白・赤と一致すること、2パターンの優勢色が異なることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis fill",
          "evidence": ""
         }
@@ -4587,8 +4587,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで外側縁取り色に既定(黒)以外の色を指定してレンダリングすると、出力フレームの文字外周(縁取り)のピクセル色が指定した色と許容誤差内で一致し、既定色で焼いた場合のフレームとはピクセル値が異なる。",
-         "verify": "video-shorts/tests/caption-style-color-check.mjs の outlineケースを実行する。outline色を2パターン(既定の黒／指定色の青)でそれぞれ実際にffmpegレンダリングし、文字外周付近をサンプリングしたRGBが指定色と一致すること、2パターンの結果が異なることを確認する。",
+         "text": "字幕スタイルで外側縁取り色に既定(黒)以外の色(青 #0000FF)を指定してレンダリングすると、出力フレーム全体で青(許容誤差20/ch)に一致する画素が、縁取り相当の面積(500px以上)で実際に現れる。既定(黒)のまま焼いたフレームには同じ青画素がほぼ現れない(50px未満)。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の outlineケースを実行する。outline幅を太く(20px)した上で、outline色を2パターン(既定の黒／指定色の青)で実際にffmpegレンダリングし、フレーム全体で青画素数を数える。既定側は黒縁取りが背景(黒)と同化し見分けが付かないため、直接比較ではなく「既定側にはほぼ現れず(50px未満)、青指定側には縁取り相当の面積(500px以上)で現れる」という対照で確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis outline",
          "evidence": ""
         }
@@ -4602,8 +4602,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで内側縁取り(innerOutline)をオンにし外側と異なる色を指定してレンダリングすると、出力フレームで文字の輪郭付近に外側縁取り色の帯と内側縁取り色の帯が別々に(2本)確認でき、内側縁取りをオフにした場合のフレームでは内側の帯が存在しない。",
-         "verify": "video-shorts/tests/caption-style-inner-check.mjs を実行する。innerOutline ON(内側=黄・外側=黒)とOFFの2パターンを実際にffmpegレンダリングし、文字の縁から内側へ向けた複数点のRGBサンプリングで、ONのときだけ外側色帯→内側色帯の2層構造が検出でき、OFFのときは内側色帯が検出されないことを確認する(検出力の対照)。",
+         "text": "字幕スタイルで内側縁取り(innerOutline)をオンにし外側と異なる色(内側=黄 #FFFF00)を指定してレンダリングすると、出力フレーム全体で黄色(許容誤差20/ch)に一致する画素が200px以上、帯として実際に検出できる。内側縁取りをオフにした場合の同条件フレームでは、同じ黄色の画素が20px未満(ほぼ皆無)しか現れない。",
+         "verify": "video-shorts/tests/caption-style-inner-check.mjs を実行する。innerOutline ON(内側=黄・外側=黒・外側幅20px)とOFFの2パターンを実際にffmpegレンダリングし、フレーム全体で黄色に一致する画素数を数える。ONで200px以上・OFFで20px未満であることを確認する(検出力の対照)。",
          "verifyCmd": "node video-shorts/tests/caption-style-inner-check.mjs",
          "evidence": ""
         }
@@ -4617,8 +4617,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで背景帯(box)をオンにし色を指定してレンダリングすると、出力フレームの文字行の背後(文字が無い余白部分を含む帯全体)のピクセル色が指定した帯色と許容誤差内で一致する。",
-         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色を指定(半透明の紺)して実際にffmpegレンダリングし、文字の無い帯内側の座標をサンプリングしたRGBAが指定色と一致することを確認する。",
+         "text": "字幕スタイルで背景帯(box)をオンにし色(#102040・不透明)を指定してレンダリングすると、出力フレーム全体で指定した帯色(許容誤差20/ch)に一致する画素が500px以上、面積を持って実際に検出できる(ASSのBorderStyle=3はグリフ単位の矩形の集まりで単一の連続長方形にはならないため、単一座標のサンプリングではなく画素数で判定する)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色(#102040)を指定して実際にffmpegレンダリングし、フレーム全体を走査して帯色に一致する画素数が500px以上であることを確認する。あわせてbbox(min_val=24)で取得した帯込みの画素範囲の面積が、帯なしで同文字列を焼いた場合の文字だけの画素範囲の面積より1.3倍以上大きいことも確認する(=帯が文字の外側にもはみ出して描かれている証拠)。",
          "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode on",
          "evidence": ""
         }
@@ -4632,8 +4632,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、出力フレームの文字行背後の座標のピクセル色が、帯をオンにした場合のフレームの同座標と一致せず、代わりに背景映像側のフレーム(字幕無し)の同座標と一致する(=帯が実際に描かれていない証拠)。",
-         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありでffmpegレンダリングしたフレームと、字幕無しでレンダリングしたフレームの同座標RGBを比較し、差分が閾値以下であることを確認する。",
+         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、帯をオンにしたときに検出される帯色(#102040)に一致する画素が、出力フレーム全体で20px未満(ほぼ皆無)しか現れない(=帯が実際に描かれていない証拠)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありで実際にffmpegレンダリングし、帯onのケースで使う帯色(#102040、許容誤差20/ch)に一致する画素数を数え、20px未満であることを確認する(対照: 帯onのケースでは同じ数え方で500px以上検出できることをon側の検査で確認済み=検出力の裏付け)。",
          "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode off",
          "evidence": ""
         }
