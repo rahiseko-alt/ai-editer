@@ -51,9 +51,12 @@ function near(actual, expected, tol, name) {
 }
 
 function cmdAvailable(bin) { return spawnSync(bin, ["-version"]).status === 0; }
+// ffmpeg/ffprobe が無いときは SKIP で緑にせず落とす。この検査は出力ファイルを実測することが
+// 本体なので、道具が無いまま「成功」を返すと、純粋関数の検査もレンダリングの検査も1つも
+// 走っていないのに全体が緑に見える＝偽の緑になる（AGENTS.md「テストは本物だけを置く」）。
 if (!cmdAvailable("ffmpeg") || !cmdAvailable("ffprobe")) {
-  console.log("SKIP: ffmpeg/ffprobe が見つからないため検証できません");
-  process.exit(0);
+  console.error("ERROR: この検査は出力を実測するため ffmpeg と ffprobe が必須です（見つかりませんでした）");
+  process.exit(1);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -97,6 +100,15 @@ const SEGS = [
   check(plan.parts[0].members.join(",") === "0,1" && plan.parts[1].members.join(",") === "2",
     "(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま");
   check(plan.joins.length === 1, "(G) つなぎ目は1箇所だけになる", `実=${plan.joins.length}`);
+
+  // 区間照合の確からしさ（選別画面が候補ごとに表示する値）を落とさない。統合した部品では
+  // 含まれる区間のうち最も低いものに合わせる＝怪しい区間が混ざったまま「確か」と出さない。
+  const conf = planBreathParts(
+    [{ ...SEGS[0], confidence: 0.9 }, { ...SEGS[1], confidence: 0.6 }, { ...SEGS[2], confidence: 0.8 }],
+    SILENCES, { maxPauseSec: 0.7, fps: 30, srcDuration: 12.1 });
+  check(conf.parts[0]?.confidence === 0.6 && conf.parts[1]?.confidence === 0.8,
+    "(G) 区間照合の確からしさが部品へ引き継がれ、統合部品では低い方に合わせる",
+    JSON.stringify(conf.parts.map((p) => p.confidence)));
   near(plan.joins[0]?.pauseSec, 0.7, 0.04, "(A) 発話を捨てた実カットのつなぎ目に一呼吸ぶんの間が入る");
   near(SEGS[0].start - plan.parts[0].start, DEFAULT_EDGE_PAD_SEC, 0.04, "(C) 先頭に余白が付く");
   near(plan.parts[1].end - SEGS[2].end, DEFAULT_EDGE_PAD_SEC, 0.04, "(C) 末尾に余白が付く");

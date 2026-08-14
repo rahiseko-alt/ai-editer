@@ -251,6 +251,9 @@ export function planBreathParts(segments, silences, opts = {}) {
       end: newEnd[i],
       hook: segs[i].hook || "",
       keepText: segs[i].keepText || "",
+      // 区間照合の確からしさ。pipeline.mjs が candidates.json へ書き出し、選別画面が表示する。
+      // ここで落とすと digest の候補だけ確からしさが消えて選べなくなる。
+      confidence: segs[i].confidence,
       members: [i],
     };
     const prev = parts[parts.length - 1];
@@ -258,6 +261,12 @@ export function planBreathParts(segments, silences, opts = {}) {
     if (prev && chronological && cur.start <= prev.end + 1e-9) {
       prev.end = Math.max(prev.end, cur.end);
       prev.members.push(i);
+      // 統合した部品の確からしさは、含まれる区間のうち最も低いものに合わせる（安全側）。
+      // 高い方に合わせると、照合が怪しい区間が混ざっているのに「確か」と表示されてしまう。
+      if (Number.isFinite(cur.confidence)) {
+        prev.confidence = Number.isFinite(prev.confidence)
+          ? Math.min(prev.confidence, cur.confidence) : cur.confidence;
+      }
       if (cur.keepText) prev.keepText = `${prev.keepText} ${cur.keepText}`.trim();
       continue;
     }

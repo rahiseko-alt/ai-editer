@@ -4788,7 +4788,7 @@
        "criteria": [
         {
          "text": "上記の固定素材で、残す発話3つのうち間が 0.5 秒しかない2つ（[1.0,3.0] と [3.5,5.5]）は1つの部品へ統合され、出力の部品数が 3 ではなく 2 になる。結果として digest の尺が 7.9秒±0.12秒（統合後の部品 5.0秒 + 2.9秒）になる。この統合は、単語終端(3.0)と音響的な無音の始まり(3.09)が 0.09 秒ずれていても成立すること（＝許容値がその境界を跨いでいること）を含む。",
-         "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(G) 素材上で連続する区間が統合され、3区間が2部品になる」「(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま」「(G) つなぎ目は1箇所だけになる」「(G) 統合と間の反映後、digest の尺が設計どおりになる」が全て PASS すること。最後の1つは ffprobe で出力の音声ストリームの duration を実測する。",
+         "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(G) 素材上で連続する区間が統合され、3区間が2部品になる」「(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま」「(G) つなぎ目は1箇所だけになる」「(G) 統合と間の反映後、digest の尺が設計どおりになる」が全て PASS すること。最後の1つは ffprobe で出力の音声ストリームの duration を実測する。あわせて「(G) 区間照合の確からしさが部品へ引き継がれ、統合部品では低い方に合わせる」がPASS すること（統合で candidates.json の confidence が消えると選別画面で候補を選べなくなる）。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
          "evidence": "18ff8a1"
         }
@@ -4880,11 +4880,11 @@
        "theme": "ブラウザの画面からも、間の長さを選べる／切れる",
        "meaning": "コマンドを打たない利用者（＝主要な使い方）でも、間の付き方を自分で決められる",
        "status": "done",
-       "detail": "この葉は basis-reviewer の反証7で新設した。反証時点では --breath が CLI にしか結線されておらず、サーバ経由の利用者は常に既定 0.7 秒固定で off にもできなかった。digest は既定 ON なのでサーバ経路の全ジョブが影響を受ける（mosaic/trim で過去に同じ結線の取りこぼしをしている）。",
+       "detail": "この葉は basis-reviewer の反証7で新設した。反証時点では --breath が CLI にしか結線されておらず、サーバ経由の利用者は常に既定 0.7 秒固定で off にもできなかった。digest は既定 ON なのでサーバ経路の全ジョブが影響を受ける（mosaic/trim で過去に同じ結線の取りこぼしをしている）。 外部レビュー（CodeRabbit）で、job-params と pipeline-runner は結線したのに server/index.mjs のハンドラが breath を分解し落としており、画面の選択が一切効かない状態だと指摘された。当初の検査がソース文字列の正規表現照合だったため素通りしていた。ハンドラが設定を1つずつ数え上げる形自体を無くし（束をそのまま渡す）、検査もその構造不変条件を見る形へ置き換えた。",
        "criteria": [
         {
-         "text": "ブラウザ画面（webapp-mockup）に「つなぎ目の間」の選択肢（おまかせ／短め0.4秒／長め1秒／なし）があり、選んだ値が /api/jobs の breath パラメータとして送られ、server/pipeline-runner.mjs がpipeline.mjs render の --breath として渡す。サーバ側は off と 0〜5 秒だけを受け付け、範囲外・不正値は既定（＝空）へ丸める（pipeline.mjs を fail-fast させてジョブ失敗にしない）。",
-         "verify": "node video-shorts/tests/smoke.mjs を実行し、「parseJobParams: breath の既定は空」「parseJobParams: breath=off と秒数はそのまま通る」「parseJobParams: 範囲外・不正な breath は既定へ丸める」「サーバ: 選んだ間の長さが pipeline.mjs render の --breath として渡る」「UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指定がある」「UI: 選んだ間の長さが /api/jobs のパラメータに載る」が全て PASS すること。",
+         "text": "ブラウザ画面（webapp-mockup）に「つなぎ目の間」の選択肢（おまかせ／短め0.4秒／長め1秒／なし）があり、選んだ値が /api/jobs の breath パラメータとして送られ、/api/jobs のハンドラが受け取った設定を1つも落とさずに startJob へ渡し、server/pipeline-runner.mjs が pipeline.mjs render の --breath として渡す。サーバ側は off と 0〜5 秒だけを受け付け、範囲外・不正値は既定（＝空）へ丸めて、サーバが通した値で pipeline.mjs が fail-fast しないことを保証する。",
+         "verify": "node video-shorts/tests/smoke.mjs を実行し、「parseJobParams: breath の既定は空」「parseJobParams: breath=off と秒数はそのまま通る」「parseJobParams: 範囲外・不正な breath は既定へ丸める」「サーバ: /api/jobs で受け取った設定が、1つも落ちずに startJob へ渡る」「サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる」「UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指定がある」「UI: 選んだ間の長さが /api/jobs のパラメータに載る」が全て PASS すること。受け渡しの検査は、フィールド名を数え上げる正規表現ではなく「ハンドラが設定の束を分解せずそのまま startJob へ渡していること」＋「parseJobParams の実際の戻り値に各設定が入っていること」で見る（分解して渡し直す形へ戻すとこの検査が落ちることを確認済み）。サーバが通した値を pipeline.mjs の parseBreathOption が受け付けることも実際に通して確かめる。",
          "verifyCmd": "node video-shorts/tests/smoke.mjs",
          "evidence": "18ff8a1"
         }

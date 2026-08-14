@@ -283,7 +283,12 @@ const QUOTA_EXCEEDED_MESSAGE =
 async function handlePostJobs(req, res) {
   // クエリパラメータ取得
   const url = new URL(req.url, "http://x");
-  const { sub, cut, size, cutMin, mosaic, trim, name } = parseJobParams(url.searchParams);
+  // 分解して startJob へ渡し直すと、設定を1つ足すたびにここへ書き足す必要があり、
+  // 足し忘れると「画面で選べるのに一切効かない」設定が出来る（breath で実際に起きた。
+  // docs/failures.md 2026-08-14）。パラメータの束はそのまま startJob へ渡し、
+  // ここでフィールドを1つずつ数え上げないことで、その取りこぼしを構造的に無くす。
+  const jobParams = parseJobParams(url.searchParams);
+  const { name } = jobParams;
 
   // P1-2(E): レート制限（単一利用者のローカルツール前提の固定ウィンドウ）
   if (!jobsRateLimiter.allow("global")) {
@@ -402,7 +407,7 @@ async function handlePostJobs(req, res) {
     }
 
     // ジョブをキックして即レスポンス（走行中なら 409 で拒否＝連打事故防止）
-    const started = startJob(jobId, inputPath, { sub, cut, size, cutMin, mosaic, trim });
+    const started = startJob(jobId, inputPath, jobParams);
     if (started === "queue_full") {
       // AUD-P2-20b: 待ち行列が上限に達している。既にディスクへ書き終えたアップロードを
       // 残さない(受理しないのだから成果物フォルダも残す理由が無い＝他の拒否経路と同じ作法)。
