@@ -24,8 +24,8 @@ function cmdAvailable(bin) {
   return spawnSync(bin, ["-version"]).status === 0;
 }
 if (!cmdAvailable("ffmpeg") || !cmdAvailable("ffprobe")) {
-  console.log("SKIP: ffmpeg/ffprobe が見つからないため検証できません");
-  process.exit(0);
+  console.log("FAIL ffmpeg/ffprobe が見つかりません。CI では quality ジョブで導入しています。");
+  process.exit(1);
 }
 
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "caption-hearing-"));

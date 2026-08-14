@@ -312,19 +312,19 @@ async function cmdRender(workDir, opts = {}) {
   });
   let resolvedCaptionStyle = null;
   if (!noSub && captionOverrides) {
-    // 書体が同梱されているか(fail-fast): システムフォントへ無言でフォールバックさせない
-    // （G-EDIT-CAPTION-STYLE-FALLBACK。docs/failures.md 2026-08-14のYu Gothic UI事故と同種の
-    // 再発防止）。レンダリング(文字起こし後の重い処理)を始める前にここで止める。
-    const fontKey = captionOverrides.fontKey;
-    if (fontKey) {
-      const bundled = checkBundledFont(fontKey);
-      if (!bundled.ok) die(bundled.reason);
-    }
     try {
       resolvedCaptionStyle = resolveCaptionStyle(subStyle, captionOverrides);
     } catch (e) {
       die(e.message);
     }
+    // 書体が同梱されているか(fail-fast): システムフォントへ無言でフォールバックさせない
+    // （G-EDIT-CAPTION-STYLE-FALLBACK。docs/failures.md 2026-08-14のYu Gothic UI事故と同種の
+    // 再発防止）。レンダリング(文字起こし後の重い処理)を始める前にここで止める。
+    // --caption-font を指定していない場合も resolveCaptionStyle() は既定書体(DEFAULT_FONT_KEY)
+    // へ解決するため、実際に使われる書体キー(resolvedCaptionStyle.fontKey)を常に確認する
+    // （--caption-font以外だけ指定したときに検証が抜けるのを防ぐ）。
+    const bundled = checkBundledFont(resolvedCaptionStyle.fontKey);
+    if (!bundled.ok) die(bundled.reason);
   }
   stageStart(workDir, "render");
   const transcript = readJson(path.join(workDir, "transcript.json"));

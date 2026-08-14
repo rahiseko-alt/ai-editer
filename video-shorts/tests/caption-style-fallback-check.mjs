@@ -24,8 +24,8 @@ function cmdAvailable(bin) {
   return spawnSync(bin, ["-version"]).status === 0;
 }
 if (!cmdAvailable("ffmpeg") || !cmdAvailable("ffprobe")) {
-  console.log("SKIP: ffmpeg/ffprobe が見つからないため検証できません");
-  process.exit(0);
+  console.log("FAIL ffmpeg/ffprobe が見つかりません。CI では quality ジョブで導入しています。");
+  process.exit(1);
 }
 
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "caption-fallback-"));
@@ -95,6 +95,26 @@ try {
       !fs.existsSync(path.join(workDir, "clip-1.ass")),
       "(2) レンダリングが実際に開始されていない(clip-1.assが生成されていない)",
     );
+
+    // (3) --caption-font を明示せず、色だけを指定した場合。resolveCaptionStyle()は
+    // 既定書体(DEFAULT_FONT_KEY=kaku)へ解決するため、そのkakuの同梱ファイルが欠落していれば
+    // --caption-fontを渡していなくてもfail-fastしなければならない(検証が--caption-fontの
+    // 明示指定にだけ効いていて、既定書体解決時に抜けていないことの確認)。
+    const workDir3 = makeJob();
+    const r3 = spawnSync(process.execPath,
+      [PIPELINE, "render", workDir3, "--caption-fill", "#FF0000"],
+      { cwd: ROOT, encoding: "utf-8" });
+    check(r3.status !== 0, "(3) --caption-fontを指定せず色だけ指定しても、既定書体(kaku)欠落でfail-fastする", `status=${r3.status}`);
+    check(
+      (r3.stderr || "").includes("角ゴシック"),
+      "(3) エラーメッセージに既定書体名(角ゴシック)が含まれる",
+      r3.stderr,
+    );
+    check(
+      !fs.existsSync(path.join(workDir3, "clip-1.ass")),
+      "(3) レンダリングが実際に開始されていない(clip-1.assが生成されていない)",
+    );
+
     fs.renameSync(renamedAway, kakuPath);
     renamedAway = null;
   }

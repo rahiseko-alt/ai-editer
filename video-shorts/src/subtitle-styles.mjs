@@ -68,9 +68,9 @@ export const FONT_CATALOG = {
 
 export const DEFAULT_FONT_KEY = "kaku";
 
-/** 書体キーの正引き。未知なら null */
+/** 書体キーの正引き。未知なら null（__proto__ 等の継承プロパティは自前キーとして扱わない） */
 export function getFont(key) {
-  return FONT_CATALOG[key] || null;
+  return typeof key === "string" && Object.hasOwn(FONT_CATALOG, key) ? FONT_CATALOG[key] : null;
 }
 
 /** ヒアリング・CLIヘルプ用：選べる書体の一覧 */
