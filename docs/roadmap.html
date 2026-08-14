@@ -119,16 +119,16 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "①マスター承認済みのSTAGE-1残作業のうち、機械検証が可能な4葉(G-EDIT-TRIM-F/G, G-EDIT-QUALITY-A/C)は本セッションでdone化済み。残るのはG-EDIT-QUALITY-B(60秒素材Qでの処理時間実測テストの新規設計・実装が必要)・G-EDIT-QUALITY-D(外部ダウンロード遮断・キャッシュ無し新規環境での実機検証が必要)・G-EDIT-QUALITY-E(軽い版でのモデル無し黒帯縮退テストの新規実装が必要)・G-TESTINFRA-RENDERCHECK(サンプルmp4同梱+ffmpeg導入CI接続が必要)で、いずれも新規のテスト設計・実装を要する規模のため次セッションへ持ち越し。G-EDIT-TRIM-Dのみ人の耳による聴取が必要でこの環境では引き続き検証不能。②G-TESTINFRA-WINCIはdetail記載どおりwindows-latestランナー追加がCI所要時間・安定性に影響するためマスターの明示承認を得てから着手する(今回のバッチ承認には未着手のまま含める)。③G-TESTINFRA-ESCAPEPATH-Bは、GitHub code scanning alerts APIへ到達できるツールがこのセッション環境に無く機械的に確認不能(前回セッションと同じ制約)。マスターがGitHub UIのSecurity>Code scanningタブでPR#9由来のescapeFilterPathアラートのstateがfixedであることを直接確認し、evidenceへアラートURLを記入のうえdone化する必要がある。④Windows実機検証が必要な3葉(AUD-P1-08/P1-15/P2-18b)とCJK文字幅の実測(AUD-P2-22)のフォローアップ、⑤従来どおりG-EDIT-MOSAIC-UI(凍結中)・G-EDIT-REFRAME-C/F(検証素材無し)はSTAGE-1完了判定の対象外のまま、⑥P1-19・G-PENDING-LECTUREも、いずれもマスターの判断待ち。",
+  "next": "【運用転換（2026-08-14 マスター指示）】受入条件(葉)の議論は後回し。以降は「マスターの指示で実素材を処理する → 出力を見せる → そこで見つかった不足を直す」の順で進める。①初回の実処理(堀口恭司RIZINメディアデーインタビュー10分17秒→縦型ショート2本)で不足9件を実測で特定済み(docs/failures.md 2026-08-14の2件目に全文)。うち字幕まわりの5件(フォント種類のハードコード=Linuxに存在しないYu Gothic UI・フォントサイズ固定・文字数固定・折り返し幅が推定係数・色が2色固定)は全て「搭載済みだが利用者が選べない」という同じ形。②AI字幕修正(captionfix)が既定経路に入っておらず、初回出力は固有名詞が壊れたまま焼かれた。③どこから直すかはマスターの指示待ち。",
   "handoff": {
    "done": [
-    "マスター承認(「おｋ」)を受け、STAGE-1残作業のうち機械検証で完結する4葉に着手しdone化した。(1)G-EDIT-TRIM-F/G: detailに記載されていた「independent-verifierを通してからdoneにする」を満たすため、independent-verifierサブエージェントを2体並列起動し敵対的検証(それぞれ製品コードへ変異を注入し、検査が実際に落ちることまで確認)を実施、いずれもPASS。verify-done-gate.mjs対応でcriteria[].verifyCmdを追加(python3 video-shorts/tests/trim-sync-check.py / trim-vfr-sync-check.py)し、現行mainのCI run(commit a8b7e9c)のjob URLをevidenceへ記入してdone化した。(2)G-EDIT-QUALITY-A/C: 2026-08-10時点で実装・調査は完了済みだったが、PR#66という古いcommitのevidenceのままdoingで止まっていたため、現行mainの最新CI run(ci-green/quality各job)を確認し直し、verifyCmdを追加(A: pnpm -r --if-present typecheck && lint && pnpm -r test && build の一括実行、C: node video-shorts/tests/dist-slim-check.mjs)してdone化した。(3)いずれもBASE_REF=a8b7e9cでverify-criteria-freeze.mjs/verify-roadmap-evidence.mjs/verify-done-gate.mjsをローカルで実行し機械的に合格を確認済み。(4)G-TESTINFRA-ESCAPEPATH-Bはmcp__github__のツール一覧にcode scanning alerts相当のツールが無く、WebFetchでの直接アクセスも404(認証が要る)で、機械的な確認を試みたが前回セッションと同じ理由で不能と判明。人間確認待ちとしてスコープ外に置いた。(5)残るG-EDIT-QUALITY-B/D/E・G-TESTINFRA-RENDERCHECKは、いずれも新規のテスト設計・実装(素材の合成・実機検証環境の構築等)を要する規模と判断し、本バッチでは着手せず次セッションへ申し送った。"
+    "マスター指示により運用を転換した。受入条件の議論を先に立てるのをやめ、実素材を製品の入口から通して成果物を出すことを優先した。実施内容：①Google Driveの実素材(堀口恭司 RIZIN メディアデー インタビュー・webm・86MB・10分17秒・1920x1080)を取得。②製品の入口(pipeline.mjs init→select→render)からそのまま処理し、縦型ショート(1080x1920・字幕焼き込み)2本を実際に出力してマスターへ提出した。実測: 文字起こし349秒/区間選定47秒/レンダリング277秒/合計673秒(素材尺の約1.1倍)、カバー率98.7%。③実処理で見つかった不足9件を docs/failures.md へ実測値つきで append した。④なぜ実素材を通さないまま基準の議論を続けてしまったかの根因と教訓も同ファイルへ append した。"
    ],
    "trouble": [
-    "この作業環境(コンテナ)にはtesseract-ocrが最初から入っておらず、G-EDIT-QUALITY-Aのverify Cmd(pnpm -r test)がローカルでは「tesseractが見つかりません」で一度FAILした(CIのroadmap-required/qualityジョブは両方ともtesseract-ocrを導入済みなので実際には問題なし)。sudo apt-get installでCIと同じ版(5.3.4-1build5 / jpn 4.1.0-2)を後から導入し、ローカルでも実際にPASSすることまで確認してからverifyCmdとして凍結した。次にこの種のverifyCmdをローカルで確認する際は、ci.yml/roadmap-required.ymlが導入している依存(ffmpeg/opencv/tesseract/faster-whisper/playwright)をこの作業環境にも先に揃えてから検証すること。"
+    "①この配信チャネルにファイル送信の30MB上限があり、書き出した本番mp4(#1が30.6MB・#2が70.4MB)がそのまま送れなかった。最初に自分の判断で720x1280へ縮小して送ったところ、マスターから「重いかどうかは俺が決める。まず見せろ」と指摘を受けた。解像度は1080x1920のまま維持し、ビットレートだけ落として上限内に収めて送り直した。勝手に仕様を落とさない。②AI字幕修正(captionfix)の実行中にコンテナが2回再起動した。1544語を200語ずつ8分割し、かたまりごとに claude プロセスを起動する作り(src/ai-caption-fix.mjs CHUNK_WORDS=200・1回5分上限)で、負荷が高い可能性がある。nohupで切り離して再実行し継続中。③マスターへの確認を、実物を出す前に投げてしまった(3問×2回)。確認は実物を出してから実物について行う。"
    ]
   },
-  "updated": "2026-08-13",
+  "updated": "2026-08-14",
   "basisChanges": [
    {
     "id": "G-EDIT-TRIM-F",
