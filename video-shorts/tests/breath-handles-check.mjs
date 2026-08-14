@@ -1,0 +1,317 @@
+// つなぎ目に「息継ぎの間」が戻ることの検証（G-EDIT-BREATH）。
+//
+// 背景（2026-08-14 実素材のダイジェストを見たマスターの指摘「つなぎ目がぎちぎちすぎる。
+// 一呼吸or半呼吸の間があるとより自然になる」）：逆マッチングの区間は Whisper の単語境界
+// ちょうどなので、素材に元々あった文間の無音が全部捨てられ、詰まった音になっていた。
+//
+// この検査が確認すること:
+//   (A) 発話を捨てた実カットのつなぎ目に、狙いどおりの間ができる（出力を実測）
+//   (B) 素材が元々持っていた間より長い間は作らない（0.5秒の間はそのまま0.5秒で残る）
+//   (C) 先頭と末尾に余白ができる
+//   (F) 余白を伸ばしても、捨てたはずの発話が戻ってこない（対照付き＝検出器が効くことを示す）
+//   (G) 素材上で連続する区間は統合され、要らないつなぎ目を作らない
+//   (I) 絵と音の尺がずれない
+//   (J) 利用者が間の長さを変えられる／off で従来どおりになる
+//   (E) 無音が全く無い素材でも落ちず、従来どおりの区間で出る
+//
+// === 固定素材（合成・数値で確定。コミットしないので生成手順そのものが正） ===
+// 320x240 / 30fps / 音声 44100Hz / 全長 12.1 秒。音は次の4つのトーンだけで、間は完全な無音。
+//   [1.0, 3.0]  3000Hz 振幅0.3  ← 残す発話1
+//   [3.5, 5.5]  3000Hz 振幅0.3  ← 残す発話2（発話1との間は 0.5 秒＝統合される境界値）
+//   [6.3, 8.3]   300Hz 振幅0.9  ← 捨てる発話（低い周波数・大きい振幅にして検出可能にしてある）
+//   [9.1, 11.1] 3000Hz 振幅0.3  ← 残す発話3（発話2との間は 3.6 秒＝実カットになる境界値）
+// 境界値の選び方: 「間が maxPause 以下（0.5秒）＝統合される側」と「間が maxPause を大きく
+// 超える（3.6秒）＝実カットになる側」の両方を1つの素材に含め、片方だけ通る実装で緑にならない
+// ようにしてある。
+//
+// 実行: node tests/breath-handles-check.mjs   (全PASSで exit 0。ffmpeg必須)
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import {
+  parseSilenceLog, detectSilences, planBreathParts, parseBreathOption,
+  DEFAULT_MAX_PAUSE_SEC, DEFAULT_EDGE_PAD_SEC,
+} from "../src/breath-handles.mjs";
+
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const PIPELINE = path.join(ROOT, "pipeline.mjs");
+
+let pass = 0, fail = 0;
+function check(cond, name, extra = "") {
+  if (cond) { pass++; console.log(`PASS ${name}`); return true; }
+  fail++; console.log(`FAIL ${name} ${extra}`); return false;
+}
+/** 実測値が期待値の±tol以内か */
+function near(actual, expected, tol, name) {
+  const ok = Number.isFinite(actual) && Math.abs(actual - expected) <= tol;
+  return check(ok, `${name}（期待 ${expected}±${tol} / 実測 ${Number.isFinite(actual) ? actual.toFixed(3) : actual}）`);
+}
+
+function cmdAvailable(bin) { return spawnSync(bin, ["-version"]).status === 0; }
+if (!cmdAvailable("ffmpeg") || !cmdAvailable("ffprobe")) {
+  console.log("SKIP: ffmpeg/ffprobe が見つからないため検証できません");
+  process.exit(0);
+}
+
+// ────────────────────────────────────────────────────────────────
+// 1) 純粋関数の検査（ffmpeg 不要・決定的）
+// ────────────────────────────────────────────────────────────────
+{
+  const log = [
+    "[silencedetect @ 0x1] silence_start: 0",
+    "[silencedetect @ 0x1] silence_end: 1 | silence_duration: 1",
+    "frame= 100 fps=0 [silencedetect @ 0x1] silence_start: 3",
+    "[silencedetect @ 0x1] silence_end: 3.5 | silence_duration: 0.5",
+  ].join("\n");
+  const parsed = parseSilenceLog(log);
+  check(parsed.length === 2 && parsed[0].start === 0 && parsed[0].end === 1
+    && parsed[1].start === 3 && parsed[1].end === 3.5,
+  "parseSilenceLog: 進捗行と混ざった stderr からも無音区間を取り出せる", JSON.stringify(parsed));
+
+  const openEnded = parseSilenceLog("silence_start: 11.1", 12.1);
+  check(openEnded.length === 1 && openEnded[0].end === 12.1,
+    "parseSilenceLog: 末尾まで無音（silence_end が無い）でも終端で閉じる");
+}
+
+// 固定素材と同じ無音の並び。
+const SILENCES = [
+  { start: 0, end: 1.0 }, { start: 3.0, end: 3.5 }, { start: 5.5, end: 6.3 },
+  { start: 8.3, end: 9.1 }, { start: 11.1, end: 12.1 },
+];
+const SEGS = [
+  { start: 1.0, end: 3.0, hook: "AAA" },
+  { start: 3.5, end: 5.5, hook: "BBB" },
+  { start: 9.1, end: 11.1, hook: "DDD" },
+];
+
+{
+  const plan = planBreathParts(SEGS, SILENCES, { maxPauseSec: 0.7, fps: 30, srcDuration: 12.1 });
+  check(plan.parts.length === 2,
+    "(G) 素材上で連続する区間が統合され、3区間が2部品になる（要らないつなぎ目を作らない）",
+    `実=${plan.parts.length}`);
+  check(plan.parts[0].members.join(",") === "0,1" && plan.parts[1].members.join(",") === "2",
+    "(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま");
+  check(plan.joins.length === 1, "(G) つなぎ目は1箇所だけになる", `実=${plan.joins.length}`);
+  near(plan.joins[0]?.pauseSec, 0.7, 0.04, "(A) 発話を捨てた実カットのつなぎ目に一呼吸ぶんの間が入る");
+  near(SEGS[0].start - plan.parts[0].start, DEFAULT_EDGE_PAD_SEC, 0.04, "(C) 先頭に余白が付く");
+  near(plan.parts[1].end - SEGS[2].end, DEFAULT_EDGE_PAD_SEC, 0.04, "(C) 末尾に余白が付く");
+
+  // (F) 捨てた発話[6.3,8.3]へ食い込んでいない＝伸ばす先が実測無音の内側に収まっている。
+  const intrudes = plan.parts.some((p) => p.end > 6.3 - 1e-9 && p.start < 8.3 + 1e-9);
+  check(!intrudes, "(F) どの部品も、捨てた発話[6.3,8.3]の区間へ一切かからない",
+    JSON.stringify(plan.parts.map((p) => [p.start, p.end])));
+
+  // (J) 間の長さを変えられる。
+  const tight = planBreathParts(SEGS, SILENCES, { maxPauseSec: 0.3, fps: 30, srcDuration: 12.1 });
+  const tightJoin = tight.joins.find((j) => j.removedSec > 3);
+  near(tightJoin?.pauseSec, 0.3, 0.04, "(J) --breath 0.3 を渡すと実カットの間が0.3秒になる");
+
+  // (E) 無音が1つも見つからない素材では、区間を一切動かさない（従来どおり）。
+  const noSil = planBreathParts(SEGS, [], { maxPauseSec: 0.7, fps: 30, srcDuration: 12.1 });
+  check(noSil.parts.length === 3
+    && noSil.parts.every((p, i) => Math.abs(p.start - SEGS[i].start) < 1e-9
+      && Math.abs(p.end - SEGS[i].end) < 1e-9),
+  "(E) 無音区間が0件の素材では、区間を伸ばさず従来どおりのまま返す");
+
+  // (F) 二重の縛り: 無音の検出しきい値が甘くても、単語境界の上限が独立に効くこと。
+  // 「捨てた短い相槌」が区間の直後 0.05 秒に在り、無音検出はそれを跨いで1つの無音として
+  // 拾ってしまった、という最悪ケースを作る。words を渡せば、そこへ届かない。
+  const sloppySil = [{ start: 3.0, end: 4.6 }]; // 捨てた発話[3.6,3.9]を跨いだ「甘い」無音
+  const dropped = { start: 3.6, end: 3.9 };
+  const withWords = planBreathParts(
+    [{ start: 1.0, end: 3.0, hook: "X" }, { start: 4.6, end: 6.0, hook: "Y" }],
+    sloppySil,
+    { maxPauseSec: 0.7, fps: 30, srcDuration: 12.1,
+      words: [{ start: 1.0, end: 3.0 }, dropped, { start: 4.6, end: 6.0 }] },
+  );
+  check(withWords.parts.every((p) => p.end <= dropped.start + 1e-9 || p.start >= dropped.end - 1e-9),
+    "(F) 無音検出が捨てた発話を跨いで拾ってしまっても、単語境界の上限が効いて発話へ届かない",
+    JSON.stringify(withWords.parts.map((p) => [p.start, p.end])));
+
+  // 台本が時系列を並べ替えた場合は統合しない（統合すると素材の別の場所が丸ごと混入する）。
+  const reordered = planBreathParts(
+    [SEGS[2], SEGS[0], SEGS[1]], SILENCES, { maxPauseSec: 0.7, fps: 30, srcDuration: 12.1 });
+  check(reordered.parts.every((p) => p.members.length === 1
+    || p.members.every((m, k, arr) => k === 0 || m === arr[k - 1] + 1)),
+  "並べ替えられた台本では、時系列が逆転する区間どうしを統合しない");
+}
+
+{
+  check(parseBreathOption(undefined).sec === DEFAULT_MAX_PAUSE_SEC,
+    "parseBreathOption: 未指定は既定値になる");
+  check(parseBreathOption("off").sec === null && parseBreathOption("0").sec === null,
+    "parseBreathOption: off / 0 は無効化として扱う");
+  check(parseBreathOption("0.5").sec === 0.5, "parseBreathOption: 秒数を受け取る");
+  check(parseBreathOption("abc").ok === false && parseBreathOption("-1").ok === false
+    && parseBreathOption("99").ok === false,
+  "parseBreathOption: 不正値・範囲外は fail-fast する（無言で既定へ落とさない）");
+}
+
+// ────────────────────────────────────────────────────────────────
+// 2) 実レンダリングまでの検査
+// ────────────────────────────────────────────────────────────────
+const FIX_DUR = 12.1;
+const AEVAL = "0.3*sin(2*PI*3000*t)*between(t,1,3)"
+  + "+0.3*sin(2*PI*3000*t)*between(t,3.5,5.5)"
+  + "+0.9*sin(2*PI*300*t)*between(t,6.3,8.3)"
+  + "+0.3*sin(2*PI*3000*t)*between(t,9.1,11.1)";
+
+function ffprobeDur(file, stream) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", stream,
+    "-show_entries", "stream=duration", "-of", "default=nw=1:nk=1", file], { encoding: "utf-8" });
+  return Number((r.stdout || "").trim().split("\n")[0]);
+}
+
+/** 出力の無音区間を実測する */
+function measureSilences(file) {
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file,
+    "-af", "silencedetect=noise=-40dB:d=0.15", "-f", "null", "-"], { encoding: "utf-8" });
+  return parseSilenceLog(r.stderr || "", ffprobeDur(file, "a:0"));
+}
+
+/** 500Hz以下の帯域のピーク音量(dB)。捨てた発話(300Hz)が残っていないかを測るのに使う。 */
+function lowBandPeakDb(file) {
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file,
+    "-af", "lowpass=f=500,lowpass=f=500,volumedetect", "-f", "null", "-"], { encoding: "utf-8" });
+  const m = (r.stderr || "").match(/max_volume:\s*(-?[0-9.]+) dB/);
+  return m ? Number(m[1]) : NaN;
+}
+
+const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "vs-breath-"));
+const cleanup = [WORK];
+try {
+  const input = path.join(WORK, "breath-fixture.mp4");
+  const gen = spawnSync("ffmpeg", ["-y", "-v", "error",
+    "-f", "lavfi", "-i", `color=c=black:s=320x240:r=30:d=${FIX_DUR}`,
+    "-f", "lavfi", "-i", `aevalsrc=exprs='${AEVAL}':s=44100:d=${FIX_DUR}`,
+    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "192k", "-shortest", input], { encoding: "utf-8" });
+  if (!check(gen.status === 0 && fs.existsSync(input), "固定素材(合成・12.1秒)を生成した",
+    (gen.stderr || "").slice(-400))) throw new Error("固定素材の生成に失敗");
+
+  // 素材そのものが設計どおりの無音の並びになっていること（＝以降の期待値の前提）。
+  const srcSil = await detectSilences(input, { duration: FIX_DUR });
+  check(srcSil.length === 5, `素材の無音が設計どおり5箇所ある（実=${srcSil.length}）`,
+    JSON.stringify(srcSil.map((s) => [s.start.toFixed(2), s.end.toFixed(2)])));
+
+  // (F) の対照: この測り方は「捨てる発話(300Hz)が有るときに、有ると言える」。
+  const srcLowDb = lowBandPeakDb(input);
+  check(srcLowDb > -6, `(F・対照) 素材には300Hzの発話があり、低域ピークが高く出る（実=${srcLowDb}dB）`);
+
+  const transcript = {
+    language: "en", duration: FIX_DUR,
+    words: [
+      { w: "AAAA", start: 1.0, end: 3.0 },
+      { w: "BBBB", start: 3.5, end: 5.5 },
+      { w: "CCCC", start: 6.3, end: 8.3 },
+      { w: "DDDD", start: 9.1, end: 11.1 },
+    ],
+    segments: [{ start: 1.0, end: 11.1, text: "AAAA BBBB CCCC DDDD" }],
+  };
+  // CCCC（捨てる発話）は台本に入れない。
+  const llmResponse = {
+    segments: [
+      { keepText: "AAAA", hook: "AAAA" },
+      { keepText: "BBBB", hook: "BBBB" },
+      { keepText: "DDDD", hook: "DDDD" },
+    ],
+  };
+  // (F) の対照用。同じ経路・同じ書き出し設定で CCCC を「残す」台本。捨てた発話が本当に
+  // 消えているのかを、素材ではなく**同じパイプラインの出力どうし**で比べるために使う。
+  const llmWithDropped = {
+    segments: [
+      { keepText: "AAAA", hook: "AAAA" },
+      { keepText: "BBBB", hook: "BBBB" },
+      { keepText: "CCCC", hook: "CCCC" },
+      { keepText: "DDDD", hook: "DDDD" },
+    ],
+  };
+
+  /** init → 固定の transcript/llm-response を置く → render し、digest のパスを返す */
+  function runCase(extraArgs, llm = llmResponse) {
+    const init = spawnSync(process.execPath,
+      [PIPELINE, "init", input, "--mode", "digest", "--sub", "off", "--orient", "横"],
+      { cwd: ROOT, encoding: "utf-8" });
+    if (init.status !== 0) throw new Error(`init 失敗: ${init.stderr}`);
+    const workDir = init.stdout.trim();
+    cleanup.push(workDir);
+    fs.writeFileSync(path.join(workDir, "transcript.json"), JSON.stringify(transcript), "utf-8");
+    fs.writeFileSync(path.join(workDir, "llm-response.json"), JSON.stringify(llm), "utf-8");
+    const r = spawnSync(process.execPath,
+      [PIPELINE, "render", workDir, "--mode", "digest", ...extraArgs],
+      { cwd: ROOT, encoding: "utf-8" });
+    const state = JSON.parse(fs.readFileSync(path.join(workDir, "state.json"), "utf-8"));
+    const outDir = path.join(ROOT, "output", state.id);
+    cleanup.push(outDir);
+    return { r, state, outDir, digest: path.join(outDir, `digest-${state.id}.mp4`) };
+  }
+
+  // ── 既定（--breath 未指定＝0.7秒）────────────────────────────────
+  const on = runCase([]);
+  if (!check(on.r.status === 0 && fs.existsSync(on.digest),
+    "既定（間あり）で digest が生成される", (on.r.stderr || "").slice(-600))) {
+    throw new Error("render に失敗したため以降の実測ができません");
+  }
+  check(/息継ぎの間/.test((on.r.stdout || "") + (on.r.stderr || "")),
+    "レンダリング時に間の適用がログへ出る");
+
+  const sil = measureSilences(on.digest);
+  const vDur = ffprobeDur(on.digest, "v:0");
+  const aDur = ffprobeDur(on.digest, "a:0");
+
+  // 期待: 部品1=[0.6667,5.8667](5.2s) + 部品2=[8.7667,11.4667](2.7s) = 7.9s
+  near(aDur, 7.9, 0.12, "(G) 統合と間の反映後、digest の尺が設計どおりになる");
+  check(Math.abs(vDur - aDur) < 0.05,
+    `(I) 絵と音の尺がずれない（映像 ${vDur?.toFixed(3)} / 音声 ${aDur?.toFixed(3)}）`);
+
+  const head = sil.find((s) => s.start < 0.05);
+  near(head ? head.end - head.start : NaN, 0.333, 0.06, "(C) 先頭に余白がある");
+  const tail = sil.find((s) => Math.abs(s.end - aDur) < 0.12);
+  near(tail ? tail.end - tail.start : NaN, 0.367, 0.06, "(C) 末尾に余白がある");
+
+  const durs = sil.map((s) => s.end - s.start);
+  check(durs.some((d) => Math.abs(d - 0.5) <= 0.06),
+    "(B) 素材が元々持っていた0.5秒の間が、そのままの長さで残っている（伸ばしも詰めもしない）",
+    JSON.stringify(durs.map((d) => d.toFixed(3))));
+  check(durs.some((d) => Math.abs(d - 0.7) <= 0.06),
+    "(A) 発話を捨てた実カットのつなぎ目に、一呼吸ぶん(0.7秒)の間ができている",
+    JSON.stringify(durs.map((d) => d.toFixed(3))));
+
+  // (F) 対照は「同じ経路で CCCC を残した出力」。素材と比べるのではなく、同じレンダリング・
+  // 同じ書き出し設定を通した出力どうしで比べる（合成トーンの立ち上がりが作る広帯域の
+  // 過渡音は両方に等しく乗るので、差はもっぱら300Hzの発話の有無になる）。
+  const withDropped = runCase([], llmWithDropped);
+  const ctrlLowDb = check(withDropped.r.status === 0 && fs.existsSync(withDropped.digest),
+    "(F・対照) 捨てた発話を残す台本でも digest が生成される", (withDropped.r.stderr || "").slice(-400))
+    ? lowBandPeakDb(withDropped.digest) : NaN;
+  check(ctrlLowDb > -12,
+    `(F・対照) 同じ経路で CCCC を残すと、低域ピークが高く出る＝この測り方は「有るとき有る」と言える（実=${ctrlLowDb}dB）`);
+
+  const outLowDb = lowBandPeakDb(on.digest);
+  check(outLowDb < -25 && outLowDb < ctrlLowDb - 20,
+    `(F) 捨てた発話(300Hz)が出力に戻ってきていない（実=${outLowDb}dB / 同一経路の対照=${ctrlLowDb}dB / 素材=${srcLowDb}dB）`);
+
+  // ── --breath off（従来どおり）────────────────────────────────────
+  const off = runCase(["--breath", "off"]);
+  if (check(off.r.status === 0 && fs.existsSync(off.digest),
+    "--breath off でも digest が生成される", (off.r.stderr || "").slice(-600))) {
+    const offDur = ffprobeDur(off.digest, "a:0");
+    near(offDur, 6.0, 0.12, "(J) --breath off では間が付かず、発話ぶんだけの尺(6.0秒)になる");
+    check(offDur < aDur - 1.5,
+      `(J) off より既定の方が確実に長い＝間は既定でだけ足されている（off ${offDur?.toFixed(2)}s < 既定 ${aDur?.toFixed(2)}s）`);
+    const offSil = measureSilences(off.digest);
+    const offHead = offSil.find((s) => s.start < 0.05);
+    check(!offHead || offHead.end - offHead.start < 0.1,
+      "(J・対照) --breath off では先頭に余白が付かない（余白は間の機能によるものだと示す）");
+  }
+} finally {
+  for (const d of cleanup) {
+    try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* 後始末の失敗は検査結果に影響させない */ }
+  }
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail === 0 ? 0 : 1);

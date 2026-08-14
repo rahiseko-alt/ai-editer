@@ -37,6 +37,7 @@ import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./sr
 import { makeUniqueJobId } from "./src/job-id.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "./src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "./src/atomic-json.mjs";
+import { detectSilences, planBreathParts, parseBreathOption, DEFAULT_MAX_PAUSE_SEC } from "./src/breath-handles.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -291,7 +292,11 @@ async function cmdRender(workDir, opts = {}) {
     flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
     exportPreset = DEFAULT_EXPORT, exportOverrides = {},
     captionFont, captionFill, captionOutlineColor, captionInner, captionBand,
+    breath,
   } = opts;
+  // つなぎ目に戻す「息継ぎの間」の上限（秒）。off/0 で従来どおり（間を作らない）。
+  const breathOpt = parseBreathOption(breath);
+  if (!breathOpt.ok) die(breathOpt.reason);
   if (!getExportPreset(exportPreset)) {
     const avail = listExportPresets().map((e) => `${e.key}（${e.label}）`).join(" / ");
     die(`未知の書き出しプリセット: ${exportPreset}\n  利用可能: ${avail}`);
@@ -434,6 +439,34 @@ async function cmdRender(workDir, opts = {}) {
   if (state.trim === "on" && !srcFps) {
     log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
   }
+  // === つなぎ目に「息継ぎの間」を戻す（G-EDIT-BREATH） ===
+  // 逆マッチングの区間は単語境界ちょうどなので、素材に元々あった文間の無音が全部捨てられ、
+  // 連結すると発話が終わった瞬間に次が始まる「詰まった」音になる（マスター指摘 2026-08-14）。
+  // 素材の無音区間を実測し、その内側でだけ前後へ伸ばして環境音ごと間を戻す。伸ばす先を
+  // 実測無音の内側に限るので「カットしたはずの発話が戻る」ことは起きない。
+  // digest（連結して1本にする経路）だけが対象。topic は区間ごとに別ファイルへ出すので
+  // つなぎ目が無く、既に余韻パディングを持っている。
+  if (mode === "digest" && breathOpt.sec !== null && resolved.length > 0) {
+    const silences = await detectSilences(state.input, { duration: transcript.duration });
+    if (silences.length === 0) {
+      log("[INFO] 息継ぎの間: 素材に無音区間が見つからないため従来どおり（間を作らない）");
+    } else {
+      const plan = planBreathParts(resolved, silences, {
+        maxPauseSec: breathOpt.sec, fps: srcFps, srcDuration: transcript.duration,
+        // 無音の検出設定に関わらず、隣の発話（捨てた発話）へ届かないことを単語境界でも縛る。
+        words: transcript.words || [],
+      });
+      const merged = resolved.length - plan.parts.length;
+      resolved = plan.parts;
+      log(`[INFO] 息継ぎの間: 無音 ${silences.length}箇所を実測 → ${plan.parts.length} 部品`
+        + `（素材上で連続する ${merged} 箇所は統合しつなぎ目を作らない）`);
+      for (const j of plan.joins) {
+        log(`  [間] 部品${j.afterPart + 1}→${j.afterPart + 2}: ${j.pauseSec.toFixed(2)}s`
+          + `（この間に捨てた素材 ${j.removedSec.toFixed(1)}s）`);
+      }
+    }
+  }
+
   // 字幕なしのときは黒帯(pad)で余白を残す理由が無いので、中央crop-fillで枠いっぱいに映す
   // （黒帯だらけで映像が小さく見える、という実素材での指摘。docs/failures.md 2026-08-14）。
   const fit = noSub ? "cover" : "pad";
@@ -611,6 +644,8 @@ async function main() {
         captionOutlineColor: flagValue(rest, "--caption-outline-color", undefined),
         captionInner: flagValue(rest, "--caption-inner", undefined),
         captionBand: flagValue(rest, "--caption-band", undefined),
+        // G-EDIT-BREATH: つなぎ目に戻す息継ぎの間の上限（秒）。off で従来どおり。
+        breath: flagValue(rest, "--breath", undefined),
       });
     case "status": return cmdStatus(arg);
     case "styles":
@@ -631,6 +666,8 @@ async function main() {
       log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短く分けるなら小さくする）");
       log("             [--duration-min <分>]（1本の目安の長さ。指定値の±30%に収める。");
       log("               --min-secより優先。未指定＝おまかせでも1本が素材全体の1/3は超えない）");
+      log(`             [--breath <秒|off>]（ダイジェストのつなぎ目に戻す息継ぎの間の上限。`
+        + `既定${DEFAULT_MAX_PAUSE_SEC}秒。素材が持つ間がこれより短ければそちらが優先）`);
       log("             [--export <用途>]（書き出し設定。youtube|sns|x|archive|light|standard）");
       log("             [--crf <0-51>] [--vcodec <名>] [--enc-preset <名>] [--acodec <名>] [--abitrate <例:128k>]");
       log("               （個別指定。--export の上から1項目ずつ上書きできる）");
