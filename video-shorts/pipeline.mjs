@@ -75,19 +75,23 @@ function normalizeOrient(v) {
 function cmdInit(input, mode, sub, orientArg) {
   if (!input || !fs.existsSync(input)) die(`入力mp4が見つかりません: ${input}`);
   // 素材導入時のヒアリングを機械強制（AI 自己規律に頼らない・前回引き継ぎ禁止）。
+  // 足りない項目は1つずつではなく、まとめて一度に列挙する（実素材の初回処理で
+  // --mode→--sub→--orient と3回やり直しになった。docs/failures.md 2026-08-14）。
+  const orient = normalizeOrient(orientArg);
+  const missing = [];
   if (!isValidMode(mode)) {
-    die("--mode を指定してください（topic=話題毎 / digest=ダイジェスト）。\n" +
-        "  素材導入時のヒアリング必須項目です（毎回確認・前回の引き継ぎ禁止）。");
+    missing.push("--mode <topic|digest>（topic=話題毎 / digest=ダイジェスト）");
   }
   if (sub !== "on" && sub !== "off") {
-    die("--sub を指定してください（on=字幕あり / off=字幕なし）。\n" +
-        "  字幕有無も毎回ヒアリング必須です（前回の引き継ぎ禁止）。");
+    missing.push("--sub <on|off>（on=字幕あり / off=字幕なし）");
   }
-  const orient = normalizeOrient(orientArg);
   if (!orient) {
-    die("--orient を指定してください（縦=portrait / 横=landscape）。\n" +
-        "  縦横も毎回ヒアリング必須です（前回の引き継ぎ禁止）。\n" +
-        "  横=画面録画など細かい文字を残す用途 / 縦=SNSリール等の縦枠用途。");
+    missing.push("--orient <縦|横>（縦=portrait・SNSリール等 / 横=landscape・画面録画等）");
+  }
+  if (missing.length > 0) {
+    die("次の項目が指定されていません。まとめて指定してください" +
+        "（1つずつではなく、一度に全部答えれば以降は聞き返しません。前回の回答の引き継ぎは禁止）:\n" +
+        missing.map((m, i) => `  ${i + 1}. ${m}`).join("\n"));
   }
   // 字幕ありの場合、文字起こし（数分〜数十分かかる）を始める前に、使うフォントが
   // 実際にこの環境にあるかを確認する。無ければ、時間を無駄にする前にここで止める
