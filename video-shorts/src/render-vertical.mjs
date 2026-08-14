@@ -10,6 +10,7 @@ import path from "node:path";
 
 import { buildTrimFilters, normalizeFpsRational } from "./trim-plan.mjs";
 import { exportArgs, resolveExportSettings, DEFAULT_EXPORT } from "./export-presets.mjs";
+import { FONTS_DIR } from "./subtitle-styles.mjs";
 
 // 向き別の出力解像度。portrait=縦型(SNSリール等)、landscape=横型(画面録画・細かい文字を残す)。
 const ORIENT = { portrait: [1080, 1920], landscape: [1920, 1080] };
@@ -76,8 +77,12 @@ export async function renderClip(p) {
       `[INFO] 拡大ガード: 素材${p.srcW}x${p.srcH} → 出力${TARGET_W}x${TARGET_H}（拡大なし）\n`
     );
   }
+  // fontsdir は常に同梱フォント置き場(video-shorts/src/fonts/)を渡す(G-EDIT-CAPTION-STYLE)。
+  // システムに無い書体(Noto Sans JP Black 等)を fontconfig 経由で見つけるために必須。
+  // 既定フォント(IPAGothic等システム側)しか使わない字幕でも無害(fontsdirは検索先の追加であって
+  // システムフォントの検索を妨げない)。
   const assFilter = p.assPath
-    ? `,ass='${escapeFilterPath(p.assPath)}'`
+    ? `,ass=filename='${escapeFilterPath(p.assPath)}':fontsdir='${escapeFilterPath(FONTS_DIR)}'`
     : "";
   // 素材そのまま方式: 拡大ぼかし帯のような余分な処理はしない。
   // 元映像をアスペクト比維持で TARGET へ収め(decrease)、余白は黒帯(pad)で埋めるだけ。

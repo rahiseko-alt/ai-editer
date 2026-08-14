@@ -4647,8 +4647,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "pipeline.mjsに書体/文字色/縁取り色/内側縁取り/背景帯の5項目を指定してジョブを作成しレンダリングすると、work/<id>/state.jsonに保存された指定値と、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour等の値が一致する。",
-         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定してpipeline.mjsをend-to-endで実行し、state.jsonの保存値と生成された.assファイルの実際の値を突き合わせ、全項目が一致することを確認する。",
+         "text": "pipeline.mjs render に --caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band の5項目をCLI引数として指定してレンダリングすると(既存の--sub-styleと同じ「render時に指定する」設計に合わせる。init時のstate.jsonには保存しない)、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour/BackColour/BorderStyle等の値が、指定した5項目と一致する。",
+         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定し、node pipeline.mjs init→select→render をend-to-endで実際にCLI実行し、生成されたwork/<id>/clip-1.assの実際の値(Fontname/PrimaryColour/OutlineColour/BackColour/BorderStyle)を、CLIに渡した指定値から独立に計算した期待値と突き合わせ、全項目が一致することを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-hearing-check.mjs",
          "evidence": ""
         }
