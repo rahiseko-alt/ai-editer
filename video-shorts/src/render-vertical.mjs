@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { buildTrimFilters, normalizeFpsRational } from "./trim-plan.mjs";
+import { exportArgs, resolveExportSettings, DEFAULT_EXPORT } from "./export-presets.mjs";
 
 // 向き別の出力解像度。portrait=縦型(SNSリール等)、landscape=横型(画面録画・細かい文字を残す)。
 const ORIENT = { portrait: [1080, 1920], landscape: [1920, 1080] };
@@ -167,9 +168,11 @@ export async function renderClip(p) {
     // 詰める場合は詰めた音声を（音声トラックが無い素材では [taout] 自体を作らない＝AUD-S-02）、
     // 詰めない場合はシークで切り出し済みの音声をそのまま map（無音素材でも落ちないよう ?）。
     ...(trim ? (trim.hasAudio ? ["-map", "[taout]"] : []) : ["-map", "0:a?"]),
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "20",
+    // 書き出しの強さ（コーデック・圧縮率・音声ビットレート）は用途プリセットが決める。
+    // 指定が無ければ standard＝従来どおり（libx264 / veryfast / crf 20 / aac 192k）。
+    // 解像度・fps・色空間はここでは触らない（下記の固定指定と filtergraph が正）。
+    ...exportArgs(resolveExportSettings(p.exportPreset ?? DEFAULT_EXPORT, p.exportOverrides)
+      ?? resolveExportSettings(DEFAULT_EXPORT)),
     // HDR→SDR変換の有無に関わらず、出力は必ず8bit 4:2:0 + BT.709で書く（AUD-P1-09）。
     // フィルタ側(colorChain)で既に yuv420p 化しているが、コンテナのタグ付けも明示して二重に保証する。
     "-pix_fmt", "yuv420p",
@@ -181,8 +184,6 @@ export async function renderClip(p) {
     // cfr にしておくと、その 1 コマ未満の穴が複製で埋まり、絵と音の対応がずれない。
     "-fps_mode", "cfr",
     "-bf", "0", // B フレーム無効化＝reorder 遅延の edit-list 先頭オフセットを排除し映像 start_time を 0 に
-    "-c:a", "aac",
-    "-b:a", "192k",
     "-movflags", "+faststart",
     p.output,
   ];

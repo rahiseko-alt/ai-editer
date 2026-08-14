@@ -20,6 +20,7 @@ import {
 } from "./src/select-segments.mjs";
 import { resolveSegments } from "./src/reverse-match.mjs";
 import { mergeShortSegments, snapToSilence, resolveMinSec } from "./src/snap-boundaries.mjs";
+import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
@@ -218,6 +219,7 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
 export async function renderSegment({
   input, seg, words, srcFps, srcFpsRational = null, srcSampleRate = null,
   srcW, srcH, orientation, trim, subtitle, output, label = "", onLog = log,
+  exportPreset = DEFAULT_EXPORT, exportOverrides = {},
 }) {
   const segStart = snapStart(seg.start, srcFps);
   const relWordsAll = wordsInRange(words || [], segStart, seg.end);
@@ -242,12 +244,20 @@ export async function renderSegment({
     fs.writeFileSync(assPath, ass, "utf-8");
   }
   await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation,
-    srcW, srcH, keep, fpsRational: srcFpsRational, sampleRate: srcSampleRate });
+    srcW, srcH, keep, fpsRational: srcFpsRational, sampleRate: srcSampleRate,
+    exportPreset, exportOverrides });
   return { segStart, keep, assWords, clipDuration, cutSeconds };
 }
 
 async function cmdRender(workDir, opts = {}) {
-  const { flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec } = opts;
+  const {
+    flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec,
+    exportPreset = DEFAULT_EXPORT, exportOverrides = {},
+  } = opts;
+  if (!getExportPreset(exportPreset)) {
+    const avail = listExportPresets().map((e) => `${e.key}（${e.label}）`).join(" / ");
+    die(`未知の書き出しプリセット: ${exportPreset}\n  利用可能: ${avail}`);
+  }
   const state = loadState(workDir);
   // 字幕有無は init のヒアリング結果（state.sub）が既定。--no-sub フラグは明示上書き。
   const noSub = flagNoSub || state.sub === "none";
@@ -367,6 +377,7 @@ async function cmdRender(workDir, opts = {}) {
           path: path.join(workDir, `clip-${i + 1}.ass`),
           style: subStyle, width: canvas.w, height: canvas.h,
         },
+        exportPreset, exportOverrides,
         output: outFile,
         label: `#${i + 1}`,
       });
@@ -503,10 +514,22 @@ async function main() {
         subStyle: flagValue(rest, "--sub-style", DEFAULT_SUBTITLE_STYLE),
         modeOverride: modeArg,
         minSec: flagValue(rest, "--min-sec", undefined),
+        exportPreset: flagValue(rest, "--export", DEFAULT_EXPORT),
+        // 個別指定はプリセットの上から1項目ずつ上書きする（全部書かなくてよい）。
+        exportOverrides: {
+          vcodec: flagValue(rest, "--vcodec", undefined),
+          preset: flagValue(rest, "--enc-preset", undefined),
+          crf: flagValue(rest, "--crf", undefined),
+          acodec: flagValue(rest, "--acodec", undefined),
+          abitrate: flagValue(rest, "--abitrate", undefined),
+        },
       });
     case "status": return cmdStatus(arg);
     case "styles":
       listStyles().forEach((s) => log(`  ${s.key}\t${s.label} — ${s.description}`));
+      return;
+    case "exports":
+      listExportPresets().forEach((e) => log(`  ${e.key}\t${e.label} — ${e.description}`));
       return;
     default:
       log("usage: node pipeline.mjs <init|captionfix|select|render|status|styles> ...");
@@ -514,7 +537,11 @@ async function main() {
       log("  captionfix <workDir>（文字起こしの変換ミスをAIが直す。select の前）");
       log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
       log("  render     <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
-      log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短いショートにするなら小さくする）");
+      log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短く分けるなら小さくする）");
+      log("             [--export <用途>]（書き出し設定。youtube|sns|x|archive|light|standard）");
+      log("             [--crf <0-51>] [--vcodec <名>] [--enc-preset <名>] [--acodec <名>] [--abitrate <例:128k>]");
+      log("               （個別指定。--export の上から1項目ずつ上書きできる）");
+      log("  exports    書き出しプリセットの一覧を表示する");
       process.exit(1);
   }
 }
