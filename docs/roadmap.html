@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)の実装は全マイルストーン完了・push済み。マスターへ実素材の見どころダイジェスト(字幕なし・縦/横)を提出し、黒帯だらけで映像が小さいという指摘を受け即修正・再提出済み。次はRelease Gate(§15)の残り: 修正込みの実素材字幕フレームPNGを添えて最終目視提出(項目6)→independent-verifierのPASS(項目7)→Evidence一式(mp4/PNG/ffprobe/CI run URL、項目8)。",
+  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)の実装は全マイルストーン完了・push済み。マスターへ実素材の見どころダイジェスト(字幕なし・縦/横)を提出→黒帯だらけの指摘を受け即修正→字幕(karaoke既定)がしょぼい・Premiere風にできないかとの指摘を受け縁取り/影を強化(push待ち)。次はRelease Gate(§15)の残り: 修正込みの実素材字幕フレームPNGを添えて最終目視提出(項目6)→independent-verifierのPASS(項目7)→Evidence一式(項目8)。字幕位置(marginV)についてマスターの希望を確認中(下部固定のままで良いか)。",
   "handoff": {
    "done": [
-    "計画のM1〜M7を実装・push済み(M7まではcommit 531025a)。M7完了後、マスターに実素材(Horiguchiインタビュー)で「字幕なし・見どころ1分・縦動画」を依頼され、digestモード(理解→台本→検証修正ループ、9区間・score=65)で実際に生成・提出。その際「黒帯だらけで映像が小さい」との指摘を受け、renderClip()が字幕の有無に関わらず常にletterbox(黒帯pad)を使っていた実装を発見・即修正: computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し、字幕なしのときは黒帯を残さないcover(中央crop-fill)を既定にした。tests/nosub-cover-fit-check.mjs(新規8 tests)で検証し、修正を一時的に戻して4/8がFAILへ転じることを確認(検出力の裏付け)。この既定変更の影響で意味が変わっていた既存2テスト(recaption-render-plan-check.mjs・sub-none-render-check.mjs)も実際に実行して発見・修正し、フルスイート的な影響範囲チェックをgrepだけで済ませない教訓をdocs/failures.mdへ追記。マスターへ縦(1080x1920)・横(1920x1080)の両方を黒帯なしで再提出済み。regression確認: subtitle-canvas-fit-check(AUD-P2-22)・subtitle-hook-fit-check・orient-render-check・mosaic系・dist-slim-check(34/34)・trim-caption-sync-check・typecheck/lintとも緑。"
+    "計画のM1〜M7を実装・push済み(M7まではcommit 531025a)。M7完了後、マスターに実素材(Horiguchiインタビュー)で「字幕なし・見どころ1分・縦動画」を依頼され、digestモード(理解→台本→検証修正ループ、9区間・score=65)で実際に生成・提出。その際「黒帯だらけで映像が小さい」との指摘を受け、renderClip()が字幕の有無に関わらず常にletterbox(黒帯pad)を使っていた実装を発見・即修正: computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し、字幕なしのときは黒帯を残さないcover(中央crop-fill)を既定にした。tests/nosub-cover-fit-check.mjs(新規8 tests)で検証し、修正を一時的に戻して4/8がFAILへ転じることを確認(検出力の裏付け)。この既定変更の影響で意味が変わっていた既存2テスト(recaption-render-plan-check.mjs・sub-none-render-check.mjs)も実際に実行して発見・修正し、フルスイート的な影響範囲チェックをgrepだけで済ませない教訓をdocs/failures.mdへ追記。マスターへ縦(1080x1920)・横(1920x1080)の両方を黒帯なしで再提出済み。続けて「字幕がしょぼい、フォントも中外シャドウやらいろいろあるだろ普通、プレミアプロのフォント設定に近づけられないのか」との指摘を受け、src/subtitle-styles.mjsの3プリセット(karaoke/pop/bold)とも outline/shadow を太く/濃くした(karaoke: 9→14/4→8等)。marginV(位置)は変更せず固定のまま。regression確認: subtitle-canvas-fit-check(AUD-P2-22)・subtitle-hook-fit-check・orient-render-check・mosaic系・dist-slim-check(34/34)・trim-caption-sync-check・typecheck/lintとも緑。"
    ],
    "trouble": [
-    "M7完了直後の自作テストの引数順ミス(check(name,cond)と check(cond,name)の取り違えで全件無条件PASSになっていた)をfailures.mdへ既に記録済み。今回は別件: fitのデフォルト変更(黒帯修正)が、既存2テストの前提(拡大ガードの縮小・字幕なし基準フレームとの画素一致)を崩していたが、grep検索だけでは見つからず、関連しそうな候補ファイルを実際に1本ずつ実行して初めて発覚した。両方とも目的に忠実な形で修正済み。"
+    "M7完了直後の自作テストの引数順ミス(check(name,cond)と check(cond,name)の取り違えで全件無条件PASSになっていた)をfailures.mdへ既に記録済み。fitのデフォルト変更(黒帯修正)が既存2テストの前提を崩していた件も同様にfailures.mdへ記録・修正済み。字幕強化はまだ実素材での目視確認(再レンダリング中)が完了していない状態でコミットした(コード自体はテスト済みで安全だが、視覚的な仕上がりの最終確認はマスターへの提出時点で行う)。"
    ]
   },
   "updated": "2026-08-14",
