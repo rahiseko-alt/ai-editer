@@ -13,6 +13,8 @@ import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
+import { checkFontAvailable } from "../src/font-check.mjs";
+import { DEFAULT_FONT } from "../src/srt-builder.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -810,6 +812,20 @@ async function runJob(jobId, inputAbsPath, opts) {
   const workDir = path.join(WORK_ROOT, jobId);
   const noSub = opts.sub === "none";
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
+
+  // 字幕ありの場合、文字起こし（数分〜数十分かかる）を始める前に、使うフォントが
+  // 実際にこの環境にあるかを確認する(pipeline.mjs cmdInit と同じ判定・M3)。
+  // 旧実装はこのチェックが pipeline.mjs init だけにあり、画面(HTTP)経路は init を呼ばず
+  // 直接 transcribe.py を起動するため、この関門を素通りしていた
+  // (M7 3経路E2Eで発覚。docs/failures.md 2026-08-14)。
+  if (!noSub) {
+    const fontCheck = checkFontAvailable(DEFAULT_FONT);
+    if (!fontCheck.ok) {
+      const e = new Error(fontCheck.reason);
+      e.code = "font_missing";
+      throw e;
+    }
+  }
 
   // state.json 初期作成（pipeline.mjs init の代替）
   // AUD-P2-16: 以後このローカル変数を使い回して丸ごと上書きすることはしない
