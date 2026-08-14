@@ -118,18 +118,35 @@ function displayCols(text) {
  * canvas幅・スケール後fontSize・スケール後左右余白(片側)から、1行に収まる目安のカラム数を出す。
  * 求まらない（幅0以下等）ときは Infinity（＝制限しない・従来どおり）。
  *
- * 【perColumnPx の実測根拠】太字・大文字英数字(半角=1カラム)を実際にlibass(DejaVu Sans Bold
- * フォールバック)で描画し、フレームの画素から実測したところ、fontsize=29pxで1文字あたり
- * 約18.7px（≈0.645×fontsize）だった（検証: scratchpad/audit-verify/verify-aud-p2-22.mjs の
- * 事前調査）。輪郭線(Outline)が字の左右にもわずかに広がる分の安全マージンを足し、
- * 0.72×fontsize を1カラムぶんの目安として使う（実測より広めに見積もる＝はみ出す方向より
- * 早めに折り返す方向に倒して安全側にする）。全角(2カラム)は、フォントの字送りが概ね
- * fontsize相当という一般的な経験則から、同じ式のまま「2カラム分」として扱う。
+ * 【perColumnPx の実測根拠（2026-08-14 更新）】旧係数0.72は、fontsize=29pxで1文字あたり
+ * 約18.7px（≈0.645×fontsize）という測定（太字・大文字英数字＝半角=1カラム、DejaVu Sans Bold
+ * フォールバック）に安全マージンを足したものだったが、日本語の全角文字（本来の用途）を
+ * 実際に描画した画素で測っていなかった。実素材の処理で字幕が画面の7割しか使わず読みにくい
+ * ことが判明（docs/failures.md 2026-08-14）。
+ *
+ * 改めて、出荷既定フォント IPAGothic で全角7文字「コンディーショ」を実際に libass で焼き、
+ * 2つの独立したスケール（fontsize=84px・PlayResX=1080＝縦型の基準解像度／fontsize=28px・
+ * PlayResX=360＝AUD-P2-22の縮小ケース）でフレームの画素から1カラムあたりの幅を実測した。
+ * 結果は 36.6〜37.2px（fontsize=84時）・12.14px（fontsize=28時）で、比率は 0.434〜0.439 と
+ * スケールに依らず一致した。
+ *
+ * ただし computeMaxCols は全角(2カラム)・半角(1カラム)を同じ perColumnPx で見積もる作りで、
+ * 半角側の実測が別に要る。AUD-P2-22 の既存対照（DejaVu Sans・太字・半角大文字20字連続）を
+ * 同じ手順で実測すると、半角1文字あたり 53.95px（fontsize=88時）＝比率 0.613 で、CJK全角の
+ * 比率(0.434〜0.439)より大きい。同じ perColumnPx を両方に使う以上、安全な側（半角の実測
+ * 0.613）に約6%の余裕を足した 0.65×fontsize を採用する。全角はこの式のまま「2カラム分」
+ * として扱うため、CJK主体の字幕では実際の可用幅の約65%相当までしか使わない計算になるが、
+ * 旧係数0.72（実測0.439の1.65倍＝可用幅の61%相当）からは改善している。半角の太字文字を
+ * 同じ精度で測って初めて全角側の余裕を使い切れる設計（列ごとに別のpxを許す拡張）は、
+ * 今回のスコープ外の改善余地として残す（検証: scratchpad配下で使い捨てスクリプトにより
+ * 実測。再現手順はffmpegのassフィルタで同じStyle定義の.assを1フレーム焼き、閾値200の
+ * 二値化で文字の画素範囲を読む。AUD-P2-22実測: 0.65のとき対照文字列でも左右34px以上の
+ * 余白を確認済み）。
  */
 function computeMaxCols(canvasW, scaledFontSize, marginLR) {
   const available = Number(canvasW) - marginLR * 2;
   if (!(available > 0) || !(scaledFontSize > 0)) return Infinity;
-  const perColumnPx = scaledFontSize * 0.72;
+  const perColumnPx = scaledFontSize * 0.65;
   return Math.max(1, Math.floor(available / perColumnPx));
 }
 
@@ -263,10 +280,19 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   const captionMarginLR = scaleToken(60, scale);
   const maxCols = computeMaxCols(W, scaledFontSize, captionMarginLR);
 
+  // 見出し(Hook)は本文(Caption)と別スタイル（フォントサイズ66・左右余白40）なので、
+  // 折り返し幅も別に計算する。従来はここを一切折り返しておらず、区間の見出し文が
+  // 画面の左右へ大きくはみ出したまま区間の全長にわたって表示され続けていた
+  // （実素材で横幅40カラム・画面に入るのは32カラム。docs/failures.md 2026-08-14）。
+  const hookFontSize = scaleToken(66, scale);
+  const hookMarginLR = scaleToken(40, scale);
+  const hookMaxCols = computeMaxCols(W, hookFontSize, hookMarginLR);
+
   const header = buildHeader(W, H, fontMain, st, align, scale);
   let events = [];
   if (hook) {
-    events.push(`Dialogue: 0,${assTime(0)},${assTime(duration)},Hook,,0,0,0,,{\\an8}${escAss(hook)}`);
+    const hookLines = splitByDisplayWidth(hook, hookMaxCols).map(escAss).join("\\N");
+    events.push(`Dialogue: 0,${assTime(0)},${assTime(duration)},Hook,,0,0,0,,{\\an8}${hookLines}`);
   }
   if (st.mode === "karaoke") events = events.concat(karaokeEvents(relWords, st, maxChars, maxCols));
   else if (st.mode === "pop") events = events.concat(popEvents(relWords, duration, maxCols));
