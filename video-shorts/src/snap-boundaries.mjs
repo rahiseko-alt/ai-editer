@@ -4,6 +4,103 @@
 // digest（台本再構成）は意図的な分割・並べ替えのため mergeShortSegments は掛けない。
 // ESM・Node標準のみ・元配列非破壊。
 
+/** mergeShortSegments に渡す「1区間の最小尺」の既定値（秒）。 */
+export const DEFAULT_MIN_SEC = 180;
+
+/**
+ * 1区間の最小尺を決める。優先順は CLI(--min-sec) > env(TOPIC_MIN_SEC) > 既定180秒。
+ *
+ * CLI から指定できるようにした理由（2026-08-14 実素材の初回処理・docs/failures.md）：
+ * 既定180秒のままだと「話題毎」でAIが選んだ区間が3分未満のとき隣と強制結合され、
+ * 実素材では4区間が2本(うち1本7分10秒)になってショート動画にならなかった。
+ * 指定口が無いこと自体が不具合だったので、env だけでなく CLI からも効くようにする。
+ *
+ * 数値として読めない値・0以下は「指定なし」とみなして次の優先度へ落とす（黙って
+ * 0秒扱いにすると結合が全く効かなくなり、壊れ方が分かりにくいため）。
+ *
+ * @param {unknown} cliValue --min-sec の値（未指定なら undefined）
+ * @param {unknown} envValue process.env.TOPIC_MIN_SEC（未設定なら undefined）
+ * @returns {number} 実際に使う最小尺（秒）
+ */
+export function resolveMinSec(cliValue, envValue) {
+  for (const raw of [cliValue, envValue]) {
+    if (raw === undefined || raw === null || raw === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_MIN_SEC;
+}
+
+/**
+ * 目標尺(分)から、区間の下限秒(floor)・上限秒(ceil)を決める。
+ * 優先順は CLI(--duration-min) > 未指定(null=おまかせ)。
+ *
+ * 「3分くらいで」と指示したのに1分30秒〜4分30秒まで許すと、指示したとは言えない
+ * （実装が「常に同じ長さを返す」形でも許容幅に収まってしまい、指定が効いているか
+ * 判定できない）。無音境界へ寄せるずれ(snapToSilence)は通常1発話ぶん(数秒)で、
+ * 180秒に対して数%しかない。floor/ceil を目標の ±30% に置くのは、この実測されている
+ * ずれ幅(数%)よりは十分広く、かつ「常に同じ長さを返す」実装が3分指定と1分指定の
+ * 両方を同時に満たせない（3分の70%=126秒 > 1分の130%=78秒で範囲が重ならない）ように
+ * 締めるため。
+ *
+ * @param {unknown} durationMinCli --duration-min の値（分。未指定なら undefined）
+ * @returns {{floorSec: number, ceilSec: number} | null} 指定が無ければ null（おまかせ）
+ */
+export function resolveTargetDuration(durationMinCli) {
+  if (durationMinCli === undefined || durationMinCli === null || durationMinCli === "") return null;
+  const n = Number(durationMinCli);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const targetSec = n * 60;
+  return { floorSec: targetSec * 0.7, ceilSec: targetSec * 1.3 };
+}
+
+/** idealEnd に最も近い word.end を、(rangeStart, rangeEnd) の開区間内から探す。無ければ null。 */
+function nearestWordEnd(idealEnd, words, rangeStart, rangeEnd) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const w of words) {
+    if (!(w.end > rangeStart) || !(w.end < rangeEnd)) continue;
+    const dist = Math.abs(w.end - idealEnd);
+    if (dist < bestDist) { bestDist = dist; best = w.end; }
+  }
+  return best;
+}
+
+/**
+ * maxSec を超える区間を、ほぼ等分になるよう複数本へ割る（語の途中では切らない）。
+ *
+ * 「おまかせ」時に1本が素材の1/3を超える（実測: 4区間が2本へ結合され1本7分10秒）のを防ぐ
+ * ため、または「3分くらいで」の指示に対して上限を守るために使う。分割位置は理想の等分点に
+ * 最も近い word.end へ寄せる（word境界を無視すると発話の途中で切れる）。寄せる先が
+ * 見つからない場合は理想の等分点をそのまま使う（words が疎な素材でも、割ること自体は保証する。
+ * 語の途中で切れる可能性はあるが、上限を超えたまま1本残すよりは害が小さい）。
+ * @param {Array} segments mergeShortSegments/snapToSilence 適用後の区間配列
+ * @param {number} maxSec 1本の上限秒数（Infinity/0以下等は無変更）
+ * @param {Array<{w:string,start:number,end:number}>} [words] 分割位置探索用
+ * @returns {Array} 新配列（元配列は破壊しない。割られた区間は複数本になる）
+ */
+export function capSegmentDuration(segments, maxSec, words = []) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+  if (!(maxSec > 0) || !Number.isFinite(maxSec)) return segments.map((s) => ({ ...s }));
+  const out = [];
+  for (const seg of segments) {
+    const dur = seg.end - seg.start;
+    if (dur <= maxSec) { out.push({ ...seg }); continue; }
+    const n = Math.ceil(dur / maxSec);
+    const chunkLen = dur / n;
+    let cursor = seg.start;
+    for (let i = 0; i < n; i++) {
+      const isLast = i === n - 1;
+      const idealEnd = isLast ? seg.end : seg.start + chunkLen * (i + 1);
+      const end = isLast ? seg.end : (nearestWordEnd(idealEnd, words, cursor, seg.end) ?? idealEnd);
+      out.push({ ...seg, start: cursor, end, duration: Math.round((end - cursor) * 1000) / 1000 });
+      cursor = end;
+      if (cursor >= seg.end) break;
+    }
+  }
+  return out;
+}
+
 /** 全角込みの見かけ幅で切る（全角=2/半角=1 として合計 maxWidth に収める）。 */
 function truncateByWidth(text, maxWidth) {
   let width = 0;

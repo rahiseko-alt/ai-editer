@@ -144,7 +144,10 @@ async function main() {
     const m = outputs.off.manifest;
     const segStart = snapStart(m.start, srcSize.fps);
     const baseline = path.join(WORK, "baseline-nosub.mp4");
-    await renderClip({ input, start: segStart, end: m.end, output: baseline, orientation: "portrait" });
+    // fit: "cover" — cmdRender は字幕なしのとき黒帯(pad)を残さないcover-fitを使う
+    // (2026-08-14、黒帯だらけで映像が小さいという実素材での指摘を受けての修正)。
+    // ここを既定のpadのままにすると、字幕の有無ではなくfitの違いで画素が食い違ってしまう。
+    await renderClip({ input, start: segStart, end: m.end, output: baseline, orientation: "portrait", fit: "cover" });
     check(fs.existsSync(baseline), "独立の「字幕なし基準」動画を生成した");
 
     const grabAt = Math.min(0.5, Math.max(0, (m.end - m.start) / 2));

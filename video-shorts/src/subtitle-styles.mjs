@@ -16,9 +16,12 @@ export const SUBTITLE_STYLES = {
     fontSize: 84,
     base: "&H00FFFFFF", // 未到達の単語（白）
     highlight: "&H0000FFFF", // 現在読んでいる単語（黄）
-    outline: 9,
-    shadow: 4,
-    marginV: 360, // 画面下からの余白
+    // 縁取り・影を強化（2026-08-14「字幕がしょぼい」の指摘を受けて）。旧値(outline9/shadow4)は
+    // fontSize比で細く、背景によっては輪郭が薄く見えた。Premiere Proの既定キャプション
+    // スタイル(太めのストローク＋視認できる影)に近づける。
+    outline: 14,
+    shadow: 8,
+    marginV: 360, // 画面下からの余白（固定値。区間の行数が変わってもこの値は動かない）
   },
   pop: {
     label: "1語ずつポップ",
@@ -27,8 +30,8 @@ export const SUBTITLE_STYLES = {
     fontSize: 120,
     base: "&H00FFFFFF",
     highlight: "&H0000FFFF",
-    outline: 12,
-    shadow: 6,
+    outline: 16,
+    shadow: 9,
     marginV: 0, // 中央表示
   },
   bold: {
@@ -38,8 +41,8 @@ export const SUBTITLE_STYLES = {
     fontSize: 88,
     base: "&H00FFFFFF",
     highlight: "&H0000FFFF",
-    outline: 10,
-    shadow: 5,
+    outline: 13,
+    shadow: 7,
     marginV: 400,
   },
 };

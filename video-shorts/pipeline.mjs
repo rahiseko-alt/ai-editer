@@ -19,8 +19,12 @@ import {
   callAnthropic,
 } from "./src/select-segments.mjs";
 import { resolveSegments } from "./src/reverse-match.mjs";
-import { mergeShortSegments, snapToSilence } from "./src/snap-boundaries.mjs";
-import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
+import {
+  mergeShortSegments, snapToSilence, resolveMinSec, resolveTargetDuration, capSegmentDuration,
+} from "./src/snap-boundaries.mjs";
+import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
+import { wordsInRange, buildAss, DEFAULT_FONT } from "./src/srt-builder.mjs";
+import { checkFontAvailable } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, probeSampleRate, clipName, computeCanvas } from "./src/render-vertical.mjs";
@@ -71,19 +75,31 @@ function normalizeOrient(v) {
 function cmdInit(input, mode, sub, orientArg) {
   if (!input || !fs.existsSync(input)) die(`入力mp4が見つかりません: ${input}`);
   // 素材導入時のヒアリングを機械強制（AI 自己規律に頼らない・前回引き継ぎ禁止）。
+  // 足りない項目は1つずつではなく、まとめて一度に列挙する（実素材の初回処理で
+  // --mode→--sub→--orient と3回やり直しになった。docs/failures.md 2026-08-14）。
+  const orient = normalizeOrient(orientArg);
+  const missing = [];
   if (!isValidMode(mode)) {
-    die("--mode を指定してください（topic=話題毎 / digest=ダイジェスト）。\n" +
-        "  素材導入時のヒアリング必須項目です（毎回確認・前回の引き継ぎ禁止）。");
+    missing.push("--mode <topic|digest>（topic=話題毎 / digest=ダイジェスト）");
   }
   if (sub !== "on" && sub !== "off") {
-    die("--sub を指定してください（on=字幕あり / off=字幕なし）。\n" +
-        "  字幕有無も毎回ヒアリング必須です（前回の引き継ぎ禁止）。");
+    missing.push("--sub <on|off>（on=字幕あり / off=字幕なし）");
   }
-  const orient = normalizeOrient(orientArg);
   if (!orient) {
-    die("--orient を指定してください（縦=portrait / 横=landscape）。\n" +
-        "  縦横も毎回ヒアリング必須です（前回の引き継ぎ禁止）。\n" +
-        "  横=画面録画など細かい文字を残す用途 / 縦=SNSリール等の縦枠用途。");
+    missing.push("--orient <縦|横>（縦=portrait・SNSリール等 / 横=landscape・画面録画等）");
+  }
+  if (missing.length > 0) {
+    die("次の項目が指定されていません。まとめて指定してください" +
+        "（1つずつではなく、一度に全部答えれば以降は聞き返しません。前回の回答の引き継ぎは禁止）:\n" +
+        missing.map((m, i) => `  ${i + 1}. ${m}`).join("\n"));
+  }
+  // 字幕ありの場合、文字起こし（数分〜数十分かかる）を始める前に、使うフォントが
+  // 実際にこの環境にあるかを確認する。無ければ、時間を無駄にする前にここで止める
+  // （実素材の処理で、既定フォントが黙って別言語へ代替され、文字起こし後の焼き込み
+  // 段階で初めて壊れた見た目が判明していた。docs/failures.md 2026-08-14）。
+  if (sub === "on") {
+    const fontCheck = checkFontAvailable(DEFAULT_FONT);
+    if (!fontCheck.ok) die(fontCheck.reason);
   }
   // P1-8: ファイル名だけで id を決めると、別々の「lecture.mp4」を処理したときに work/output を
   // 共有してしまい、前のジョブの state.json やクリップを上書きする。サーバー経路(P1-3)と同じく
@@ -218,6 +234,7 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
 export async function renderSegment({
   input, seg, words, srcFps, srcFpsRational = null, srcSampleRate = null,
   srcW, srcH, orientation, trim, subtitle, output, label = "", onLog = log,
+  exportPreset = DEFAULT_EXPORT, exportOverrides = {}, fit = "pad",
 }) {
   const segStart = snapStart(seg.start, srcFps);
   const relWordsAll = wordsInRange(words || [], segStart, seg.end);
@@ -242,12 +259,20 @@ export async function renderSegment({
     fs.writeFileSync(assPath, ass, "utf-8");
   }
   await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation,
-    srcW, srcH, keep, fpsRational: srcFpsRational, sampleRate: srcSampleRate });
+    srcW, srcH, keep, fpsRational: srcFpsRational, sampleRate: srcSampleRate,
+    exportPreset, exportOverrides, fit });
   return { segStart, keep, assWords, clipDuration, cutSeconds };
 }
 
 async function cmdRender(workDir, opts = {}) {
-  const { flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride } = opts;
+  const {
+    flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
+    exportPreset = DEFAULT_EXPORT, exportOverrides = {},
+  } = opts;
+  if (!getExportPreset(exportPreset)) {
+    const avail = listExportPresets().map((e) => `${e.key}（${e.label}）`).join(" / ");
+    die(`未知の書き出しプリセット: ${exportPreset}\n  利用可能: ${avail}`);
+  }
   const state = loadState(workDir);
   // 字幕有無は init のヒアリング結果（state.sub）が既定。--no-sub フラグは明示上書き。
   const noSub = flagNoSub || state.sub === "none";
@@ -286,13 +311,32 @@ async function cmdRender(workDir, opts = {}) {
   // digest は編集エージェントが確定した精密な keepText 区間のため、結合・無音スナップ・余韻パディングの
   // いずれも適用しない（適用すると隣接区間が重なり concat 時に同一発話が二重再生されうる＝R-7b/c）。
   if (mode !== "digest") {
-    const MIN_SEC_RAW = Number(process.env.TOPIC_MIN_SEC ?? 180);
-    const MIN_SEC = Number.isFinite(MIN_SEC_RAW) && MIN_SEC_RAW > 0 ? MIN_SEC_RAW : 180; // R-7d: 不正値は既定にフォールバック
+    // 尺の指示。--duration-min が指定されていれば、その値の±30%を下限/上限とする
+    // （下限は --min-sec より優先。「3分くらいで」の指示が実際に効くようにするため）。
+    // 未指定（おまかせ）なら下限は従来どおり --min-sec/TOPIC_MIN_SEC/既定180秒。
+    const target = resolveTargetDuration(durationMin);
+    const MIN_SEC = target ? target.floorSec : resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
     const MAX_GAP_RAW = Number(process.env.TOPIC_MERGE_GAP_MAX ?? 3);
     const MAX_GAP = Number.isFinite(MAX_GAP_RAW) && MAX_GAP_RAW > 0 ? MAX_GAP_RAW : 3; // R-8: 不正値は既定(3秒)にフォールバック
     resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP);
     resolved = snapToSilence(resolved, transcript.words || [], {});
     log(`[INFO] 区間リファイン後: ${resolved.length} 区間（結合＋無音スナップ）`);
+
+    // 上限。指示が有ればその上限、無ければ「おまかせ」でも1本が素材全体の1/3を超えない
+    // ようにする（実測: 指示無しで4区間が2本へ結合され、1本が7分10秒になっていた。
+    // docs/failures.md 2026-08-14）。ただし素材が短い（1/3が AUTO_CEIL_MIN_SEC 未満になる）
+    // ときは適用しない。数秒の素材の1/3（数秒未満）まで割ろうとすると、素材のほぼ全体を
+    // 使った妥当な1本まで無意味に分割してしまう（実測: CI の4秒合成素材で発覚。1本の候補が
+    // 2本に割れて回帰した）。
+    const AUTO_CEIL_MIN_SEC = 60;
+    const srcDurForCap = transcript.duration;
+    const autoCeil = Number.isFinite(srcDurForCap) && srcDurForCap > 0 ? srcDurForCap / 3 : Infinity;
+    const ceilSec = target ? target.ceilSec : (autoCeil >= AUTO_CEIL_MIN_SEC ? autoCeil : Infinity);
+    const beforeCap = resolved.length;
+    resolved = capSegmentDuration(resolved, ceilSec, transcript.words || []);
+    if (resolved.length !== beforeCap) {
+      log(`[INFO] 上限(${ceilSec.toFixed(1)}秒)超えの区間を分割: ${beforeCap} → ${resolved.length} 区間`);
+    }
 
     // 余韻パディング: 語境界ピッタリだと発話が即始まり/即切れて「ぶち切れ」感が出る。
     // 開始を少し前へ・終了を少し後ろへ伸ばし前後に間を作る（素材端でクランプ）。env で調整可。
@@ -345,7 +389,10 @@ async function cmdRender(workDir, opts = {}) {
   if (state.trim === "on" && !srcFps) {
     log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
   }
-  const canvas = computeCanvas(orientation, srcW, srcH);
+  // 字幕なしのときは黒帯(pad)で余白を残す理由が無いので、中央crop-fillで枠いっぱいに映す
+  // （黒帯だらけで映像が小さく見える、という実素材での指摘。docs/failures.md 2026-08-14）。
+  const fit = noSub ? "cover" : "pad";
+  const canvas = computeCanvas(orientation, srcW, srcH, fit);
 
   for (let i = 0; i < resolved.length; i++) {
     const seg = resolved[i];
@@ -366,6 +413,7 @@ async function cmdRender(workDir, opts = {}) {
           path: path.join(workDir, `clip-${i + 1}.ass`),
           style: subStyle, width: canvas.w, height: canvas.h,
         },
+        exportPreset, exportOverrides, fit,
         output: outFile,
         label: `#${i + 1}`,
       });
@@ -501,10 +549,24 @@ async function main() {
         flagNoSub: rest.includes("--no-sub"),
         subStyle: flagValue(rest, "--sub-style", DEFAULT_SUBTITLE_STYLE),
         modeOverride: modeArg,
+        minSec: flagValue(rest, "--min-sec", undefined),
+        durationMin: flagValue(rest, "--duration-min", undefined),
+        exportPreset: flagValue(rest, "--export", DEFAULT_EXPORT),
+        // 個別指定はプリセットの上から1項目ずつ上書きする（全部書かなくてよい）。
+        exportOverrides: {
+          vcodec: flagValue(rest, "--vcodec", undefined),
+          preset: flagValue(rest, "--enc-preset", undefined),
+          crf: flagValue(rest, "--crf", undefined),
+          acodec: flagValue(rest, "--acodec", undefined),
+          abitrate: flagValue(rest, "--abitrate", undefined),
+        },
       });
     case "status": return cmdStatus(arg);
     case "styles":
       listStyles().forEach((s) => log(`  ${s.key}\t${s.label} — ${s.description}`));
+      return;
+    case "exports":
+      listExportPresets().forEach((e) => log(`  ${e.key}\t${e.label} — ${e.description}`));
       return;
     default:
       log("usage: node pipeline.mjs <init|captionfix|select|render|status|styles> ...");
@@ -512,6 +574,13 @@ async function main() {
       log("  captionfix <workDir>（文字起こしの変換ミスをAIが直す。select の前）");
       log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
       log("  render     <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
+      log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短く分けるなら小さくする）");
+      log("             [--duration-min <分>]（1本の目安の長さ。指定値の±30%に収める。");
+      log("               --min-secより優先。未指定＝おまかせでも1本が素材全体の1/3は超えない）");
+      log("             [--export <用途>]（書き出し設定。youtube|sns|x|archive|light|standard）");
+      log("             [--crf <0-51>] [--vcodec <名>] [--enc-preset <名>] [--acodec <名>] [--abitrate <例:128k>]");
+      log("               （個別指定。--export の上から1項目ずつ上書きできる）");
+      log("  exports    書き出しプリセットの一覧を表示する");
       process.exit(1);
   }
 }
