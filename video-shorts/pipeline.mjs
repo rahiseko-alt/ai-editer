@@ -320,10 +320,14 @@ async function cmdRender(workDir, opts = {}) {
 
     // 上限。指示が有ればその上限、無ければ「おまかせ」でも1本が素材全体の1/3を超えない
     // ようにする（実測: 指示無しで4区間が2本へ結合され、1本が7分10秒になっていた。
-    // docs/failures.md 2026-08-14）。
+    // docs/failures.md 2026-08-14）。ただし素材が短い（1/3が AUTO_CEIL_MIN_SEC 未満になる）
+    // ときは適用しない。数秒の素材の1/3（数秒未満）まで割ろうとすると、素材のほぼ全体を
+    // 使った妥当な1本まで無意味に分割してしまう（実測: CI の4秒合成素材で発覚。1本の候補が
+    // 2本に割れて回帰した）。
+    const AUTO_CEIL_MIN_SEC = 60;
     const srcDurForCap = transcript.duration;
-    const ceilSec = target ? target.ceilSec
-      : (Number.isFinite(srcDurForCap) && srcDurForCap > 0 ? srcDurForCap / 3 : Infinity);
+    const autoCeil = Number.isFinite(srcDurForCap) && srcDurForCap > 0 ? srcDurForCap / 3 : Infinity;
+    const ceilSec = target ? target.ceilSec : (autoCeil >= AUTO_CEIL_MIN_SEC ? autoCeil : Infinity);
     const beforeCap = resolved.length;
     resolved = capSegmentDuration(resolved, ceilSec, transcript.words || []);
     if (resolved.length !== beforeCap) {
