@@ -119,13 +119,18 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "G-EDIT-BREATH",
-  "next": "G-EDIT-BREATH（ダイジェストのつなぎ目に息継ぎの間）は8葉すべて実装・検証・done化まで完了。次はこのPRがCI緑になり次第マージする。マージ後の次の一手は、backlogに切り出した「音のカット端への10〜50msフェード」か、ロードマップの続き（G-P0/G-P1/G-P2/G-EDIT-REFRAME-C/F 等の残りtodo葉、または新たにマスターから依頼される案件）。",
+  "next": "G-EDIT-BREATH の外部レビュー(CodeRabbit)対応。その後は音のカット端への10〜50msフェード（backlog: 無音が全く無く伸ばせない箇所の素の切り口対策）。",
   "handoff": {
    "done": [
-    "実素材のダイジェストに対するマスターの指摘2件を処理した。①区間選定のやり直し: 文字起こしを全文読み、前回AIが冒頭へ置いていた「話者自身が直後に『話がそれました』と謝っている雑談」を外し、本来のフック（ラッシュカットの問題提起）から始まる9区間へ手で組み直した。②つなぎ目の間: G-EDIT-BREATH として原子ツリー8葉を確定→src/breath-handles.mjs 新設→pipeline.mjs の digest 経路へ配線→tests/breath-handles-check.mjs（35検査）を追加し pnpm test へ登録。詳細は G-EDIT-BREATH の detail/criteria を参照。"
+    "PR #116（字幕スタイル自由指定・12葉）をマージ。",
+    "ダイジェストのつなぎ目に息継ぎの間を戻す機能を実装（src/breath-handles.mjs 新設 → pipeline.mjs の digest 経路へ配線）。合成の無音を足さず silencedetect で実測した無音の内側でだけ前後へ伸ばし、素材のルームトーンごと間を戻す。素材上で連続する区間は統合してつなぎ目そのものを作らない。",
+    "実素材で確認: 9区間83.6秒（つなぎ目8箇所・間ゼロ）→ 6部品88.3秒（つなぎ目5箇所）。間は 0.41秒（同一話題内＝半呼吸）／0.65〜0.73秒（話題の変わり目＝一呼吸）。",
+    "凍結前に basis-reviewer を通し反証8件。うち実装欠陥3件（trim=on で機能が実質無効化・サーバ未結線・NOSILENCE が死んだ経路を検証）を修正し、基準の質5件（固定素材の設計・原子性）を直した。",
+    "G-EDIT-BREATH を14葉で凍結（PR #117）。"
    ],
    "trouble": [
-    "①（実装中に自分で発見・修正済み）単語境界と音響的な無音の開始が実素材で0.09秒ずれており、許容を0.08秒にしていたため本来ひと続きに繋がる2区間が統合されず0.27秒の不要なカットが残った。許容を0.15秒へ広げ、同時に単語境界による上限を追加して「捨てた発話へ届かない」保証を無音検出から独立させた（片方を緩めても安全側が壊れない構成にした）。②本セッション開始時点で PR #116（字幕スタイル自由指定）が同一ブランチ上で未マージのままオープンだったため、本作業のコミットが PR #116 へ相乗りしている。詳細は docs/failures.md 2026-08-14 を参照。"
+    "basis-reviewer が実際に偽実装を当てたところ、①実測無音を無視し単語境界だけで縛る偽物 ②同日に自分で直したdefect（BOUNDARY_TOLERANCE_SEC 0.15→0.02）を戻したもの、の両方が35検査すべてをすり抜けた。固定素材の無音境界と単語境界が完全に一致するよう作っていたため、中核の縛りを検出できなかった。素材へ「文字起こしに載らない音(1200Hz)」と「境界0.09秒ずれ」を仕込み、探り①③で落ちることを確認した。詳細と教訓は docs/failures.md 2026-08-14 の3件目。",
+    "実装途中、合成素材のテストは全て緑なのに実素材では 0.27 秒の不要なカットが残っていた。手作業の承認済み成果物と1対1で突き合わせて初めて気付いた（同 2件目）。"
    ]
   },
   "updated": "2026-08-14",
@@ -4682,14 +4687,14 @@
        "kind": "state",
        "theme": "発話を捨てたつなぎ目に、一呼吸ぶんの間が入る",
        "meaning": "話が切り替わる所で、前の言葉が終わった瞬間に次が始まる「詰まった」聞こえ方にならない",
-       "status": "todo",
+       "status": "done",
        "detail": "【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、間の発話（[6.3,8.3]）を捨ててできた実カットのつなぎ目に、0.70秒±0.06秒の無音が実際の出力ファイル上に存在する（境界は両端を含む）。0.70秒は --breath の既定値 0.7 に由来し、素材がその箇所に持っていた間（3.6秒）より短いので既定値側が上限として効く。固定素材は合成（コミットしない）なので生成手順そのものを正とする: ffmpeg -f lavfi -i \"color=c=black:s=320x240:r=30:d=12.1\" -f lavfi -i \"aevalsrc=exprs='0.3*sin(2*PI*3000*t)*between(t,1,3)+0.1*sin(2*PI*3000*t)*between(t,3.0,3.09)+0.3*sin(2*PI*3000*t)*between(t,3.5,5.5)+0.6*sin(2*PI*1200*t)*between(t,5.7,5.9)+0.9*sin(2*PI*300*t)*between(t,6.3,8.3)+0.3*sin(2*PI*3000*t)*between(t,9.1,11.1)':s=44100:d=12.1\" -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 192k -shortest。台本に残す発話=[1.0,3.0][3.5,5.5][9.1,11.1]、捨てる発話=[6.3,8.3]（300Hz）。この素材は境界値分析で次の2つを含む: ①余韻[3.00,3.09]＝単語終端(3.0)と音響的な無音の始まり(3.09)が0.09秒ずれる箇所（実素材で統合に失敗し0.27秒の不要なカットが残った defect と同じずれ幅）。②単語表に無い音[5.70,5.90]（1200Hz・振幅0.6）＝文字起こしに載らない音。単語の隙間としては[5.5,6.3]が空いて見えるので、単語境界だけで縛る実装はここへ食い込む。測定環境は CI の ubuntu-24.04 + ffmpeg 7:6.1.1-3ubuntu5（.github/workflows/ci.yml で固定）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(A) 発話を捨てた実カットのつなぎ目に、一呼吸ぶん(0.7秒)の間ができている」が PASS すること。この検査は pipeline.mjs render を実際に走らせて digest を書き出し、その出力を ffmpeg silencedetect=noise=-40dB:d=0.15 に掛けて無音の長さを実測する（関数の戻り値ではなく成果物を測る）。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4698,14 +4703,14 @@
        "kind": "state",
        "theme": "素材が元々持っていた間より、長い間は作らない",
        "meaning": "機械的に一定の間を差し込んで、元の話しぶりのテンポを壊してしまわない",
-       "status": "todo",
+       "status": "done",
        "detail": "【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、素材が元々 0.5 秒ぶんの素材しか持っていなかった箇所（単語終端3.0→次の単語3.5）は、出力上でもその 0.5 秒がそのまま残る。うち先頭 0.09 秒は AAAA の余韻（音が鳴っている）なので、無音として測れるのは 0.41秒±0.06秒である（既定の 0.7 秒まで水増しされない）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(B) 素材が元々持っていた間（無音0.41秒＋余韻0.09秒）が、そのままの長さで残っている」が PASS すること。出力を silencedetect に掛けて得た無音の長さの一覧に 0.41±0.06 のものが在ることを実測する。期待値を 0.5 ではなく 0.41 にしているのは、0.5 を期待すると「素材のまま残す」実装ではなく「合成の無音を 0.5 秒作る」実装まで通ってしまうため。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4714,14 +4719,14 @@
        "kind": "state",
        "theme": "間を戻す場所は、機械で実際に測った無音の中だけに限る",
        "meaning": "文字起こしに載っていない音（笑い声・物音・拾い損ねた発話）を、間だと思って巻き込まない",
-       "status": "todo",
+       "status": "done",
        "detail": "この葉は basis-reviewer の反証1で新設した。反証時点では、素材の無音境界と単語境界が完全に一致していたため『実測無音の内側で伸ばす』という中核の縛りが『単語境界の内側』と区別できず、実測無音を一切見ない偽実装が35検査すべてをすり抜けていた。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材には、transcript の単語表に載っていない音（[5.70,5.90]・1200Hz・振幅0.6）が置いてある。単語の隙間としては [5.5,6.3] が 0.8 秒空いて見えるが、出力にこの音が含まれない。判定は 1200Hz 帯（bandpass f=1200 w=150 を2段）のピーク音量が -35dBFS 未満であること。対照（この測り方が「有るときに有ると言える」ことの担保）として、素材そのものを同じ測り方に掛けると -12dBFS を上回ること、かつ出力が素材より 25dB 以上低いこと。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(H) 文字起こしに載っていない音へ食い込まない＝伸ばす先が実測した無音の内側に限られている」と、その対照である「(H・対照) 素材には単語表に無い音(1200Hz)があり、その帯域のピークが高く出る」が両方 PASS すること。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4730,14 +4735,14 @@
        "kind": "state",
        "theme": "動画の頭に余白があり、いきなり始まらない",
        "meaning": "冒頭が食い気味に始まって、最初のひと言が聞き取れないことがない",
-       "status": "todo",
+       "status": "done",
        "detail": "頭と尻は別々に落ちうるので2葉へ割った（basis-reviewer の反証5）。実際、trim の保護を外すと頭の余白だけが消え、尻の余白は残る。実装上も頭は最初の部品の start を前へ伸ばす経路、尻は最後の部品の end を後ろへ伸ばす経路で別物。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、出力の先頭の無音が 0.333秒±0.06秒である（既定の端余白 0.35 秒を 30fps のコマ境界へ丸めた値）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(C) 先頭に余白がある」が PASS すること。出力を silencedetect に掛け、開始 0 秒に接する無音の長さを実測する。対照として --breath off の出力では先頭の余白が 0.1 秒未満であることも同じ検査内で確認し、余白がこの機能によるものだと示す。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4746,14 +4751,14 @@
        "kind": "state",
        "theme": "動画の尻に余白があり、唐突に終わらない",
        "meaning": "最後の語尾が言い終わる前にぶつ切りになることがない",
-       "status": "todo",
+       "status": "done",
        "detail": "頭と尻は別々に落ちうるので2葉へ割った（basis-reviewer の反証5）。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、出力の末尾の無音が 0.367秒±0.06秒である（既定の端余白 0.35 秒を 30fps のコマ境界へ丸めた値）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(C) 末尾に余白がある」が PASS すること。出力を silencedetect に掛け、終端に接する無音の長さを実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4762,14 +4767,14 @@
        "kind": "state",
        "theme": "余白を伸ばしても、カットしたはずの発話が戻ってこない",
        "meaning": "間を作るために前後へ伸ばした結果、消したはずの雑談や言い間違いが混ざらない",
-       "status": "todo",
+       "status": "done",
        "detail": "【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、台本に入れなかった発話（[6.3,8.3] の 300Hz・振幅0.9）が出力に含まれない。判定は 500Hz 以下の帯域のピーク音量が -25dBFS 未満であること。対照（この測り方が「有るときに有ると言える」ことの担保）として、同じ pipeline.mjs render を同じ書き出し設定で通し、台本にその発話を残した出力では同じ測り方で -12dBFS を上回ること、かつ本番の出力が対照より 20dB 以上低いこと。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(F) 捨てた発話(300Hz)が出力に戻ってきていない」と、その対照である「(F・対照) 同じ経路で CCCC を残すと、低域ピークが高く出る」が両方 PASS すること。測定は ffmpeg -af \"lowpass=f=500,lowpass=f=500,volumedetect\" の max_volume を読む。あわせて純粋関数側でも、無音検出が捨てた発話を跨いで1つの無音として拾ってしまった場合でも単語境界による上限が独立に効くことを確認する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4778,14 +4783,14 @@
        "kind": "state",
        "theme": "素材の上で続いている所は切らずに、そのまま繋げて出す",
        "meaning": "本来ひと続きの話を無意味に切り貼りして、不要なつなぎ目を増やさない",
-       "status": "todo",
+       "status": "done",
        "detail": "【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材で、残す発話3つのうち間が 0.5 秒しかない2つ（[1.0,3.0] と [3.5,5.5]）は1つの部品へ統合され、出力の部品数が 3 ではなく 2 になる。結果として digest の尺が 7.9秒±0.12秒（統合後の部品 5.0秒 + 2.9秒）になる。この統合は、単語終端(3.0)と音響的な無音の始まり(3.09)が 0.09 秒ずれていても成立すること（＝許容値がその境界を跨いでいること）を含む。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(G) 素材上で連続する区間が統合され、3区間が2部品になる」「(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま」「(G) つなぎ目は1箇所だけになる」「(G) 統合と間の反映後、digest の尺が設計どおりになる」が全て PASS すること。最後の1つは ffprobe で出力の音声ストリームの duration を実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4794,14 +4799,14 @@
        "kind": "state",
        "theme": "間を入れても、絵と音がずれない",
        "meaning": "間を足した結果、口の動きと声が合わなくなることがない",
-       "status": "todo",
+       "status": "done",
        "detail": "【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材の出力で、映像ストリームと音声ストリームの duration の差が 0.05 秒未満である。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(I) 絵と音の尺がずれない」が PASS すること。ffprobe -select_streams v:0 / a:0 で各 duration を取り、差の絶対値を見る。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4810,14 +4815,14 @@
        "kind": "state",
        "theme": "「間を詰める」を選んでも、息継ぎの間は残る",
        "meaning": "無駄な沈黙や言い淀みは詰めたいが、話の切り替わりの一呼吸まで削られてテンポが壊れることはない",
-       "status": "todo",
+       "status": "done",
        "detail": "この葉は basis-reviewer の反証3で新設した。反証時点では trim=on にすると planTrim（src/trim-plan.mjs）が 0.2 秒以上の無音を機械的に全部詰めるため、戻した間もろとも削られて機能が実質無効化されていた（実測: 尺 7.923s→6.756s、先頭余白と 0.5 秒の間は消滅、0.7 秒の間は 0.39 秒へ）。trim はサーバ経路 ?trim=on で利用者が選べる正規の設定で、breath は digest で既定 ON なので実運用で普通に起こる組み合わせ。対処として planBreathParts が「息継ぎのために戻した区間」を part.protect として返し、planTrim がそこを詰めないようにした。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "上記の固定素材を trim=on（無音・言い淀みを詰める）で書き出しても、先頭の余白 0.333秒±0.06秒・実カットのつなぎ目の 0.70秒±0.06秒・統合された箇所の 0.41秒±0.06秒がいずれも出力上に残る。trim が詰める対象（0.2秒以上の無音）に該当していても、息継ぎのために戻した区間だけは詰めない。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(K) trim=on でも digest が生成される」「(K) trim=on でも先頭の余白が残る」「(K) trim=on でも実カットのつなぎ目の一呼吸(0.7秒)が残る」「(K) trim=on でも統合された区間の間(0.41秒)が残る」が全て PASS すること。state.json の trim を on にして pipeline.mjs render を実際に走らせ、出力を silencedetect で実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4826,14 +4831,14 @@
        "kind": "state",
        "theme": "間が要らなければ、切って従来どおりにできる",
        "meaning": "間が邪魔になる納品先や、今までどおりの出来上がりが欲しいときに戻せる",
-       "status": "todo",
+       "status": "done",
        "detail": "「切れる」「長さを選べる」「変な指定で止まる」は独立に落ちうるので3葉へ割った（basis-reviewer の反証6）。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "pipeline.mjs render に --breath off を渡すと、つなぎ目の間も端の余白も一切付かず、上記の固定素材での出力の尺が発話ぶんだけの 6.0秒±0.12秒になる（既定の出力より 1.5 秒以上短い）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(J) --breath off では間が付かず、発話ぶんだけの尺(6.0秒)になる」「(J) off より既定の方が確実に長い」「(J・対照) --breath off では先頭に余白が付かない」が全て PASS すること。実際に pipeline.mjs render を --breath off 付きで走らせた出力を ffprobe / silencedetect で実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4842,14 +4847,14 @@
        "kind": "state",
        "theme": "間の長さを好みに合わせて選べる",
        "meaning": "テンポよく見せたいか、ゆったり見せたいかを作り手が決められる",
-       "status": "todo",
+       "status": "done",
        "detail": "「切れる」「長さを選べる」「変な指定で止まる」は独立に落ちうるので3葉へ割った（basis-reviewer の反証6）。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "pipeline.mjs render に --breath 0.3 を渡すと、上記の固定素材の実カットのつなぎ目の間が0.30秒±0.04秒になる（既定の 0.70 秒ではなく、指定した値が上限として効く）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(J) --breath 0.3 を渡すと実カットの間が0.3秒になる」が PASS すること。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4858,14 +4863,14 @@
        "kind": "state",
        "theme": "間の指定を書き間違えたら、黙って別の動きをせず止まる",
        "meaning": "打ち間違いに気づかないまま、頼んだのと違う出来上がりを納品してしまうことがない",
-       "status": "todo",
+       "status": "done",
        "detail": "「切れる」「長さを選べる」「変な指定で止まる」は独立に落ちうるので3葉へ割った（basis-reviewer の反証6）。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "pipeline.mjs render の --breath に、秒数でも off でもない値・負値・5 を超える値を渡すと、既定へ無言で落とさず理由を表示して停止する（parseBreathOption が ok:false を返す）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「parseBreathOption: 不正値・範囲外は fail-fast する（無言で既定へ落とさない）」「parseBreathOption: off / 0 は無効化として扱う」「parseBreathOption: 秒数を受け取る」が全て PASS すること。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4874,14 +4879,14 @@
        "kind": "state",
        "theme": "ブラウザの画面からも、間の長さを選べる／切れる",
        "meaning": "コマンドを打たない利用者（＝主要な使い方）でも、間の付き方を自分で決められる",
-       "status": "todo",
+       "status": "done",
        "detail": "この葉は basis-reviewer の反証7で新設した。反証時点では --breath が CLI にしか結線されておらず、サーバ経由の利用者は常に既定 0.7 秒固定で off にもできなかった。digest は既定 ON なのでサーバ経路の全ジョブが影響を受ける（mosaic/trim で過去に同じ結線の取りこぼしをしている）。",
        "criteria": [
         {
          "text": "ブラウザ画面（webapp-mockup）に「つなぎ目の間」の選択肢（おまかせ／短め0.4秒／長め1秒／なし）があり、選んだ値が /api/jobs の breath パラメータとして送られ、server/pipeline-runner.mjs がpipeline.mjs render の --breath として渡す。サーバ側は off と 0〜5 秒だけを受け付け、範囲外・不正値は既定（＝空）へ丸める（pipeline.mjs を fail-fast させてジョブ失敗にしない）。",
          "verify": "node video-shorts/tests/smoke.mjs を実行し、「parseJobParams: breath の既定は空」「parseJobParams: breath=off と秒数はそのまま通る」「parseJobParams: 範囲外・不正な breath は既定へ丸める」「サーバ: 選んだ間の長さが pipeline.mjs render の --breath として渡る」「UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指定がある」「UI: 選んだ間の長さが /api/jobs のパラメータに載る」が全て PASS すること。",
          "verifyCmd": "node video-shorts/tests/smoke.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       },
@@ -4890,18 +4895,19 @@
        "kind": "state",
        "theme": "間を作れる余白が無い素材でも、失敗せずに今までどおり出る",
        "meaning": "ずっと喋りっぱなしの素材を渡しても、この機能のせいで止まったりしない",
-       "status": "todo",
+       "status": "done",
        "detail": "この葉は basis-reviewer の反証4を受けて測り直した。反証時点の verify は planBreathParts(SEGS, [], ...) という、製品が到達しない引数の組（pipeline.mjs は silences.length===0 のとき planBreathParts を呼ばない）を検査しており、theme が約束する『失敗せずに出る＝レンダリングが成功する』は一度も実行されていなかった。また旧 criteria の『開始・終了を一切動かさず完全に一致する』は一般には偽で、実装はコマ境界へ丸めるため区間が 1/30 秒の倍数でないとずれる。【凍結前の探り3本（basis-reviewer の反証を受けて実施）】①偽物を当てる: planBreathParts の lower/upper から実測無音による縛りを外し、単語境界だけで縛る偽実装 → 45検査中4件が落ちた（(A)(F)(H)(K)）。反証時点の素材ではこの偽物が全緑をすり抜けていた。②正しい実装: 45 passed / 0 failed。③わざと壊す: BOUNDARY_TOLERANCE_SEC を 0.15→0.02（実素材の defect 発生時と同じ値）へ戻す → 5件が落ちた（(G)×3・(A)・(C末尾)）。反証時点では全緑をすり抜けていた。trim の保護（planTrim の protect）を外す → 2件が落ちた（(K)×2）。",
        "criteria": [
         {
          "text": "無音区間が1件も検出されない素材（8秒・鳴りっぱなしの合成素材: ffmpeg -f lavfi -i \"color=c=black:s=320x240:r=30:d=8\" -f lavfi -i \"aevalsrc=exprs='0.3*sin(2*PI*3000*t)':s=44100:d=8\"）を pipeline.mjs render に通すと、エラーで止まらず digest が生成される。かつ「無音区間が見つからないため従来どおり」とログに明示され、黙って別の動きをしない。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(E・前提) この素材には無音が1件も検出されない」「(E) 無音が無い素材でも、この機能のせいで止まらず digest が出来る」「(E) 無音0件のときは「従来どおり」と明示され、黙って別の動きをしない」が全て PASS すること。純粋関数へ空配列を渡すのではなく、pipeline.mjs render を実際に走らせてsilences.length===0 の分岐を製品経路で通す。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "18ff8a1"
         }
        ]
       }
-     ]
+     ],
+     "status": "done"
     },
     {
      "id": "STAGE-2",
