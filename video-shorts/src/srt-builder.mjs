@@ -6,6 +6,14 @@
 
 import { getStyle, DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken } from "./subtitle-styles.mjs";
 
+// 既定フォント（2026-08-14 是正）。旧既定 "Yu Gothic UI" はWindows専用で、この製品が
+// 動く環境（客のPC。Linux/macOSも含む想定）に存在しないことがあり、fontconfig が
+// 黙って別言語のフォントへ代替していた（docs/failures.md 2026-08-14）。IPAGothicは
+// パブリックドメイン相当のライセンスでOS横断の日本語フォントとして広く使われており、
+// 配布物にも同梱しやすい。実在の確認は src/font-check.mjs が担う（このモジュールは
+// 「どのフォント名を使うか」だけを持ち、「実在するか」の判定は持たない）。
+export const DEFAULT_FONT = "IPAGothic";
+
 /** 区間 [start,end] に入る words を抜き出し、相対時間(区間先頭=0)に変換 */
 export function wordsInRange(words, start, end) {
   return words
@@ -267,7 +275,7 @@ function lineEvents(relWords, maxChars, maxCols) {
 export function buildAss(relWords, hook, duration, opts = {}) {
   const W = opts.width ?? 1080;
   const H = opts.height ?? 1920;
-  const fontMain = opts.fontMain ?? "Yu Gothic UI";
+  const fontMain = opts.fontMain ?? DEFAULT_FONT;
   const styleRef = opts.style ?? DEFAULT_SUBTITLE_STYLE;
   const st =
     typeof styleRef === "object" ? styleRef : getStyle(styleRef) || getStyle(DEFAULT_SUBTITLE_STYLE);

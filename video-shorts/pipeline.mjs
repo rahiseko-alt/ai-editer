@@ -21,7 +21,8 @@ import {
 import { resolveSegments } from "./src/reverse-match.mjs";
 import { mergeShortSegments, snapToSilence, resolveMinSec } from "./src/snap-boundaries.mjs";
 import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
-import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
+import { wordsInRange, buildAss, DEFAULT_FONT } from "./src/srt-builder.mjs";
+import { checkFontAvailable } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, probeSampleRate, clipName, computeCanvas } from "./src/render-vertical.mjs";
@@ -85,6 +86,14 @@ function cmdInit(input, mode, sub, orientArg) {
     die("--orient を指定してください（縦=portrait / 横=landscape）。\n" +
         "  縦横も毎回ヒアリング必須です（前回の引き継ぎ禁止）。\n" +
         "  横=画面録画など細かい文字を残す用途 / 縦=SNSリール等の縦枠用途。");
+  }
+  // 字幕ありの場合、文字起こし（数分〜数十分かかる）を始める前に、使うフォントが
+  // 実際にこの環境にあるかを確認する。無ければ、時間を無駄にする前にここで止める
+  // （実素材の処理で、既定フォントが黙って別言語へ代替され、文字起こし後の焼き込み
+  // 段階で初めて壊れた見た目が判明していた。docs/failures.md 2026-08-14）。
+  if (sub === "on") {
+    const fontCheck = checkFontAvailable(DEFAULT_FONT);
+    if (!fontCheck.ok) die(fontCheck.reason);
   }
   // P1-8: ファイル名だけで id を決めると、別々の「lecture.mp4」を処理したときに work/output を
   // 共有してしまい、前のジョブの state.json やクリップを上書きする。サーバー経路(P1-3)と同じく
