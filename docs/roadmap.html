@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M5(書き出しプリセット)・M1(字幕フレーム実測)・M2(見出しの画面外はみ出し修正)完了・push済み(commit db77eb0)。次はM3(フォントを確実にする。ジョブ作成時に日本語が描けるか確認して駄目なら止める)→M4(尺の指示口)→M6(一度に聞く。SKILL.mdの改訂)→M7(3経路E2E)。",
+  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M1・M2・M3・M5完了・push済み(最新commit 081e769)。次はM4(尺の指示口。--min-secは実装済みのため、state経由での指示受け口とおまかせ時の上限を追加)→M6(一度に聞く。SKILL.mdの改訂)→M7(3経路E2E)。M3で判明した既知の未対応：サーバー経由(経路B/画面)はcmdInitのフォント確認を通らない可能性があり、M7の3経路E2Eで確認予定。",
   "handoff": {
    "done": [
-    "計画のM1〜M2・M5を実装・push済み。①M5(書き出しプリセット、commit 937620c)。②M1: 既存成果物のフレームから実測すると、既定フォント(Yu Gothic UI)は無言でWenQuanYi(中国語)へ代替されていたため、改めてIPAGothicで直接測定。全角1カラムあたり実測36.6〜37.2px(fontSize84時、2スケールで比率0.434〜0.439が一致)。ただしAUD-P2-22の対照(DejaVu Sans太字半角)は実測比率0.613で、同じ係数を両方に使う既存設計上、安全側を採用し係数を0.72→0.65へ更新。③M2(commit db77eb0): 見出し(Hook)行が折り返し処理を一度も通っておらず、実素材で横幅40カラムの見出しが画面(32カラム)から大きくはみ出したまま区間全長(2分58秒)表示され続けていた実害を修正。検査9件を新規作成、既存のAUD-P2-22・G-EDIT-REFRAME-D2(37件)・caption-recaption-ocr-check等が全て緑のままであることを確認済み。"
+    "計画のM1・M2・M3・M5を実装・push済み(前回セッションからの続き)。M3(commit 081e769): 既定フォント\"Yu Gothic UI\"(Windows専用)がこの環境に存在せずfontconfigが黙って中国語フォントへ代替していた問題を修正。既定をIPAGothicへ変更し、src/font-check.mjsを新設(fc-listの実在フォント一覧との完全一致で判定。fc-matchは指定名が無くても必ず何か返すため単独では「無い」と断定できない)。pipeline.mjs cmdInitで、字幕ありの場合は文字起こし前にフォント実在を確認し無ければ止まるようにした。検査15件(font-check.mjs)。smoke.mjs(97件)・REFRAME検証(37件)・字幕関連テストが全て緑であることを確認済み。"
    ],
    "trouble": [
-    "無し（前回セッションのAI字幕修正時のコンテナ再起動・未addファイルの問題は解消済み）。M2着手時、全角(CJK)と半角(Latin太字)で実測比率が大きく異なる(0.44 vs 0.61)ことが判明し、単一係数では両立できずCJK側の理論上限(実測ベースなら約26カラム)まで使い切れていない(現在24カラム相当)。より正確にするには全角/半角で別々のpx単価を持つ設計への拡張が要るが、今回のスコープ外として計画のRemaining Risksに準ずる形で申し送る。"
+    "無し。M3実装時、サーバー経由(画面/HTTP)の経路はcmdInitのフォント確認を通らないことに気づいた(pipeline-runner.mjs等がpipeline.mjsの内部関数を直接呼ぶ可能性があり、CLIのcmdInitを経由しない)。今回はMilestoneの範囲(pipeline.mjsのみ)に留め、この経路差はM7(3経路E2E)で確認する方針とした(スコープを勝手に広げない)。"
    ]
   },
   "updated": "2026-08-14",
