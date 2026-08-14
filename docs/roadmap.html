@@ -4682,13 +4682,13 @@
        "kind": "state",
        "theme": "発話を捨てたつなぎ目に、一呼吸ぶんの間が入る",
        "meaning": "話が切り替わる所で、前の言葉が終わった瞬間に次が始まる「詰まった」聞こえ方にならない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材で、間の発話（[6.3,8.3]）を捨ててできた実カットのつなぎ目に、0.70秒±0.06秒の無音が実際の出力ファイル上に存在する（境界は両端を含む）。0.70秒という値は --breath の既定値 0.7 に由来し、素材がその箇所に持っていた間（3.6秒）より短いので既定値側が上限として効く。固定素材は合成（コミットしない）なので生成手順そのものを正とする: ffmpeg -f lavfi -i \"color=c=black:s=320x240:r=30:d=12.1\" -f lavfi -i \"aevalsrc=exprs='0.3*sin(2*PI*3000*t)*between(t,1,3)+0.3*sin(2*PI*3000*t)*between(t,3.5,5.5)+0.9*sin(2*PI*300*t)*between(t,6.3,8.3)+0.3*sin(2*PI*3000*t)*between(t,9.1,11.1)':s=44100:d=12.1\" -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 192k -shortest。残す発話=[1.0,3.0][3.5,5.5][9.1,11.1]、捨てる発話=[6.3,8.3]。測定環境は CI の ubuntu-24.04 + ffmpeg 7:6.1.1-3ubuntu5（.github/workflows/ci.yml で固定）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(A) 発話を捨てた実カットのつなぎ目に、一呼吸ぶん(0.7秒)の間ができている」が PASS すること。この検査は pipeline.mjs render を実際に走らせて digest を書き出し、その出力を ffmpeg silencedetect=noise=-40dB:d=0.15 に掛けて無音の長さを実測し、0.7±0.06 に入るかを見る（関数の戻り値ではなく成果物を測る）。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4697,13 +4697,13 @@
        "kind": "state",
        "theme": "素材が元々持っていた間より、長い間は作らない",
        "meaning": "機械的に一定の間を差し込んで、元の話しぶりのテンポを壊してしまわない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材で、素材が元々 0.5 秒の間しか持っていなかった箇所（[3.0,3.5]）は、出力上でも 0.5秒±0.06秒のままである（既定の 0.7 秒まで水増しされない）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(B) 素材が元々持っていた0.5秒の間が、そのままの長さで残っている（伸ばしも詰めもしない）」が PASS すること。出力を silencedetect に掛けて得た無音の長さの一覧に 0.5±0.06 のものが在ることを実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4712,13 +4712,13 @@
        "kind": "state",
        "theme": "動画の頭と尻に余白があり、いきなり始まって唐突に終わらない",
        "meaning": "冒頭が食い気味に始まったり、最後の語尾で即座に切れたりしない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材で、出力の先頭の無音が 0.333秒±0.06秒、末尾の無音が 0.367秒±0.06秒である（いずれも既定の端余白 0.35 秒を 30fps のコマ境界へ丸めた値）。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(C) 先頭に余白がある」「(C) 末尾に余白がある」が両方 PASS すること。出力を silencedetect に掛け、先頭（開始 0 秒に接する無音）と末尾（終端に接する無音）の長さを実測する。対照として --breath off の出力では先頭の余白が 0.1 秒未満であることも同じ検査内で確認し、余白がこの機能によるものだと示す。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4727,13 +4727,13 @@
        "kind": "state",
        "theme": "余白を伸ばしても、カットしたはずの発話が戻ってこない",
        "meaning": "間を作るために前後へ伸ばした結果、消したはずの雑談や言い間違いが混ざらない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材で、台本に入れなかった発話（[6.3,8.3] の 300Hz・振幅0.9）が出力に含まれない。判定は 500Hz 以下の帯域のピーク音量が -25dBFS 未満であること。対照（この測り方が「有るときに有ると言える」ことの担保）として、同じ pipeline.mjs render を同じ書き出し設定で通し、台本にその発話を残した出力では同じ測り方で -12dBFS を上回ること、かつ本番の出力が対照より 20dB 以上低いこと。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(F) 捨てた発話(300Hz)が出力に戻ってきていない」と、その対照である「(F・対照) 同じ経路で CCCC を残すと、低域ピークが高く出る」が両方 PASS すること。測定は ffmpeg -af \"lowpass=f=500,lowpass=f=500,volumedetect\" の max_volume を読む。あわせて純粋関数側でも、無音検出が捨てた発話を跨いで1つの無音として拾ってしまった場合でも単語境界による上限が独立に効くこと（「(F) 無音検出が捨てた発話を跨いで拾ってしまっても、単語境界の上限が効いて発話へ届かない」）を確認する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4742,13 +4742,13 @@
        "kind": "state",
        "theme": "素材の上で続いている所は切らずに、そのまま繋げて出す",
        "meaning": "本来ひと続きの話を無意味に切り貼りして、不要なつなぎ目を増やさない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材で、残す発話3つのうち間が 0.5 秒しかない2つ（[1.0,3.0] と [3.5,5.5]）は1つの部品へ統合され、出力の部品数が 3 ではなく 2 になる。結果として digest の尺が 7.9秒±0.12秒（統合後の部品 5.2秒 + 2.7秒）になる。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(G) 素材上で連続する区間が統合され、3区間が2部品になる」「(G) 統合されたのは間が0.5秒だった区間1+2であり、実カットを挟む区間3は別部品のまま」「(G) つなぎ目は1箇所だけになる」「(G) 統合と間の反映後、digest の尺が設計どおりになる」が全て PASS すること。最後の1つは ffprobe で出力の音声ストリームの duration を実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4757,13 +4757,13 @@
        "kind": "state",
        "theme": "間を入れても、絵と音がずれない",
        "meaning": "間を足した結果、口の動きと声が合わなくなることがない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "上記の固定素材の出力で、映像ストリームと音声ストリームの duration の差が 0.05 秒未満である。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(I) 絵と音の尺がずれない」が PASS すること。ffprobe -select_streams v:0 / a:0 で各 duration を取り、差の絶対値を見る。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4772,13 +4772,13 @@
        "kind": "state",
        "theme": "間の長さを指定でき、要らなければ切れる",
        "meaning": "作り手の好みや納品先に合わせて、間の付き方を調整できる",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "pipeline.mjs render の --breath で間の長さを制御できる。(1) --breath off を渡すと間も端の余白も一切付かず、出力の尺が発話ぶんだけの 6.0秒±0.12秒になる（既定の出力より 1.5 秒以上短い）。(2) --breath 0.3 を渡すと実カットのつなぎ目の間が 0.30秒±0.04秒になる。(3) 秒数でも off でもない値・負値・5 を超える値は、既定へ無言で落とさず fail-fast する。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(J) --breath off では間が付かず、発話ぶんだけの尺(6.0秒)になる」「(J) off より既定の方が確実に長い」「(J・対照) --breath off では先頭に余白が付かない」「(J) --breath 0.3 を渡すと実カットの間が0.3秒になる」「parseBreathOption: 不正値・範囲外は fail-fast する」が全て PASS すること。(1)(2) は実際に pipeline.mjs render を当該フラグ付きで走らせた出力を ffprobe / silencedetect で実測する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       },
@@ -4787,13 +4787,13 @@
        "kind": "state",
        "theme": "間を作れる余白が無い素材でも、失敗せずに今までどおり出る",
        "meaning": "ずっと喋りっぱなしの素材を渡しても、この機能のせいで止まったりしない",
-       "status": "todo",
+       "status": "done",
        "criteria": [
         {
          "text": "無音区間が1件も検出されない素材では、区間の開始・終了を一切動かさず（元の区間と完全に一致する）、部品数も元の区間数のまま返す。",
          "verify": "node video-shorts/tests/breath-handles-check.mjs を実行し、「(E) 無音区間が0件の素材では、区間を伸ばさず従来どおりのまま返す」が PASS すること。planBreathParts に無音0件を渡し、返る各部品の start/end が入力の区間と 1e-9 以内で一致し、件数も同じであることを確認する。",
          "verifyCmd": "node video-shorts/tests/breath-handles-check.mjs",
-         "evidence": ""
+         "evidence": "31df77d"
         }
        ]
       }
