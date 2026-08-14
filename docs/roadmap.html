@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)の実装は全マイルストーン完了・push済み。マスターへ実素材の見どころダイジェスト(字幕なし・縦/横)を提出→黒帯だらけの指摘を受け即修正→字幕(karaoke既定)がしょぼい・Premiere風にできないかとの指摘を受け縁取り/影を強化(push待ち)。次はRelease Gate(§15)の残り: 修正込みの実素材字幕フレームPNGを添えて最終目視提出(項目6)→independent-verifierのPASS(項目7)→Evidence一式(項目8)。字幕位置(marginV)についてマスターの希望を確認中(下部固定のままで良いか)。",
+  "next": "字幕スタイルの自由指定(フォント書体/文字色(中)/縁取り色(外)/内側縁取り/背景帯)をマスターと合意した仕様どおりに実装する。① src/subtitle-styles.mjsを固定3プリセット(karaoke/pop/bold)から可変フィールド(font family/base/outline/innerOutline/box/boxColor等)へ拡張。② 5書体(角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black・手書き風=Kosugi Maru・マーカー風=Yusei Magic)のフォントファイルをリポジトリへ同梱しfontsdirで読み込む(system fontに頼らない。副次効果でWindows配布物のフォント欠如リスクも解消)。③ SKILL.mdの手順2項目3(字幕の有無)を「あり→おすすめ/詳細決めるの分岐→詳細ならa.書体/b.文字色/c.縁取り色/d.内側縁取り/e.背景帯」の順で聞く形へ改訂(マスター承認済みの構成)。④ pipeline.mjs/render-vertical.mjs/srt-builder.mjsへの配線とテスト。実装前の段階(フォントのリサーチ・5+2書体の実サンプル画像生成・聞き方の構成をマスターと3往復で合意)はこのセッションで完了済み・まだコード化していない。",
   "handoff": {
    "done": [
-    "計画のM1〜M7を実装・push済み(M7まではcommit 531025a)。M7完了後、マスターに実素材(Horiguchiインタビュー)で「字幕なし・見どころ1分・縦動画」を依頼され、digestモード(理解→台本→検証修正ループ、9区間・score=65)で実際に生成・提出。その際「黒帯だらけで映像が小さい」との指摘を受け、renderClip()が字幕の有無に関わらず常にletterbox(黒帯pad)を使っていた実装を発見・即修正: computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し、字幕なしのときは黒帯を残さないcover(中央crop-fill)を既定にした。tests/nosub-cover-fit-check.mjs(新規8 tests)で検証し、修正を一時的に戻して4/8がFAILへ転じることを確認(検出力の裏付け)。この既定変更の影響で意味が変わっていた既存2テスト(recaption-render-plan-check.mjs・sub-none-render-check.mjs)も実際に実行して発見・修正し、フルスイート的な影響範囲チェックをgrepだけで済ませない教訓をdocs/failures.mdへ追記。マスターへ縦(1080x1920)・横(1920x1080)の両方を黒帯なしで再提出済み。続けて「字幕がしょぼい、フォントも中外シャドウやらいろいろあるだろ普通、プレミアプロのフォント設定に近づけられないのか」との指摘を受け、src/subtitle-styles.mjsの3プリセット(karaoke/pop/bold)とも outline/shadow を太く/濃くした(karaoke: 9→14/4→8等)。marginV(位置)は変更せず固定のまま。regression確認: subtitle-canvas-fit-check(AUD-P2-22)・subtitle-hook-fit-check・orient-render-check・mosaic系・dist-slim-check(34/34)・trim-caption-sync-check・typecheck/lintとも緑。"
+    "計画のM1〜M7を実装・PR #114としてマージ済み(squash commit 5779c55、main)。マージ前にマスターから実際に「字幕なし・見どころ1分・縦動画」を依頼され、digestモードで生成・提出→「黒帯だらけで映像が小さい」の指摘→computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し字幕なしはcover(黒帯を残さない中央crop-fill)を既定にする修正(tests/nosub-cover-fit-check.mjs 8 tests、検出力を修正の一時取り消しで確認)→「字幕がしょぼい、プレミアプロ並みにできないか」の指摘→outline/shadowを強化(karaoke: 9→14/4→8等)。縦(1080x1920)・横(1920x1080)ともマスターへ再提出し、CI(ci-green/roadmap-required等)全緑を確認してPRをdraft解除→マージまで完了。マージ後、マスターの「SNSで映えるフォントをリサーチしろ」指示でWeb検索・実際のfc-list確認(この環境はIPAGothicのみでBoldウェイト無し、という構造的な弱さを発見)を行い、Google Fonts(OFL)から候補をダウンロードしfonttools varLib.instancerでBlackウェイトを実体化、実素材フレーム背景に5パターン(角ゴシック/丸ゴシック/フラット黒帯/手書き風/二重縁取りインパクト)→マスターの指摘で角ゴシックを1つに整理・明朝体とマーカー風を追加調査し計7パターンを実際にffmpeg drawtextで焼いて画像提出。聞き方の構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)をマスターと3往復ですり合わせ合意済み。実装はまだ未着手(次回)。"
    ],
    "trouble": [
-    "M7完了直後の自作テストの引数順ミス(check(name,cond)と check(cond,name)の取り違えで全件無条件PASSになっていた)をfailures.mdへ既に記録済み。fitのデフォルト変更(黒帯修正)が既存2テストの前提を崩していた件も同様にfailures.mdへ記録・修正済み。字幕強化はまだ実素材での目視確認(再レンダリング中)が完了していない状態でコミットした(コード自体はテスト済みで安全だが、視覚的な仕上がりの最終確認はマスターへの提出時点で行う)。"
+    "無し(PR #114のマージ・フォントリサーチともにトラブルなく完了)。"
    ]
   },
   "updated": "2026-08-14",
