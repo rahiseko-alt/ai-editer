@@ -941,6 +941,9 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   const renderArgs = [PIPELINE_MJS, "render", workDir, "--mode", mode];
   if (noSub) renderArgs.push("--no-sub");
+  // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH-SERVER）。渡し忘れると、画面から選んでも
+  // 常に既定 0.7 秒固定になり off にもできない（trim/mosaic と同じ結線の取りこぼし）。
+  if (opts.breath) renderArgs.push("--breath", String(opts.breath));
 
   await spawnAndLog(
     "node",

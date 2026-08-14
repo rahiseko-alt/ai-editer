@@ -77,9 +77,11 @@ if (!cmdAvailable("ffmpeg") || !cmdAvailable("ffprobe")) {
 }
 
 // 固定素材と同じ無音の並び。
+// 上の AEVAL が作る素材を silencedetect に掛けたときに出る無音区間（実測値と一致させる）。
+// [3.09,3.5] は余韻ぶん後ろにずれ、[5.5,5.7]/[5.9,6.3] は単語表に無い音で分断されている。
 const SILENCES = [
-  { start: 0, end: 1.0 }, { start: 3.0, end: 3.5 }, { start: 5.5, end: 6.3 },
-  { start: 8.3, end: 9.1 }, { start: 11.1, end: 12.1 },
+  { start: 0, end: 1.0 }, { start: 3.09, end: 3.5 }, { start: 5.5, end: 5.7 },
+  { start: 5.9, end: 6.3 }, { start: 8.3, end: 9.1 }, { start: 11.1, end: 12.1 },
 ];
 const SEGS = [
   { start: 1.0, end: 3.0, hook: "AAA" },
@@ -154,10 +156,30 @@ const SEGS = [
 // 2) 実レンダリングまでの検査
 // ────────────────────────────────────────────────────────────────
 const FIX_DUR = 12.1;
+// 固定素材の設計（境界値分析）。合成素材は実素材の汚さを再現しないので、実素材で実際に
+// 起きた2つの壊れ方を、素材の側にわざと仕込んである（basis-reviewer の反証1・2）。
+//   ① 余韻 [3.00,3.09]：AAAA の単語終端は 3.0 だが、音は 0.09 秒だけ後まで鳴る。
+//      ＝単語境界と音響的な無音境界がずれる。実素材で 0.09 秒ずれていたため統合に失敗し、
+//      0.27 秒の不要なカットが残った（docs/failures.md 2026-08-14）。この素材は
+//      BOUNDARY_TOLERANCE_SEC が 0.09 未満だと統合に失敗する＝許容値の境界を踏んでいる。
+//   ② 単語表に無い音 [5.70,5.90]（1200Hz）：文字起こしに載らない音（笑い声・物音・
+//      Whisper が拾い損ねた発話）。単語境界だけで縛る実装はここへ食い込むが、
+//      silencedetect の実測で縛る実装は届かない。＝この機能の中核である
+//      「実測した無音の内側でだけ伸ばす」を、単語境界による縛りと区別して検出できる。
 const AEVAL = "0.3*sin(2*PI*3000*t)*between(t,1,3)"
+  + "+0.1*sin(2*PI*3000*t)*between(t,3.0,3.09)"
   + "+0.3*sin(2*PI*3000*t)*between(t,3.5,5.5)"
+  + "+0.6*sin(2*PI*1200*t)*between(t,5.7,5.9)"
   + "+0.9*sin(2*PI*300*t)*between(t,6.3,8.3)"
   + "+0.3*sin(2*PI*3000*t)*between(t,9.1,11.1)";
+/** 単語表に無い音(1200Hz)の帯域のピーク音量(dB)。食い込んでいないかを測るのに使う。 */
+function noiseBandPeakDb(file) {
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file,
+    "-af", "bandpass=f=1200:width_type=h:w=150,bandpass=f=1200:width_type=h:w=150,volumedetect",
+    "-f", "null", "-"], { encoding: "utf-8" });
+  const m = (r.stderr || "").match(/max_volume:\s*(-?[0-9.]+) dB/);
+  return m ? Number(m[1]) : NaN;
+}
 
 function ffprobeDur(file, stream) {
   const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", stream,
@@ -194,7 +216,7 @@ try {
 
   // 素材そのものが設計どおりの無音の並びになっていること（＝以降の期待値の前提）。
   const srcSil = await detectSilences(input, { duration: FIX_DUR });
-  check(srcSil.length === 5, `素材の無音が設計どおり5箇所ある（実=${srcSil.length}）`,
+  check(srcSil.length === 6, `素材の無音が設計どおり6箇所ある（実=${srcSil.length}）`,
     JSON.stringify(srcSil.map((s) => [s.start.toFixed(2), s.end.toFixed(2)])));
 
   // (F) の対照: この測り方は「捨てる発話(300Hz)が有るときに、有ると言える」。
@@ -231,14 +253,20 @@ try {
   };
 
   /** init → 固定の transcript/llm-response を置く → render し、digest のパスを返す */
-  function runCase(extraArgs, llm = llmResponse) {
+  function runCase(extraArgs, llm = llmResponse, opts = {}) {
+    const src = opts.input || input;
+    const tr = opts.transcript || transcript;
     const init = spawnSync(process.execPath,
-      [PIPELINE, "init", input, "--mode", "digest", "--sub", "off", "--orient", "横"],
+      [PIPELINE, "init", src, "--mode", "digest", "--sub", "off", "--orient", "横"],
       { cwd: ROOT, encoding: "utf-8" });
     if (init.status !== 0) throw new Error(`init 失敗: ${init.stderr}`);
     const workDir = init.stdout.trim();
     cleanup.push(workDir);
-    fs.writeFileSync(path.join(workDir, "transcript.json"), JSON.stringify(transcript), "utf-8");
+    if (opts.statePatch) {
+      const sp = path.join(workDir, "state.json");
+      fs.writeFileSync(sp, JSON.stringify({ ...JSON.parse(fs.readFileSync(sp, "utf-8")), ...opts.statePatch }), "utf-8");
+    }
+    fs.writeFileSync(path.join(workDir, "transcript.json"), JSON.stringify(tr), "utf-8");
     fs.writeFileSync(path.join(workDir, "llm-response.json"), JSON.stringify(llm), "utf-8");
     const r = spawnSync(process.execPath,
       [PIPELINE, "render", workDir, "--mode", "digest", ...extraArgs],
@@ -273,8 +301,12 @@ try {
   near(tail ? tail.end - tail.start : NaN, 0.367, 0.06, "(C) 末尾に余白がある");
 
   const durs = sil.map((s) => s.end - s.start);
-  check(durs.some((d) => Math.abs(d - 0.5) <= 0.06),
-    "(B) 素材が元々持っていた0.5秒の間が、そのままの長さで残っている（伸ばしも詰めもしない）",
+  // 単語終端 3.0 → 次の単語 3.5 の 0.5 秒ぶんの素材が、そのまま丸ごと残る。ただし
+  // そのうち先頭 0.09 秒は AAAA の余韻（音が鳴っている）なので、無音として測れるのは
+  // 0.41 秒。ここで 0.5 を期待すると「素材のまま残す」ではなく「無音を作る」実装を
+  // 通してしまうため、素材が実際に持っている無音の長さで判定する。
+  check(durs.some((d) => Math.abs(d - 0.41) <= 0.06),
+    "(B) 素材が元々持っていた間（無音0.41秒＋余韻0.09秒）が、そのままの長さで残っている",
     JSON.stringify(durs.map((d) => d.toFixed(3))));
   check(durs.some((d) => Math.abs(d - 0.7) <= 0.06),
     "(A) 発話を捨てた実カットのつなぎ目に、一呼吸ぶん(0.7秒)の間ができている",
@@ -306,6 +338,60 @@ try {
     const offHead = offSil.find((s) => s.start < 0.05);
     check(!offHead || offHead.end - offHead.start < 0.1,
       "(J・対照) --breath off では先頭に余白が付かない（余白は間の機能によるものだと示す）");
+  }
+
+  // ── (H) 伸ばす先は「実測した無音の内側」であって「単語の隙間」ではない ──────────
+  // 素材 [5.7,5.9] には、文字起こしに載っていない音(1200Hz)が置いてある。単語境界だけを
+  // 見て伸ばす実装はここへ食い込む（単語 BBBB の終わり 5.5 の次の単語は 6.3 なので、
+  // 単語の隙間としては 0.8 秒空いて見える）。silencedetect の実測で縛る実装だけが届かない。
+  const ctrlNoiseDb = noiseBandPeakDb(input);
+  check(ctrlNoiseDb > -12,
+    `(H・対照) 素材には単語表に無い音(1200Hz)があり、その帯域のピークが高く出る＝この測り方は「有るとき有る」と言える（実=${ctrlNoiseDb}dB）`);
+  const outNoiseDb = noiseBandPeakDb(on.digest);
+  check(outNoiseDb < -35 && outNoiseDb < ctrlNoiseDb - 25,
+    `(H) 文字起こしに載っていない音へ食い込まない＝伸ばす先が実測した無音の内側に限られている（実=${outNoiseDb}dB / 対照=${ctrlNoiseDb}dB）`);
+
+  // ── (K) trim（無音・言い淀みを詰める）と併用しても、戻した間が削られない ──────────
+  // trim は 0.2 秒以上の無音を機械的に全部詰めるので、素通しだと戻した間ごと消える。
+  const trimmed = runCase([], llmResponse, { statePatch: { trim: "on" } });
+  if (check(trimmed.r.status === 0 && fs.existsSync(trimmed.digest),
+    "(K) trim=on でも digest が生成される", (trimmed.r.stderr || "").slice(-600))) {
+    const tSil = measureSilences(trimmed.digest);
+    const tDurs = tSil.map((s) => s.end - s.start);
+    const tHead = tSil.find((s) => s.start < 0.05);
+    near(tHead ? tHead.end - tHead.start : NaN, 0.333, 0.06,
+      "(K) trim=on でも先頭の余白が残る");
+    check(tDurs.some((d) => Math.abs(d - 0.7) <= 0.06),
+      "(K) trim=on でも実カットのつなぎ目の一呼吸(0.7秒)が残る", JSON.stringify(tDurs.map((d) => d.toFixed(3))));
+    check(tDurs.some((d) => Math.abs(d - 0.41) <= 0.06),
+      "(K) trim=on でも統合された区間の間(0.41秒)が残る", JSON.stringify(tDurs.map((d) => d.toFixed(3))));
+  }
+
+  // ── (E) 無音が1つも無い素材でも、製品が通る経路で落ちずに出る ──────────────────
+  // pipeline.mjs は無音0件のとき planBreathParts を呼ばない分岐へ入る。純粋関数へ空配列を
+  // 渡すのではなく、その分岐を実際に通してレンダリングが成功することを確かめる。
+  const contInput = path.join(WORK, "breath-continuous.mp4");
+  const gen2 = spawnSync("ffmpeg", ["-y", "-v", "error",
+    "-f", "lavfi", "-i", "color=c=black:s=320x240:r=30:d=8",
+    "-f", "lavfi", "-i", "aevalsrc=exprs='0.3*sin(2*PI*3000*t)':s=44100:d=8",
+    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "192k", "-shortest", contInput], { encoding: "utf-8" });
+  if (check(gen2.status === 0 && fs.existsSync(contInput),
+    "(E) 無音を1つも含まない素材(8秒・鳴りっぱなし)を生成した", (gen2.stderr || "").slice(-300))) {
+    const contSil = await detectSilences(contInput, { duration: 8 });
+    check(contSil.length === 0,
+      `(E・前提) この素材には無音が1件も検出されない（実=${contSil.length}）`);
+    const contTranscript = {
+      language: "en", duration: 8,
+      words: [{ w: "PPPP", start: 0.5, end: 3.0 }, { w: "QQQQ", start: 4.0, end: 7.0 }],
+      segments: [{ start: 0.5, end: 7.0, text: "PPPP QQQQ" }],
+    };
+    const cont = runCase([], { segments: [{ keepText: "PPPP", hook: "P" }, { keepText: "QQQQ", hook: "Q" }] },
+      { input: contInput, transcript: contTranscript });
+    check(cont.r.status === 0 && fs.existsSync(cont.digest),
+      "(E) 無音が無い素材でも、この機能のせいで止まらず digest が出来る", (cont.r.stderr || "").slice(-600));
+    check(/無音区間が見つからないため従来どおり/.test(cont.r.stderr || ""),
+      "(E) 無音0件のときは「従来どおり」と明示され、黙って別の動きをしない");
   }
 } finally {
   for (const d of cleanup) {

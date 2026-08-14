@@ -247,7 +247,10 @@ export async function renderSegment({
   let cutSeconds = 0;
   if (trim) {
     // 無音・言い淀みを詰める。字幕は詰めたあとの時間軸で書かないと、詰めたぶんだけ遅れて出る。
-    const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps });
+    // breath が戻した間（素材時間）をクリップ相対へ直して渡し、trim に削らせない。
+    const protect = (seg.protect || [])
+      .map((r) => ({ start: r.start - segStart, end: r.end - segStart }));
+    const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps, protect });
     keep = plan.keep;
     assWords = remapWords(relWordsAll, plan.keep);
     clipDuration = plan.keptSeconds;

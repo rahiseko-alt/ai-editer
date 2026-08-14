@@ -552,6 +552,46 @@ t("UI: 間を詰めるのチップ群に「あり」の選択肢がある", () =
   assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
 });
 
+// ── つなぎ目の間（G-EDIT-BREATH-SERVER）─────────────────────────────
+// CLI にだけ結線して画面へ結線し忘れると、利用者は常に既定 0.7 秒固定で off にもできない。
+// digest は既定 ON なのでサーバ経由の全ジョブが影響を受ける（mosaic/trim と同じ取りこぼし）。
+t("parseJobParams: breath の既定は空（pipeline.mjs 側の既定に従う）", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams()).breath, "");
+});
+
+t("parseJobParams: breath=off と秒数はそのまま通る", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ breath: "off" })).breath, "off");
+  assert.strictEqual(parseJobParams(new URLSearchParams({ breath: "0.4" })).breath, "0.4");
+});
+
+t("parseJobParams: 範囲外・不正な breath は既定へ丸める（pipeline.mjs を fail-fast させない）", () => {
+  for (const v of ["-1", "99", "abc", "1e999"]) {
+    assert.strictEqual(parseJobParams(new URLSearchParams({ breath: v })).breath, "",
+      `breath=${v} は既定へ丸まる`);
+  }
+});
+
+t("サーバ: 選んだ間の長さが pipeline.mjs render の --breath として渡る", () => {
+  const runner = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  assert.ok(/renderArgs\.push\("--breath", String\(opts\.breath\)\)/.test(runner),
+    "renderArgs に --breath が入る");
+});
+
+t("UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指定がある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  const m = html.match(/data-group="breath"[^]*?<\/div>/);
+  assert.ok(m, "つなぎ目の間のチップ群が画面にある");
+  assert.ok(/data-val=""/.test(m[0]), "おまかせ（既定）がある");
+  assert.ok(/data-val="off"/.test(m[0]), "なし（間を入れない）がある");
+  assert.ok(/data-val="0\.4"/.test(m[0]) && /data-val="1"/.test(m[0]), "長さを選べる");
+});
+
+t("UI: 選んだ間の長さが /api/jobs のパラメータに載る", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/breath:\s*state\.breath/.test(app), "送信パラメータに breath が入る");
+  assert.ok(/breath:\s*""/.test(app), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+});
+
 t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
   const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
   assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");

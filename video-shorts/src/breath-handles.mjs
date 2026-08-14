@@ -265,6 +265,24 @@ export function planBreathParts(segments, silences, opts = {}) {
   }
   for (const p of parts) p.duration = Math.round((p.end - p.start) * 1000) / 1000;
 
+  // 5-b) 「息継ぎのために戻した区間」を部品ごとに記録する（素材時間）。
+  //   後段の trim（無音・言い淀みを詰める）は 0.2 秒以上の無音を機械的に全部詰めるので、
+  //   ここで戻した間もろとも削ってしまい、この機能が丸ごと無効化される
+  //   （basis-reviewer 実測: trim=on で 0.7 秒の間が 0.39 秒へ、0.5 秒の間と先頭余白は消滅）。
+  //   詰める目的（言い淀み・長すぎる沈黙を削る）は保ったまま、意図して戻した間だけを
+  //   守れるよう、保護する区間を planTrim へ渡せる形で持たせる。
+  for (const p of parts) {
+    const ranges = [];
+    const first = segs[p.members[0]];
+    const last = segs[p.members[p.members.length - 1]];
+    ranges.push({ start: p.start, end: first.start });          // 先頭に足した余白
+    for (let k = 0; k < p.members.length - 1; k++) {            // 統合でそのまま残した素材上の間
+      ranges.push({ start: segs[p.members[k]].end, end: segs[p.members[k + 1]].start });
+    }
+    ranges.push({ start: last.end, end: p.end });               // 末尾に足した余白
+    p.protect = ranges.filter((r) => r.end > r.start + 1e-9);
+  }
+
   // 6) 実際にできたつなぎ目の間を報告用に測る（部品iの最後の発話終わり→部品i+1の最初の発話始まり）。
   const joins = [];
   for (let i = 0; i < parts.length - 1; i++) {
