@@ -22,12 +22,18 @@ const DEFAULT_ORIENT = "portrait";
  * k = min(TARGET_W/srcW, TARGET_H/srcH)。k>1（=そのままだと拡大）なら
  * even(TARGET_W/k) x even(TARGET_H/k) へ縮小（h264は偶数幅高さが必須）。
  * env FORCE_TARGET_RES=1 でガード無効化（オプトアウト）。
+ *
+ * この拡大ガードは fit="pad"（黒帯で余白を埋める）のときだけ適用する。fit="cover"
+ * （中央crop-fillで枠いっぱいに映す。字幕なしのとき既定で使う）は黒帯を残さないことが
+ * 目的そのものなので、素材がターゲットより小さくても常にターゲット全体を使う
+ * （16:9→9:16のcover変換は縦方向の拡大を伴うのが普通で、これは業界標準の挙動）。
+ * @param {"pad"|"cover"} [fit="pad"]
  * @returns {{w:number, h:number, guarded:boolean}}
  */
-export function computeCanvas(orientation, srcW, srcH) {
+export function computeCanvas(orientation, srcW, srcH, fit = "pad") {
   const [TARGET_W, TARGET_H] = ORIENT[orientation] || ORIENT[DEFAULT_ORIENT];
   const forceTarget = process.env.FORCE_TARGET_RES === "1";
-  if (!forceTarget && srcW && srcH && srcW > 0 && srcH > 0) {
+  if (fit === "pad" && !forceTarget && srcW && srcH && srcW > 0 && srcH > 0) {
     const k = Math.min(TARGET_W / srcW, TARGET_H / srcH);
     if (k > 1) {
       const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
@@ -61,7 +67,8 @@ export function computeCanvas(orientation, srcW, srcH) {
  */
 export async function renderClip(p) {
   const dur = Math.max(0.1, p.end - p.start);
-  const canvas = computeCanvas(p.orientation, p.srcW, p.srcH);
+  const fit = p.fit === "cover" ? "cover" : "pad";
+  const canvas = computeCanvas(p.orientation, p.srcW, p.srcH, fit);
   const TARGET_W = canvas.w;
   const TARGET_H = canvas.h;
   if (canvas.guarded) {
@@ -150,9 +157,16 @@ export async function renderClip(p) {
   // SAR=1:1（大半の素材）では trunc(iw*1/2)*2 は iw のままなので実質恒等。
   const sarChain = "scale=trunc(iw*sar/2)*2:ih,setsar=1,";
 
+  // pad(黒帯): 元映像をアスペクト比維持でTARGET内に収め(decrease)、余白を黒帯(pad)で埋める。
+  //   字幕ありのとき既定。見出し・本文を焼く黒帯のスペースを確保する目的がある。
+  // cover(crop-fill): 元映像をTARGET全体を覆うまで拡大し(increase)、はみ出た分を中央cropで切る。
+  //   字幕なしのとき既定。黒帯を残す理由が無いので枠いっぱいに映す（縦型ショートの一般的な作法）。
+  const fitChain = fit === "cover"
+    ? `scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=increase,crop=${TARGET_W}:${TARGET_H}`
+    : `scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
+      `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black`;
   const scaleChain =
-    `${videoIn}${sarChain}${colorChain}scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease,` +
-    `pad=${TARGET_W}:${TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,` +
+    `${videoIn}${sarChain}${colorChain}${fitChain},setsar=1,` +
     `setpts=PTS-STARTPTS` + assFilter + `[v]`;
   // 詰める式は映像と音声を1本の concat で繋ぐ（区間ごとの端数を継ぎ目で清算させるため）。
   // 映像用・音声用に2本へ分けると、差が継ぎ目の数だけ積み上がる（src/trim-plan.mjs の注を参照）。

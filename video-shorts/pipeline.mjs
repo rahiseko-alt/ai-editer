@@ -234,7 +234,7 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
 export async function renderSegment({
   input, seg, words, srcFps, srcFpsRational = null, srcSampleRate = null,
   srcW, srcH, orientation, trim, subtitle, output, label = "", onLog = log,
-  exportPreset = DEFAULT_EXPORT, exportOverrides = {},
+  exportPreset = DEFAULT_EXPORT, exportOverrides = {}, fit = "pad",
 }) {
   const segStart = snapStart(seg.start, srcFps);
   const relWordsAll = wordsInRange(words || [], segStart, seg.end);
@@ -260,7 +260,7 @@ export async function renderSegment({
   }
   await renderClip({ input, start: segStart, end: seg.end, assPath, output, orientation,
     srcW, srcH, keep, fpsRational: srcFpsRational, sampleRate: srcSampleRate,
-    exportPreset, exportOverrides });
+    exportPreset, exportOverrides, fit });
   return { segStart, keep, assWords, clipDuration, cutSeconds };
 }
 
@@ -389,7 +389,10 @@ async function cmdRender(workDir, opts = {}) {
   if (state.trim === "on" && !srcFps) {
     log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
   }
-  const canvas = computeCanvas(orientation, srcW, srcH);
+  // 字幕なしのときは黒帯(pad)で余白を残す理由が無いので、中央crop-fillで枠いっぱいに映す
+  // （黒帯だらけで映像が小さく見える、という実素材での指摘。docs/failures.md 2026-08-14）。
+  const fit = noSub ? "cover" : "pad";
+  const canvas = computeCanvas(orientation, srcW, srcH, fit);
 
   for (let i = 0; i < resolved.length; i++) {
     const seg = resolved[i];
@@ -410,7 +413,7 @@ async function cmdRender(workDir, opts = {}) {
           path: path.join(workDir, `clip-${i + 1}.ass`),
           style: subStyle, width: canvas.w, height: canvas.h,
         },
-        exportPreset, exportOverrides,
+        exportPreset, exportOverrides, fit,
         output: outFile,
         label: `#${i + 1}`,
       });

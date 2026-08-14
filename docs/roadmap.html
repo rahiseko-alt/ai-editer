@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)の実装は全マイルストーン完了・push済み(最新commit 531025a)。次はRelease Gate(§15)の残り: 実素材(Horiguchi RIZINインタビュー)を全修正込みで焼き直し、字幕フレームのPNGを添えてマスターへ目視提出(項目6)→independent-verifierのPASS(項目7)→Evidence一式(mp4/PNG/ffprobe/CI run URL、項目8)。",
+  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)の実装は全マイルストーン完了・push済み。マスターへ実素材の見どころダイジェスト(字幕なし・縦/横)を提出し、黒帯だらけで映像が小さいという指摘を受け即修正・再提出済み。次はRelease Gate(§15)の残り: 修正込みの実素材字幕フレームPNGを添えて最終目視提出(項目6)→independent-verifierのPASS(項目7)→Evidence一式(mp4/PNG/ffprobe/CI run URL、項目8)。",
   "handoff": {
    "done": [
-    "計画のM1〜M7を実装・push済み。M7(3経路E2E): tests/e2e-three-paths-check.mjs(新規28 tests)で、同じ凍結素材を経路A(CLI/ソース)・経路B(画面=HTTP、server/pipeline-runner.mjs)・経路C(配布物、build-dist.mjsのdist/ai-editer-video-shorts)の3つで実際に処理し、候補本数・解像度・字幕の有無/中身が一致することを確認。この検査を書く過程でM3のフォント確認ゲートが経路Bだけ素通りする回帰を発見(pipeline.mjs cmdInitのみにあり、server/pipeline-runner.mjsのrunJob()はinitを経由せず直接transcribe.pyを起動していたため)。runJob()の先頭に同じcheckFontAvailable判定を追加して修正。新テストの検出力はgit stashで修正を一時的に外し、28 PASS中3件(job-error終了/transcribe.py不起動/errorCode)が実際にFAILへ変わることで確認済み。export-presets.mjsのソース/配布物パリティ比較・経路Cがserver/を含まないことの確認も同テストに含む。regression確認: font-check.mjs・orient-render-check.mjs・mosaic-job-wiring-check.mjs・job-failure-state-check.mjs・dist-slim-check.mjs(34/34)・typecheck/lintとも緑。"
+    "計画のM1〜M7を実装・push済み(M7まではcommit 531025a)。M7完了後、マスターに実素材(Horiguchiインタビュー)で「字幕なし・見どころ1分・縦動画」を依頼され、digestモード(理解→台本→検証修正ループ、9区間・score=65)で実際に生成・提出。その際「黒帯だらけで映像が小さい」との指摘を受け、renderClip()が字幕の有無に関わらず常にletterbox(黒帯pad)を使っていた実装を発見・即修正: computeCanvas/renderClipへfit(\"pad\"|\"cover\")を追加し、字幕なしのときは黒帯を残さないcover(中央crop-fill)を既定にした。tests/nosub-cover-fit-check.mjs(新規8 tests)で検証し、修正を一時的に戻して4/8がFAILへ転じることを確認(検出力の裏付け)。この既定変更の影響で意味が変わっていた既存2テスト(recaption-render-plan-check.mjs・sub-none-render-check.mjs)も実際に実行して発見・修正し、フルスイート的な影響範囲チェックをgrepだけで済ませない教訓をdocs/failures.mdへ追記。マスターへ縦(1080x1920)・横(1920x1080)の両方を黒帯なしで再提出済み。regression確認: subtitle-canvas-fit-check(AUD-P2-22)・subtitle-hook-fit-check・orient-render-check・mosaic系・dist-slim-check(34/34)・trim-caption-sync-check・typecheck/lintとも緑。"
    ],
    "trouble": [
-    "自分のテストコード内でcheck()ヘルパーの引数順(cond, name, extra)を関数定義(name, cond, extra)と取り違え、書いた瞬間は28 PASS/0 FAILに見えたが、実際にはメッセージ文字列(常に truthy)を判定に使っていたため全件が無条件PASSになっていた（本物の検査になっていなかった）。git stashで既知の回帰を意図的に再現させても28 PASSのまま変化しないことに気づいて発覚。引数順を修正し、同じ回帰再現で実際に3件FAILすることを確認してから確定した。教訓: 新しいテストを書いたら、緑になったことだけで満足せず、既知の欠陥を一時的に再現させて実際にFAILに転じるか(検出力そのもの)を毎回確認する。"
+    "M7完了直後の自作テストの引数順ミス(check(name,cond)と check(cond,name)の取り違えで全件無条件PASSになっていた)をfailures.mdへ既に記録済み。今回は別件: fitのデフォルト変更(黒帯修正)が、既存2テストの前提(拡大ガードの縮小・字幕なし基準フレームとの画素一致)を崩していたが、grep検索だけでは見つからず、関連しそうな候補ファイルを実際に1本ずつ実行して初めて発覚した。両方とも目的に忠実な形で修正済み。"
    ]
   },
   "updated": "2026-08-14",

@@ -26,6 +26,11 @@
 //  - 解像度は 320x180（1080x1920 へは6.75倍ぶんの拡大になるため、computeCanvas() の
 //    拡大ガードが必ず発動し 320x568 に縮小される。既定の 1080x1920 とは明確に異なるので、
 //    ガードが効いているかどうかを解像度の値そのもので判定できる）。
+//  - 字幕ありで焼く(state.sub="on")。字幕なし(--no-sub)は fit="cover" になり黒帯を残さず
+//    常にTARGET全体(1080x1920)を使う既定の挙動へ変わった(2026-08-14、実素材で「黒帯だらけで
+//    映像が小さい」という指摘を受けての修正。docs/failures.md)ため、拡大ガードによる縮小は
+//    fit="pad"（字幕あり）のときだけ起きる。この検査は拡大ガードの保持を見るのが目的なので
+//    字幕ありに固定する。
 //  - CLIP_PAD_HEAD/TAIL=0（既定の余韻パディングを切り、区間の境界を素材設計どおりに保つ）。
 //
 // 実行: node tests/recaption-render-plan-check.mjs   (全PASSで exit 0)
@@ -107,7 +112,7 @@ async function main() {
   fs.writeFileSync(
     path.join(WORK_DIR, "state.json"),
     JSON.stringify({
-      id: JOB_ID, input: sample, mode: "topic", sub: "none", orient: "portrait", trim: "on",
+      id: JOB_ID, input: sample, mode: "topic", sub: "on", orient: "portrait", trim: "on",
     }, null, 2),
     "utf-8",
   );
