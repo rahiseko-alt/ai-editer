@@ -100,10 +100,19 @@ try {
       "--caption-outline-color の指定が、実際に生成された.assのOutlineColourに反映されている",
       `OutlineColour=${outlineColour} 期待=${hexToAss(CAPTION_OUTLINE_COLOR)}`,
     );
+    // 背景帯: BorderStyle=3ではなく、buildBackgroundBand()がASSの描画コマンド(\p1)を使った
+    // 専用のDialogueイベント(Layer -1)として出す(2026-08-14、BorderStyle=3がこの環境の
+    // libassで塗りつぶしにならなかったため書き直した。docs/failures.md参照)。
     check(
-      borderStyle === "3" && backColour === hexToAss(CAPTION_BAND),
-      "--caption-band の指定が、実際に生成された.assのBorderStyle=3・BackColourに反映されている",
-      `BorderStyle=${borderStyle} BackColour=${backColour} 期待BackColour=${hexToAss(CAPTION_BAND)}`,
+      borderStyle === "1" && backColour === "&H00000000",
+      "背景帯はStyle行(BorderStyle/BackColour)を変更しない設計になっている",
+      `BorderStyle=${borderStyle} BackColour=${backColour}`,
+    );
+    const bandLine = ass.split("\n").find((l) => /^Dialogue: -1,/.test(l) && l.includes(",Caption,"));
+    check(
+      !!bandLine && bandLine.includes(`\\1c${hexToAss(CAPTION_BAND)}`) && bandLine.includes("\\p1"),
+      "--caption-band の指定が、実際に生成された.assの帯用Dialogue(\\p1描画・Layer -1)に反映されている",
+      `bandLine=${bandLine}`,
     );
 
     // 内側縁取り: applyInnerOutline()がLayer0/Layer1の2重Dialogueへ複製している

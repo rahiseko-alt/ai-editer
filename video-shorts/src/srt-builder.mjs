@@ -196,11 +196,11 @@ function buildHeader(W, H, font, st, align, scale) {
   // 縁取り色: 既定は黒(&H00000000)。resolveCaptionStyle() で上乗せされていればそれを使う
   // （2026-08-14 追加。旧実装は縁取り色が常に固定で、Style行に書かず単に未指定=黒だった）。
   const outlineColor = st.outlineColor ?? "&H00000000";
-  // 背景帯(box): st.box.enabled のときだけ BorderStyle=3（不透明ボックス背景）にし、
-  // BackColour に指定色を使う。無効時は従来どおり BorderStyle=1（縁取りのみ・背景なし）。
-  const boxEnabled = st.box?.enabled === true;
-  const borderStyle = boxEnabled ? 3 : 1;
-  const backColour = boxEnabled ? st.box.color : "&H00000000";
+  // 背景帯(box)は Style行(BorderStyle=3)では実装しない。この環境のffmpeg(6.1.1)同梱libassで
+  // BorderStyle=3が塗りつぶされた矩形ではなく右下だけの細い縁(恐らくshadowの残骸)しか描かず、
+  // 「背景帯」としての見た目を満たさないことが実装後の目視確認で判明した(2026-08-14。
+  // docs/failures.md参照)。代わりに buildBackgroundBand() が ASS の描画コマンド(\p1)で
+  // 直接矩形を描く(BorderStyle=1のまま・下のイベントで別Dialogueとして重ねる)。
   return `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${W}
@@ -209,11 +209,42 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},${backColour},1,${borderStyle},${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${scaleToken(st.marginV, scale)},1
+Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},&H00000000,1,1,${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${scaleToken(st.marginV, scale)},1
 Style: Hook,${font},${hookFontSize},&H0000FFFF,&H00111111,&H00000000,1,1,${hookOutline},${hookShadow},8,${hookMarginLR},${hookMarginLR},${hookMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
+}
+
+/**
+ * 背景帯(box)を、ASSの描画コマンド(\p1〜\p0のベクター描画)で塗りつぶした矩形として直接描く。
+ * BorderStyle=3(不透明ボックス)には頼らない(buildHeader()のコメント参照。この環境では
+ * 塗りつぶしにならなかったため)。矩形は字幕の安全エリア(左右余白=captionMarginLR)いっぱいの
+ * 横幅・フォントサイズ基準の高さを持つ帯として、区間の全長(duration)ぶん1本だけ描く
+ * (karaoke等で単語ごとに複数のCaptionイベントがあっても、帯の位置はどれも同じ1本の帯で足りる)。
+ * Layer -1(他のCaptionイベントより小さい)にして、文字より必ず背面に描かれるようにする。
+ * @param {object} st resolveCaptionStyle() が返すスタイル
+ * @param {number} scale computeSubtitleScale() の結果
+ * @param {number} W canvas幅
+ * @param {number} H canvas高さ
+ * @param {number} duration 区間長(秒)
+ * @param {number} captionMarginLR Captionスタイルの左右余白(スケール後)
+ * @param {number} scaledFontSize Captionスタイルのフォントサイズ(スケール後)
+ * @returns {string[]}
+ */
+function buildBackgroundBand(st, scale, W, H, duration, captionMarginLR, scaledFontSize) {
+  if (!st.box?.enabled) return [];
+  const bandHeight = Math.round(scaledFontSize * 1.3);
+  const x1 = captionMarginLR;
+  const w = Math.max(1, W - captionMarginLR * 2);
+  const y1 = st.mode === "pop"
+    ? Math.round(H / 2 - bandHeight / 2) // align=5: 画面中央基準
+    : Math.max(0, H - scaleToken(st.marginV, scale) - bandHeight); // align=2: 下端基準
+  const draw = `m 0 0 l ${w} 0 ${w} ${bandHeight} 0 ${bandHeight}`;
+  return [
+    `Dialogue: -1,${assTime(0)},${assTime(duration)},Caption,,0,0,0,,` +
+      `{\\an7\\pos(${x1},${y1})\\bord0\\shad0\\1c${st.box.color}\\p1}${draw}{\\p0}`,
+  ];
 }
 
 /**
@@ -346,6 +377,7 @@ export function buildAss(relWords, hook, duration, opts = {}) {
 
   const header = buildHeader(W, H, fontMain, st, align, scale);
   let events = [];
+  events = events.concat(buildBackgroundBand(st, scale, W, H, duration, captionMarginLR, scaledFontSize));
   if (hook) {
     const hookLines = splitByDisplayWidth(hook, hookMaxCols).map(escAss).join("\\N");
     events.push(`Dialogue: 0,${assTime(0)},${assTime(duration)},Hook,,0,0,0,,{\\an8}${hookLines}`);
