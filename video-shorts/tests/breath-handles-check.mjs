@@ -10,19 +10,30 @@
 //   (C) 先頭と末尾に余白ができる
 //   (F) 余白を伸ばしても、捨てたはずの発話が戻ってこない（対照付き＝検出器が効くことを示す）
 //   (G) 素材上で連続する区間は統合され、要らないつなぎ目を作らない
+//   (H) 伸ばす先は「実測した無音の内側」であって「単語の隙間」ではない（対照付き）
 //   (I) 絵と音の尺がずれない
 //   (J) 利用者が間の長さを変えられる／off で従来どおりになる
+//   (K) trim（無音・言い淀みを詰める）と併用しても、戻した間が削られない
 //   (E) 無音が全く無い素材でも落ちず、従来どおりの区間で出る
 //
 // === 固定素材（合成・数値で確定。コミットしないので生成手順そのものが正） ===
-// 320x240 / 30fps / 音声 44100Hz / 全長 12.1 秒。音は次の4つのトーンだけで、間は完全な無音。
-//   [1.0, 3.0]  3000Hz 振幅0.3  ← 残す発話1
-//   [3.5, 5.5]  3000Hz 振幅0.3  ← 残す発話2（発話1との間は 0.5 秒＝統合される境界値）
-//   [6.3, 8.3]   300Hz 振幅0.9  ← 捨てる発話（低い周波数・大きい振幅にして検出可能にしてある）
-//   [9.1, 11.1] 3000Hz 振幅0.3  ← 残す発話3（発話2との間は 3.6 秒＝実カットになる境界値）
-// 境界値の選び方: 「間が maxPause 以下（0.5秒）＝統合される側」と「間が maxPause を大きく
-// 超える（3.6秒）＝実カットになる側」の両方を1つの素材に含め、片方だけ通る実装で緑にならない
-// ようにしてある。
+// 320x240 / 30fps / 音声 44100Hz / 全長 12.1 秒。
+//   [1.00, 3.00] 3000Hz 振幅0.3  ← 残す発話1（AAAA）
+//   [3.00, 3.09] 3000Hz 振幅0.1  ← ★AAAAの余韻。単語終端(3.0)より音が 0.09 秒だけ長く鳴る
+//   [3.50, 5.50] 3000Hz 振幅0.3  ← 残す発話2（BBBB。発話1との間は 0.5 秒＝統合される境界値）
+//   [5.70, 5.90] 1200Hz 振幅0.6  ← ★単語表に無い音（文字起こしに載らない笑い声・物音の代わり）
+//   [6.30, 8.30]  300Hz 振幅0.9  ← 捨てる発話（CCCC。低い周波数・大きい振幅にして検出可能にしてある）
+//   [9.10, 11.10] 3000Hz 振幅0.3 ← 残す発話3（DDDD。発話2との間は 3.6 秒＝実カットになる境界値）
+//
+// 境界値の選び方（★の2つが要）:
+//  ・「間が maxPause 以下（0.5秒）＝統合される側」と「間が maxPause を大きく超える（3.6秒）＝
+//    実カットになる側」の両方を1つの素材に含め、片方だけ通る実装で緑にならないようにしてある。
+//  ・★余韻[3.00,3.09]: 単語境界と音響的な無音境界が 0.09 秒ずれる。実素材で同じずれ幅により
+//    統合に失敗し 0.27 秒の不要なカットが残った（docs/failures.md 2026-08-14）。この素材なら
+//    BOUNDARY_TOLERANCE_SEC を defect 当時の値へ戻すと (G) が落ちる。
+//  ・★単語表に無い音[5.70,5.90]: 単語の隙間としては [5.5,6.3] が 0.8 秒空いて見えるので、
+//    単語境界だけで縛る実装はここへ食い込む。実測無音で縛る実装だけが届かない。これが無いと
+//    「実測無音の内側」という中核の縛りを抜いた偽実装が全検査をすり抜ける（実際にすり抜けた）。
 //
 // 実行: node tests/breath-handles-check.mjs   (全PASSで exit 0。ffmpeg必須)
 
@@ -40,6 +51,13 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PIPELINE = path.join(ROOT, "pipeline.mjs");
 
 let pass = 0, fail = 0;
+/**
+ * 1件の検査結果を記録して表示する。
+ * @param {boolean} cond 合格ならtrue
+ * @param {string} name 検査名（そのままロードマップの verify に対応する）
+ * @param {string} [extra] 落ちたときだけ出す実測値など
+ * @returns {boolean} cond をそのまま返す（続く検査を打ち切る判断に使う）
+ */
 function check(cond, name, extra = "") {
   if (cond) { pass++; console.log(`PASS ${name}`); return true; }
   fail++; console.log(`FAIL ${name} ${extra}`); return false;
@@ -50,6 +68,11 @@ function near(actual, expected, tol, name) {
   return check(ok, `${name}（期待 ${expected}±${tol} / 実測 ${Number.isFinite(actual) ? actual.toFixed(3) : actual}）`);
 }
 
+/**
+ * 外部コマンドがこの環境で実行できるか。
+ * @param {string} bin コマンド名
+ * @returns {boolean}
+ */
 function cmdAvailable(bin) { return spawnSync(bin, ["-version"]).status === 0; }
 // ffmpeg/ffprobe が無いときは SKIP で緑にせず落とす。この検査は出力ファイルを実測することが
 // 本体なので、道具が無いまま「成功」を返すと、純粋関数の検査もレンダリングの検査も1つも
@@ -193,6 +216,12 @@ function noiseBandPeakDb(file) {
   return m ? Number(m[1]) : NaN;
 }
 
+/**
+ * ffprobe で1本のストリームの尺（秒）を実測する。
+ * @param {string} file 対象ファイル
+ * @param {string} stream ffprobe の -select_streams へ渡す指定（例 "a:0" / "v:0"）
+ * @returns {number} 秒。取得できなければ NaN
+ */
 function ffprobeDur(file, stream) {
   const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", stream,
     "-show_entries", "stream=duration", "-of", "default=nw=1:nk=1", file], { encoding: "utf-8" });
