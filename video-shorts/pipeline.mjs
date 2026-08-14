@@ -19,7 +19,7 @@ import {
   callAnthropic,
 } from "./src/select-segments.mjs";
 import { resolveSegments } from "./src/reverse-match.mjs";
-import { mergeShortSegments, snapToSilence } from "./src/snap-boundaries.mjs";
+import { mergeShortSegments, snapToSilence, resolveMinSec } from "./src/snap-boundaries.mjs";
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import { getStyle, listStyles, DEFAULT_SUBTITLE_STYLE } from "./src/subtitle-styles.mjs";
@@ -247,7 +247,7 @@ export async function renderSegment({
 }
 
 async function cmdRender(workDir, opts = {}) {
-  const { flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride } = opts;
+  const { flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec } = opts;
   const state = loadState(workDir);
   // 字幕有無は init のヒアリング結果（state.sub）が既定。--no-sub フラグは明示上書き。
   const noSub = flagNoSub || state.sub === "none";
@@ -286,8 +286,9 @@ async function cmdRender(workDir, opts = {}) {
   // digest は編集エージェントが確定した精密な keepText 区間のため、結合・無音スナップ・余韻パディングの
   // いずれも適用しない（適用すると隣接区間が重なり concat 時に同一発話が二重再生されうる＝R-7b/c）。
   if (mode !== "digest") {
-    const MIN_SEC_RAW = Number(process.env.TOPIC_MIN_SEC ?? 180);
-    const MIN_SEC = Number.isFinite(MIN_SEC_RAW) && MIN_SEC_RAW > 0 ? MIN_SEC_RAW : 180; // R-7d: 不正値は既定にフォールバック
+    // 1区間の最小尺。--min-sec（CLI）> TOPIC_MIN_SEC（env）> 既定180秒 の順で効く。
+    // 解決順は resolveMinSec が正（R-7d: 不正値は次の優先度へ落とし、最後は既定へ）。
+    const MIN_SEC = resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
     const MAX_GAP_RAW = Number(process.env.TOPIC_MERGE_GAP_MAX ?? 3);
     const MAX_GAP = Number.isFinite(MAX_GAP_RAW) && MAX_GAP_RAW > 0 ? MAX_GAP_RAW : 3; // R-8: 不正値は既定(3秒)にフォールバック
     resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP);
@@ -501,6 +502,7 @@ async function main() {
         flagNoSub: rest.includes("--no-sub"),
         subStyle: flagValue(rest, "--sub-style", DEFAULT_SUBTITLE_STYLE),
         modeOverride: modeArg,
+        minSec: flagValue(rest, "--min-sec", undefined),
       });
     case "status": return cmdStatus(arg);
     case "styles":
@@ -512,6 +514,7 @@ async function main() {
       log("  captionfix <workDir>（文字起こしの変換ミスをAIが直す。select の前）");
       log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
       log("  render     <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
+      log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短いショートにするなら小さくする）");
       process.exit(1);
   }
 }

@@ -4,6 +4,33 @@
 // digest（台本再構成）は意図的な分割・並べ替えのため mergeShortSegments は掛けない。
 // ESM・Node標準のみ・元配列非破壊。
 
+/** mergeShortSegments に渡す「1区間の最小尺」の既定値（秒）。 */
+export const DEFAULT_MIN_SEC = 180;
+
+/**
+ * 1区間の最小尺を決める。優先順は CLI(--min-sec) > env(TOPIC_MIN_SEC) > 既定180秒。
+ *
+ * CLI から指定できるようにした理由（2026-08-14 実素材の初回処理・docs/failures.md）：
+ * 既定180秒のままだと「話題毎」でAIが選んだ区間が3分未満のとき隣と強制結合され、
+ * 実素材では4区間が2本(うち1本7分10秒)になってショート動画にならなかった。
+ * 指定口が無いこと自体が不具合だったので、env だけでなく CLI からも効くようにする。
+ *
+ * 数値として読めない値・0以下は「指定なし」とみなして次の優先度へ落とす（黙って
+ * 0秒扱いにすると結合が全く効かなくなり、壊れ方が分かりにくいため）。
+ *
+ * @param {unknown} cliValue --min-sec の値（未指定なら undefined）
+ * @param {unknown} envValue process.env.TOPIC_MIN_SEC（未設定なら undefined）
+ * @returns {number} 実際に使う最小尺（秒）
+ */
+export function resolveMinSec(cliValue, envValue) {
+  for (const raw of [cliValue, envValue]) {
+    if (raw === undefined || raw === null || raw === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_MIN_SEC;
+}
+
 /** 全角込みの見かけ幅で切る（全角=2/半角=1 として合計 maxWidth に収める）。 */
 function truncateByWidth(text, maxWidth) {
   let width = 0;
