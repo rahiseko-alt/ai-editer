@@ -4497,8 +4497,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで書体「角ゴシック」を選んでレンダリングすると、リポジトリに同梱したNotoSansJP-Black.ttf(video-shorts/assets/fonts/配下、システムにインストール済みのフォントではなく同梱ファイル)がfontsdir経由で使われ、出力フレームの字形が他の書体(丸ゴシック等)の同一テキストのレンダリングとピクセル単位で異なる(=実際にその書体が焼かれた証拠)。",
-         "verify": "video-shorts/tests/caption-style-font-check.mjs の 角ゴシックケースを実行する。同一テキスト・同一位置で角ゴシック指定と丸ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分(diffするピクセル数)が閾値以上であることを確認する(=フォント切替が実際に出力へ反映されている対照)。あわせてNotoSansJP-Black.ttfのSHA-256が固定値と一致し、レンダリングコマンドのfontsdirが同梱パスを指していることを確認する。",
+         "text": "字幕スタイルで書体「角ゴシック」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/NotoSansJP-Black.ttf(SHA-256: 63a34f5646cc2a8d7781638221eded85dd77c7104e2c02e15708633abbb8e657、システムにインストール済みのフォントではなく同梱ファイル)がfontsdir経由で使われ、出力フレームの字形が他の書体(丸ゴシック等)の同一テキストのレンダリングとピクセル単位で異なる(=実際にその書体が焼かれた証拠)。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 角ゴシックケースを実行する。同一テキスト(区間: 半角+全角混在の固定文字列'字幕テストABC123')・同一位置で角ゴシック指定と丸ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分(RGB各chが閾値10以上異なるピクセル数)が1000px以上であることを確認する(=フォント切替が実際に出力へ反映されている対照)。あわせてvideo-shorts/src/fonts/NotoSansJP-Black.ttfのSHA-256が63a34f5646cc2a8d7781638221eded85dd77c7104e2c02e15708633abbb8e657と一致し、レンダリングコマンドのfontsdirがvideo-shorts/src/fontsを指していることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font kaku",
          "evidence": ""
         }
@@ -4512,8 +4512,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで書体「丸ゴシック」を選んでレンダリングすると、リポジトリに同梱したMPLUSRounded1c-Black.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
-         "verify": "video-shorts/tests/caption-style-font-check.mjs の 丸ゴシックケースを実行する。同一テキスト・同一位置で丸ゴシック指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてMPLUSRounded1c-Black.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "text": "字幕スタイルで書体「丸ゴシック」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/MPLUSRounded1c-Black.ttf(SHA-256: 7409964207251dab6315577128d3f6e9fd637d1fa7b0af771bb4cc029f07a4dd)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 丸ゴシックケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で丸ゴシック指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/MPLUSRounded1c-Black.ttfのSHA-256が7409964207251dab6315577128d3f6e9fd637d1fa7b0af771bb4cc029f07a4ddと一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font maru",
          "evidence": ""
         }
@@ -4527,8 +4527,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで書体「明朝体」を選んでレンダリングすると、リポジトリに同梱したNotoSerifJP-Black.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
-         "verify": "video-shorts/tests/caption-style-font-check.mjs の 明朝体ケースを実行する。同一テキスト・同一位置で明朝体指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてNotoSerifJP-Black.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "text": "字幕スタイルで書体「明朝体」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/NotoSerifJP-Black.ttf(SHA-256: a19cc17fc0d9ff71331a8d779c5c41f1b4c0ee9b6491b190787cf290bfaef546)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 明朝体ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で明朝体指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/NotoSerifJP-Black.ttfのSHA-256がa19cc17fc0d9ff71331a8d779c5c41f1b4c0ee9b6491b190787cf290bfaef546と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font mincho",
          "evidence": ""
         }
@@ -4542,8 +4542,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで書体「手書き風」を選んでレンダリングすると、リポジトリに同梱したKosugiMaru-Regular.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
-         "verify": "video-shorts/tests/caption-style-font-check.mjs の 手書き風ケースを実行する。同一テキスト・同一位置で手書き風指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてKosugiMaru-Regular.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "text": "字幕スタイルで書体「手書き風」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/KosugiMaru-Regular.ttf(SHA-256: 4b8d0022c8dadd090ef67cd1f71f130714767af7806cba2eb4ebe4b0271c1d68)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 手書き風ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置で手書き風指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/KosugiMaru-Regular.ttfのSHA-256が4b8d0022c8dadd090ef67cd1f71f130714767af7806cba2eb4ebe4b0271c1d68と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font hand",
          "evidence": ""
         }
@@ -4557,8 +4557,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "字幕スタイルで書体「マーカー風」を選んでレンダリングすると、リポジトリに同梱したYuseiMagic-Regular.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
-         "verify": "video-shorts/tests/caption-style-font-check.mjs の マーカー風ケースを実行する。同一テキスト・同一位置でマーカー風指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてYuseiMagic-Regular.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "text": "字幕スタイルで書体「マーカー風」を選んでレンダリングすると、リポジトリに同梱したvideo-shorts/src/fonts/YuseiMagic-Regular.ttf(SHA-256: 82098615f39ed9da6a8ccc674b9006e49c70dd5b775a7a1697f6bedd22ce25a2)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の マーカー風ケースを実行する。同一テキスト(固定文字列'字幕テストABC123')・同一位置でマーカー風指定と角ゴシック指定の2枚のPNGフレーム(1080x1920、区間0.5秒地点)を実際にffmpegでレンダリングし、ピクセル差分が1000px以上であることを確認する。あわせてvideo-shorts/src/fonts/YuseiMagic-Regular.ttfのSHA-256が82098615f39ed9da6a8ccc674b9006e49c70dd5b775a7a1697f6bedd22ce25a2と一致し、fontsdirがvideo-shorts/src/fontsを指していることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font marker",
          "evidence": ""
         }
