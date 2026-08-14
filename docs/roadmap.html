@@ -118,7 +118,7 @@
 <script type="application/json" id="roadmap-data">{
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
-  "active": "GOAL",
+  "active": "G-EDIT-CAPTION-STYLE",
   "next": "字幕スタイルの自由指定(フォント書体/文字色(中)/縁取り色(外)/内側縁取り/背景帯)をマスターと合意した仕様どおりに実装する。① src/subtitle-styles.mjsを固定3プリセット(karaoke/pop/bold)から可変フィールド(font family/base/outline/innerOutline/box/boxColor等)へ拡張。② 5書体(角ゴシック=Noto Sans JP Black・丸ゴシック=M PLUS Rounded 1c Black・明朝体=Noto Serif JP Black・手書き風=Kosugi Maru・マーカー風=Yusei Magic)のフォントファイルをリポジトリへ同梱しfontsdirで読み込む(system fontに頼らない。副次効果でWindows配布物のフォント欠如リスクも解消)。③ SKILL.mdの手順2項目3(字幕の有無)を「あり→おすすめ/詳細決めるの分岐→詳細ならa.書体/b.文字色/c.縁取り色/d.内側縁取り/e.背景帯」の順で聞く形へ改訂(マスター承認済みの構成)。④ pipeline.mjs/render-vertical.mjs/srt-builder.mjsへの配線とテスト。実装前の段階(フォントのリサーチ・5+2書体の実サンプル画像生成・聞き方の構成をマスターと3往復で合意)はこのセッションで完了済み・まだコード化していない。",
   "handoff": {
    "done": [
@@ -4476,6 +4476,196 @@
          "verify": "digestを生成する設定でジョブを実行し、完了後のwebapp-mockup結果画面を確認する。APIレスポンスのdigestに対応する動画が画面上から再生またはダウンロードできることを確認する。",
          "evidence": "03e1aaab1cbea80dd4726b5dfd95ca6ae5aecf8c",
          "verifyCmd": "node video-shorts/tests/webapp-digest-check.mjs"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "G-EDIT-CAPTION-STYLE",
+     "kind": "state",
+     "theme": "字幕のスタイル(書体・文字色・縁取り色・内側縁取り・背景帯)を自由に選べる",
+     "meaning": "「普通の字幕」しか選べず、プレミアプロ風の見た目を求められても応えられない状態を無くす",
+     "detail": "2026-08-14 マスターの「SNSで映えるフォントをリサーチしろ」指示を受け、実環境のfc-list確認(IPAGothicのみ・Boldウェイト無し)→Google Fonts(OFL)から候補取得→fonttools varLib.instancerでBlackウェイト実体化→実素材フレームへ7パターンをffmpeg drawtextで焼いて提出、の3往復でマスターと聞き方構成(あり→おすすめ/詳細分岐→書体/文字色/縁取り色/内側縁取り/背景帯)に合意。着手前のこのタイミングで原子ツリーを確定する(AGENTS.md「案件の絶対起点」)。実装はこの下の子ノード確定後に開始する。",
+     "status": "doing",
+     "children": [
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-KAKU",
+       "kind": "state",
+       "theme": "角ゴシック書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「角ゴシック」を選んでレンダリングすると、リポジトリに同梱したNotoSansJP-Black.ttf(video-shorts/assets/fonts/配下、システムにインストール済みのフォントではなく同梱ファイル)がfontsdir経由で使われ、出力フレームの字形が他の書体(丸ゴシック等)の同一テキストのレンダリングとピクセル単位で異なる(=実際にその書体が焼かれた証拠)。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 角ゴシックケースを実行する。同一テキスト・同一位置で角ゴシック指定と丸ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分(diffするピクセル数)が閾値以上であることを確認する(=フォント切替が実際に出力へ反映されている対照)。あわせてNotoSansJP-Black.ttfのSHA-256が固定値と一致し、レンダリングコマンドのfontsdirが同梱パスを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font kaku",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MARU",
+       "kind": "state",
+       "theme": "丸ゴシック書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「丸ゴシック」を選んでレンダリングすると、リポジトリに同梱したMPLUSRounded1c-Black.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 丸ゴシックケースを実行する。同一テキスト・同一位置で丸ゴシック指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてMPLUSRounded1c-Black.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font maru",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MINCHO",
+       "kind": "state",
+       "theme": "明朝体書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「明朝体」を選んでレンダリングすると、リポジトリに同梱したNotoSerifJP-Black.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 明朝体ケースを実行する。同一テキスト・同一位置で明朝体指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてNotoSerifJP-Black.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font mincho",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-HAND",
+       "kind": "state",
+       "theme": "手書き風書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「手書き風」を選んでレンダリングすると、リポジトリに同梱したKosugiMaru-Regular.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の 手書き風ケースを実行する。同一テキスト・同一位置で手書き風指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてKosugiMaru-Regular.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font hand",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FONT-MARKER",
+       "kind": "state",
+       "theme": "マーカー風書体を選ぶと、同梱フォントの字形で正しく焼ける",
+       "meaning": "書体を選んでも、実は入っていないフォントの代わりが無言で焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで書体「マーカー風」を選んでレンダリングすると、リポジトリに同梱したYuseiMagic-Regular.ttf(video-shorts/assets/fonts/配下)がfontsdir経由で使われ、出力フレームの字形が角ゴシックの同一テキストのレンダリングとピクセル単位で異なる。",
+         "verify": "video-shorts/tests/caption-style-font-check.mjs の マーカー風ケースを実行する。同一テキスト・同一位置でマーカー風指定と角ゴシック指定の2枚のPNGフレームを実際にffmpegでレンダリングし、ピクセル差分が閾値以上であることを確認する。あわせてYuseiMagic-Regular.ttfのSHA-256が固定値と一致し、fontsdirが同梱パスを指していることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-font-check.mjs --font marker",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-COLOR-FILL",
+       "kind": "state",
+       "theme": "文字色(中の塗り色)を指定した色で実際に焼ける",
+       "meaning": "色を選んでも既定の白のまま焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで文字色(fill)に既定(白)以外の色を指定してレンダリングすると、出力フレームの文字内部のピクセル色が指定した色と許容誤差内で一致し、既定色で焼いた場合のフレームとはピクセル値が異なる。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の fillケースを実行する。fill色を2パターン(既定の白／指定色の赤)でそれぞれ実際にffmpegレンダリングし、文字中心付近をサンプリングしたRGBが指定色と一致すること、2パターンの結果が異なることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis fill",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-COLOR-OUTLINE",
+       "kind": "state",
+       "theme": "外側の縁取り色を指定した色で実際に焼ける",
+       "meaning": "縁取り色を選んでも既定の黒のまま焼かれてしまわない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで外側縁取り色に既定(黒)以外の色を指定してレンダリングすると、出力フレームの文字外周(縁取り)のピクセル色が指定した色と許容誤差内で一致し、既定色で焼いた場合のフレームとはピクセル値が異なる。",
+         "verify": "video-shorts/tests/caption-style-color-check.mjs の outlineケースを実行する。outline色を2パターン(既定の黒／指定色の青)でそれぞれ実際にffmpegレンダリングし、文字外周付近をサンプリングしたRGBが指定色と一致すること、2パターンの結果が異なることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-color-check.mjs --axis outline",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-INNER",
+       "kind": "state",
+       "theme": "内側の縁取り(二重縁取り)をオンにすると、外側と別の色の縁がもう1本内側に入る",
+       "meaning": "「中外シャドウ」のような二重縁取りが無く、プレミアプロ風の袋文字にできない状態を無くす",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで内側縁取り(innerOutline)をオンにし外側と異なる色を指定してレンダリングすると、出力フレームで文字の輪郭付近に外側縁取り色の帯と内側縁取り色の帯が別々に(2本)確認でき、内側縁取りをオフにした場合のフレームでは内側の帯が存在しない。",
+         "verify": "video-shorts/tests/caption-style-inner-check.mjs を実行する。innerOutline ON(内側=黄・外側=黒)とOFFの2パターンを実際にffmpegレンダリングし、文字の縁から内側へ向けた複数点のRGBサンプリングで、ONのときだけ外側色帯→内側色帯の2層構造が検出でき、OFFのときは内側色帯が検出されないことを確認する(検出力の対照)。",
+         "verifyCmd": "node video-shorts/tests/caption-style-inner-check.mjs",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-BAND-ON",
+       "kind": "state",
+       "theme": "背景帯をオンにすると、指定した色の帯が文字の後ろに実際に焼ける",
+       "meaning": "背景帯を求められても、透明な背景のままで応えられない状態を無くす",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで背景帯(box)をオンにし色を指定してレンダリングすると、出力フレームの文字行の背後(文字が無い余白部分を含む帯全体)のピクセル色が指定した帯色と許容誤差内で一致する。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の onケースを実行する。帯色を指定(半透明の紺)して実際にffmpegレンダリングし、文字の無い帯内側の座標をサンプリングしたRGBAが指定色と一致することを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode on",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-BAND-OFF",
+       "kind": "state",
+       "theme": "背景帯をオフにすると、文字の背後に帯が残らず映像がそのまま透けて見える",
+       "meaning": "帯なしを選んだのに帯が残ってしまう状態を無くす",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで背景帯(box)をオフにしてレンダリングすると、出力フレームの文字行背後の座標のピクセル色が、帯をオンにした場合のフレームの同座標と一致せず、代わりに背景映像側のフレーム(字幕無し)の同座標と一致する(=帯が実際に描かれていない証拠)。",
+         "verify": "video-shorts/tests/caption-style-band-check.mjs の offケースを実行する。帯off・字幕ありでffmpegレンダリングしたフレームと、字幕無しでレンダリングしたフレームの同座標RGBを比較し、差分が閾値以下であることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-band-check.mjs --mode off",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-HEARING",
+       "kind": "state",
+       "theme": "ヒアリングで書体・文字色・縁取り色・内側縁取り・背景帯を選ぶと、その通りにレンダリングへ渡る",
+       "meaning": "画面(チャット)で選んだ設定が無視され、既定のまま焼かれてしまう状態を無くす",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "pipeline.mjsに書体/文字色/縁取り色/内側縁取り/背景帯の5項目を指定してジョブを作成しレンダリングすると、work/<id>/state.jsonに保存された指定値と、実際に生成されたASS(.ass)字幕ファイル内のFontname/PrimaryColour/OutlineColour等の値が一致する。",
+         "verify": "video-shorts/tests/caption-style-hearing-check.mjs を実行する。5項目すべてを既定と異なる値で指定してpipeline.mjsをend-to-endで実行し、state.jsonの保存値と生成された.assファイルの実際の値を突き合わせ、全項目が一致することを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-hearing-check.mjs",
+         "evidence": ""
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-CAPTION-STYLE-FALLBACK",
+       "kind": "state",
+       "theme": "指定した書体のフォントファイルが同梱物に無いとき、無言で別書体に化けずエラーで止まる",
+       "meaning": "2026-08-14以前にWindows用フォント名が存在せず無言で中国語フォントに化けた事故(docs/failures.md)と同じ種類の欠陥を、この新しい書体選択機能で再発させない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイルで存在しない/破損した書体キーまたは同梱フォントファイルが見つからない状態を指定してpipeline.mjsを実行すると、レンダリングは開始されず、日本語の分かりやすいエラーメッセージと共に0以外の終了コードで停止する。",
+         "verify": "video-shorts/tests/caption-style-fallback-check.mjs を実行する。(1) 存在しない書体キーを指定した場合、(2) 同梱フォントファイルパスを一時的に欠落させた場合、の2ケースでpipeline.mjsを実行し、いずれも非ゼロ終了・エラーメッセージに書体名が含まれることを確認する。対照として、正しい書体キー・実在するフォントファイルの場合は同じ経路が正常終了することも確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-style-fallback-check.mjs",
+         "evidence": ""
         }
        ]
       }
