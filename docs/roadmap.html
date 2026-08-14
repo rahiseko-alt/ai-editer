@@ -119,13 +119,13 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "GOAL",
-  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M1・M2・M3・M4・M5完了・push済み(最新commit 1277b10)。M4のCI回帰(短い合成素材まで無条件に分割していた)は修正済み。次はM6(一度に聞く。SKILL.mdの改訂)→M7(3経路E2E)。",
+  "next": "計画(/root/.claude/plans/attach-inherited-oasis.md、Milestone M1〜M7)進行中。M1・M2・M3・M4・M5・M6完了・push済み(最新commit 5a43b6f)。次はM7(3経路E2E: tests/e2e-three-paths-check.mjs新規作成)→Release Gate(§15。実素材の焼き直し・字幕PNG添付でマスターへ目視提出、independent-verifier PASS)。",
   "handoff": {
    "done": [
-    "計画のM1〜M5を実装・push済み。M4のpush後、CIで回帰を検出(commit 96c4c0e): 「おまかせ上限」実装がCIの4秒合成素材(sub-none-render-check.mjs)まで無条件に割ってしまい、1本のはずの候補が2本になっていた。素材の1/3が60秒未満なら上限を適用しないガード(AUTO_CEIL_MIN_SEC=60)を追加して修正(commit 1277b10)。修正後、sub-none-render-check.mjs・mosaic-job-wiring-check.mjs・orient-render-check.mjs・duration-target-check.mjsをローカルで再実行し全て緑を確認。他に180秒以上の合成素材を使うテストが無いことをgrepで確認し、影響範囲がsub-none-render-check.mjsのみだったことを裏付けた。"
+    "計画のM1〜M6を実装・push済み。M6(一度に聞く): pipeline.mjsのcmdInitを、--mode/--sub/--orientの不足を1個ずつdie()する実装から、不足を全部集めて番号付きで一度に返す実装へ変更(一部だけ答えた場合は答えた項目を不足一覧から除く)。SKILL.mdのStep 2ヒアリングを「1度に1つずつ」から一度に全項目提示(尺・書き出し用途を新規追加)へ書き換え、「縦型ショート専用」の名乗りも外した。tests/init-hearing-batch-check.mjs(新規9 tests、全PASS)で検証し、package.jsonのtestチェーンに登録。--duration-min/--exportをinit必須にする(計画文字どおりの「5項目」)のは、既存3フラグのみでinitを呼ぶテスト呼び出し箇所を壊すため見送り、任意フラグのまま維持(スコープを縮めた判断として明記)。regression確認: font-check.mjs(10/10)・smoke.mjs(97/97)・cli-job-isolation-check.mjs(4/4)・dist-slim-check.mjs(34/34)・typecheck/lintとも緑。"
    ],
    "trouble": [
-    "M4実装直後、ローカルでは影響に気づけずpushしてしまい、CI(typecheck/lint/test/build)が赤くなった。原因はpackage.jsonのtestチェーンが`&&`連結のため、失敗したテスト以降(97件中85件)が一度も実行されず、ローカルでも個別テストしか確認していなかったこと。教訓：新しい既定動作(おまかせ時の自動上限のような、明示的フラグ無しで常に効くロジック)を追加するときは、影響範囲をgrep等で機械的に洗い出してから(「同じ性質の素材/条件を使う他のテストは無いか」)pushする。フルスイートの再実行がこの環境で度々中断されるため、影響範囲の絞り込みを先に行う運用とした。"
+    "無し(M6は初回実装でテスト全PASS。M4回帰の教訓を踏まえ、push前にfont-check/smoke/cli-job-isolation/dist-slim-checkの関連テストを個別に再実行してから確定した)。"
    ]
   },
   "updated": "2026-08-14",
