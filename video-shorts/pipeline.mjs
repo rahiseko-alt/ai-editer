@@ -19,7 +19,9 @@ import {
   callAnthropic,
 } from "./src/select-segments.mjs";
 import { resolveSegments } from "./src/reverse-match.mjs";
-import { mergeShortSegments, snapToSilence, resolveMinSec } from "./src/snap-boundaries.mjs";
+import {
+  mergeShortSegments, snapToSilence, resolveMinSec, resolveTargetDuration, capSegmentDuration,
+} from "./src/snap-boundaries.mjs";
 import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
 import { wordsInRange, buildAss, DEFAULT_FONT } from "./src/srt-builder.mjs";
 import { checkFontAvailable } from "./src/font-check.mjs";
@@ -260,7 +262,7 @@ export async function renderSegment({
 
 async function cmdRender(workDir, opts = {}) {
   const {
-    flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec,
+    flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
     exportPreset = DEFAULT_EXPORT, exportOverrides = {},
   } = opts;
   if (!getExportPreset(exportPreset)) {
@@ -305,14 +307,28 @@ async function cmdRender(workDir, opts = {}) {
   // digest は編集エージェントが確定した精密な keepText 区間のため、結合・無音スナップ・余韻パディングの
   // いずれも適用しない（適用すると隣接区間が重なり concat 時に同一発話が二重再生されうる＝R-7b/c）。
   if (mode !== "digest") {
-    // 1区間の最小尺。--min-sec（CLI）> TOPIC_MIN_SEC（env）> 既定180秒 の順で効く。
-    // 解決順は resolveMinSec が正（R-7d: 不正値は次の優先度へ落とし、最後は既定へ）。
-    const MIN_SEC = resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
+    // 尺の指示。--duration-min が指定されていれば、その値の±30%を下限/上限とする
+    // （下限は --min-sec より優先。「3分くらいで」の指示が実際に効くようにするため）。
+    // 未指定（おまかせ）なら下限は従来どおり --min-sec/TOPIC_MIN_SEC/既定180秒。
+    const target = resolveTargetDuration(durationMin);
+    const MIN_SEC = target ? target.floorSec : resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
     const MAX_GAP_RAW = Number(process.env.TOPIC_MERGE_GAP_MAX ?? 3);
     const MAX_GAP = Number.isFinite(MAX_GAP_RAW) && MAX_GAP_RAW > 0 ? MAX_GAP_RAW : 3; // R-8: 不正値は既定(3秒)にフォールバック
     resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP);
     resolved = snapToSilence(resolved, transcript.words || [], {});
     log(`[INFO] 区間リファイン後: ${resolved.length} 区間（結合＋無音スナップ）`);
+
+    // 上限。指示が有ればその上限、無ければ「おまかせ」でも1本が素材全体の1/3を超えない
+    // ようにする（実測: 指示無しで4区間が2本へ結合され、1本が7分10秒になっていた。
+    // docs/failures.md 2026-08-14）。
+    const srcDurForCap = transcript.duration;
+    const ceilSec = target ? target.ceilSec
+      : (Number.isFinite(srcDurForCap) && srcDurForCap > 0 ? srcDurForCap / 3 : Infinity);
+    const beforeCap = resolved.length;
+    resolved = capSegmentDuration(resolved, ceilSec, transcript.words || []);
+    if (resolved.length !== beforeCap) {
+      log(`[INFO] 上限(${ceilSec.toFixed(1)}秒)超えの区間を分割: ${beforeCap} → ${resolved.length} 区間`);
+    }
 
     // 余韻パディング: 語境界ピッタリだと発話が即始まり/即切れて「ぶち切れ」感が出る。
     // 開始を少し前へ・終了を少し後ろへ伸ばし前後に間を作る（素材端でクランプ）。env で調整可。
@@ -523,6 +539,7 @@ async function main() {
         subStyle: flagValue(rest, "--sub-style", DEFAULT_SUBTITLE_STYLE),
         modeOverride: modeArg,
         minSec: flagValue(rest, "--min-sec", undefined),
+        durationMin: flagValue(rest, "--duration-min", undefined),
         exportPreset: flagValue(rest, "--export", DEFAULT_EXPORT),
         // 個別指定はプリセットの上から1項目ずつ上書きする（全部書かなくてよい）。
         exportOverrides: {
@@ -547,6 +564,8 @@ async function main() {
       log("  select     <workDir> [--mode <topic|digest>] [--target-min <分数>]（digestのみ有効）");
       log("  render     <workDir> [--no-sub] [--sub-style karaoke|pop|bold] [--mode ...]");
       log("             [--min-sec <秒>]（1区間の最小尺。既定180秒。短く分けるなら小さくする）");
+      log("             [--duration-min <分>]（1本の目安の長さ。指定値の±30%に収める。");
+      log("               --min-secより優先。未指定＝おまかせでも1本が素材全体の1/3は超えない）");
       log("             [--export <用途>]（書き出し設定。youtube|sns|x|archive|light|standard）");
       log("             [--crf <0-51>] [--vcodec <名>] [--enc-preset <名>] [--acodec <名>] [--abitrate <例:128k>]");
       log("               （個別指定。--export の上から1項目ずつ上書きできる）");
