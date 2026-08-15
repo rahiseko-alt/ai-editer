@@ -1,5 +1,16 @@
 // server/job-params.mjs — POST /api/jobs のクエリパラメータ検証（副作用なし・単体テスト用に分離）。
 // サポートする設定契約（P0-5）: UIが送りうる値のみを許可し、それ以外は既定値へフォールバックする。
+//
+// 2026-08-15 追加(G-EDIT-UI-SETTINGS-VALIDATE / G-EDIT-UI-SETTINGS-ACCEPT): 字幕スタイル一式
+// (subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand)・尺の指示
+// (durationMin)・書き出しプリセット(exportPreset)。既存のbreathと同じ方針＝不正・範囲外・欠落は
+// 例外を投げず既定値(未指定扱い)へ丸める。判定はCLI側の正引き関数(getFont/getStyle/hexToAss/
+// getExportPreset)へそのまま委譲し、ここに独自のバリデーションロジックを重複させない
+// （getFont/getStyle は Object.hasOwn 済みで __proto__/constructor 等のプロトタイプ汚染狙いの
+// キーも自前キーとして扱わない＝正引きに失敗し既定値へ丸まる）。
+
+import { getFont, getStyle, hexToAss } from "../src/subtitle-styles.mjs";
+import { getExportPreset } from "../src/export-presets.mjs";
 
 const SUPPORTED_CUTS = new Set(["topic", "minutes"]);
 const SUPPORTED_SIZES = new Set(["9:16", "16:9"]);
@@ -30,5 +41,57 @@ export function parseJobParams(searchParams) {
     if (Number.isFinite(n) && n >= 0 && n <= 5) breath = String(n);
   }
   const name = searchParams.get("name") ?? "upload.mp4";
-  return { sub, cut, size, cutMin, mosaic, trim, breath, name };
+
+  // 字幕スタイル名（G-EDIT-UI-SETTINGS-*）。既定は空＝pipeline.mjs 側の既定(karaoke)に従う。
+  // 未指定なら server/pipeline-runner.mjs 側で --sub-style を一切付けない、という breath と
+  // 同じパターンにするため、DEFAULT_SUBTITLE_STYLE を明示的には返さない。
+  const subStyleRaw = searchParams.get("subStyle") ?? "";
+  const subStyle = getStyle(subStyleRaw) ? subStyleRaw : "";
+
+  // 字幕の書体キー。既定は空＝未指定扱い(pipeline.mjs 側が既定書体kakuを解決する)。
+  const captionFontRaw = searchParams.get("captionFont") ?? "";
+  const captionFont = getFont(captionFontRaw) ? captionFontRaw : "";
+
+  // 字幕の文字色／外側縁取り色。"#RRGGBB" or "#RRGGBBAA" 以外は既定(空=未指定)へ丸める。
+  const captionFillRaw = searchParams.get("captionFill") ?? "";
+  const captionFill = hexToAss(captionFillRaw) !== null ? captionFillRaw : "";
+  const captionOutlineColorRaw = searchParams.get("captionOutlineColor") ?? "";
+  const captionOutlineColor = hexToAss(captionOutlineColorRaw) !== null ? captionOutlineColorRaw : "";
+
+  // 内側縁取り／背景帯の色。"off"はそのまま無効化として通す（pipeline.mjs 281行付近と同じ扱い）。
+  // それ以外は色形式として妥当なときだけ通し、そうでなければ未指定(空)へ丸める。
+  const captionInnerRaw = searchParams.get("captionInner") ?? "";
+  const captionInner =
+    captionInnerRaw === "off" ? "off" : hexToAss(captionInnerRaw) !== null ? captionInnerRaw : "";
+  const captionBandRaw = searchParams.get("captionBand") ?? "";
+  const captionBand =
+    captionBandRaw === "off" ? "off" : hexToAss(captionBandRaw) !== null ? captionBandRaw : "";
+
+  // 書き出しプリセット名。既定は空＝未指定扱い(pipeline.mjs 側の既定standardに従う)。
+  const exportPresetRaw = searchParams.get("exportPreset") ?? "";
+  const exportPreset = getExportPreset(exportPresetRaw) ? exportPresetRaw : "";
+
+  // 尺の指示(topicモードのみ有効。digestモードではpipeline.mjs側が無視する)。
+  // サーバ側では「正の有限数かどうか」だけを見る（具体的な上下限はpipeline.mjs側のバリデーション）。
+  const durationMinRaw = Number(searchParams.get("durationMin"));
+  const durationMin = Number.isFinite(durationMinRaw) && durationMinRaw > 0 ? durationMinRaw : undefined;
+
+  return {
+    sub,
+    cut,
+    size,
+    cutMin,
+    mosaic,
+    trim,
+    breath,
+    name,
+    subStyle,
+    captionFont,
+    captionFill,
+    captionOutlineColor,
+    captionInner,
+    captionBand,
+    exportPreset,
+    durationMin,
+  };
 }
