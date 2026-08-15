@@ -36,7 +36,6 @@
         <li class="rail-step" data-testid="step-item" data-step-no="3">書き出す</li>
       </ol>
       <p class="rail-head">ライブラリ</p>
-      <p class="rail-note" id="rail-privacy" data-testid="privacy-note">文字起こしの処理先を確認しています…</p>
     </nav>
 
     <!-- ==================== 左：設定カラム ==================== -->
@@ -58,7 +57,6 @@
           <span class="file-name" id="file-name">—</span>
           <button class="link" id="clear-file">変更</button>
         </div>
-        <p class="group-note" id="file-note-hint" data-testid="privacy-note">文字起こしの処理先を確認しています…</p>
       </section>
 
       <!-- グループ2: 字幕 -->
@@ -342,50 +340,8 @@
 
   <!-- ===== 編集中ウィンドウ（通常画面の上にふわっと浮く小窓・暗幕なし）===== -->
   <div class="editing-card hidden" id="editing-card" role="status" aria-label="編集中">
-    <div class="snip-stage" aria-hidden="true">
-      <svg class="snip-svg" viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg">
-        <!-- フィルム（左へ流れる。外側=黒の縁＋スプロケット穴、中=白い映像コマ） -->
-        <g class="film">
-          <rect class="film-edge" x="-40" y="28" width="280" height="24" rx="2" />
-          <rect class="film-pic"  x="-40" y="33" width="280" height="14" />
-          <g class="film-frame">
-            <line x1="-20" y1="33" x2="-20" y2="47" />
-            <line x1="20"  y1="33" x2="20"  y2="47" />
-            <line x1="60"  y1="33" x2="60"  y2="47" />
-            <line x1="100" y1="33" x2="100" y2="47" />
-            <line x1="140" y1="33" x2="140" y2="47" />
-            <line x1="180" y1="33" x2="180" y2="47" />
-            <line x1="220" y1="33" x2="220" y2="47" />
-          </g>
-          <line class="sprocket" x1="-40" y1="30.5" x2="240" y2="30.5" />
-          <line class="sprocket" x1="-40" y1="49.5" x2="240" y2="49.5" />
-        </g>
-        <!-- ハサミ（チャコール単色シルエット・刃が開閉） -->
-        <g class="scissors">
-          <g class="blade top">
-            <polygon class="sil" points="100,40 141,27 147,35 105,45" />
-            <circle class="sil"  cx="78" cy="47" r="8.5" />
-            <circle class="hole" cx="78" cy="47" r="2.8" />
-          </g>
-          <g class="blade bot">
-            <polygon class="sil" points="100,40 141,53 147,45 105,35" />
-            <circle class="sil"  cx="78" cy="33" r="8.5" />
-            <circle class="hole" cx="78" cy="33" r="2.8" />
-          </g>
-          <circle class="hole" cx="100" cy="40" r="2.2" />
-        </g>
-      </svg>
-    </div>
-    <p class="editing-title">編集中…</p>
-    <div class="editing-steps" id="editing-steps" aria-hidden="true">
-      <span class="estep" data-testid="progress-step" data-k="t"></span>
-      <span class="estep" data-testid="progress-step" data-k="c"></span>
-      <span class="estep" data-testid="progress-step" data-k="s"></span>
-      <span class="estep" data-testid="progress-step" data-k="r"></span>
-      <span class="estep" data-testid="progress-step" data-k="m"></span>
-    </div>
-    <p class="editing-status" id="editing-status">動画を読み込んでいます</p>
-    <p class="editing-eta"><b id="editing-elapsed">0:00</b> 経過 ・ ふつう1〜3分で終わります</p>
+    <p class="editing-title">編集中</p>
+    <p class="editing-status sr-only" id="editing-status">動画を読み込んでいます</p>
     <div class="editing-error hidden" id="editing-error">
       <p class="editing-error-msg" id="editing-error-msg">編集できませんでした</p>
       <button class="btn ghost" id="editing-error-close">閉じる</button>

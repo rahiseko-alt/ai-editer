@@ -2,9 +2,9 @@
 // 実行中→完了の表示遷移が既存の段（文字起こしt・場面選びs等）と同じ形で起きることの検証
 // — roadmap葉 G-EDIT-CAPTION-AI-K2
 //
-// 【なぜブラウザ実測が要るか】webapp-mockup/app.jsのSTEP_ORDER/EDITING_LABEL/data-k="c"の
+// 【なぜブラウザ実測が要るか】webapp-mockup/app.jsのEDITING_LABEL/data-k="c"の
 // 存在は静的なソース読解で確認できるが、それだけでは「実際にジョブを流したときに、
-// #progress li[data-k="c"] と #editing-steps .estep[data-k="c"] が本当に
+// #progress li[data-k="c"] が本当に
 // active→done とクラスを切り替えるか」「その切り替えが文字起こし(t)の後・場面選び(s)の前
 // という既存の段と同じ位置・同じ形で起きるか」は分からない。本テストは実サーバー
 // （server/index.mjs）を起動し、実ブラウザ（Playwright/Chromium）で
@@ -16,7 +16,7 @@
 // （routeの2ルール: 字幕校正/区間選定）へ差し替える。場面選び(s)以降・書き出し(r)は実物
 // （実ffmpegでの縦動画レンダリング）をそのまま通す。
 //
-// 【観測方法】run()を呼ぶ前に、app.js側の段階切替関数 setStage()/setEditingStep()、および
+// 【観測方法】run()を呼ぶ前に、app.js側の段階切替関数 setStage()、および
 // #editing-statusへのtextContent代入を同期的にフック（元の実装は必ず素通しで呼ぶ）し、
 // 呼ばれた引数をそのまま順番に記録する。
 // 【なぜMutationObserverではなくフックか】MutationObserverはマイクロタスクでまとめて配送される
@@ -170,14 +170,6 @@ async function installHooks(page) {
       return origSetStage.apply(this, arguments);
     };
 
-    // #editing-steps .estep[data-k] の active/done 切替は setEditingStep(stage, status) が担う。
-    const origSetEditingStep = window.setEditingStep;
-    assert2(typeof origSetEditingStep === "function", "window.setEditingStepが見つからない");
-    window.setEditingStep = function (stage, status) {
-      window.__capLog.push({ fn: "setEditingStep", stage, status });
-      return origSetEditingStep.apply(this, arguments);
-    };
-
     // #editing-status の文言はインスタンスへの直接代入(`$("editing-status").textContent = text`)
     // なので、その要素インスタンスにだけ own property を定義して代入を横取りする。
     const statusEl = document.getElementById("editing-status");
@@ -199,11 +191,6 @@ async function installHooks(page) {
 /** logの中で fn==="setStage" && key===k && cls===c を満たす最初の添字（無ければ -1）。 */
 function firstStageIndex(log, k, cls) {
   return log.findIndex((e) => e.fn === "setStage" && e.key === k && e.cls === cls);
-}
-
-/** logの中で fn==="setEditingStep" && stage===s && status===st を満たす最初の添字（無ければ -1）。 */
-function firstEditingStepIndex(log, s, st) {
-  return log.findIndex((e) => e.fn === "setEditingStep" && e.stage === s && e.status === st);
 }
 
 // ── 本体 ────────────────────────────────────────────────────
@@ -295,18 +282,6 @@ try {
     const sActive = firstStageIndex(log, "s", "active");
     assert.ok(sActive >= 0, "progress側: 場面選び(s)がactiveになった呼び出しが無い");
     assert.ok(sActive > cDone, `場面選び(s)のactiveがAI点検(c)のdoneより前（cが独立した段になっていない疑い）: cDone=${cDone}, sActive=${sActive}`);
-  });
-
-  await t("⑤編集中オーバーレイ(#editing-steps): AI点検(c)のestepが既存の段(t/s)と同じ形でactive→doneと切り替わる", () => {
-    const tDone = firstEditingStepIndex(log, "t", "done");
-    const cActive = firstEditingStepIndex(log, "c", "active");
-    const cDone = firstEditingStepIndex(log, "c", "done");
-    const sActive = firstEditingStepIndex(log, "s", "active");
-    assert.ok(tDone >= 0 && cActive >= 0 && cDone >= 0 && sActive >= 0,
-      `いずれかのestep遷移呼び出しが欠けている: tDone=${tDone}, cActive=${cActive}, cDone=${cDone}, sActive=${sActive}`);
-    assert.ok(tDone < cActive, "estep側: tのdoneよりcのactiveが先");
-    assert.ok(cActive < cDone, "estep側: cのactiveよりdoneが先");
-    assert.ok(cDone < sActive, "estep側: cのdoneよりsのactiveが先");
   });
 
   await t("⑥編集中オーバーレイの文言: AI点検中は「AIが字幕の間違いを直しています」が表示される", () => {

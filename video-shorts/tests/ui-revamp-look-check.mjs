@@ -345,7 +345,9 @@ export function contrastRatio(fg, bg) {
     // (2) 幅
     assert.ok(m.left.width >= 160 && m.left.width <= 240, `左ペインの幅が範囲外: ${m.left.width}px`);
     assert.ok(m.right.width >= 600, `右ペインの幅が下限未満: ${m.right.width}px`);
-    assert.ok(Math.abs(m.center.width - 315) <= 1, `中央ペインの幅が315pxでない: ${m.center.width}px`);
+    // 2026-08-16 マスター指示「中央を狭くしすぎ。あと10％広くして右を狭めろ」により
+    // 315px → 347px（315 × 1.1）へ変更。meta.basisChanges へ宣言済み。
+    assert.ok(Math.abs(m.center.width - 347) <= 1, `中央ペインの幅が347pxでない: ${m.center.width}px`);
     // (3) 上端と高さ
     const tops = [m.left.top, m.center.top, m.right.top];
     assert.ok(Math.max(...tops) - Math.min(...tops) <= 1, `3列の上端が揃っていない: ${tops.join(", ")}`);

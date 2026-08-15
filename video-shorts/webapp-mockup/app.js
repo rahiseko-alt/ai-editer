@@ -299,8 +299,6 @@ function updateMosaicStepRow() {
   // モザイクを選ばないときは m の段が来ないので、進捗の行も出さない。
   const li = document.querySelector('#progress li[data-k="m"]');
   if (li) li.classList.toggle("hidden", state.mosaic !== "on");
-  const es = document.querySelector('.estep[data-k="m"]');
-  if (es) es.classList.toggle("hidden", state.mosaic !== "on");
 }
 // 選んだ内容を、専門用語を使わず1行で言い直す（何が起きるかを選ぶ前に分かるように）
 function updateTrimDesc() {
@@ -568,33 +566,8 @@ const EDITING_LABEL = {
   r: "縦長の動画に整えています",
   m: "顔にモザイクを掛けています",
 };
-// 進捗ステップ（t→c→s→r→m）を編集中窓に反映。m は顔モザイクを選んだときだけサーバから来る。
-// 受け皿が無いと、その工程に数分かかっている間ずっと画面が止まって見える。
-const STEP_ORDER = ["t", "c", "s", "r", "m"];
-function setEditingStep(stage, status) {
-  const idx = STEP_ORDER.indexOf(stage);
-  if (idx < 0) return;
-  document.querySelectorAll("#editing-steps .estep").forEach((el, i) => {
-    el.classList.remove("active", "done");
-    if (i < idx) el.classList.add("done");
-    else if (i === idx) el.classList.add(status === "done" ? "done" : "active");
-  });
-}
-// 経過タイマー（実際に動いている＝止まっていない証拠）
-let editTimer = null, editStart = 0;
-function startEditTimer() {
-  editStart = Date.now();
-  $("editing-elapsed").textContent = "0:00";
-  editTimer = setInterval(() => {
-    const s = Math.floor((Date.now() - editStart) / 1000);
-    $("editing-elapsed").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  }, 1000);
-}
-function stopEditTimer() { if (editTimer) { clearInterval(editTimer); editTimer = null; } }
-
 // 失敗時: 窓を閉じず、その場で「編集できませんでした＋理由」を明示
 function showEditingError(msg) {
-  stopEditTimer();
   $("editing-error-msg").textContent = `編集できませんでした：${msg}`;
   $("editing-error").classList.remove("hidden");
   $("editing-card").classList.add("is-error");
@@ -639,13 +612,10 @@ function showEditing() {
   c.classList.remove("is-error");
   $("editing-error").classList.add("hidden");
   $("editing-status").textContent = "動画を読み込んでいます";
-  document.querySelectorAll("#editing-steps .estep").forEach((el) => el.classList.remove("active", "done"));
-  startEditTimer();
   c.classList.remove("hidden");
   requestAnimationFrame(() => c.classList.add("show"));
 }
 function hideEditing() {
-  stopEditTimer();
   const c = $("editing-card");
   c.classList.remove("show");
   setTimeout(() => c.classList.add("hidden"), 300);
@@ -684,7 +654,6 @@ function run() {
         const { stage, status, label } = d;
         if (status === "active") {
           setStage(stage, "active");
-          setEditingStep(stage, "active");
           // サーバーが状況に応じたlabel(例: 縦長/横長、順番待ち)を送ってきた場合はそれを優先する。
           // 無ければ段階名からの既定文言(EDITING_LABEL)にフォールバックする。
           const text = label || EDITING_LABEL[stage];
@@ -692,7 +661,6 @@ function run() {
         }
         if (status === "done") {
           setStage(stage, "done");
-          setEditingStep(stage, "done");
         }
       };
 
@@ -1054,32 +1022,15 @@ $("result-overlay").addEventListener("click", (e) => { if (e.target === $("resul
 // 「編集済動画一覧」: 閉じた結果（履歴）を再実行なしで開き直す
 $("btn-show-result").addEventListener("click", openResult);
 
-// ---- 文字起こしがどこで行われるかを、実態のとおりに表示する ----
-// 2026-08-16: 画面には常に「この動画はこのPCの中だけで処理されます（外部に送りません）」と
-// 固定で書いてあったが、GROQ_API_KEY があるときは実際には音声を Groq のクラウドへ送っている。
-// 書いてあることと実際の動きが違う状態だったので、サーバに実態を聞いて表示を合わせる。
-const PRIVACY_TEXT = {
-  local: "文字起こしはこのPCの中で行います。動画も音声も外部へ送りません（そのぶん時間がかかります）。",
-  cloud: "文字起こしは Groq のクラウドで行います。音声だけが Groq へ送信されます（そのぶん速く終わります）。",
-  unknown: "文字起こしの処理先を確認できませんでした。サーバの状態をご確認ください。",
-};
-function applyPrivacyNote(kind) {
-  const text = PRIVACY_TEXT[kind] ?? PRIVACY_TEXT.unknown;
-  document.querySelectorAll('[data-testid="privacy-note"]').forEach((el) => {
-    el.textContent = text;
-    el.dataset.transcribe = kind;
-  });
-}
 fetch(withTokenQuery("/api/env"), withTokenHeader())
   .then((r) => (r.ok ? r.json() : null))
   .then((d) => {
-    applyPrivacyNote(d?.transcribe === "cloud" ? "cloud" : d?.transcribe === "local" ? "local" : "unknown");
     if (d?.captionPosDefaults) {
       capPosDefaults = d.captionPosDefaults;
       updateCapPos(); // 既定位置が分かった時点でつまみを置き直す
     }
   })
-  .catch(() => applyPrivacyNote("unknown"));
+  .catch(() => {}); // 取れなければ画面側の既定位置のまま（表示は何も変えない）
 
 showCut();
 updateSubDesc();
