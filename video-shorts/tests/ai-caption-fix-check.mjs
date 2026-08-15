@@ -540,13 +540,50 @@ function claudeLaunchSites(dir) {
   return sites.sort();
 }
 
-await t("E: claude を起動できる箇所は src/claude-run.mjs のちょうど1箇所", () => {
+/**
+ * 診断専用として、共通口を通さない claude 起動を認める唯一のファイル。
+ *
+ * これは守りの穴ではない。scripts/diagnose-claude.mjs は「製品と同じ条件になるまで、条件を
+ * 1つずつ足していく」切り分け道具で、**わざと共通口を通さない条件（env を絞る前・フラグを
+ * 足す前）を試すこと自体が目的**なので、runClaudeJson 経由には置き換えられない
+ * （2026-08-15、Windows実機の原因特定に使用。docs/failures.md 参照）。
+ *
+ * 代わりに、この例外が「製品の抜け道」にならないことを下の2つの検査で機械的に縛る:
+ *   1) 製品コード（この1ファイルを除く全て）の起動口は、従来どおり共通口の1箇所だけ
+ *   2) このファイルは製品コードから import されていない＝実行経路に載らない
+ */
+const DIAGNOSTIC_LAUNCH_SITE = "scripts/diagnose-claude.mjs";
+
+await t("E: claude を起動できる箇所は src/claude-run.mjs のちょうど1箇所（診断専用ファイルを除く）", () => {
   // 凍結した受入基準（roadmap 葉 G-EDIT-CAPTION-AI-E1）。守りを書き写す先が増えれば、
   // 写し漏れた1箇所だけが素通しになっても他を見ている検査は緑のままになる。
   // 呼び出し側ごとに違う引数（digest-editor の --model pin 等）は共通口の extraArgs で足す。
-  const found = claudeLaunchSites(ROOT);
+  const found = claudeLaunchSites(ROOT).filter((p) => p !== DIAGNOSTIC_LAUNCH_SITE);
   assert.deepStrictEqual(found, ["src/claude-run.mjs"],
     `claude を起動できる箇所が共通口1つになっていない: ${found.join(", ") || "(0件)"}`);
+});
+
+await t("E: 診断専用ファイルは実在し、かつ製品コードから import されていない（例外が実行経路に載らない）", () => {
+  // 実在の確認: 例外が「もう無いファイルへの空の許可」として残り続けると、あとで同名の
+  // ファイルが作られたときに黙って抜け道になる。
+  assert.ok(
+    fs.existsSync(path.join(ROOT, DIAGNOSTIC_LAUNCH_SITE)),
+    `例外に指定したファイルが存在しない: ${DIAGNOSTIC_LAUNCH_SITE}（不要なら例外ごと消すこと）`
+  );
+  // 到達不能の確認: どこからも import されていなければ、製品の実行経路には絶対に載らない。
+  const base = DIAGNOSTIC_LAUNCH_SITE.split("/").pop().replace(/\.mjs$/, "");
+  const importers = [];
+  for (const p of listMjs(ROOT)) {
+    const rel = path.relative(ROOT, p).split(path.sep).join("/");
+    if (rel === DIAGNOSTIC_LAUNCH_SITE) continue;
+    const src = fs.readFileSync(p, "utf-8");
+    // import / await import() / require のいずれの形でも拾う。
+    if (new RegExp(String.raw`(?:from\s*|import\s*\(\s*|require\s*\(\s*)["'][^"']*${base}["']`).test(src)) {
+      importers.push(rel);
+    }
+  }
+  assert.deepStrictEqual(importers, [],
+    `診断専用ファイルが製品コードから参照されている（実行経路に載る＝例外の前提が崩れる）: ${importers.join(", ")}`);
 });
 
 await t("E 対照: 2つ目の起動口を含むソースを与えると検出は2件になり、この判定は不合格になる", () => {

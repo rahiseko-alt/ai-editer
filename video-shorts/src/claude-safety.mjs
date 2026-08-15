@@ -12,7 +12,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 /** claude -p の子プロセスに渡してよい環境変数のallowlist。
- *  ANTHROPIC_API_KEY 等の秘密情報は含めない（サブスク継承のみを使う＝意図せぬ課金/漏洩防止）。 */
+ *  ANTHROPIC_API_KEY 等の秘密情報は含めない（サブスク継承のみを使う＝意図せぬ課金/漏洩防止）。
+ *
+ *  【Windows 用の項目について】旧実装は POSIX 名だけを並べており、Windows で必須の変数が
+ *  1つも入っていなかった。Windows の PowerShell は HOME を定義しない（定義するのは Git Bash 等
+ *  MSYS 系のみ）ため、allowlist を通過するホーム情報がゼロになり、claude が
+ *  %USERPROFILE%\.claude\.credentials.json へ到達できず「ログイン済みなのに認証が見つからない」
+ *  状態で終了コード1になっていた（2026-08-15 実機で発生。docs/failures.md 参照）。
+ *  ターミナルで直接叩くと6ヶ月間正常だったのは、そちらでは変数がそのまま継承されるため。
+ *  秘密情報を渡さないという方針は変えず、OSがプロセスを成立させるために要る項目だけを足す。 */
 export const ALLOWED_ENV_VARS = [
   "PATH",
   "HOME",
@@ -25,6 +33,53 @@ export const ALLOWED_ENV_VARS = [
   "XDG_CONFIG_HOME",
   "XDG_DATA_HOME",
   "CLAUDE_CONFIG_DIR",
+  // ── ここから Windows 用（POSIX 環境には存在しないので、そちらでは自動的に無視される） ──
+  // USERPROFILE: Windows の os.homedir() の実体。claude の設定・認証情報の置き場
+  //   (%USERPROFILE%\.claude\) を解決するのに要る。これが今回の直接原因。
+  "USERPROFILE",
+  // SystemRoot / windir: Windows がネットワーク通信の部品(Winsock のプロバイダDLL)を読み込むのに要る。
+  //   自前の環境ブロックを子へ渡すとき入れ忘れると、通信を伴うプロセスが理由も出せずに落ちる
+  //   （Go の golang/go#25513 が同型の事例）。claude は起動直後に必ず HTTPS 通信を行う。
+  "SystemRoot",
+  "windir",
+  // APPDATA / LOCALAPPDATA: Windows の設定・キャッシュ置き場。npm 経由導入時の prefix も含む。
+  "APPDATA",
+  "LOCALAPPDATA",
+  // SystemDrive / HOMEDRIVE / HOMEPATH: パス解決の基点。USERPROFILE 不在時のホーム解決にも使われる。
+  "SystemDrive",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  // ProgramData / ProgramFiles: 一部の実行時依存が参照する。
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  // PROCESSOR_ARCHITECTURE / NUMBER_OF_PROCESSORS / OS: 実行環境の判定に使われる。
+  "PROCESSOR_ARCHITECTURE",
+  "NUMBER_OF_PROCESSORS",
+  "OS",
+  // USERNAME: Windows での実行ユーザー名（POSIX の USER 相当）。
+  "USERNAME",
+];
+
+/**
+ * Claude Code CLI 自身がバンドルする MCP SDK が「Windows で子プロセスへ渡す最小集合」として
+ * 定義している環境変数（2026-08-15 に実バイナリ v2.1.233 から読み取って確認）。
+ * ALLOWED_ENV_VARS がこれを満たすことを tests/claude-safety-win-env-check.mjs が機械で見張る。
+ * 上流が増やしたときに、こちらだけ古いまま気付かず取り残される事故を防ぐための対照表。
+ */
+export const WINDOWS_MINIMUM_ENV_VARS = [
+  "APPDATA",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "PATH",
+  "PROCESSOR_ARCHITECTURE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "USERNAME",
+  "USERPROFILE",
+  "PROGRAMFILES",
 ];
 
 /** allowlist に載っている環境変数だけを含む env オブジェクトを作る。 */
