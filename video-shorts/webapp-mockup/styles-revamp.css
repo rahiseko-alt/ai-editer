@@ -18,6 +18,7 @@
   --ink: #0d1117;          /* 白背景に対し約 18.9:1 */
   --muted: #4a5259;        /* 白背景に対し約 8.0:1（AA の 4.5:1 を余裕で満たす） */
   --line: #e6e8eb;
+  --rule: #c9ced6;      /* ペインの境目。白との比 約1.67:1（LOOK-RULE の下限 1.5:1 を満たす） */
 
   --accent: #0d1117;
   --accent-text: #ffffff;  /* #0d1117 の上で約 18.9:1 */
@@ -81,8 +82,8 @@ html::before, html::after, body::before, body::after { content: none; background
 }
 
 /* 区切りは色の差ではなく罫線で示す（LOOK-RULE） */
-.three-pane > .pane-left { border-right: 1px solid var(--line); padding: 16px 10px; }
-.three-pane > .pane-center { border-right: 1px solid var(--line); padding: 20px; }
+.three-pane > .pane-left { border-right: 1px solid var(--rule); padding: 16px 10px; }
+.three-pane > .pane-center { border-right: 1px solid var(--rule); padding: 20px; }
 .three-pane > .pane-right { padding: 14px 16px; }
 
 /* ===== 4. 左ペイン（手順・ライブラリ）===== */
@@ -172,3 +173,13 @@ html::before, html::after, body::before, body::after { content: none; background
 .three-pane .device-home { background: var(--surface-2); }
 .three-pane .pc-topbar { background: var(--surface-2); }
 .three-pane .video-area { background: var(--surface-3); }
+
+/* ===== 9. ファイル選択の主ボタン（承認済みモックAの「ファイルを選ぶ」）===== */
+.drop-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 36px; padding: 0 16px; margin-top: 14px;
+  border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--accent-text);
+  font-size: 13px; font-weight: 600;
+}
+.drop-btn { white-space: nowrap; }

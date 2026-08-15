@@ -51,6 +51,7 @@
           <input type="file" id="file" accept="video/*" hidden />
           <span class="drop-ico" aria-hidden="true">⬆</span>
           <span class="drop-text" id="drop-text">動画をドロップ<br>またはクリックで選択</span>
+          <span class="drop-btn" data-testid="btn-pick-file" aria-hidden="true">ファイルを選ぶ</span>
         </label>
         <div class="filebar hidden" id="filebar">
           <span aria-hidden="true">🎬</span>
@@ -65,7 +66,7 @@
         <h2 class="group-label" id="h-sub">
           字幕
         </h2>
-        <div class="chips sub-toggle" data-group="sub" role="group" aria-label="字幕のあり・なし">
+        <div class="chips sub-toggle" data-group="sub" data-testid="setting-row" data-setting-key="sub" role="group" aria-label="字幕のあり・なし">
           <button class="chip sub-chip is-on" data-val="none" aria-pressed="true">なし</button>
           <button class="chip sub-chip" data-val="on" aria-pressed="false">あり</button>
         </div>
@@ -78,7 +79,7 @@
         <h2 class="group-label" id="h-caption-style">字幕の見た目</h2>
 
         <p class="group-note">書体</p>
-        <div class="chips chips-wrap" data-group="captionFont" role="group" aria-label="字幕の書体">
+        <div class="chips chips-wrap" data-group="captionFont" data-testid="setting-row" data-setting-key="captionFont" role="group" aria-label="字幕の書体">
           <button class="chip" data-val="kaku" aria-pressed="false">角ゴシック</button>
           <button class="chip" data-val="maru" aria-pressed="false">丸ゴシック</button>
           <button class="chip" data-val="mincho" aria-pressed="false">明朝体</button>
@@ -87,7 +88,7 @@
         </div>
 
         <p class="group-note">スタイル</p>
-        <div class="chips chips-wrap" data-group="subStyle" role="group" aria-label="字幕のスタイル">
+        <div class="chips chips-wrap" data-group="subStyle" data-testid="setting-row" data-setting-key="subStyle" role="group" aria-label="字幕のスタイル">
           <button class="chip" data-val="karaoke" aria-pressed="false">ワードハイライト</button>
           <button class="chip" data-val="pop" aria-pressed="false">1語ずつポップ</button>
           <button class="chip" data-val="bold" aria-pressed="false">太字ライン</button>
@@ -103,7 +104,7 @@
         </div>
 
         <p class="group-note">内側縁取り</p>
-        <div class="chips" data-group="captionInner" role="group" aria-label="内側縁取りのあり・なし">
+        <div class="chips" data-group="captionInner" data-testid="setting-row" data-setting-key="captionInner" role="group" aria-label="内側縁取りのあり・なし">
           <button class="chip is-on" data-val="off" aria-pressed="true">なし</button>
           <button class="chip" data-val="on" aria-pressed="false">あり</button>
         </div>
@@ -113,7 +114,7 @@
         </div>
 
         <p class="group-note">背景帯</p>
-        <div class="chips" data-group="captionBand" role="group" aria-label="背景帯のあり・なし">
+        <div class="chips" data-group="captionBand" data-testid="setting-row" data-setting-key="captionBand" role="group" aria-label="背景帯のあり・なし">
           <button class="chip is-on" data-val="off" aria-pressed="true">なし</button>
           <button class="chip" data-val="on" aria-pressed="false">あり</button>
         </div>
@@ -128,7 +129,7 @@
         <h2 class="group-label" id="h-mosaic">
           顔を隠す
         </h2>
-        <div class="chips mosaic-toggle" data-group="mosaic" role="group" aria-label="顔モザイクのあり・なし">
+        <div class="chips mosaic-toggle" data-group="mosaic" data-testid="setting-row" data-setting-key="mosaic" role="group" aria-label="顔モザイクのあり・なし">
           <button class="chip mosaic-chip is-on" data-val="none" aria-pressed="true">なし</button>
           <button class="chip mosaic-chip" data-val="on" aria-pressed="false">あり</button>
         </div>
@@ -140,7 +141,7 @@
         <h2 class="group-label" id="h-trim">
           間を詰める
         </h2>
-        <div class="chips trim-toggle" data-group="trim" role="group" aria-label="間を詰めるあり・なし">
+        <div class="chips trim-toggle" data-group="trim" data-testid="setting-row" data-setting-key="trim" role="group" aria-label="間を詰めるあり・なし">
           <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">なし</button>
           <button class="chip trim-chip" data-val="on" aria-pressed="false">あり</button>
         </div>
@@ -152,7 +153,7 @@
         <h2 class="group-label" id="h-breath">
           つなぎ目の間
         </h2>
-        <div class="chips breath-toggle" data-group="breath" role="group" aria-label="つなぎ目の間の長さ">
+        <div class="chips breath-toggle" data-group="breath" data-testid="setting-row" data-setting-key="breath" role="group" aria-label="つなぎ目の間の長さ">
           <button class="chip breath-chip is-on" data-val="" aria-pressed="true">おまかせ</button>
           <button class="chip breath-chip" data-val="0.4" aria-pressed="false">短め</button>
           <button class="chip breath-chip" data-val="1" aria-pressed="false">長め</button>
@@ -166,7 +167,7 @@
         <h2 class="group-label" id="h-cut">
           カットの目安
         </h2>
-        <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
+        <div class="chips chips-wrap" data-group="cut" data-testid="setting-row" data-setting-key="cut" role="group" aria-label="カット方法">
           <button class="chip is-on" data-val="topic" aria-pressed="true">話題で切る</button>
           <button class="chip" data-val="minutes" aria-pressed="false">分数で切る</button>
         </div>
@@ -195,7 +196,7 @@
         <h2 class="group-label" id="h-size">
           サイズ
         </h2>
-        <div class="size-chips" data-group="size" role="group" aria-label="動画サイズ">
+        <div class="size-chips" data-group="size" data-testid="setting-row" data-setting-key="size" role="group" aria-label="動画サイズ">
           <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16" aria-pressed="true">
             <span class="size-ratio">縦 9:16</span>
             <span class="size-use">ショート / リール / TikTok</span>
@@ -212,7 +213,7 @@
         <h2 class="group-label" id="h-export">
           書き出し
         </h2>
-        <div class="chips chips-wrap" data-group="exportPreset" role="group" aria-label="書き出しの用途">
+        <div class="chips chips-wrap" data-group="exportPreset" data-testid="setting-row" data-setting-key="exportPreset" role="group" aria-label="書き出しの用途">
           <button class="chip is-on" data-val="" aria-pressed="true">標準</button>
           <button class="chip" data-val="youtube" aria-pressed="false">YouTube向け</button>
           <button class="chip" data-val="sns" aria-pressed="false">SNS向け</button>
@@ -272,7 +273,7 @@
       <div class="actions-wrap">
         <div class="actions">
           <button class="btn ghost hidden" id="btn-show-result">編集済動画一覧</button>
-          <button class="btn cta" id="btn-run" disabled>編集実行</button>
+          <button class="btn cta" id="btn-run" data-testid="btn-run" disabled>編集実行</button>
         </div>
         <p class="cta-hint" id="cta-hint">動画を入れると押せます。</p>
         <p class="progress-note hidden" id="progress-note">ふつう1〜3分ほどで終わります。そのままお待ちください。</p>
@@ -370,11 +371,11 @@
     </div>
     <p class="editing-title">編集中…</p>
     <div class="editing-steps" id="editing-steps" aria-hidden="true">
-      <span class="estep" data-k="t"></span>
-      <span class="estep" data-k="c"></span>
-      <span class="estep" data-k="s"></span>
-      <span class="estep" data-k="r"></span>
-      <span class="estep" data-k="m"></span>
+      <span class="estep" data-testid="progress-step" data-k="t"></span>
+      <span class="estep" data-testid="progress-step" data-k="c"></span>
+      <span class="estep" data-testid="progress-step" data-k="s"></span>
+      <span class="estep" data-testid="progress-step" data-k="r"></span>
+      <span class="estep" data-testid="progress-step" data-k="m"></span>
     </div>
     <p class="editing-status" id="editing-status">動画を読み込んでいます</p>
     <p class="editing-eta"><b id="editing-elapsed">0:00</b> 経過 ・ ふつう1〜3分で終わります</p>
