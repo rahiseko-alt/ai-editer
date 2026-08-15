@@ -384,6 +384,14 @@ function updateState(workDir, patch) {
 // P1-14-A: パイプラインの子(python/node)へ渡してよい環境変数の基本allowlist。
 // claude起動口(src/claude-safety.mjs ALLOWED_ENV_VARS)より広いのは、python/nodeの実行系・
 // ライブラリ解決・モデルキャッシュに必要な変数を含むため(APIキー等の秘密情報は含めない)。
+//
+// 【allowlistが2つある構造と、そこに空いていた穴】この関所を通った先で claude が起動する経路が
+// ある。「分数で切る(digest)」は server → node(pipeline.mjs) → digest-editor → claude と孫まで
+// 潜るため、claude の env は「ここで絞られた後の process.env」を claude-safety.mjs が更に絞った
+// 結果になる。2026-08-15 に claude-safety.mjs 側へ Windows 用の変数を足したとき、こちらは
+// POSIX 名のままで、この経路の claude へ渡るのが PATH/TMP/TEMP の3個だけになっていた
+// (Windows の PowerShell は HOME を定義しないため)。片方だけ直すと、もう片方が黙って残る。
+// tests/claude-safety-win-env-check.mjs が **両方の allowlist** を対照表と突き合わせて見張る。
 const BASE_CHILD_ENV_VARS = [
   "PATH", "HOME", "LANG", "LC_ALL", "LANGUAGE", "USER",
   "TMPDIR", "TMP", "TEMP",
@@ -391,7 +399,19 @@ const BASE_CHILD_ENV_VARS = [
   "NODE_PATH",
   "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
   "HF_HOME", "HUGGINGFACE_HUB_CACHE", // faster-whisperモデルキャッシュの置き場所
+  // ── Windows 用（POSIX 環境には存在しないので、そちらでは自動的に無視される）──
+  // 内訳の根拠は src/claude-safety.mjs の ALLOWED_ENV_VARS 側コメントと
+  // WINDOWS_MINIMUM_ENV_VARS(Claude Code CLI 自身が定める Windows 最小集合)を参照。
+  "USERPROFILE", "SystemRoot", "windir", "APPDATA", "LOCALAPPDATA",
+  "SystemDrive", "HOMEDRIVE", "HOMEPATH",
+  "ProgramData", "ProgramFiles", "ProgramFiles(x86)",
+  "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "OS", "USERNAME",
+  // COMSPEC/PATHEXT: Windows で python/node をシェル経由・拡張子解決つきで起こす経路が要る。
+  "COMSPEC", "PATHEXT",
 ];
+
+/** 両方のallowlistをテストから突き合わせられるようexportする（片方だけ直す事故の再発防止）。 */
+export { BASE_CHILD_ENV_VARS };
 
 /** allowlist(+呼び出しごとの追加キー)だけを含むenvを作る。単体テストのためexportする。 */
 export function buildChildEnv(extraKeys = []) {

@@ -16,6 +16,7 @@
 
 import assert from "node:assert";
 import { ALLOWED_ENV_VARS, WINDOWS_MINIMUM_ENV_VARS, buildSafeEnv } from "../src/claude-safety.mjs";
+import { BASE_CHILD_ENV_VARS } from "../server/pipeline-runner.mjs";
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -26,13 +27,48 @@ function t(name, fn) {
 /** Windows の環境変数名は大文字小文字を区別しないので、比較は正規化して行う。 */
 const upper = (arr) => arr.map((v) => v.toUpperCase());
 
-t("allowlist は、Claude Code CLI が定める Windows 最小集合をすべて含む", () => {
-  const have = upper(ALLOWED_ENV_VARS);
+// 【allowlist は2つある】claude へ渡る env は、経路によって2つの関所を通る。
+//   「話題で切る」: サーバ内から直接 → claude-safety.mjs の ALLOWED_ENV_VARS だけ
+//   「分数で切る」: サーバ → node(pipeline.mjs) → digest-editor → claude と孫まで潜るため、
+//                   pipeline-runner.mjs の BASE_CHILD_ENV_VARS で絞られた後の process.env を
+//                   さらに ALLOWED_ENV_VARS が絞る＝**両方を通らないと届かない**
+// 2026-08-15、片方(ALLOWED_ENV_VARS)にだけ Windows 用を足して、もう片方を見落とした。
+// その状態では「分数で切る」経路の claude へ渡るのが PATH/TMP/TEMP の3個だけになる。
+// 片方だけ直す事故を繰り返さないため、両方を同じ対照表へ突き合わせる。
+const ALLOWLISTS = [
+  { name: "ALLOWED_ENV_VARS (src/claude-safety.mjs)", vars: ALLOWED_ENV_VARS },
+  { name: "BASE_CHILD_ENV_VARS (server/pipeline-runner.mjs)", vars: BASE_CHILD_ENV_VARS },
+];
+
+for (const { name, vars } of ALLOWLISTS) {
+  t(`${name} は、Claude Code CLI が定める Windows 最小集合をすべて含む`, () => {
+    const have = upper(vars);
+    const missing = WINDOWS_MINIMUM_ENV_VARS.filter((v) => !have.includes(v.toUpperCase()));
+    assert.deepStrictEqual(
+      missing, [],
+      `Windows で必須の変数が ${name} に無い: ${missing.join(", ")}。足すこと`
+    );
+  });
+}
+
+t("2つのallowlistを重ねて通しても、Windows 最小集合が生き残る（孫プロセス経路の実測）", () => {
+  // 「分数で切る」経路の実際の絞られ方を再現する: 一度 BASE_CHILD_ENV_VARS で絞った結果を、
+  // さらに ALLOWED_ENV_VARS で絞る。ここで消えるものがあれば、その経路の claude には届かない。
+  const winEnv = {
+    PATH: "C:\\Windows\\system32", USERPROFILE: "C:\\Users\\user", SystemRoot: "C:\\Windows",
+    SystemDrive: "C:", APPDATA: "C:\\Users\\user\\AppData\\Roaming",
+    LOCALAPPDATA: "C:\\Users\\user\\AppData\\Local", TEMP: "C:\\Temp", TMP: "C:\\Temp",
+    USERNAME: "user", HOMEDRIVE: "C:", HOMEPATH: "\\Users\\user",
+    PROCESSOR_ARCHITECTURE: "AMD64", ProgramFiles: "C:\\Program Files",
+  };
+  const afterFirst = {};
+  for (const k of BASE_CHILD_ENV_VARS) if (winEnv[k] !== undefined) afterFirst[k] = winEnv[k];
+  const afterSecond = buildSafeEnv(afterFirst);
+  const have = upper(Object.keys(afterSecond));
   const missing = WINDOWS_MINIMUM_ENV_VARS.filter((v) => !have.includes(v.toUpperCase()));
   assert.deepStrictEqual(
     missing, [],
-    `Windows で必須の変数が allowlist に無い: ${missing.join(", ")}。` +
-    `src/claude-safety.mjs の ALLOWED_ENV_VARS へ足すこと`
+    `孫プロセス経路で Windows 必須の変数が消えている: ${missing.join(", ")}`
   );
 });
 

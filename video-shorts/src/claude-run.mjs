@@ -39,19 +39,61 @@ export const SIGKILL_GRACE_MS = 5_000;
 export function summarizeStdoutFailure(stdout, limit = 600) {
   const raw = String(stdout ?? "").trim();
   if (!raw) return "";
-  let envelope;
-  try {
-    envelope = JSON.parse(raw);
-  } catch {
-    return raw.slice(0, limit); // JSON でなければ素の出力をそのまま（切り詰めて）見せる
-  }
+  const envelope = parseEnvelopeLoosely(raw);
   if (!envelope || typeof envelope !== "object") return raw.slice(0, limit);
   // 理由が入りうるフィールドを、人間可読な順に拾う。
-  for (const key of ["result", "error", "message", "terminal_reason", "stop_reason"]) {
+  // errors(配列)を含めるのが要点: subtype が error_during_execution / error_max_turns /
+  // error_max_budget_usd / error_max_structured_output_retries のとき、claude のエンベロープには
+  // **result が存在せず**、理由は errors: string[] に入る（CLI の出力スキーマで確認）。
+  // 旧実装は文字列フィールドしか見ておらず、この系統では terminal_reason だけを拾って
+  // 肝心の本文を捨てていた＝「真因が消える」欠陥がこの経路にだけ残っていた。
+  for (const key of ["result", "error", "message", "errors", "terminal_reason", "stop_reason"]) {
     const v = envelope[key];
     if (typeof v === "string" && v.trim()) return `${key}=${v.trim().slice(0, limit)}`;
+    if (Array.isArray(v)) {
+      const joined = v.filter((x) => typeof x === "string" && x.trim()).join(" / ").trim();
+      if (joined) return `${key}=${joined.slice(0, limit)}`;
+    }
   }
   return raw.slice(0, limit); // 既知のフィールドが無ければ生のまま
+}
+
+/**
+ * stdout から JSON エンベロープを取り出す。素直な JSON.parse で読めないときは、
+ * 先頭に混ざったノイズ（更新通知・警告行・BOM 等）を読み飛ばして最後の JSON を拾う。
+ *
+ * これが要る理由: 理由(result)はエンベロープの末尾寄り(実測で約1180文字目)にあるため、
+ * JSON の前に1行でも別の出力が挟まると JSON.parse が失敗し、頭からの切り詰めへ戻ってしまう。
+ * それは修正前とまったく同じ「理由が読めない」状態で、ノイズが出る環境でだけ再発する。
+ *
+ * @param {string} raw
+ * @returns {object|null} 読めなければ null
+ */
+function parseEnvelopeLoosely(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch { /* 下でノイズ混じりとして読み直す */ }
+  // BOM を落としてから、最初に現れる { 以降を候補にする（末尾のノイズは JSON.parse が弾く）。
+  const body = raw.replace(/^﻿/, "");
+  const first = body.indexOf("{");
+  if (first === -1) return null;
+  // 末尾側にもノイズが付く場合に備え、最後の } までを候補として1度だけ試す。
+  const last = body.lastIndexOf("}");
+  if (last > first) {
+    try {
+      return JSON.parse(body.slice(first, last + 1));
+    } catch { /* 候補が壊れていれば下の行単位走査へ */ }
+  }
+  // 1行1JSON（stream-json 等）に備え、行単位で後ろから最初に読めたものを採る。
+  const lines = body.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      return JSON.parse(t);
+    } catch { /* この行は JSON ではない */ }
+  }
+  return null;
 }
 
 /**

@@ -142,6 +142,56 @@ try {
     );
   });
 
+  // ── errors配列にだけ理由が入る系統（result が存在しないエンベロープ）─────────────
+  // subtype が error_during_execution / error_max_turns / error_max_budget_usd /
+  // error_max_structured_output_retries のとき、claude のエンベロープには result が無く、
+  // 理由は errors: string[] に入る。文字列フィールドしか見ない実装はここで本文を捨てる。
+  await t("resultが無くerrors配列にだけ理由がある場合でも、理由が表示される", async () => {
+    const envelope = JSON.stringify({
+      type: "result", subtype: "error_during_execution", is_error: true,
+      duration_ms: 12, num_turns: 1, session_id: "x", total_cost_usd: 0,
+      usage: { input_tokens: 0, output_tokens: 0 },
+      terminal_reason: "turn_setup_failed",
+      errors: ["Sandbox required but unavailable: MARKER_IN_ERRORS_ARRAY"],
+    });
+    installFakeClaude(`process.stdout.write(${JSON.stringify(envelope)});\nprocess.exit(1);`);
+    let caught = null;
+    try { await runClaudeJson({ stdin: "hi", cwd: mkCwd() }); }
+    catch (e) { caught = e; }
+    assert.ok(caught, "失敗するはずが成功した");
+    assert.ok(
+      caught.message.includes("MARKER_IN_ERRORS_ARRAY"),
+      `errors配列の理由が捨てられている: ${caught.message}`
+    );
+  });
+
+  // ── JSONの前にノイズが混ざっても、頭切り詰めへ戻らない ────────────────────────
+  // 更新通知・警告行・BOM 等が1行でも先に出ると JSON.parse が失敗する。素朴な実装は
+  // そこで生文字列の頭切り詰めへフォールバックし、末尾寄りにある理由へ到達できなくなる
+  // （＝修正前と同じ症状が、ノイズの出る環境でだけ再発する）。
+  await t("JSONの前に別の行が混ざっていても、末尾寄りの理由へ到達できる", async () => {
+    const envelope = JSON.stringify({
+      is_error: true, session_id: "x", total_cost_usd: 0,
+      usage: { input_tokens: 0, output_tokens: 0, padding: "x".repeat(700) },
+      result: "MARKER_AFTER_NOISE",
+    });
+    const noisy = `Some warning line before the JSON\n${envelope}`;
+    // 前提の確認: 素朴に頭から600文字切ると理由へ到達しない
+    assert.ok(
+      !noisy.slice(0, 600).includes("MARKER_AFTER_NOISE"),
+      "前提が崩れている: 600文字以内に理由が入ってしまい、この検査が何も守らない"
+    );
+    installFakeClaude(`process.stdout.write(${JSON.stringify(noisy)});\nprocess.exit(1);`);
+    let caught = null;
+    try { await runClaudeJson({ stdin: "hi", cwd: mkCwd() }); }
+    catch (e) { caught = e; }
+    assert.ok(caught, "失敗するはずが成功した");
+    assert.ok(
+      caught.message.includes("MARKER_AFTER_NOISE"),
+      `ノイズ混入時に理由へ到達できていない: ${caught.message}`
+    );
+  });
+
   await t("summarizeStdoutFailure: JSONでない出力はそのまま見せる(フォールバック)", async () => {
     assert.ok(summarizeStdoutFailure("plain text failure").includes("plain text failure"));
     assert.strictEqual(summarizeStdoutFailure(""), "");
