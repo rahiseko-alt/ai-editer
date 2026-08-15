@@ -44,9 +44,16 @@ function callClaude(prompt, onLog, useModel = true, cwd) {
     timeoutMs: TIMEOUT_MS,
     extraArgs: useModel ? ["--model", MODEL] : [],
   }).catch((e) => {
-    // 終了コードが 0 でない失敗にだけ stderr が付く（打ち切り・spawn 失敗・JSON 崩れには付かない）。
+    // 終了コードが 0 でない失敗にだけ stderr/stdout が付く（打ち切り・spawn 失敗・JSON 崩れには付かない）。
     // ＝再試行するのは「--model 指定が原因で終了コードが非0になった」場合だけ、という従来の絞り込みのまま。
-    if (useModel && MODEL_ERROR_RE.test(e?.stderr ?? "")) {
+    //
+    // 判定は stderr と stdout の両方に対して行う。claude はモデル起因の失敗のとき、stderr へは
+    // 機械可読タグ（[claude-code:unrecognized_model] {...}）を出す一方、人間可読な理由
+    // （"There's an issue with the selected model ..."）は結果として stdout 側へ出す。
+    // 旧実装は stderr だけを見ており、CLI の文言が変わって機械タグ側が正規表現に掛からなくなると、
+    // 退避できるはずの失敗をそのまま投げてしまう（2026-08-15 の調査で判明。docs/failures.md 参照）。
+    const failureText = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
+    if (useModel && MODEL_ERROR_RE.test(failureText)) {
       onLog(`[digest] --model ${MODEL} 失敗→CLI既定モデルで再試行`);
       return callClaude(prompt, onLog, false, cwd);
     }

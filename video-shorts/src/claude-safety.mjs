@@ -57,6 +57,29 @@ export const ALLOWED_ENV_VARS = [
   "PROCESSOR_ARCHITECTURE",
   "NUMBER_OF_PROCESSORS",
   "OS",
+  // USERNAME: Windows での実行ユーザー名（POSIX の USER 相当）。
+  "USERNAME",
+];
+
+/**
+ * Claude Code CLI 自身がバンドルする MCP SDK が「Windows で子プロセスへ渡す最小集合」として
+ * 定義している環境変数（2026-08-15 に実バイナリ v2.1.233 から読み取って確認）。
+ * ALLOWED_ENV_VARS がこれを満たすことを tests/claude-safety-win-env-check.mjs が機械で見張る。
+ * 上流が増やしたときに、こちらだけ古いまま気付かず取り残される事故を防ぐための対照表。
+ */
+export const WINDOWS_MINIMUM_ENV_VARS = [
+  "APPDATA",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "PATH",
+  "PROCESSOR_ARCHITECTURE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "USERNAME",
+  "USERPROFILE",
+  "PROGRAMFILES",
 ];
 
 /** allowlist に載っている環境変数だけを含む env オブジェクトを作る。 */
