@@ -468,6 +468,12 @@
     "criteriaHash": "c5259af7576f8732a5f0a574986e53c58d10900f669112be940ae4c0bcf6d347",
     "at": "2026-08-13",
     "reason": "done-gate(CI)の指摘への対応。この葉は元々criteria[0]にverifyCmdフィールドが無く、verify本文中に手順としてnode tests/trim-duration-check.mjsを実行する旨が書かれているだけだった。B/C/D/Eには既にverifyCmdフィールドがあり、この葉だけ機械が直接実行できる形になっていなかった。text/verifyの受入内容・判定ロジック・しきい値は一切変更せず、verifyCmdフィールド(\"node video-shorts/tests/trim-duration-check.mjs\")を追加しただけ。"
+   },
+   {
+    "id": "G-UI-REVAMP-LOOK-3PANE",
+    "criteriaHash": "37a9c8045f5a904b6817ff9b07ea2a0787a685569f18b22f01a375937e74309e",
+    "at": "2026-08-15",
+    "reason": "マスター指示『あとUI悪すぎる。中央は今の半分で良い。右を倍のサイズにしろ』による設計変更。右ペインの許容幅を 280〜360px から 600〜680px へ変更した(実装は 640px。従来の 320px のちょうど倍)。変更したのは右ペインの幅の範囲だけで、3列の並び順・非重なり・左ペインの幅の範囲(160〜240px)・上端一致(±1px)・高さ一致(±1px)・ヘッダーを除いた表示領域との一致(±1px)は一切変更していない。緩めた変更ではなく、マスターが求める見た目へ範囲を移動したもの。検査側(tests/ui-revamp-look-check.mjs)の数値も同じ範囲へ合わせ、実測 640px で PASS することを確認済み。"
    }
   ]
  },
