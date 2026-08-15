@@ -5961,7 +5961,7 @@
          "text": "字幕『あり』のとき、中央プレビューの動画領域(.video-area)の中に data-testid=caption-ghost の見本が表示され、字幕『なし』のときは表示されない。見本は上下ドラッグでも矢印キーでも位置が変わり、変えた値が画面の数値表示(data-testid=caption-pos-value)と一致する。",
          "verify": "実サーバ(node video-shorts/server/index.mjs)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1400x900 で / を開く。(1) 字幕なしの初期状態で caption-ghost が hidden であることを確認。(2) 字幕チップ on を押し、hidden が外れ、style.bottom が既定値(src/subtitle-styles.mjs の karaoke.marginV=360 を基準高さ1920で割った 18.8%)と一致することを確認。(3) 要素へフォーカスし ArrowUp を2回押して style.bottom が変わることと、caption-pos-value の文言にその数値が含まれることを確認。(4) mouse.down→move→up で動画領域の上方へドラッグし、style.bottom の数値が増える(=上へ動く)ことを確認。対照: 字幕なしのケースで hidden であることを同じ検査内で見る(常時表示する偽実装を弾く)。あわせて pageerror が0件であることを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "6e44256"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: caption-ghost が無い状態では locator が空になり、hidden 判定の evaluate 自体が落ちる。②正しい実装で1回実測: 既定 bottom=18.8%、ArrowUp×2 で 20.8%、動画領域の上から30%地点へのドラッグで 62.6% を実測した。③意図的に壊したものを当てる: 字幕なしのケースを同じ検査に入れてあるので、可視性の出し分けを外すと必ず落ちる。"
@@ -5977,7 +5977,7 @@
          "text": "プレビュー上で位置を動かしてから実行すると、POST /api/jobs のクエリ文字列に captionPos が載り、その値が画面に表示されている位置と一致する。位置を動かしていない（既定のまま／既定に戻した）ときは captionPos を送らない。",
          "verify": "実サーバ＋Playwright/Chromium で / を開き、字幕 on にしてから見本をドラッグで動かす。ダミーの mp4 を #file へ入れ、#btn-run → #confirm-run と進めて page.waitForRequest で POST /api/jobs を捕捉し、URL の captionPos が caption-ghost の style.bottom と一致することを確認する。対照: 画面を再読込して字幕 on → ArrowUp で一度動かす → data-testid=caption-pos-reset を押し、caption-ghost の dataset.capPos が空文字へ戻る(=run() の走査規則で送信対象から外れる)ことを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "6e44256"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: state へ captionPos キーが無ければ URLSearchParams に載らず、waitForRequest 後の一致比較で落ちる。②正しい実装で1回実測: ドラッグ後の送信値が画面表示と一致することを実測した。③意図的に壊したものを当てる: 『既定に戻す』の対照で、値が残っている実装なら空文字にならず落ちる。"
@@ -5993,7 +5993,7 @@
          "text": "位置を p％ 指定して生成した .ass の Caption スタイル行の MarginV が、出力canvasの高さ H に対して round(H × p/100) と一致する。縦(1080x1920)でも横(1920x1080)でも高さ基準で解釈される。pop プリセット（既定 Alignment=5＝画面中央で ASS 仕様上 MarginV を見ない）に位置を指定した場合は Alignment=2 へ落ち、MarginV が指定どおりになる。背景帯を on にしたとき、帯の描画位置も同じ向きに動く。",
          "verify": "video-shorts/src/subtitle-styles.mjs の resolveCaptionStyle(styleKey,{posPercent}) と video-shorts/src/srt-builder.mjs の buildAss() を実際に呼び、生成された .ass 文字列から 'Style: Caption,' 行を取り出して Alignment(第11欄)と MarginV(第14欄)を数値で読む。p=0/12.5/33/90 の4点(下端・低め・中間・上限の境界を含む)で round(1920×p/100) と一致することを確認。横向きは 1920x1080 で p=25 が round(1080×0.25) になることを確認。pop は位置未指定で Alignment=5、位置指定で Alignment=2 かつ MarginV=round(1920×0.4) を確認。背景帯は box.enabled で生成される \\pos(x,y) の y が、p=5 のときより p=70 のときの方が小さい（＝上へ動く）ことを確認。対照: 位置を指定しない場合、3プリセットすべてで MarginV が scaleToken(プリセット既定,1)、Alignment がプリセット既定のままであることを確認する（位置指定を無視する実装と、常に上書きする実装の両方を弾く）。",
          "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "6e44256"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: posPercent を読まない実装では MarginV がプリセット既定のままなので、p=0/12.5/33/90 の一致比較で落ちる。②正しい実装で1回実測: p=33 → MarginV=634、横1920x1080 の p=25 → MarginV=270、pop の p=40 → Alignment=2 / MarginV=768 を実測した。③意図的に壊したものを当てる: pop の Alignment を 5 のままにすると『指定しても効かない』状態になり、Alignment=2 の確認で落ちる（実装中に実際にこの経路を踏み、align を st.mode ではなく st.align 優先へ直した）。"
@@ -6009,7 +6009,7 @@
          "text": "server/job-params.mjs の parseJobParams は captionPos として 0 と 90（境界）および中間値を受理し、範囲外(-1 / 91)・数値でない値(abc / 空 / 空白)・プロトタイプ汚染狙い(__proto__)・Infinity / NaN はすべて undefined へ丸める。丸めた場合 server/pipeline-runner.mjs の buildRenderArgs は --caption-pos を付けない。受理した場合は 0 であっても argv へ渡す。",
          "verify": "video-shorts/server/job-params.mjs の parseJobParams(new URLSearchParams({captionPos: v})) を、受理側 v=0/90/33.5、丸め側 v='-1'/'91'/'abc'/''/'  '/'__proto__'/'Infinity'/'NaN' および captionPos キー自体が無い場合について呼び、戻り値の captionPos を assert する。続けて buildRenderArgs('/p/pipeline.mjs','/w', parseJobParams(...)) の argv 配列を実測し、v=0/45/90 では '--caption-pos' の次要素が String(v) であること、未指定では '--caption-pos' が argv に含まれないことを確認する。対照: 0 を truthy 判定で落とす実装だと v=0 のケースだけが落ちる（0＝画面の一番下は正当な指定なので、これを黙って捨てるのは欠陥）。あわせて resolveCaptionStyle が -1 / 90超 / 'abc' / NaN / Infinity に対して例外を投げる（黙って既定色ならぬ既定位置へ落とさない）ことを確認する。",
          "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "6e44256"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: captionPos を返さない parseJobParams では受理側3件が undefined になって落ちる。②正しい実装で1回実測: 0/90/33.5 が素通し、範囲外・不正8件すべてが undefined、argv に '--caption-pos','0' が入ることを実測した。③意図的に壊したものを当てる: buildRenderArgs を `if (opts.captionPos)` の truthy 判定に戻すと v=0 のケースだけが落ちることを確認した。"
@@ -6033,7 +6033,7 @@
          "text": "同じサーバを GROQ_API_KEY 無し／有りの2通りで起動し、画面 / を開いたときに data-testid=privacy-note の要素へ出る説明文が、それぞれ『外部へ送らない』趣旨／『Groq へ音声を送信する』趣旨になっている。2通りで実際に別の文が出る。読み込み中の仮文言のまま残らない。判定は特定の語句の一致ではなく意味で行い、『このPCの中だけ』『端末の中だけ』『送信しません』のような言い換えも、クラウド経路では不合格として検出できる。",
          "verify": "実サーバ(node video-shorts/server/index.mjs)を PORT 5294 に GROQ_API_KEY='' で、PORT 5295 に GROQ_API_KEY='gsk_dummy_for_test_only' で起動する（値の有無だけを見る実装なので Groq へは接続しない）。Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で各々 / を開き、data-testid=privacy-note のすべての要素の textContent と dataset.transcribe を採る。dataset.transcribe が local/cloud と一致すること、checkBackendNote(kind,text) が null を返すこと、2通りの文が異なることを確認する。対照3本を同じ検査に置く: (a) 変更前の固定文言『この動画はこのPCの中だけで処理されます（外部に送りません）。』が local では通り cloud では落ちること、(b) 『処理はこのPCの中だけで行います。』『音声を外部へ送信しません。』『動画は端末の中だけで処理され、外部には送りません。』の3つの言い換えがすべて cloud で落ちること、(c) 読み込み中の仮文言『文字起こしの処理先を確認しています…』が local/cloud の両方で落ちること。",
          "verifyCmd": "node video-shorts/tests/transcribe-backend-note-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "6e44256"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: 表示を差し替えない実装では仮文言のまま残り、(c) の対照と同じ条件で落ちる。②正しい実装で1回実測: 鍵なしで dataset.transcribe='local'、鍵ありで 'cloud' となり、2通りで別の文が出ることを実測した（GET /api/env は {\"transcribe\":\"local\"} / {\"transcribe\":\"cloud\"} を返す）。③意図的に壊したものを当てる: 変更前の固定文言を判定関数へ直接食わせ、cloud のケースで検出できることを確認した。語句一致だけの判定では言い換えを見逃すため、3通りの言い換えも同時に確認している。"
