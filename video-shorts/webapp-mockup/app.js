@@ -77,7 +77,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
     if (g === "trim") updateTrimDesc();
     if (g === "breath") updateBreathDesc();
-    if (g === "cut") { showCut(); updateDurationVisibility(); }
+    if (g === "cut") { showCut(); updateDurationVisibility(); updateBreathVisibility(); }
     if (g === "size") updateVideoArea(btn);
     if (g === "exportPreset") updateExportDesc();
     // 内側縁取り・背景帯: on/offチップの選択そのものは他設定と同じ総称ハンドラで拾えるが、
@@ -278,6 +278,16 @@ function showCut() {
 function updateDurationVisibility() {
   const el = $("card-duration");
   if (el) el.classList.toggle("hidden", state.cut !== "topic");
+}
+
+// つなぎ目の間は「分数で切る」(=digest)のときしか効かない。
+// server/pipeline-runner.mjs:818 が cut==="minutes" のときだけ mode="digest" にし、
+// pipeline.mjs:453 が mode==="digest" のときだけ breath を適用するため。
+// 2026-08-16 まで、この設定は「話題で切る」でも表示され、選んでも出力が1ミリも
+// 変わらなかった（マスター指摘⑥）。効かない場面では出さない。
+function updateBreathVisibility() {
+  const el = $("card-breath");
+  if (el) el.classList.toggle("hidden", state.cut !== "minutes");
 }
 const durationMinInput = $("duration-min");
 if (durationMinInput) durationMinInput.addEventListener("input", () => {
@@ -929,6 +939,7 @@ showCut();
 updateSubDesc();
 updateCaptionStyleVisibility();
 updateDurationVisibility();
+updateBreathVisibility();
 updateExportDesc();
 refresh();
 // 初期サイズチップの動画領域を反映（デバイス枠は固定のため触らない）
