@@ -616,16 +616,36 @@ t("UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指�
   assert.ok(/data-val="0\.4"/.test(m[0]) && /data-val="1"/.test(m[0]), "長さを選べる");
 });
 
+// G-EDIT-UI-SETTINGS-WIRING-CLIENT: run()の送信処理は state を Object.entries() で丸ごと
+// 走査し、個別のキー(k)がEXCLUDEDリスト([file, device, cutMin])に無ければ自動的に送信対象へ
+// なる（params.set(...)を1つずつ書き足す形をやめた＝過去2回の「足し忘れ」事故の再発防止）。
+// よって「breath/trim/mosaicが送られるか」は「stateの初期キーに存在し、かつEXCLUDEDに
+// 含まれていないか」という実際の判定メカニズムで見る（`breath:\s*state\.breath`のような
+// 個別記述のソース照合は、この丸ごと走査の実装では意味を失う）。
+function readAppJs() {
+  return fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+}
+function stateBlock(app) {
+  const m = app.match(/const state = \{[^]*?\n\};/);
+  assert.ok(m, "state の初期値ブロックが見つからない");
+  return m[0];
+}
+function excludedKeys(app) {
+  const m = app.match(/\[("file", "device", "cutMin"|"device", "file", "cutMin"|[^\]]*)\]\.includes\(k\)/);
+  assert.ok(m, "run()の送信ループの除外リストが見つからない");
+  return m[0];
+}
+
 t("UI: 選んだ間の長さが /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/breath:\s*state\.breath/.test(app), "送信パラメータに breath が入る");
-  assert.ok(/breath:\s*""/.test(app), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+  const app = readAppJs();
+  assert.ok(/breath:\s*""/.test(stateBlock(app)), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+  assert.ok(!/"breath"/.test(excludedKeys(app)), "breath が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");
-  assert.ok(/trim:\s*"none"/.test(app), "画面の初期値が none（既定で詰めない）");
+  const app = readAppJs();
+  assert.ok(/trim:\s*"none"/.test(stateBlock(app)), "画面の初期値が none（既定で詰めない）");
+  assert.ok(!/"trim"/.test(excludedKeys(app)), "trim が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {
@@ -701,8 +721,9 @@ t("UI: 候補に区間の時刻を持たせている（そのクリップの語�
 });
 
 t("UI: 選んだモザイクの値が /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "送信パラメータに mosaic が入る");
+  const app = readAppJs();
+  assert.ok(/mosaic:\s*"none"/.test(stateBlock(app)), "画面の初期値が none（既定でモザイクを掛けない）");
+  assert.ok(!/"mosaic"/.test(excludedKeys(app)), "mosaic が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 // 画面→サーバの配線。ここが抜けると「画面で選んでもモザイクが掛からない」のに
