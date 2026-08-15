@@ -4917,7 +4917,7 @@
      "kind": "state",
      "theme": "字幕の見た目・1本の長さ・書き出し画質を、CLIを使わずブラウザ画面だけで選べる",
      "meaning": "マスターがコマンドを打たなくても、これまで作った字幕スタイル(PR #116)・尺の指示(M4)・書き出しプリセット(M5)を実際に使える。設定を1つ足すたびに「画面で選べるのに一切効かない」事故を繰り返さない",
-     "detail": "2026-08-15 マスター指示「裏側でお前動いていいけど、UI上で操作できるようにできるか？」を受けて着手。現状ブラウザ画面から操作できるのは6項目(字幕あり/なし・切り方・サイズ・顔モザイク・間を詰める・つなぎ目の間)だけで、字幕スタイル一式(--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band/--sub-style)・尺の指示(--duration-min)・書き出しプリセット(--export)はCLIからしか触れない。\n\n【前提の確認】build-dist.mjsはserver/とwebapp-mockup/を配布物から除外しており(コメント上「保留経路」)、tests/e2e-three-paths-check.mjsも画面を「実際の入口ではない・退行検知用」と明記している。マスターへ確認し、「ブラウザ画面を本番の制御盤にする」「利用者は現状マスター本人(実客はまだ無い)」の2点を確定した。配布物(build-dist.mjs)へserver/webapp-mockup/を含めるかは別判断とし、今回のNon-goalとする(R1として残す)。\n\n【繰り返されている事故】設定を画面から足したのに結線が欠けて効かない事故が過去2回発生: 顔モザイク(G-EDIT-MOSAIC-UI-O-2)、つなぎ目の間(docs/failures.md 2026-08-14最終項、外部レビューでCritical判定)。いずれも「parseJobParamsは返しているのにハンドラが渡し忘れる」形。\n\n【basis-reviewer 第1回の反証7件と対応】(1)webapp-mockup/app.jsのrun()は送信パラメータをsub/mosaic/trim/breath/cut/size/nameと1つずつ手で列挙しており、ここへ新設定を足し忘れると実ブラウザからは一切送られない＝過去2回と同じ形の事故になるのに、当初のWIRING/ACCEPT葉はどちらも実ブラウザのrun()を経由せず合成データで検査していたため検出できなかった。WIRING-CLIENT葉を新設し、実ブラウザで8設定すべてを操作し実際の送信リクエストを検査する。(2)字幕スタイル(karaoke/pop/bold)はCLI側(G-EDIT-CAPTION-STYLE)でも一度も見た目を確認されたことが無いのに、ACCEPT葉が『CLI側で画素検証済みだから受理確認だけでよい』という誤った前提で見た目の効果を省いていた。STYLE葉を新設し、出来た.assの内容がスタイルに応じて構造的に変わることを確認する(新機能の画素検証を追加するのではなく、既存機能の効果が実際に出ることを見る)。(3)CONDITIONALがUI非表示とバックエンド無視という独立に壊れうる2事実を1葉にまとめていたため、CONDITIONAL-UI/CONDITIONAL-BACKENDへ分割。(4)DURATIONも入力欄の表示制御と尺への実効果という独立の2事実を1葉にまとめていたため、DURATION-VISIBILITY/DURATION-EFFECTへ分割。(5)親detailで『複数設定の同時指定』を分解の軸に掲げながら対応する葉が無かったため、COMPOSE葉を新設。(6)VALIDATEが『クラッシュしない』ことしか見ておらず『本当に既定値になっているか』を測っていなかったため、実測した既定値との一致を criteria/verify へ明記。(7)全葉に凍結前の探り3本(偽実装で落ちる／正しい実装で通る／わざと壊して落ちる)の実行記録が無かった点は、G-EDIT-BREATHと同じ運用(各Mの実装完了時にverifyスクリプトへ実際に3種の実装を通し、detailへ実行記録を残してからstatusをdoneにする)を踏襲することをここに明記し、M6で全葉done化する際に必ず実施する。\n\n【対象外(Non-goal)】エンコーダの生ノブ(--vcodec/--crf/--abitrate/--enc-preset)個別追加は--exportが利用者向けの言葉で既に包んでいるため対象外。--min-secは--duration-min指定時に無視される実装のため、両方出すと「効かない設定」を自ら作ることになるので対象外(pipeline.mjs:369-370)。--api/--mode/--orientは開発用または既存チップが既に担っているため対象外。画面構成そのものの作り直しも対象外(今の画面に足す)。字幕スタイル(karaoke/pop/bold)自体の見た目の正しさ(CLI側の新規画素検証)は既存機能の再検証であり今回追加しない。STYLE葉は「UIから選んだ値が.assへ構造的に反映される」ことだけを見る。\n\n【分解の軸】機能軸(字幕の見た目/尺/書き出し)、経路軸(クライアント側の送信→サーバの受理→レンダリングコマンド→出力)、故障モード軸(結線の欠落/不正値でのジョブ失敗/未指定時の退行/条件付き表示の取り違え/同時指定の相互干渉)、Journey軸(失敗後のやり直し・複数設定の同時指定)を横断して葉を起こしてある。UAC(利用者から観測できる受入事実)は実ブラウザ→実サーバ→出力実測で検証し、ソース文字列の正規表現照合は用いない(つなぎ目の間で外部レビューが指摘した弱点そのものの再発防止)。詳細な計画はUser Goal/Journey/Acceptance Criteria/Adversarial Reviewを含め、セッション開始時にマスター承認済み。",
+     "detail": "2026-08-15 マスター指示「裏側でお前動いていいけど、UI上で操作できるようにできるか？」を受けて着手。現状ブラウザ画面から操作できるのは6項目(字幕あり/なし・切り方・サイズ・顔モザイク・間を詰める・つなぎ目の間)だけで、字幕スタイル一式(--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band/--sub-style)・尺の指示(--duration-min)・書き出しプリセット(--export)はCLIからしか触れない。\n\n【前提の確認】build-dist.mjsはserver/とwebapp-mockup/を配布物から除外しており(コメント上「保留経路」)、tests/e2e-three-paths-check.mjsも画面を「実際の入口ではない・退行検知用」と明記している。マスターへ確認し、「ブラウザ画面を本番の制御盤にする」「利用者は現状マスター本人(実客はまだ無い)」の2点を確定した。配布物(build-dist.mjs)へserver/webapp-mockup/を含めるかは別判断とし、今回のNon-goalとする(R1として残す)。\n\n【繰り返されている事故】設定を画面から足したのに結線が欠けて効かない事故が過去2回発生: 顔モザイク(G-EDIT-MOSAIC-UI-O-2)、つなぎ目の間(docs/failures.md 2026-08-14最終項、外部レビューでCritical判定)。いずれも「parseJobParamsは返しているのにハンドラが渡し忘れる」形。\n\n【basis-reviewer 第1回の反証7件と対応】(1)webapp-mockup/app.jsのrun()は送信パラメータをsub/mosaic/trim/breath/cut/size/nameと1つずつ手で列挙しており、ここへ新設定を足し忘れると実ブラウザからは一切送られない＝過去2回と同じ形の事故になるのに、当初のWIRING/ACCEPT葉はどちらも実ブラウザのrun()を経由せず合成データで検査していたため検出できなかった。WIRING-CLIENT葉を新設し、実ブラウザで8設定すべてを操作し実際の送信リクエストを検査する。(2)字幕スタイル(karaoke/pop/bold)はCLI側(G-EDIT-CAPTION-STYLE)でも一度も見た目を確認されたことが無いのに、ACCEPT葉が『CLI側で画素検証済みだから受理確認だけでよい』という誤った前提で見た目の効果を省いていた。STYLE葉を新設した。(3)CONDITIONALがUI非表示とバックエンド無視という独立に壊れうる2事実を1葉にまとめていたため、CONDITIONAL-UI/CONDITIONAL-BACKENDへ分割。(4)DURATIONも入力欄の表示制御と尺への実効果という独立の2事実を1葉にまとめていたため、DURATION-VISIBILITY/DURATION-EFFECTへ分割。(5)親detailで『複数設定の同時指定』を分解の軸に掲げながら対応する葉が無かったため、COMPOSE葉を新設。(6)VALIDATEが『クラッシュしない』ことしか見ておらず『本当に既定値になっているか』を測っていなかったため、実測した既定値との一致を criteria/verify へ明記。(7)全葉に凍結前の探り3本の実行記録が無かった点。\n\n【basis-reviewer 第2回の反証9件と対応】(1)『探りは後で実施する』という予告は実行記録ではなく反証のままである、との指摘。→ 本ノードの16葉は基準の言語化(criteria/verify)の凍結までを本ラウンドの範囲とし、探り3本の実測はM1〜M6の実装フェーズで、実際に動く検証スクリプトへ①偽実装②正しい実装③破壊実装を通してから各葉のdetailへ記録し、記録した葉から個別にstatusをdoneへ更新する(G-EDIT-BREATHと同一運用)。この結果、G-EDIT-UI-SETTINGS自体はM6完了まで親としてもdoneにならない。(2)captionOutlineColor/captionInnerに効果確認葉が無い(FONT/FILL/BANDと非対称)→ OUTLINE/INNER葉を新設し画素で確認する。(3)WIRING-SERVERがparseJobParamsを経由せず合成optsで検査していた→ verifyを実searchParams→parseJobParams()→buildRenderArgs()の実チェーンへ修正。(4)COMPOSEが競合しない5設定の組合せ1本しか見ていない→ 検証シナリオを2本(通常5設定の同時指定／captionInner+captionBandの重なり・durationMin+trim=onの相互作用)へ拡張。(5)STYLEがpop/boldのどちらか片方でよい文言だった→ 両方を要求する文言へ修正。(6)STYLEが.ass構造差分のみで画素を見ておらず、FONT/FILL/BANDと検証強度が非対称→ 『字幕テキストが実際に描画されている(空白でない)』ことを画素で確認する項目を追加し、構造差分と画素の両方を見る。(7)VALIDATEが8設定中4設定(captionFill/durationMin/exportPreset/captionFont)にしか不正値を要求していない→ 残りのsubStyle/captionOutlineColor/captionInner/captionBandにも不正値ケースを追加し8設定全部を対象にした。(8)FONT/FILL/DURATION-EFFECTが単一の非既定値としか比較しておらず、『常に固定の非既定値を返す』偽実装を排除できない→ いずれも2種類以上の異なる値を試し、選んだ値ごとに出力が異なることを要求する文言へ修正。(9)ACCEPTのthemeに実装ファイル名(pipeline.mjs)が直書きされていた→ 平易な言い回しへ修正。\n\n【探りの運用】上記のとおり、本ラウンドは『何を・どう測るか』の言語化の凍結であり、実測(探り3本)は各葉の実装完了時に必須で行う。実装済みでない葉のstatusは一貫して\"todo\"のままとし、\"todo\"であること自体が『まだ探っていない』ことの正直な表示である(basis-reviewerが指摘した『先送りの予告』ではなく、この二段階運用そのものがG-EDIT-BREATHの実績に基づく確立した手順であることをここに明記する)。\n\n【対象外(Non-goal)】エンコーダの生ノブ(--vcodec/--crf/--abitrate/--enc-preset)個別追加は--exportが利用者向けの言葉で既に包んでいるため対象外。--min-secは--duration-min指定時に無視される実装のため、両方出すと「効かない設定」を自ら作ることになるので対象外(pipeline.mjs:369-370)。--api/--mode/--orientは開発用または既存チップが既に担っているため対象外。画面構成そのものの作り直しも対象外(今の画面に足す)。字幕スタイル(karaoke/pop/bold)自体のCLI側アニメーション精度の新規画素検証(1文字単位のタイミング等)は既存機能の再検証であり今回追加しない。STYLE葉が見るのは『選んだスタイルの指示が出力へ反映され、かつ実際に文字が描画されている』ことまで。\n\n【分解の軸】機能軸(字幕の見た目/尺/書き出し)、経路軸(クライアント側の送信→サーバの受理→レンダリングコマンド→出力)、故障モード軸(結線の欠落/不正値でのジョブ失敗/未指定時の退行/条件付き表示の取り違え/同時指定の相互干渉/固定値を返す安価な偽実装)、Journey軸(失敗後のやり直し・複数設定の同時指定)を横断して葉を起こしてある。UAC(利用者から観測できる受入事実)は実ブラウザ→実サーバ→出力実測で検証し、ソース文字列の正規表現照合は用いない(つなぎ目の間で外部レビューが指摘した弱点そのものの再発防止)。詳細な計画はUser Goal/Journey/Acceptance Criteria/Adversarial Reviewを含め、セッション開始時にマスター承認済み。",
      "children": [
       {
        "id": "G-EDIT-UI-SETTINGS-WIRING-CLIENT",
@@ -4940,8 +4940,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "server/pipeline-runner.mjsのrender argv組み立てを純粋関数buildRenderArgs(pipelinePath, workDir, opts)へ切り出し、parseJobParamsが返すキー(sub/cut/size/cutMin/mosaic/trim/breath/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を1つずつ数え上げるのではなく、この関数を通してargvへ渡す。既存の--mode/--no-sub/--breathも同じ関数を通ることで、今回の変更が既存設定の結線を壊していないことも同時に検知する。",
-         "verify": "buildRenderArgs()を直接呼び出し、戻り値のargv配列を実測する単体検査を追加する(ソース文字列の正規表現照合は禁止。つなぎ目の間でCodeRabbitが指摘した弱点そのものであるため)。各キーに具体的な値を渡し、対応する--フラグと値がargvに実在することを配列の中身で確認する。あわせてtests/smoke.mjsの既存検査『サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる』(正規表現照合)をbuildRenderArgsの実測へ置き換える。"
+         "text": "server/pipeline-runner.mjsのrender argv組み立てを純粋関数buildRenderArgs(pipelinePath, workDir, opts)へ切り出し、parseJobParamsが返すキー(sub/cut/size/cutMin/mosaic/trim/breath/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を1つずつ数え上げるのではなく、この関数を通してargvへ渡す。既存の--mode/--no-sub/--breathも同じ関数を通ることで、今回の変更が既存設定の結線を壊していないことも同時に検知する。『受け取った設定が届く』という約束は、クエリ文字列の受理(parseJobParams)からargvまでの鎖全体で成立していること。",
+         "verify": "実際のURLSearchParams(8設定それぞれに具体的な値を持つクエリ文字列)を組み立て、それをparseJobParams()へ通し、その**戻り値をそのままbuildRenderArgs()へ渡す**(あらかじめ用意した合成optsを直接渡すのではなく、parseJobParamsの実出力を経由させる。CodeRabbitが指摘した『検証がソース文字列やハンドコードされた値で完結し、実際の変換ロジックを通らない』弱点の再発防止)。得られたargv配列に対応する--フラグと値が実在することを配列の中身で確認する(正規表現照合は禁止)。あわせてtests/smoke.mjsの既存検査『サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる』(正規表現照合)を、この実チェーンの実測へ置き換える。"
         }
        ]
       },
@@ -4953,16 +4953,16 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "range外・不正形式・欠落・__proto__/constructor等のプロトタイプ汚染狙いの値がクエリパラメータとして来ても、parseJobParamsが例外を投げず既定値へ丸め、pipeline.mjsをfail-fastさせず、ジョブが最後まで(stage=doneまで)完走する。かつ、丸めた結果が『何も指定しなかったとき』と同じ真の既定値(captionFillなら既定色、captionFontなら既定書体kaku等)であることを実測で確認する(クラッシュしないことだけでは満たさない。丸めた先が壊れた別の値になっていても検出できるようにする)。",
-         "verify": "captionFill=red(不正形式)/durationMin=-5(範囲外)/exportPreset=unknown(未知の名前)/captionFont=__proto__(プロトタイプ汚染狙い)を含む細工クエリで、parseJobParamsの単体検査(丸めた値が既定値と一致することの確認)に加え、実サーバを起動しPOST /api/jobsから実際にジョブを走らせ、stageがerrorへ落ちずdoneへ到達すること、および出来た成果物(字幕フレームの色等、測定可能な項目)が『新設定を一切送らない場合』と一致することを確認する。"
+         "text": "range外・不正形式・欠落・__proto__/constructor等のプロトタイプ汚染狙いの値が、8設定(subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)のどれについてクエリパラメータとして来ても、parseJobParamsが例外を投げず既定値へ丸め、pipeline.mjsをfail-fastさせず、ジョブが最後まで(stage=doneまで)完走する。かつ、丸めた結果が『何も指定しなかったとき』と同じ真の既定値であることを実測で確認する(クラッシュしないことだけでは満たさない。丸めた先が壊れた別の値になっていても検出できるようにする)。",
+         "verify": "8設定それぞれについて少なくとも1つの不正値ケースを用意する: subStyle=unknown/captionFont=__proto__(プロトタイプ汚染狙い)/captionFill=red(不正形式)/captionOutlineColor=notacolor/captionInner=badvalue/captionBand=xyz/exportPreset=unknown(未知の名前)/durationMin=-5(範囲外)またはabc(数値でない)。それぞれ単独で含む細工クエリで、parseJobParamsの単体検査(丸めた値が既定値と一致することの確認)に加え、実サーバを起動しPOST /api/jobsから実際にジョブを走らせ、stageがerrorへ落ちずdoneへ到達すること、および出来た成果物(字幕フレームの色・書体等、測定可能な項目)が『新設定を一切送らない場合』と一致することを確認する。"
         }
        ]
       },
       {
        "id": "G-EDIT-UI-SETTINGS-ACCEPT",
        "kind": "state",
-       "theme": "画面のどの選択肢を選んでも、サーバとpipeline.mjsが必ず受理する",
-       "meaning": "画面に用意した選択肢が、実は一部だけpipeline.mjsに拒否される(選べるのに失敗する)状態を無くす",
+       "theme": "画面のどの選択肢を選んでも、裏側の処理が必ず受理する",
+       "meaning": "画面に用意した選択肢が、実は一部だけ裏側に拒否される(選べるのに失敗する)状態を無くす",
        "status": "todo",
        "criteria": [
         {
@@ -4992,8 +4992,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "実ブラウザで書体チップ(明朝体など既定=角ゴシック以外のもの)を選び「作る」を実行して出来た動画の字幕フレームが、書体を選ばず(既定のまま)作った動画の字幕フレームと画素で異なる字形になっている。.assファイルにフォント名が書かれているだけでは満たさない(フォント実体が無く描画に反映されない事故を検出できない)。",
-         "verify": "playwrightで実サーバに接続し、動画をアップロード→字幕あり→書体チップ(既定以外)を選択→作成を実行する。出来た動画のフレームをtests/helpers/caption-style-render.mjsと同じ作法(dominantColors/画素比較に準じる字形比較)で、既定書体の出力と比較し、有意に異なることを確認する。"
+         "text": "実ブラウザで書体チップを2種類以上(例: 明朝体・手書き風。いずれも既定=角ゴシック以外)選び、それぞれ「作る」を実行して出来た動画の字幕フレームが、(a)書体を選ばず(既定のまま)作った動画の字幕フレームと画素で異なる字形になっている、(b)選んだ2種類どうしでも互いに画素で異なる字形になっている。(b)が無いと『何を選んでも常に同じ1つの非既定書体を返す』安価な偽実装を見逃す。.assファイルにフォント名が書かれているだけでは満たさない(フォント実体が無く描画に反映されない事故を検出できない)。",
+         "verify": "playwrightで実サーバに接続し、動画をアップロード→字幕あり→書体チップ(明朝体)を選択→作成を実行する。同様に書体チップ(手書き風)でも作成する。出来た2本の動画のフレームをtests/helpers/caption-style-render.mjsと同じ作法(dominantColors/画素比較に準じる字形比較)で、(1)それぞれが既定書体の出力と有意に異なること、(2)明朝体と手書き風の2本が互いに有意に異なることの両方を確認する。"
         }
        ]
       },
@@ -5005,8 +5005,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "実ブラウザで文字色を指定(例 #FF0000)して作成した動画の字幕領域の支配色が、指定した色に一致する。サーバが値を受理したのに黙って既定色へ落とす実装ではこれを満たさない。",
-         "verify": "playwrightで実サーバに接続し、文字色を#FF0000へ指定して作成する。出来た動画のフレームからtests/helpers/caption-style-render.mjsのdominantColors()で字幕領域の支配色を測り、colorClose()で指定色と一致することを確認する。"
+         "text": "実ブラウザで文字色を2種類以上(例 #FF0000と#00FF00)指定してそれぞれ作成した動画の字幕領域の支配色が、指定した色にそれぞれ一致する。かつ2種類の出力が互いに異なる色になっている(『何を選んでも常に同じ1つの非既定色を返す』安価な偽実装を見逃さないため)。サーバが値を受理したのに黙って既定色へ落とす実装ではこれを満たさない。",
+         "verify": "playwrightで実サーバに接続し、文字色を#FF0000へ指定して作成する。同様に#00FF00でも作成する。出来た2本の動画のフレームからtests/helpers/caption-style-render.mjsのdominantColors()で字幕領域の支配色を測り、(1)それぞれがcolorClose()で指定色と一致すること、(2)2本の支配色が互いに異なることの両方を確認する。"
         }
        ]
       },
@@ -5026,13 +5026,39 @@
       {
        "id": "G-EDIT-UI-SETTINGS-STYLE",
        "kind": "state",
-       "theme": "画面で字幕のスタイル(ワードハイライト/1語ずつポップ/太字ライン)を選ぶと、出来た字幕の作り方がスタイルどおりに変わる",
-       "meaning": "書体・色だけでなく、字幕の動き方そのものも画面から選べる。選んでも常に同じ動きのままという事故を防ぐ",
+       "theme": "画面で字幕のスタイル(ワードハイライト/1語ずつポップ/太字ライン)を選ぶと、出来た字幕の作り方がスタイルどおりに変わり、実際に字幕として描画される",
+       "meaning": "書体・色だけでなく、字幕の動き方そのものも画面から選べる。選んでも常に同じ動きのまま、あるいは指示だけ書かれて実際には描かれない、という事故を防ぐ",
        "status": "todo",
        "criteria": [
         {
-         "text": "実ブラウザでスタイルを既定(karaoke)以外(pop または bold)へ変更して作成した動画の.ass内容が、karaokeで作成した場合と構造的に異なる(SUBTITLE_STYLESが定義するタグ・アニメーション指定の違いが実際の出力へ反映されている)。この葉はsubStyleがCLI側も含め初めて『選んだ効果が実際に出ているか』を確認する葉であり(basis-reviewer反証2)、画素比較までは求めず.assの構造差分で見る。",
-         "verify": "playwrightで実サーバに接続し、字幕あり→スタイルpop(またはbold)を選択→作成を実行する。出来た.assファイルをkaraoke(既定)で作成したものと比較し、SUBTITLE_STYLESの定義に対応する構造上の差分(アニメーションタグの有無・種類等)が実在することを確認する。"
+         "text": "実ブラウザでスタイルをpopとboldの**両方**へ、それぞれ既定(karaoke)から変更して作成した動画の.ass内容が、karaokeで作成した場合と構造的に異なる(SUBTITLE_STYLESが定義するタグ・アニメーション指定の違いが実際の出力へ反映されている)。かつ、popとboldの2本それぞれで、出来た動画の字幕領域に実際に文字が描画されている(空白のままではない)ことを画素で確認する。この葉はsubStyleがCLI側も含め初めて『選んだ効果が実際に出ているか』を確認する葉であり(basis-reviewer反証2)、CLI側のアニメーション精度そのものの新規画素検証までは求めないが、『指示は書けたが実際には描かれない』事故(ASS構文ミス等)は画素で検出する。",
+         "verify": "playwrightで実サーバに接続し、字幕あり→スタイルpopを選択→作成を実行する。同様にboldでも作成する。出来た2本の.assファイルをkaraoke(既定)で作成したものと比較し、SUBTITLE_STYLESの定義に対応する構造上の差分が実在することを確認する。あわせて2本それぞれの出力フレームの字幕領域を、字幕なしで作成した同一素材のフレームと画素比較し、有意な差分(=文字が実際に描画されている)があることを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-OUTLINE",
+       "kind": "state",
+       "theme": "画面で縁取り色を選ぶと、出来た動画の字幕の縁取りがその色になる",
+       "meaning": "画面から縁取り色を選んでも実は無視される、という事故を防ぐ(basis-reviewer反証2で発見。FONT/FILL/BANDだけにこの確認があり、この設定だけ抜けていた)",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "実ブラウザで縁取り色を既定(黒)以外(例 #0000FF)へ指定して作成した動画の字幕縁取り領域の色が、指定した色に一致する。既存のG-EDIT-CAPTION-STYLE-COLOR-OUTLINE葉がCLI側の描画自体は画素検証済みのため、この葉はUIから選んだ値が実際にその経路まで届くことを確認する。",
+         "verify": "playwrightで実サーバに接続し、縁取り色を#0000FFへ指定して作成する。出来た動画のフレームから字幕の縁取り領域の色を実測し、既定(黒)で作成した場合と有意に異なり、かつ指定した#0000FFに近いことを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-INNER",
+       "kind": "state",
+       "theme": "画面で内側縁取りのon/offを選ぶと、出来た動画にその通り内側の縁取りが出る・出ない",
+       "meaning": "画面から内側縁取りを選んでも実は無視される、という事故を防ぐ(basis-reviewer反証2で発見)",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "実ブラウザで内側縁取りonを色指定(例 #FFFF00)して作成した動画の字幕領域と、offのまま作成した動画の同領域とで、画素が明確に異なる(内側縁取りが実際に描かれている)。既存のG-EDIT-CAPTION-STYLE-INNER葉がCLI側の描画自体は画素検証済みのため、この葉はUIから選んだ値が実際にその経路まで届くことを確認する。",
+         "verify": "playwrightで内側縁取りon(#FFFF00)/offそれぞれで作成し、字幕領域の画素をtests/helpers/caption-style-render.mjsの作法で比較する。on側にだけ内側縁取りの色が現れることを確認する。"
         }
        ]
       },
@@ -5057,8 +5083,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "『話題で切る』を選んでいる状態で、画面から『1本の目安の長さ』へ具体的な値(例 2分)を指定して作成すると、出来た各候補の尺が指定値の±30%の範囲(pipeline.mjsのresolveTargetDurationと同じ規則)に収まる。",
-         "verify": "playwrightで実サーバに接続し、『話題で切る』のまま『1本の目安の長さ』へ2分を指定して作成を実行し、candidates.jsonの各候補durationを実測して範囲内であることを確認する。"
+         "text": "『話題で切る』を選んでいる状態で、画面から『1本の目安の長さ』へ具体的な値(例 1分と4分の2種類)を指定してそれぞれ作成すると、出来た各候補の尺が指定値ごとの±30%の範囲(pipeline.mjsのresolveTargetDurationと同じ規則)に収まる。かつ1分指定の結果と4分指定の結果とで、候補の尺の分布が明確に異なる(『何を指定しても常に同じ固定の尺を返す』安価な偽実装を見逃さないため)。",
+         "verify": "playwrightで実サーバに接続し、『話題で切る』のまま『1本の目安の長さ』へ1分を指定して作成を実行し、candidates.jsonの各候補durationを実測する。同様に4分でも作成し実測する。(1)それぞれが対応する±30%範囲内であること、(2)1分側の尺の代表値(例:中央値)が4分側の尺の代表値より明確に小さいことの両方を確認する。"
         }
        ]
       },
@@ -5109,8 +5135,8 @@
        "status": "todo",
        "criteria": [
         {
-         "text": "実ブラウザで書体(既定以外)・文字色(既定以外)・背景帯on・書き出し(軽くして共有)・1本の目安の長さ(2分、話題で切るモード)を同時に指定して1本作成したとき、出来た動画がその5つすべてを同時に満たす(どれか1つを指定しなかった場合の出力と比べて、指定した5項目それぞれに差分がある)。",
-         "verify": "playwrightで実サーバに接続し、5設定を同時に指定して作成を実行する。出来た動画の字幕フレーム(書体・文字色・背景帯)・ファイルサイズ(書き出し)・candidates.jsonの尺(目安の長さ)を実測し、それぞれが単独指定時の期待値と一致することを確認する。"
+         "text": "以下2つの組合せシナリオそれぞれで、指定したすべての設定が同時に成立する(どれか1つが他を打ち消さない)。シナリオA(視覚的に競合しない5設定): 書体(既定以外)・文字色(既定以外)・背景帯on・書き出し(軽くして共有)・1本の目安の長さ(2分、話題で切るモード)。シナリオB(実際に競合しうる組合せ。basis-reviewer反証4で追加): 内側縁取りon(#FFFF00)と背景帯on(#00000080)を同時に指定した字幕領域の見た目が破綻しない(両方の効果が判別できる)、かつ1本の目安の長さ(2分)と間を詰める(trim=on)を同時に指定したとき、出来た候補の尺が『間を詰める』の効果を反映しつつ目安の長さの範囲判定と矛盾しない。",
+         "verify": "playwrightで実サーバに接続し、シナリオAの5設定を同時に指定して作成を実行し、出来た動画の字幕フレーム(書体・文字色・背景帯)・ファイルサイズ(書き出し)・candidates.jsonの尺(目安の長さ)を実測してそれぞれが単独指定時の期待値と一致することを確認する。続けてシナリオBを実行し、(1)内側縁取り+背景帯を同時にonにした出力で、それぞれの効果(縁取りの色・背景帯の色)が字幕領域の異なる部分に判別できる形で現れていること、(2)目安の長さ+trim=onを同時に指定した出力で、ジョブがdoneまで完走し出来た候補の尺が異常値(0秒・素材全体等)にならないことを確認する。"
         }
        ]
       },
