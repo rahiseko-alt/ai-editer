@@ -2897,3 +2897,31 @@ CI は最終ゲートだが、判定しているのは「製品が正しいこ�
      見分けになる。
 - **再発防止**: ナビのステップ2の見出しを「まるごと貼って、**最後に Enter を押す**」へ改め、
   未実行の見分け方（プロンプトが出ていなければ未実行）を注記として追加した。
+
+## 2026-08-15 — 使わないフォントを、無いツールで確認していた（Windowsで字幕ありが常に失敗）
+
+- **事象**: マスターの手元 Windows で「字幕あり」を選んで実行すると、必ず失敗した。
+  画面に出た理由は `fc-list（fontconfig）が見つからないため、フォントの有無を確認できません。`
+- **根因（二重の誤り）**: 字幕ありのジョブは、文字起こしを始める前に
+  `checkFontAvailable(DEFAULT_FONT)` を通っていた。`DEFAULT_FONT` は `"IPAGothic"`（システムフォント）。
+  1. **成立しない**: この関数は `fc-list`(fontconfig) を必要とする。Windows には無い。
+     しかも有無の判定に `sh -c command -v fc-list` を使っており、`sh` 自体も Windows には無い。
+  2. **測る対象が違う**: 実際に焼かれるのは**同梱フォント**である。`resolveCaptionStyle()` は
+     常に `DEFAULT_FONT_KEY="kaku"` へ解決し、`render-vertical.mjs` は `fontsdir=src/fonts` を
+     ffmpeg へ渡す。`IPAGothic` は使われない。**使わないフォントを、無いツールで確認していた。**
+- **正しい関門は既に repo にあった**: `checkBundledFont(fontKey)` は同梱 ttf の実在を直接見るので
+  外部コマンドに依存しない。`pipeline.mjs` の render 段階（line 334 付近）では既にこれを使っていた。
+  つまり**同じファイルの中に、正しい検査と、成立しない検査が併存していた**。
+- **なぜ素通りしたか**: CI は全ジョブが ubuntu で、fontconfig が入っている。
+  「fc-list が無い環境」を作った検査が1本も無かったため、Linux では永久に緑のままだった。
+  2026-08-15 の Windows 不具合（`claude` 起動）とまったく同じ構造である。
+- **教訓**:
+  1. **関門は「実際に使うもの」を測る。** 既定値の名前を測っても、実行時にその既定値が使われる
+     とは限らない。解決後の値（ここでは `resolveCaptionStyle()` の結果）を見る。
+  2. **外部コマンドに依存する検査は、その環境で成立するかを先に問う。** `fc-list`/`sh` は
+     Linux 前提であり、配布先（客の Windows）では前提が崩れる。
+  3. **「無い環境」を作って測る。** 今回の再発防止検査は `PATH` を空にして fontconfig が無い
+     状況を再現し、新しい関門は通る／旧い関門は落ちる、を両方実測している。
+- **再発防止**: `tests/font-gate-no-fontconfig-check.mjs` を追加し `pnpm test` へ登録した（5項目・
+  うち対照2本）。画面経路(`server/pipeline-runner.mjs`)と CLI 経路(`pipeline.mjs`)の両方で、
+  関門を `checkBundledFont()` へ置き換えた。

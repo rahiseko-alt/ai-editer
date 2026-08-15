@@ -23,11 +23,11 @@ import {
   mergeShortSegments, snapToSilence, resolveMinSec, resolveTargetDuration, capSegmentDuration,
 } from "./src/snap-boundaries.mjs";
 import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
-import { wordsInRange, buildAss, DEFAULT_FONT } from "./src/srt-builder.mjs";
-import { checkFontAvailable, checkBundledFont } from "./src/font-check.mjs";
+import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
+import { checkBundledFont } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
 import {
-  getStyle, listStyles, listFonts, DEFAULT_SUBTITLE_STYLE, resolveCaptionStyle,
+  getStyle, listStyles, listFonts, DEFAULT_SUBTITLE_STYLE, resolveCaptionStyle, DEFAULT_FONT_KEY,
 } from "./src/subtitle-styles.mjs";
 import { renderClip, probeSize, probeSampleRate, clipName, computeCanvas } from "./src/render-vertical.mjs";
 import { concatClips } from "./src/concat.mjs";
@@ -101,7 +101,8 @@ function cmdInit(input, mode, sub, orientArg) {
   // （実素材の処理で、既定フォントが黙って別言語へ代替され、文字起こし後の焼き込み
   // 段階で初めて壊れた見た目が判明していた。docs/failures.md 2026-08-14）。
   if (sub === "on") {
-    const fontCheck = checkFontAvailable(DEFAULT_FONT);
+    // 2026-08-15: 同上。fc-list に依存せず、実際に焼かれる同梱フォントの実在を見る。
+    const fontCheck = checkBundledFont(DEFAULT_FONT_KEY);
     if (!fontCheck.ok) die(fontCheck.reason);
   }
   // P1-8: ファイル名だけで id を決めると、別々の「lecture.mp4」を処理したときに work/output を

@@ -133,7 +133,9 @@
     "LOOK(5葉)+INFO(3葉)を実装して done 化した。3ペイン化は既存テストが .two-col/#col-settings/#col-preview とHTML上のDOM順に依存していたため、id・class・DOM順を温存し grid-column だけで見た目を作る方針にして回避した。検査は tests/ui-revamp-look-check.mjs(12項目)と tests/ui-revamp-info-check.mjs(7項目)を新設し pnpm test へ登録。対照(偽実装)はファイル書き換えではなく検査内で注入する形にしてコミットへ残した(戻し忘れで検査が嘘になるのを構造的に防ぐため)。既存の画面系テスト13本は引き続き全て緑。",
     "PR #124 をマージ(squash 92b1cdc)。UI刷新の LOOK(5葉)+INFO(3葉) が main に入った。",
     "WIRING の着手前調査として probe#2 を実行した。刷新後のUIに対して既存の実ブラウザ検査6本を回し、全て PASS・合計約6.8分と実測。あわせて被覆マップを取り、新UIから操作して確かめる検査が1本も無い設定が7件(cut/cutMin/size/mosaic/trim/breath/name)あることを特定した。操作セレクタと合成素材の生成手順も数値で確定して WIRING の detail へ記録した。",
-    "マスター指示『毎回手順を固定しろ。ステップ0すべてのターミナルを閉じる』を受け、起動手順を固定した。docs/ui-startup-navi.md を唯一の正とし、ステップ0〜5を固定。リポジトリを探す→移動→更新→起動を1ブロックにまとめ、マスターがパスを覚えなくてよい形にした。AGENTS.md へ規律(全文提示・省略禁止・移動コマンドを省かない・出力を見る前に原因を言わない)を追加し、.claude/skills/ui-startup-navi/ として発動条件込みで登録した。roadmap へ G-OPS-UI-VIEW-STARTNAVI を追加(機械検査は未作成のため todo)。"
+    "マスター指示『毎回手順を固定しろ。ステップ0すべてのターミナルを閉じる』を受け、起動手順を固定した。docs/ui-startup-navi.md を唯一の正とし、ステップ0〜5を固定。リポジトリを探す→移動→更新→起動を1ブロックにまとめ、マスターがパスを覚えなくてよい形にした。AGENTS.md へ規律(全文提示・省略禁止・移動コマンドを省かない・出力を見る前に原因を言わない)を追加し、.claude/skills/ui-startup-navi/ として発動条件込みで登録した。roadmap へ G-OPS-UI-VIEW-STARTNAVI を追加(機械検査は未作成のため todo)。",
+    "マスターの手元Windowsで刷新後のUIが正しく表示され、失敗の理由も画面に出ることを確認した(PR #122 の理由表示の修正が効いている)。一方で新しい実害バグを発見・修正した: 字幕ありのジョブが fc-list(fontconfig) を必要とする関門で必ず失敗していた。関門が checkFontAvailable(DEFAULT_FONT=IPAGothic) を見ていたが、(a)fc-list も sh も Windows に無く成立しない (b)実際に焼かれるのは同梱フォント(kaku)で IPAGothic は使わない、という二重の誤り。画面経路とCLI経路の両方を checkBundledFont() へ置き換え、PATHを空にして fontconfig 不在を再現する検査を追加した(5項目・対照2本)。",
+    "マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」に対応。右ペインを 320px -> 640px へ倍にし(中央は 1fr なので 1365px 幅で 845px -> 525px)、広がった右ペインを2列に置いて縦スクロールを半減させた(1列あたり298px。動画とサイズのカードのみ横幅いっぱい)。凍結済みの G-UI-REVAMP-LOOK-3PANE の許容幅を 280〜360px から 600〜680px へ変更し、検査側の数値も合わせた。"
    ],
    "trouble": [
     "スクリーンショットだけを見て『PC表示では⑥サイズ以降が切れていて操作できない』と誤診しかけた。実際は body 自身が内部スクロール領域(height:900px, overflow-y:auto)で、document.scrollHeight=900 に対し body.scrollHeight=1153。Playwright の fullPage:true は document の全高しか撮らないため、残り253pxが写らないだけだった。マスターへ報告する前に DOM で裏を取って撤回した。詳細と教訓は docs/failures.md 2026-08-15 に記録し、この罠自体を G-OPS-UI-VIEW-FULLPAGE の葉として立てた。",
@@ -5288,13 +5290,13 @@
          "status": "done",
          "criteria": [
           {
-           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、右ペイン幅は280px以上360px以下（いずれも境界を含む）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、右ペイン幅は600px以上680px以下（いずれも境界を含む）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
            "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で / を開き、3ペインと app-header の getBoundingClientRect を取得する。(1) left の昇順が pane-left→pane-center→pane-right と一致し、前の right が次の left 以下であること。(2) 幅が上記の範囲に収まること。(3) top の最大差、height の最大差、および height と (800 - app-header.height) の差が、いずれも 1px 以下であること。丸めは比較前に行わず、生の float 値の差の絶対値で判定する。対照2本を実測する。対照1: 現行の webapp-mockup/index.html（2カラム）を同じ検査に掛け、ペインが3つ揃わず FAIL すること。対照2: pane-right だけ height:50% にした偽実装で (3) だけが FAIL すること。",
            "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
            "evidence": "2a00366"
           }
          ],
-         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 2カラムのままの実装はペインが3つ揃わず落ちる(刷新前の webapp-mockup は pane-left が存在しない)。 ②正しい実装で1回実測: viewport 1280x800 で pane-left/center/right の left=0/200/960、幅=200/760/320、上端=49(3件の差 0px)、高さ=751(3件の差 0px)。ヘッダーを除いた表示領域 751px と一致(差 0px)。 ③意図的に壊したものを当てる: 右ペインだけ height:50% にすると3列の高さの差が 1px を超えて不合格になることを確認した。"
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 2カラムのままの実装はペインが3つ揃わず落ちる(刷新前の webapp-mockup は pane-left が存在しない)。 ②正しい実装で1回実測: viewport 1280x800 で pane-left/center/right の left=0/200/960、幅=200/760/320、上端=49(3件の差 0px)、高さ=751(3件の差 0px)。ヘッダーを除いた表示領域 751px と一致(差 0px)。 ③意図的に壊したものを当てる: 右ペインだけ height:50% にすると3列の高さの差が 1px を超えて不合格になることを確認した。 【2026-08-15 基準変更】マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」により、右ペインの許容幅を 280〜360px から 600〜680px へ変更した(実装は 640px)。左ペインの範囲と、上端一致・高さ一致・重なり無しの条件は変更していない。"
         }
        ]
       },

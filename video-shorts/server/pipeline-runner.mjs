@@ -13,8 +13,8 @@ import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
-import { checkFontAvailable } from "../src/font-check.mjs";
-import { DEFAULT_FONT } from "../src/srt-builder.mjs";
+import { checkBundledFont } from "../src/font-check.mjs";
+import { DEFAULT_FONT_KEY } from "../src/subtitle-styles.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -874,7 +874,13 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 直接 transcribe.py を起動するため、この関門を素通りしていた
   // (M7 3経路E2Eで発覚。docs/failures.md 2026-08-14)。
   if (!noSub) {
-    const fontCheck = checkFontAvailable(DEFAULT_FONT);
+    // 2026-08-15: 旧実装は checkFontAvailable(DEFAULT_FONT="IPAGothic") を見ていた。これは
+    // (a) fc-list(fontconfig)を必要とし Windows では原理的に成立しない (b) そもそも実際に
+    // 焼かれるのは同梱フォント(resolveCaptionStyle が DEFAULT_FONT_KEY="kaku" へ解決し、
+    // render-vertical が fontsdir=src/fonts を渡す)で、IPAGothic は使われない、という
+    // 二重の誤りだった。マスターの手元Windowsで「字幕あり」が常に失敗していた。
+    // 実際に使う同梱フォントのファイル実在を見る形へ改める(OS非依存)。
+    const fontCheck = checkBundledFont(opts.captionFont || DEFAULT_FONT_KEY);
     if (!fontCheck.ok) {
       const e = new Error(fontCheck.reason);
       e.code = "font_missing";
