@@ -119,7 +119,7 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "G-EDIT-UI-SETTINGS",
-  "next": "G-EDIT-UI-SETTINGS(18葉)完了・PR #120マージ済み（squash 932129b）。次は音のカット端への10〜50msフェード（backlog: 無音が全く無く伸ばせない箇所に素の切り口が残る。renderClipの音声経路がtrimの有無で分岐しているため別葉として切り出す）。着手前に『案件の絶対起点』どおり原子ツリーへ描いてから作業する。",
+  "next": "PR #122（Windows実機でclaude起動が失敗し真因も消える2欠陥の修正）をマージし、マスターの手元Windowsで動画作成が通ることを確認する。動いたら backlog: ①Windows対応の穴（テスト用の偽claudeが拡張子なしファイルのためWindowsでは原理的に起動不可＝現行のテスト構造ではWindows経路を検証できない。CIへWindowsジョブを足すかの判断も含む）②音のカット端への10〜50msフェード（無音が全く無く伸ばせない箇所に素の切り口が残る。renderClipの音声経路がtrimの有無で分岐しているため別葉として切り出す）。いずれも着手前に『案件の絶対起点』どおり原子ツリーへ描いてから作業する。",
   "handoff": {
    "done": [
     "マスター指示「裏側で動いていいけどUI上で操作できるようにできるか」を受け、字幕スタイル一式・尺の指示・書き出しプリセットの8設定をCLI専用からブラウザ画面へ開放するG-EDIT-UI-SETTINGSに着手。basis-reviewerを3ラウンド通し反証19件(第1回7件・第2回9件・第3回3件)へ対応し、18葉で凍結。",
@@ -127,9 +127,16 @@
     "実ブラウザ×実サーバ×実ffmpegのE2E検査を6ファイル新設(WIRING-CLIENT/VALIDATE/CONDITIONAL・RECOVER・COMPAT/FONT・FILL・BAND・OUTLINE・INNER・STYLE/DURATION・EXPORT・COMPOSE)。実装時に2件の実バグ相当の問題を検出・修正: ①COMPOSEの背景帯充填率検査が長尺fixtureの文字と測定帯が重なり誤って割れていた(製品側は.assの座標が計算式と完全一致=正常。検査の素材選びを直した) ②並列実装した4エージェントのうち1つ(M4-B)は自己申告のPASSが実は未検証で、独立に再実行して初めて②の欠陥が判明した。",
     "e2e-three-paths-check.mjsの『画面はexport等の配線を持たない』という前提記述を実態に合わせ更新し、exportPreset=snsが実HTTPクエリ経由でも出力へ反映されることを検査に追加(M5)。",
     "凍結後にWIRING-CLIENT/VALIDATEへ実際の探り(偽実装を当てて落ちることを確認→復元)を実行し、実測件数をdetailへ記録。video-shorts全体のpnpm test(100件超・全ブロック0 FAIL)・scripts test・build・audit・roadmap機械検査(evidence/criteria凍結/done-gate)すべて緑を確認し、18葉すべてをdone化・evidence(コミットSHA)とverifyCmdを記入。",
-    "PR #120 を作成しCI(ci-green/roadmap-required/CodeQL/起動スモーク)全緑を確認のうえマージ（squash 932129b）。マスターへ実画面のスクリーンショット2枚（字幕なし/字幕ありで設定カード群が現れる状態）を提示。マスターからは手元環境で直接操作したいとの要望があり、ローカル起動手順（git clone → node server/index.mjs → http://127.0.0.1:5178）を案内した（このリモート実行環境はサーバがloopback限定のため画面を直接渡せない旨も説明）。"
+    "PR #120 を作成しCI(ci-green/roadmap-required/CodeQL/起動スモーク)全緑を確認のうえマージ（squash 932129b）。マスターへ実画面のスクリーンショット2枚（字幕なし/字幕ありで設定カード群が現れる状態）を提示。マスターからは手元環境で直接操作したいとの要望があり、ローカル起動手順（git clone → node server/index.mjs → http://127.0.0.1:5178）を案内した（このリモート実行環境はサーバがloopback限定のため画面を直接渡せない旨も説明）。",
+    "マスターの手元Windowsで実際に動かしたところ、画面から動画作成を実行すると『claude 終了コード 1。stderr: 』とだけ出て失敗した。ターミナルでのclaude単体利用は6ヶ月間正常・ログイン済みで、このサーバ経由のときだけ失敗する状態。仮説3本（フラグの妥当性／Windows固有のプロセス起動／認証情報の到達性）を独立サブエージェント3体へ並列調査させ、原因を2つ特定してPR #122で修正した。",
+    "【原因1】claudeは『起動前の失敗』(不正フラグ等)をstderrへ、『実行中の失敗』(認証・通信・モデル・クォータ)を結果としてstdoutへ出す(公式ドキュメント Run Claude Code programmatically)。src/claude-run.mjsのcloseハンドラは非0終了時にstdoutBufを読まずに捨てており、後者が起きると手掛かりがゼロになっていた。調査担当がANTHROPIC_BASE_URLを到達不能値にして『終了コード1・stderr 0バイト・診断は全部stdout』の完全再現に成功。stderr/stdout両方を報告へ含める形へ修正し、偽claudeで修正前後の差(修正前=『stderr: 』のみ／修正後=理由が表示)を実測した。",
+    "【原因2】src/claude-safety.mjsのALLOWED_ENV_VARSがPOSIX名だけで構成されており、Windows必須の変数が1つも無かった。WindowsのPowerShellはHOMEを定義しない(定義するのはGit Bash等MSYS系のみ)ため許可リストを通過するホーム情報がゼロになり、%USERPROFILE%\\.claude\\.credentials.jsonへ到達できない。加えてSystemRoot不在はWinsockのプロバイダDLL読込を壊す既知の事故パターン(golang/go#25513が同型)で、claudeは起動直後に必ずHTTPS通信を行う。USERPROFILE/SystemRoot/windir/APPDATA/LOCALAPPDATA等を追加。秘密情報を渡さない方針は不変で、ANTHROPIC_API_KEY等の遮断をWindows模擬環境で実測確認した。",
+    "再発防止として機械検査を3本追加。tests/claude-safety-win-env-check.mjs(許可リストがClaude Code CLI自身の定めるWindows最小集合を満たすかを対照表と突き合わせ。Linux上で判定できる形。この検査で実際にUSERNAMEの漏れを発見し追加した)、tests/claude-run-failure-surface-check.mjs(非0終了時にstderr/stdout両方が呼び出し側へ届くことを偽claudeで実際に失敗させて実測)、tests/claude-run-real-check.mjs(本物のclaudeを本番と同じ経路で起こす疎通検査。CIには本物のclaudeが無いためpnpm test未登録・手元実行用)。あわせてsrc/digest-editor.mjsの--model退避判定がstderrだけを見ていた関連バグも修正した。"
    ],
    "trouble": [
+    "Windows実機の不具合に対し、原因を確かめずに『環境変数HOMEを設定する』等の当てずっぽうの対処をマスターへ2回続けて指示し、いずれも外して信頼を損ねた。真因が見えなかったのは製品コードがstdout(=真因の唯一の出所)を捨てていたためだが、それを調べる前に手を動かしたのが誤り。マスターから『小手先の修正は禁止。0ベースで修正プランを練れ。サブに徹底リサーチさせろ。原因を3個考えろ』と指示され、独立3系統の並列調査に切り替えて初めて原因が確定した。症状が説明できないうちは対処を提案せず、まず観測できる形にすること。",
+    "この不具合が素通りした構造的な原因: (1)CIは全8ジョブがubuntuでWindows検証がゼロ (2)claudeを扱うテスト17ファイルが全て偽claudeへの差し替えで、本物のclaudeがこの起動方法(引数・制限env・隔離cwd)で動くかを検証したテストが1本も無かった (3)既存の『検査』はNO_TOOLS_ARGSがリテラルと等しいことをassertする同語反復か、ソース文字列の正規表現照合に留まっていた。『検査が有る』ことと『効くことを検査している』ことは別である。",
+    "偽claudeは拡張子なしファイル(path.join(binDir,'claude')+chmod)として書かれるため、Windowsのspawnでは原理的に起動できない。つまり現行のテスト構造ではWindows経路を検証しようとしても検証できない。backlogとして残した。",
     "並列実装した4本のサブエージェント(M4-A〜D)のうち1本(M4-B)は、完了報告が『バックグラウンドのテスト実行を待っている』という状態のまま終了しており、実際には一度もPASSを確認していなかった。他3本の完了報告(15/8/13 PASS)を信じて統合するのではなく、念のため自分でも同じテストを再実行したところ、M4-Bだけ実際に2件FAIL(COMPOSE-Aの背景帯充填率が90%基準に対し68.8%)していることが判明した。サブエージェントの『完了』ステータスは実行結果を保証しない。",
     "上記の欠陥は製品側ではなく検査側の測定条件のミスだった: 長尺fixture(尺検証のため120秒ぶんの同じ文字を1本のキャプションとして並べる)の文字が、CLI側の参照検査(短い固定文言『帯テスト』が前提)と同じ上下端全幅サンプリングの測定帯へ重なり、実際には正しく描かれている背景帯を『充填率不足』と誤判定していた。.assの実座標(x1/y1/w/height)を計算式と直接突き合わせて完全一致することを確認してから検査側の測定範囲を直す、という手順を踏んだ(製品側を疑う前に測定方法を検証する)。",
     "basis-reviewerは3ラウンド行っても『探り済みでない』という反証が残り続けた。『後で実装フェーズに探りを行う』という予告は、G-EDIT-BREATHの実際の運用(基準確定と探りの実行が同じタイミング)と食い違っており、予告だけでは反証を解消できないと明確に指摘された。実装が揃ってから実際に偽実装を当てて探りを実行し、実測件数をdetailへ記録して初めて解消した。",
