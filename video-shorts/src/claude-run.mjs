@@ -109,8 +109,19 @@ export function runClaudeJson({
     child.on("close", (code) => {
       clearTimers();
       if (code !== 0) {
-        const err = new Error(`claude 終了コード ${code}。stderr: ${stderrBuf.slice(0, 400)}`);
+        // 失敗の理由は stderr だけに出るとは限らない。claude は「起動前の失敗」(不正なフラグ等)を
+        // stderr へ出す一方、「実行中の失敗」(認証が見つからない等)は結果として stdout へ出す
+        // （公式ドキュメント "Run Claude Code programmatically"）。旧実装は stdout を読まずに
+        // 捨てていたため、Windows実機で認証に到達できず落ちたとき、画面には
+        // 「claude 終了コード 1。stderr: 」とだけ出て真因が一切分からなかった
+        // （docs/failures.md 2026-08-15）。両方を報告に含める。
+        const parts = [];
+        if (stderrBuf.trim()) parts.push(`stderr: ${stderrBuf.slice(0, 400)}`);
+        if (stdoutBuf.trim()) parts.push(`stdout: ${stdoutBuf.slice(0, 400)}`);
+        if (parts.length === 0) parts.push("stderr/stdout とも空でした");
+        const err = new Error(`claude 終了コード ${code}。${parts.join(" / ")}`);
         err.stderr = stderrBuf; // 呼び出し側が失敗の中身で分岐できるよう、切り詰めない全文も渡す
+        err.stdout = stdoutBuf; // 同上（真因がこちらに出る経路があるため stderr と対で渡す）
         return reject(err);
       }
       let envelope;
