@@ -26,7 +26,7 @@
 
 ### ステップ1：PowerShell を新しく開く
 
-### ステップ2：次のブロックをまるごと貼って Enter
+### ステップ2：次のブロックをまるごと貼って、**最後に Enter を押す**
 
 ```powershell
 Get-NetTCPConnection -LocalPort 5178 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
@@ -37,6 +37,10 @@ if (-not $repo) { Write-Host "リポジトリが見つかりません。クロ�
 この1ブロックが「残っているサーバを止める → リポジトリを探す → 移動する → **main へ切り替える** →
 更新する → いまのブランチと版を表示する → 起動する」を全部やる。
 **マスターがパスもブランチ名も覚えておく必要は無い。**
+
+> **貼ったあと必ず Enter を1回押す。** PowerShell は複数行をまとめて貼ると、**最後の行が
+> 入力欄に置かれるだけで実行されない**ことがある。2026-08-15 にこれで詰まった。
+> 見分け方: 直前の行のあとに次のプロンプト（`PS ...>`）が出ていないなら、その行はまだ実行されていない。
 
 > `git checkout main` は 2026-08-15 に追加した。これが無かったため、マスターの手元が古い作業ブランチ
 > (`claude/ui-p2-quality`) のままで、`git pull` がそのブランチだけを更新し、刷新後の画面が出なかった。
