@@ -52,6 +52,7 @@ function startServer() {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let buf = "";
+    let timer;
     const onData = (chunk) => {
       buf += String(chunk);
       if (buf.includes("server listening")) {
@@ -62,7 +63,7 @@ function startServer() {
     proc.stdout.on("data", onData);
     proc.stderr.on("data", onData);
     proc.on("error", reject);
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       proc.kill("SIGKILL");
       reject(new Error(`サーバが起動しない(20秒)。出力:\n${buf}`));
     }, 20000);

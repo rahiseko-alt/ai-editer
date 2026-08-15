@@ -55,6 +55,7 @@ function startServer() {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let buf = "";
+    let timer;
     const onData = (c) => {
       buf += String(c);
       if (buf.includes("server listening")) {
@@ -65,7 +66,7 @@ function startServer() {
     proc.stdout.on("data", onData);
     proc.stderr.on("data", onData);
     proc.on("error", reject);
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       proc.kill("SIGKILL");
       reject(new Error(`サーバが起動しない(20秒)。出力:\n${buf}`));
     }, 20000);
@@ -84,6 +85,10 @@ function luminance({ r, g, b }) {
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+/** 境目の罫線として認める太さか（実測にも対照にも同じ関数を使う） */
+export function ruleWidthOk(width) {
+  return width >= 1 && width <= 2;
 }
 export function contrastRatio(fg, bg) {
   const a = luminance(fg),
@@ -193,7 +198,7 @@ export function contrastRatio(fg, bg) {
       return [read(g("pane-left"), "Right"), read(g("pane-center"), "Right")];
     });
     for (const [i, r] of rules.entries()) {
-      assert.ok(r.width >= 1 && r.width <= 2, `境目${i + 1}の罫線の太さが範囲外: ${r.width}px`);
+      assert.ok(ruleWidthOk(r.width), `境目${i + 1}の罫線の太さが範囲外: ${r.width}px`);
       const c = parseRgb(r.color);
       assert.ok(c, `境目${i + 1}の罫線色が読めない: ${r.color}`);
       const ratio = contrastRatio(c, { r: 255, g: 255, b: 255 });
@@ -202,7 +207,8 @@ export function contrastRatio(fg, bg) {
   });
 
   await t("LOOK-RULE 対照: 罫線なし・白い罫線のどちらも不合格になる", () => {
-    assert.ok(!(0 >= 1 && 0 <= 2), "罫線なし(0px)を合格にしてしまっている");
+    assert.ok(!ruleWidthOk(0), "罫線なし(0px)を合格にしてしまっている");
+    assert.ok(!ruleWidthOk(3), "太すぎる罫線(3px)を合格にしてしまっている");
     const white = contrastRatio({ r: 255, g: 255, b: 255 }, { r: 255, g: 255, b: 255 });
     assert.ok(white < 1.5, `白い罫線を合格にしてしまっている: ${white.toFixed(2)}:1`);
   });
