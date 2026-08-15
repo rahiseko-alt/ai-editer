@@ -119,17 +119,17 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "G-UI-REVAMP-WIRING",
-  "next": "①マスターの手元へ GROQ_API_KEY を入れて、2分29秒の素材で編集時間を再実測する（鍵なしの基準値は 06:58→07:03 の約5分）。②字幕の位置を実素材で1本焼いて、選んだ位置に出ているかをマスターに目で確認してもらう。③その後 G-UI-REVAMP-WIRING の穴（新UIから操作して確かめる検査が1本も無い7設定: cut / cutMin / size / mosaic / trim / breath / name）へ戻る。",
+  "next": "「間を詰める」の作り直し。マスターの棚卸し指示により、いまの1つのつまみを ①無音カット ②言い淀みカット ③カット前後の余韻(原則0.3秒) ④使わない場面を選別して入れない ⑤本番前後の雑談の削除 の5つに分けて考える。④⑤とAIの文脈判断（会話の途中の沈黙は残す）は選定・編集の段へ寄せ、③は数値で固定する。着手前に原子ツリーを描いて criteria/verify を凍結する。",
   "handoff": {
    "done": [
-    "PR #126（UI調整①〜④＋⑥の修正）を出し、CIの結果を確認した。",
-    "マスター指摘⑤『字幕の位置を中央のプレビュー上で決めたい』を実装した。中央プレビューの動画領域(.video-area)の中に見本(.cap-ghost)を置き、上下ドラッグと矢印キーで位置を決められるようにした。決めた値は captionPos として POST /api/jobs → parseJobParams → buildRenderArgs → --caption-pos → resolveCaptionStyle(posPercent) → .ass の MarginV まで一本で通す。pop プリセットは既定 Alignment=5 で ASS 仕様上 MarginV を見ないため、位置を指定したときだけ Alignment=2 へ落とす（そうしないと『動かせるのに効かない』設定になる）。既定の位置は画面に数値を書き写さず GET /api/env が src/subtitle-styles.mjs から計算して配る。",
-    "マスター指示『Aにしろ。表示も変えろ』に対応した。文字起こしの Groq 対応は既に実装済み（src/transcribe.py の auto 解決）で、使われていなかったのは GROQ_API_KEY が無かったためだった。鍵の入れ方を docs/ui-startup-navi.md へ手順として追加し、画面に固定で書いてあった『この動画はこのPCの中だけで処理されます（外部に送りません）』を、GET /api/env の実態に応じて切り替わる文へ変えた。",
-    "検査を2本足した: video-shorts/tests/caption-pos-check.mjs（20件）と video-shorts/tests/transcribe-backend-note-check.mjs（8件）。どちらも package.json の test チェーンへ登録済み。"
+    "PR #126 を CI 緑（ci-green 成功）でマージした（squash 4871333）。①〜④・⑥のUI調整、⑤の字幕位置、Groqの処理先表示が main に入った。",
+    "マスターの手元で GROQ_API_KEY を .env へ入れ、鍵が1行・gsk_始まり・長さ56 で入っていることを実測で確認した。起動も版 4871333 で成功。",
+    "マスター指示4件のうちUIの3件を実装した。(1) 編集中カードをハサミ演出・進捗の点・段階文言・経過時間ごと削除し、目に見えるのは「編集中」の1行だけにした（段階文言は読み上げ専用として残す）。(2) 文字起こしの処理先の説明文を DOM ごと削除した（マスター『何もいらない』）。(3) 中央ペインを 315px → 347px（1.1倍）へ広げ、右ペインは残り幅なので自動的に狭まった。実測は 左200 / 中央347 / 右818。実画面をPlaywrightで撮って自分で確認した。",
+    "検査を1本追加した: video-shorts/tests/editing-card-simple-check.mjs（8件）。処理先の説明文の検査(transcribe-backend-note-check.mjs)は、表示そのものを消したので削除した。"
    ],
    "trouble": [
-    "字幕位置の実装中、背景帯だけが取り残される欠陥を自分の検査で見つけた。帯の縦位置を st.mode === 'pop' で分岐していたため、位置指定で Alignment=2 へ落ちても帯だけ画面中央に残っていた。判定を align 基準へ直した。",
-    "『位置を指定しなければ従来どおり』の対照で pop だけ落ちた。scaleToken が 0 を 1 へ持ち上げる既存の作法によるもので、今回の変更による退行ではない。期待値を scaleToken 経由へ直した。"
+    "編集中カードの簡素化で、進捗の点(.estep)に依存していた webapp-ai-caption-progress-check.mjs の1件が対象を失った。段の順序は同じ検査の③④が #progress 側で見ているため、その1件だけを削って覆いは維持した。",
+    "凍結済みの G-UI-REVAMP-LOOK-3PANE（中央315px）と G-UI-BACKEND-NOTE-TRUTH（処理先の説明文）が、今回のマスター指示で成り立たなくなった。前者は幅の変更、後者は表示の廃止として meta.basisChanges へ宣言した。"
    ]
   },
   "updated": "2026-08-16",
@@ -464,6 +464,18 @@
     "criteriaHash": "eace039135fc39414893597bb52b26bff4d67774198b7d46984c26c4100732a0",
     "at": "2026-08-16",
     "reason": "マスター指示『まだ中央が広い。現状の60%まで横幅を小さくする』による設計変更。中央ペインを固定315px(1365px幅での実測525pxの60%)にし、右ペインを minmax(640px,1fr) として残り幅を占める形へ変更した。これに伴い criteria の幅条件を『右600〜680px』から『中央315px(±1px)かつ右600px以上(上限なし)』へ改めた。左ペインの幅の範囲(160〜240px)・3列の並び順・非重なり・上端一致(±1px)・高さ一致(±1px)・ヘッダーを除いた表示領域との一致(±1px)は一切変更していない。緩めた変更ではなく、マスターが求める見た目へ条件を移動したもの。検査側(tests/ui-revamp-look-check.mjs)も同じ条件へ合わせ、実測(中央315px/右850px)で PASS を確認済み。"
+   },
+   {
+    "id": "G-UI-REVAMP-LOOK-3PANE",
+    "criteriaHash": "229243780c2275327416c36742a4c7583634bd410f913f7532dcdeb8e104b5a1",
+    "at": "2026-08-16",
+    "reason": "マスター指示『画面配置の割合だが、中央を狭くしすぎ。あと10％広くして右を狭めろ』による設計変更。中央ペインの固定幅を 315px から 347px（315の1.1倍・小数切り捨て）へ変更した。右ペインは minmax(640px,1fr) で残り幅を占めるため、中央が広がったぶん自動的に狭まる（1365px幅での実測は 左200 / 中央347 / 右818）。変更したのは中央ペインの幅の数値だけで、左ペインの幅の範囲(160〜240px)・右ペインの下限(600px以上)・3列の並び順・非重なり・上端一致(±1px)・高さ一致(±1px)・ヘッダーを除いた表示領域との一致(±1px)・検査用フック契約(data-testid一覧)は一切変更していない。緩めた変更ではなく、マスターが求める見た目へ数値を移動したもの。検査側(tests/ui-revamp-look-check.mjs)も347pxへ合わせ、実測でPASSを確認済み。"
+   },
+   {
+    "id": "G-UI-BACKEND-NOTE-TRUTH",
+    "criteriaHash": "383ec72732932e673692824a9423d805f56a902511134156ba333d9c49ff0e13",
+    "at": "2026-08-16",
+    "reason": "マスター指示『文字起こしは Groq のクラウドで行います。音声だけが Groq へ送信されます という表示も削除。何もいらない』により、この葉が受入条件としていた画面表示そのものを廃止した。基準を緩めたのではなく、検査対象が製品から無くなったための削除である（表示が存在しない以上、その表示が実態と一致するかを問えない）。あわせて検査 tests/transcribe-backend-note-check.mjs も削除し、package.json の test チェーンから外した。実態（GROQ_API_KEY があれば音声を Groq へ送る）は変えていない。表示だけを消したことでマスター以外の利用者が誤解する余地が残るが、この製品はマスター本人の手元でのみ動くもので、鍵を入れたのはマスター自身であるため、今回はマスターの判断に従う。"
    }
   ]
  },
@@ -5286,7 +5298,7 @@
          "status": "done",
          "criteria": [
           {
-           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、中央ペイン幅は315px（±1px）、右ペイン幅は600px以上（上限なし。残り幅を占める）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、中央ペイン幅は347px（±1px）、右ペイン幅は600px以上（上限なし。残り幅を占める）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
            "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で / を開き、3ペインと app-header の getBoundingClientRect を取得する。(1) left の昇順が pane-left→pane-center→pane-right と一致し、前の right が次の left 以下であること。(2) 幅が上記の範囲に収まること。(3) top の最大差、height の最大差、および height と (800 - app-header.height) の差が、いずれも 1px 以下であること。丸めは比較前に行わず、生の float 値の差の絶対値で判定する。対照2本を実測する。対照1: 現行の webapp-mockup/index.html（2カラム）を同じ検査に掛け、ペインが3つ揃わず FAIL すること。対照2: pane-right だけ height:50% にした偽実装で (3) だけが FAIL すること。",
            "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
            "evidence": "2a00366"
@@ -6017,26 +6029,26 @@
      ]
     },
     {
-     "id": "G-UI-BACKEND-NOTE",
+     "id": "G-UI-EDITCARD",
      "kind": "state",
-     "theme": "動画がどこで処理されるかの説明が、実際の動きと合っている",
-     "meaning": "マスター指示（2026-08-16）で文字起こしを Groq のクラウドへ切り替える運用にしたため、画面に固定で書いてあった『このPCの中だけで処理されます（外部に送りません）』が実態と食い違う状態になった。表示を実態に追随させ、食い違いを機械で検出できるようにする",
+     "theme": "編集している間の画面が、余計なものを出さない",
+     "meaning": "マスター指示（2026-08-16）『この表示を修正。シンプルに文字だけにする。0ベースで以下にしろ／編集中』への対応",
      "children": [
       {
-       "id": "G-UI-BACKEND-NOTE-TRUTH",
+       "id": "G-UI-EDITCARD-SIMPLE",
        "kind": "state",
-       "theme": "鍵を入れたら「音声をGroqへ送る」と画面に出て、入れていなければ「外へ送らない」と出る",
-       "meaning": "書いてあることと実際の動きが食い違わないこと。実害は『外部に送りません』と読んで安心した人の音声が、実際にはクラウドへ送られること",
+       "theme": "編集している間に出るのは「編集中」の1行だけになっている",
+       "meaning": "ハサミの演出・進捗の点・段階の文言・経過時間の4つが目に見える形では出ない。失敗の理由だけは今までどおり出る",
        "status": "done",
        "criteria": [
         {
-         "text": "同じサーバを GROQ_API_KEY 無し／有りの2通りで起動し、画面 / を開いたときに data-testid=privacy-note の要素へ出る説明文が、それぞれ『外部へ送らない』趣旨／『Groq へ音声を送信する』趣旨になっている。2通りで実際に別の文が出る。読み込み中の仮文言のまま残らない。判定は特定の語句の一致ではなく意味で行い、『このPCの中だけ』『端末の中だけ』『送信しません』のような言い換えも、クラウド経路では不合格として検出できる。",
-         "verify": "実サーバ(node video-shorts/server/index.mjs)を PORT 5294 に GROQ_API_KEY='' で、PORT 5295 に GROQ_API_KEY='gsk_dummy_for_test_only' で起動する（値の有無だけを見る実装なので Groq へは接続しない）。Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で各々 / を開き、data-testid=privacy-note のすべての要素の textContent と dataset.transcribe を採る。dataset.transcribe が local/cloud と一致すること、checkBackendNote(kind,text) が null を返すこと、2通りの文が異なることを確認する。対照3本を同じ検査に置く: (a) 変更前の固定文言『この動画はこのPCの中だけで処理されます（外部に送りません）。』が local では通り cloud では落ちること、(b) 『処理はこのPCの中だけで行います。』『音声を外部へ送信しません。』『動画は端末の中だけで処理され、外部には送りません。』の3つの言い換えがすべて cloud で落ちること、(c) 読み込み中の仮文言『文字起こしの処理先を確認しています…』が local/cloud の両方で落ちること。",
-         "verifyCmd": "node video-shorts/tests/transcribe-backend-note-check.mjs",
-         "evidence": "6e44256"
+         "text": "編集中カード(#editing-card)を表示した状態で、そのカードの中に目で見えている文字（display:none / visibility:hidden / opacity:0 / 描画矩形が2px以下の要素を除いた文字）が「編集中」だけである。カードの中に目で見える svg / canvas / img が1つも無い。時刻の形（数字:2桁数字）の文字が出ていない。段階の文言(#editing-status)は DOM に残っているが描画矩形が2px以下（読み上げ専用）である。失敗したとき（is-error）は「編集できませんでした」を含む理由が目に見える形で出る。",
+         "verify": "実サーバ(node video-shorts/server/index.mjs)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1365x830 で / を開き、#editing-card から hidden を外して表示する。カード配下を再帰的に歩き、getComputedStyle と getBoundingClientRect で「目に見える」要素だけのテキストノードを連結して判定する（要素の有無ではなく画面に出る文字で見るのは、SVG を消して別の飾りを足す抜け道を塞ぐため）。対照4本を同じ検査の中で実測する。対照1: 刷新前の中身（段階の文言と『0:23 経過 ・ ふつう1〜3分で終わります』）をその場で注入すると落ちること。対照2: 図が1枚あると落ちること。対照3: カードが空だと落ちること。対照4: 失敗表示に切り替えたとき理由が見えること。あわせて pageerror が0件であることを確認する。",
+         "verifyCmd": "node video-shorts/tests/editing-card-simple-check.mjs",
+         "evidence": "PENDING"
         }
        ],
-       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: 表示を差し替えない実装では仮文言のまま残り、(c) の対照と同じ条件で落ちる。②正しい実装で1回実測: 鍵なしで dataset.transcribe='local'、鍵ありで 'cloud' となり、2通りで別の文が出ることを実測した（GET /api/env は {\"transcribe\":\"local\"} / {\"transcribe\":\"cloud\"} を返す）。③意図的に壊したものを当てる: 変更前の固定文言を判定関数へ直接食わせ、cloud のケースで検出できることを確認した。語句一致だけの判定では言い換えを見逃すため、3通りの言い換えも同時に確認している。"
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: カードが空だと『文字が1つも出ていない』で落ちる（対照3）。②正しい実装で1回実測: 見えている文字が「編集中」だけ、図0枚、#editing-status は 0x0（.sr-only）であることを実測した。③意図的に壊したものを当てる: 刷新前の段階文言と経過時間を注入すると落ちることを実測した（対照1）。読み上げ専用の #editing-status を残しているのは意図で、DOM ごと消すと画面を見ない人へ進行が一切伝わらなくなるため。"
       }
      ]
     },

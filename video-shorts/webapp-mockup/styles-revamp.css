@@ -40,7 +40,9 @@
   /* 2026-08-16 マスター指示「まだ中央が広い。現状の60%まで横幅を小さくする」により、
      中央を固定幅(315px = 1365px幅での 525px の60%)にし、右ペインは残り全部にした。
      画面が広いほど設定側が広がる。 */
-  --pane-center-w: 315px;
+  /* 2026-08-16 マスター指示「中央を狭くしすぎ。あと10％広くして右を狭めろ」により
+     315px の 1.1 倍 = 347px（小数は切り捨て）。右ペインは残り全部なので自動的に狭まる。 */
+  --pane-center-w: 347px;
   --pane-right-w: 640px;   /* 右ペインの下限 */
   --pane-break: 900px;     /* この幅未満で縦積みへ落ちる */
 }
@@ -262,3 +264,18 @@ html::before, html::after, body::before, body::after { content: none; background
   cursor: pointer;
 }
 .cap-pos-hint { margin-top: 0; }
+
+/* ===== 13. 読み上げ専用（画面には出さないが支援技術には伝える）=====
+   2026-08-16 マスター指示で編集中カードの表示を「編集中」の1行だけにした。段階の文言
+   （話し言葉を文字にしています 等）は目に見える形では出さないが、role="status" の中に
+   残して読み上げには伝える。ここを DOM ごと消すと、画面を見ない人には編集が進んでいる
+   ことが一切伝わらなくなる。 */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

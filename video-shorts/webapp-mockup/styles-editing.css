@@ -1,17 +1,18 @@
 /* ============================================================
    編集中ウィンドウ — 通常画面の上にふわっと浮く小窓（暗幕なし・position:fixed）。
-   処理中（run→done/error）だけハサミでフィルムをチョキチョキ。z-index は result(50)/confirm(60) の上。
-   配色・影は styles.css の :root 変数を踏襲（北欧 warm off-white / sage）。
+   2026-08-16 マスター指示で「シンプルに文字だけ」にした。ハサミの演出・進捗の点・経過時間は
+   DOM ごと削除済み。出るのは「編集中」の1行と、失敗したときの理由だけ。
+   z-index は result(50)/confirm(60) の上。
    ============================================================ */
 
 .editing-card {
   position: fixed; left: 50%; top: 50%; z-index: 70;
-  width: 232px;
+  width: 180px;
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: var(--shadow-panel);
-  padding: var(--sp-2);
+  padding: 18px var(--sp-2);
   text-align: center;
   opacity: 0; transform: translate(-50%, -50%) scale(.96);
   transition: opacity .25s ease, transform .25s ease;
@@ -19,68 +20,14 @@
 .editing-card.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 .editing-card.hidden { display: none; }
 
-/* ステージ: カード内に収める（はみ出しはクリップ） */
-.snip-stage {
-  width: 100%; max-width: 168px; margin: 0 auto 4px;
-  aspect-ratio: 5 / 2; overflow: hidden;
-}
-.snip-svg { width: 100%; height: 100%; overflow: hidden; display: block; }
-
-/* --- フィルム（左へ流れる・40px 周期で継ぎ目なしループ） --- */
-.snip-svg .film { animation: film-scroll 1.4s linear infinite; }
-@keyframes film-scroll {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-40px); }
-}
-
-/* --- ハサミの刃（ピボット 120,60 を軸に開閉＝チョキチョキ） --- */
-.snip-svg .blade {
-  transform-box: view-box;
-  transform-origin: 100px 40px;
-}
-.snip-svg .blade.top { animation: snip-top 1.1s ease-in-out infinite; }
-.snip-svg .blade.bot { animation: snip-bot 1.1s ease-in-out infinite; }
-@keyframes snip-top { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(-2deg); } }
-@keyframes snip-bot { 0%, 100% { transform: rotate(16deg);  } 50% { transform: rotate(2deg);  } }
-
-/* ハサミ本体の上下のわずかな揺れ（生き物感） */
-.snip-svg .scissors {
-  transform-box: view-box;
-  transform-origin: 100px 40px;
-  animation: scissor-bob 2.2s ease-in-out infinite;
-}
-@keyframes scissor-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
-
-/* モノクロ・シルエット配色（黒フィルム＋白い映像部＋チャコールのハサミ） */
-.snip-svg .film-edge  { fill: #1d1d1b; }
-.snip-svg .film-pic   { fill: var(--surface-1); }
-.snip-svg .film-frame { stroke: #1d1d1b; stroke-width: 2; }
-.snip-svg .sprocket   { stroke: var(--surface-1); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 4 16; }
-.snip-svg .sil  { fill: var(--ink); }
-.snip-svg .hole { fill: var(--surface-1); }
-
-/* P2-6: 最小フォントサイズ13px以上(主要説明は14px以上)。旧 .78rem/.72rem(=12.48px/11.52px)は
-   実測で最小文字11.5pxの原因だったので、状況を伝える主要文言(editing-status/error-msg)は14px、
-   補足情報(editing-eta)は13pxへ引き上げる。 */
-.editing-title  { font-family: var(--font-display); font-size: .95rem; color: var(--ink); margin: 0 0 6px; }
+.editing-title  { font-family: var(--font-display); font-size: 1rem; color: var(--ink); margin: 0; letter-spacing: .04em; }
 .editing-status { color: var(--muted); font-weight: 600; font-size: 14px; margin: 0; }
-.editing-eta    { color: var(--muted); font-size: 13px; margin: 3px 0 0; opacity: .85; }
-.editing-eta b  { color: var(--ink); font-variant-numeric: tabular-nums; }
 
-/* 失敗時: アニメ・進捗を隠してエラーを明示（沈黙で閉じない） */
-.editing-card.is-error .snip-stage,
-.editing-card.is-error .editing-steps,
-.editing-card.is-error .editing-status,
-.editing-card.is-error .editing-eta { display: none; }
+/* 失敗時: 「編集中」を消して理由を明示（沈黙で閉じない） */
+.editing-card.is-error .editing-title { display: none; }
+.editing-card.is-error { width: 232px; }
 .editing-error.hidden { display: none; }
 .editing-error-msg { color: var(--ink); font-weight: 600; font-size: 14px; margin: 6px 0 10px; }
-
-/* 3段ステップ（文字起こし→選定→縦化のどこか・モノクロ） */
-.editing-steps { display: flex; gap: 5px; justify-content: center; margin: 0 0 6px; }
-.editing-steps .estep { width: 26px; height: 4px; border-radius: 2px; background: var(--surface-3); transition: background .3s ease; }
-.editing-steps .estep.done   { background: var(--ink); }
-.editing-steps .estep.active { background: var(--ink); animation: estep-pulse 1s ease-in-out infinite; }
-@keyframes estep-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 
 /* ============================================================
    編集できないカード（話し声なし等）— 編集中窓と同じ浮く小窓・モノクロ
@@ -115,11 +62,3 @@
 .ce-col span   { font-size: 14px; color: var(--muted); line-height: 1.3; }
 .ce-col.ce-ng  { opacity: .82; }
 .cantedit-card .btn.cta { width: 100%; }
-
-/* アクセシビリティ: 動きを減らす設定では停止 */
-@media (prefers-reduced-motion: reduce) {
-  .snip-svg .film,
-  .snip-svg .blade,
-  .snip-svg .scissors,
-  .editing-steps .estep { animation: none; }
-}
