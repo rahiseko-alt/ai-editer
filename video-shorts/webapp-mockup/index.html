@@ -36,7 +36,7 @@
         <li class="rail-step" data-testid="step-item" data-step-no="3">書き出す</li>
       </ol>
       <p class="rail-head">ライブラリ</p>
-      <p class="rail-note" id="rail-privacy">この動画はこのPCの中だけで処理されます（外部に送りません）。</p>
+      <p class="rail-note" id="rail-privacy" data-testid="privacy-note">文字起こしの処理先を確認しています…</p>
     </nav>
 
     <!-- ==================== 左：設定カラム ==================== -->
@@ -58,7 +58,7 @@
           <span class="file-name" id="file-name">—</span>
           <button class="link" id="clear-file">変更</button>
         </div>
-        <p class="group-note" id="file-note-hint">この動画はこのPCの中だけで処理されます（外部に送りません）。</p>
+        <p class="group-note" id="file-note-hint" data-testid="privacy-note">文字起こしの処理先を確認しています…</p>
       </section>
 
       <!-- グループ2: 字幕 -->
@@ -77,6 +77,13 @@
            G-EDIT-UI-SETTINGS-FONT/FILL/BAND/STYLE/CONDITIONAL-UI） -->
       <section class="settings-group hidden" id="card-caption-style" aria-labelledby="h-caption-style">
         <h2 class="group-label" id="h-caption-style">字幕の見た目</h2>
+
+        <p class="group-note">位置</p>
+        <p class="cap-pos-row">
+          <span class="cap-pos-val" id="cap-pos-val" data-testid="caption-pos-value">既定の位置</span>
+          <button type="button" class="cap-pos-reset hidden" id="cap-pos-reset" data-testid="caption-pos-reset">既定に戻す</button>
+        </p>
+        <p class="group-note cap-pos-hint">中央のプレビューに出ている「字幕はここに出ます」を、上下にドラッグして決めます。</p>
 
         <p class="group-note">書体</p>
         <select class="setting-select" id="caption-font" data-group="captionFont" data-testid="setting-row" data-setting-key="captionFont" aria-label="字幕の書体">
@@ -241,7 +248,7 @@
         <div class="device-frame phone-device" id="phone-frame" aria-label="スマホプレビュー">
           <div class="device-notch" aria-hidden="true"></div>
           <div class="device-screen" id="device-screen">
-            <div class="video-area" id="video-area-phone" aria-label="動画プレビュー領域（スマホ）"></div>
+            <div class="video-area" id="video-area-phone" aria-label="動画プレビュー領域（スマホ）"><div class="cap-ghost hidden" id="cap-ghost-phone" data-testid="caption-ghost" data-device="phone" role="slider" tabindex="0" aria-label="字幕の位置（上下の矢印キーで動かせます）" aria-valuemin="0" aria-valuemax="90" aria-valuenow="0" aria-valuetext="既定の位置"><span class="cap-ghost-text">字幕はここに出ます</span></div></div>
             <span class="phone-placeholder" id="phone-placeholder-phone">動画を選ぶと<br>ここにプレビュー</span>
           </div>
           <div class="device-home" aria-hidden="true"></div>
@@ -252,7 +259,7 @@
             <span class="pc-dot"></span><span class="pc-dot"></span><span class="pc-dot"></span>
           </div>
           <div class="pc-screen" id="pc-screen">
-            <div class="video-area" id="video-area-pc" aria-label="動画プレビュー領域（PC）"></div>
+            <div class="video-area" id="video-area-pc" aria-label="動画プレビュー領域（PC）"><div class="cap-ghost hidden" id="cap-ghost-pc" data-testid="caption-ghost" data-device="pc" role="slider" tabindex="0" aria-label="字幕の位置（上下の矢印キーで動かせます）" aria-valuemin="0" aria-valuemax="90" aria-valuenow="0" aria-valuetext="既定の位置"><span class="cap-ghost-text">字幕はここに出ます</span></div></div>
             <span class="phone-placeholder" id="phone-placeholder-pc">動画を選ぶと<br>ここにプレビュー</span>
           </div>
         </div>

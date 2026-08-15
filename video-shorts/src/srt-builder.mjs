@@ -183,8 +183,9 @@ function splitByDisplayWidth(text, maxCols) {
   return pieces.length ? pieces : [text];
 }
 
-/** スタイルに応じた ASS ヘッダ（[Script Info]+[V4+ Styles]+[Events] 見出し）を作る */
-function buildHeader(W, H, font, st, align, scale) {
+/** スタイルに応じた ASS ヘッダ（[Script Info]+[V4+ Styles]+[Events] 見出し）を作る
+ *  @param {number} captionMarginV Caption スタイルの MarginV（px・スケール適用済み） */
+function buildHeader(W, H, font, st, align, scale, captionMarginV) {
   // AUD-P2-22: Caption/Hook の絶対px値（フォントサイズ・縁取り・影・余白）を canvas に応じて
   // 比例縮小する。scale=1（canvasが基準どおり）のときは全て元の値のまま＝従来どおりの見た目。
   const captionMarginLR = scaleToken(60, scale);
@@ -209,7 +210,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},&H00000000,1,1,${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${scaleToken(st.marginV, scale)},1
+Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},&H00000000,1,1,${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${captionMarginV},1
 Style: Hook,${font},${hookFontSize},&H0000FFFF,&H00111111,&H00000000,1,1,${hookOutline},${hookShadow},8,${hookMarginLR},${hookMarginLR},${hookMarginV},1
 
 [Events]
@@ -224,22 +225,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
  * (karaoke等で単語ごとに複数のCaptionイベントがあっても、帯の位置はどれも同じ1本の帯で足りる)。
  * Layer -1(他のCaptionイベントより小さい)にして、文字より必ず背面に描かれるようにする。
  * @param {object} st resolveCaptionStyle() が返すスタイル
- * @param {number} scale computeSubtitleScale() の結果
  * @param {number} W canvas幅
  * @param {number} H canvas高さ
  * @param {number} duration 区間長(秒)
  * @param {number} captionMarginLR Captionスタイルの左右余白(スケール後)
  * @param {number} scaledFontSize Captionスタイルのフォントサイズ(スケール後)
+ * @param {number} align Captionスタイルの Alignment(2=下中央 / 5=画面中央)
+ * @param {number} captionMarginV Captionスタイルの MarginV(px・スケール適用済み)
  * @returns {string[]}
  */
-function buildBackgroundBand(st, scale, W, H, duration, captionMarginLR, scaledFontSize) {
+function buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, align, captionMarginV) {
   if (!st.box?.enabled) return [];
   const bandHeight = Math.round(scaledFontSize * 1.3);
   const x1 = captionMarginLR;
   const w = Math.max(1, W - captionMarginLR * 2);
-  const y1 = st.mode === "pop"
+  // 帯の縦位置は Caption スタイルの Alignment に合わせる（st.mode ではなく align を見る。
+  // 字幕の位置を明示したときは pop でも align=2 へ落ちるため、mode で判定すると帯だけ
+  // 画面中央に取り残される）。
+  const y1 = align === 5
     ? Math.round(H / 2 - bandHeight / 2) // align=5: 画面中央基準
-    : Math.max(0, H - scaleToken(st.marginV, scale) - bandHeight); // align=2: 下端基準
+    : Math.max(0, H - captionMarginV - bandHeight); // align=2: 下端基準
   const draw = `m 0 0 l ${w} 0 ${w} ${bandHeight} 0 ${bandHeight}`;
   return [
     `Dialogue: -1,${assTime(0)},${assTime(duration)},Caption,,0,0,0,,` +
@@ -358,7 +363,9 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   // resolveCaptionStyle() 由来のスタイルは st.fontFamily を持つ（書体選択・G-EDIT-CAPTION-STYLE）。
   // 持たない場合(旧来のプリセットそのまま・テスト等)は opts.fontMain / DEFAULT_FONT にフォールバック。
   const fontMain = st.fontFamily ?? opts.fontMain ?? DEFAULT_FONT;
-  const align = st.mode === "pop" ? 5 : 2; // pop=画面中央 / それ以外=下中央
+  // 字幕の位置を明示したとき(resolveCaptionStyle が st.align=2 を立てる)はそれを優先する。
+  // 未指定なら従来どおり pop=画面中央 / それ以外=下中央。
+  const align = st.align ?? (st.mode === "pop" ? 5 : 2);
   const maxChars = opts.maxChars ?? (st.mode === "karaoke" ? 14 : 18);
 
   // AUD-P2-22: canvasに応じてstyleの絶対px値を比例縮小し、実際に収まる見た目カラム数を求める。
@@ -375,9 +382,18 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   const hookMarginLR = scaleToken(40, scale);
   const hookMaxCols = computeMaxCols(W, hookFontSize, hookMarginLR);
 
-  const header = buildHeader(W, H, fontMain, st, align, scale);
+  // Caption の MarginV(px)。位置を明示していれば「canvas高さに対する割合」から実pxを求め、
+  // 未指定なら従来どおりプリセットの絶対px値を canvas 比で縮小する（＝挙動を変えない）。
+  const captionMarginV =
+    st.marginVRatio != null
+      ? Math.max(0, Math.round(H * st.marginVRatio))
+      : scaleToken(st.marginV, scale);
+
+  const header = buildHeader(W, H, fontMain, st, align, scale, captionMarginV);
   let events = [];
-  events = events.concat(buildBackgroundBand(st, scale, W, H, duration, captionMarginLR, scaledFontSize));
+  events = events.concat(
+    buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, align, captionMarginV),
+  );
   if (hook) {
     const hookLines = splitByDisplayWidth(hook, hookMaxCols).map(escAss).join("\\N");
     events.push(`Dialogue: 0,${assTime(0)},${assTime(duration)},Hook,,0,0,0,,{\\an8}${hookLines}`);

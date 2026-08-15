@@ -14,6 +14,9 @@ const state = {
   subStyle: "", captionFont: "", captionFill: "", captionOutlineColor: "",
   captionInner: "off", captionBand: "off",
   exportPreset: "", durationMin: "",
+  // 字幕の縦位置（G-UI-CAPPOS）。空＝未指定＝スタイルの既定位置のまま。
+  // 単位は「画面の高さに対する％」で 0＝一番下。
+  captionPos: "",
 };
 const $ = (id) => document.getElementById(id);
 
@@ -175,7 +178,123 @@ function updateSubDesc() {
 function updateCaptionStyleVisibility() {
   const el = $("card-caption-style");
   if (el) el.classList.toggle("hidden", state.sub !== "on");
+  updateCapPos();
 }
+
+// ---- 字幕の縦位置を、中央のプレビュー上で決める（G-UI-CAPPOS）----
+// マスター指示（2026-08-16）「字幕の位置をこの時点で決めたい。中央のスマホやPCの画面上で
+// あらかじめ設定できないか？」への実装。つまみ(.cap-ghost)は動画が焼かれる領域(.video-area)の
+// 中に置いてあるので、つまみの下端の高さ＝出力の MarginV（画面の下端からの距離）と一致する。
+const CAP_POS_MIN = 0;
+const CAP_POS_MAX = 90;
+// スタイルごとの既定位置。GET /api/env が src/subtitle-styles.mjs から計算して配る
+// （画面へ数値を書き写すとプリセットを直したとき片方だけ古くなるため）。null=画面中央。
+let capPosDefaults = {};
+
+/** 現在のスタイルの既定位置（％）。中央指定(null)や未取得のときは表示用に 50 / 18.8 を使う。 */
+function capPosDefaultFor(styleKey) {
+  const key = styleKey || "karaoke";
+  if (!Object.hasOwn(capPosDefaults, key)) return { pct: 18.8, center: false };
+  const v = capPosDefaults[key];
+  return v === null ? { pct: 50, center: true } : { pct: v, center: false };
+}
+
+/** つまみの位置と読み上げ値、カード側の数値表示をまとめて描き直す。 */
+function updateCapPos() {
+  const chosen = state.captionPos !== "" ? Number(state.captionPos) : null;
+  const def = capPosDefaultFor(state.subStyle);
+  const shownPct = chosen ?? def.pct;
+  const label =
+    chosen !== null
+      ? `画面の下から ${chosen}%`
+      : def.center
+        ? "既定の位置（画面の中央）"
+        : `既定の位置（画面の下から ${def.pct}%）`;
+
+  document.querySelectorAll('[data-testid="caption-ghost"]').forEach((el) => {
+    el.classList.toggle("hidden", state.sub !== "on");
+    el.style.bottom = `${shownPct}%`;
+    el.setAttribute("aria-valuenow", String(shownPct));
+    el.setAttribute("aria-valuetext", label);
+    el.dataset.capPos = chosen === null ? "" : String(chosen);
+  });
+  const val = $("cap-pos-val");
+  if (val) val.textContent = label;
+  const reset = $("cap-pos-reset");
+  if (reset) reset.classList.toggle("hidden", chosen === null);
+}
+
+/** 0〜90 の範囲へ丸め、小数第1位までにする（送信値と表示値を必ず一致させる）。 */
+function clampCapPos(pct) {
+  const v = Math.min(CAP_POS_MAX, Math.max(CAP_POS_MIN, pct));
+  return Math.round(v * 10) / 10;
+}
+
+function setCapPos(pct) {
+  state.captionPos = String(clampCapPos(pct));
+  updateCapPos();
+  refresh();
+}
+
+document.querySelectorAll('[data-testid="caption-ghost"]').forEach((ghost) => {
+  let dragging = false;
+  // つまみのどこを掴んだかを覚えておく（掴んだ点が飛ばないように）
+  let grabOffset = 0;
+
+  const areaRect = () => ghost.parentElement.getBoundingClientRect();
+  const pctFromPointer = (clientY) => {
+    const rect = areaRect();
+    if (!rect.height) return null;
+    // つまみの「下端」が出力の MarginV に対応する
+    const bottomY = clientY + grabOffset;
+    return ((rect.bottom - bottomY) / rect.height) * 100;
+  };
+
+  ghost.addEventListener("pointerdown", (ev) => {
+    if (state.sub !== "on") return;
+    dragging = true;
+    grabOffset = ghost.getBoundingClientRect().bottom - ev.clientY;
+    ghost.setPointerCapture(ev.pointerId);
+    ghost.classList.add("dragging");
+    ev.preventDefault();
+  });
+  ghost.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const pct = pctFromPointer(ev.clientY);
+    if (pct !== null) setCapPos(pct);
+  });
+  const endDrag = (ev) => {
+    if (!dragging) return;
+    dragging = false;
+    ghost.classList.remove("dragging");
+    if (ghost.hasPointerCapture?.(ev.pointerId)) ghost.releasePointerCapture(ev.pointerId);
+  };
+  ghost.addEventListener("pointerup", endDrag);
+  ghost.addEventListener("pointercancel", endDrag);
+
+  // AUD: ドラッグだけだとポインタを使えない人が位置を決められない。矢印キーでも動かせるようにする。
+  ghost.addEventListener("keydown", (ev) => {
+    if (state.sub !== "on") return;
+    const cur = state.captionPos !== "" ? Number(state.captionPos) : capPosDefaultFor(state.subStyle).pct;
+    const step = ev.shiftKey ? 5 : 1;
+    let next = null;
+    if (ev.key === "ArrowUp" || ev.key === "ArrowRight") next = cur + step;
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowLeft") next = cur - step;
+    else if (ev.key === "PageUp") next = cur + 10;
+    else if (ev.key === "PageDown") next = cur - 10;
+    else if (ev.key === "Home") next = CAP_POS_MIN;
+    else if (ev.key === "End") next = CAP_POS_MAX;
+    if (next === null) return;
+    ev.preventDefault();
+    setCapPos(next);
+  });
+});
+
+$("cap-pos-reset").addEventListener("click", () => {
+  state.captionPos = "";
+  updateCapPos();
+  refresh();
+});
 function updateMosaicStepRow() {
   // モザイクを選ばないときは m の段が来ないので、進捗の行も出さない。
   const li = document.querySelector('#progress li[data-k="m"]');
@@ -935,9 +1054,37 @@ $("result-overlay").addEventListener("click", (e) => { if (e.target === $("resul
 // 「編集済動画一覧」: 閉じた結果（履歴）を再実行なしで開き直す
 $("btn-show-result").addEventListener("click", openResult);
 
+// ---- 文字起こしがどこで行われるかを、実態のとおりに表示する ----
+// 2026-08-16: 画面には常に「この動画はこのPCの中だけで処理されます（外部に送りません）」と
+// 固定で書いてあったが、GROQ_API_KEY があるときは実際には音声を Groq のクラウドへ送っている。
+// 書いてあることと実際の動きが違う状態だったので、サーバに実態を聞いて表示を合わせる。
+const PRIVACY_TEXT = {
+  local: "文字起こしはこのPCの中で行います。動画も音声も外部へ送りません（そのぶん時間がかかります）。",
+  cloud: "文字起こしは Groq のクラウドで行います。音声だけが Groq へ送信されます（そのぶん速く終わります）。",
+  unknown: "文字起こしの処理先を確認できませんでした。サーバの状態をご確認ください。",
+};
+function applyPrivacyNote(kind) {
+  const text = PRIVACY_TEXT[kind] ?? PRIVACY_TEXT.unknown;
+  document.querySelectorAll('[data-testid="privacy-note"]').forEach((el) => {
+    el.textContent = text;
+    el.dataset.transcribe = kind;
+  });
+}
+fetch(withTokenQuery("/api/env"), withTokenHeader())
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => {
+    applyPrivacyNote(d?.transcribe === "cloud" ? "cloud" : d?.transcribe === "local" ? "local" : "unknown");
+    if (d?.captionPosDefaults) {
+      capPosDefaults = d.captionPosDefaults;
+      updateCapPos(); // 既定位置が分かった時点でつまみを置き直す
+    }
+  })
+  .catch(() => applyPrivacyNote("unknown"));
+
 showCut();
 updateSubDesc();
 updateCaptionStyleVisibility();
+updateCapPos();
 updateDurationVisibility();
 updateBreathVisibility();
 updateExportDesc();

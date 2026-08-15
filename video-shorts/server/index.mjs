@@ -22,8 +22,13 @@ import {
   isRecaptioning,
   runGated,
   cancelJob,
+  groqKeyAvailable,
 } from "./pipeline-runner.mjs";
 import { parseJobParams } from "./job-params.mjs";
+import {
+  REFERENCE_CANVAS,
+  SUBTITLE_STYLES,
+} from "../src/subtitle-styles.mjs";
 import {
   readEdits, saveWordEdit, applyEdits, editPairs,
 } from "../src/caption-store.mjs";
@@ -109,6 +114,25 @@ sweepExpiredJobsNow();
 // 起動しっぱなしのローカルサーバーでも定期的に掃除されるよう、1時間ごとに再実行する。
 // unref() でこのタイマーだけのためにプロセスが終了できなくなるのを防ぐ(テスト等での後始末)。
 setInterval(sweepExpiredJobsNow, 60 * 60 * 1000).unref();
+
+/**
+ * 字幕スタイルごとの「既定の縦位置」を、画面のつまみの初期位置に使える形（％）で返す。
+ * 単位は画面の高さに対する％で、0＝一番下（ASS の MarginV と同じ意味）。
+ * pop プリセットだけは既定が画面中央（Alignment=5・MarginV を見ない）なので null を返し、
+ * 画面側は「中央」として描く。
+ *
+ * 正は src/subtitle-styles.mjs。画面へ数値を書き写すとプリセットを直したとき片方だけ
+ * 古くなるので、ここで計算して配る。
+ * @returns {Record<string, number|null>}
+ */
+function captionPosDefaults() {
+  const refH = REFERENCE_CANVAS.portrait.height;
+  const out = {};
+  for (const [key, st] of Object.entries(SUBTITLE_STYLES)) {
+    out[key] = st.mode === "pop" ? null : Math.round((st.marginV / refH) * 1000) / 10;
+  }
+  return out;
+}
 
 // ── MIME マップ ───────────────────────────────────────────────
 const MIME = {
@@ -751,6 +775,25 @@ async function handleRequest(req, res) {
     // P1-15-A: 静的配信(GET /等)にもHost検査を課す。ここを素通りさせると、別名ホストを
     // 名乗るだけの同一PC上の別プロセスが index.html 経由で起動時トークンを取得できてしまう。
     return jsonRes(res, 401, { error: "Unauthorized" });
+  }
+
+  // GET /api/env（この環境の処理のしかた。秘密情報は返さない）
+  //
+  // 2026-08-16: 画面に「この動画はこのPCの中だけで処理されます（外部に送りません）」と
+  // 常時固定で書いていたが、GROQ_API_KEY があるときは実際には音声を Groq のクラウドへ
+  // 送る。書いてある内容と実際の動きが食い違っていたので、実態を返してそれを表示する。
+  // 返すのは経路の種類だけで、鍵そのものも鍵の一部も返さない。
+  if (method === "GET" && pathname === "/api/env") {
+    if (!isValidStartupToken(req, url)) {
+      return jsonRes(res, 401, { error: "Unauthorized" });
+    }
+    return jsonRes(res, 200, {
+      transcribe: groqKeyAvailable() ? "cloud" : "local",
+      // 字幕の既定の縦位置（G-UI-CAPPOS）。画面のつまみの初期位置に使う。
+      // 画面側に数値を書き写すと、プリセットを直したときに片方だけ古くなる。正は
+      // src/subtitle-styles.mjs なので、そこから計算して配る。
+      captionPosDefaults: captionPosDefaults(),
+    });
   }
 
   // POST /api/jobs（新規ジョブ作成。まだジョブが存在せず起動時トークンでのみ認可する）

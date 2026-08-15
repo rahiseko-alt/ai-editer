@@ -570,7 +570,9 @@ function spawnAndLog(cmd, args, opts, onLine) {
 // local（faster-whisper / CPU）は並列しても CPU 律速で合計時間が変わらず
 // 各本が遅くなるだけなので、FIFO キューで 1 本ずつ直列に流す。
 // 判定は transcribe.py の auto 解決と同じ「GROQ_API_KEY の有無」（env → .env の順）。
-function groqKeyAvailable() {
+// 2026-08-16: 画面(GET /api/env)へ「文字起こしがどこで行われるか」を出すためにも使う。
+// 鍵そのものは返さない＝有無(真偽)だけを外へ出す。
+export function groqKeyAvailable() {
   if (process.env.GROQ_API_KEY) return true;
   try {
     const envPath = path.join(ROOT, ".env");
@@ -837,7 +839,7 @@ export function renderLabel(orient) {
  * @param {string} pipelinePath pipeline.mjs の絶対パス（PIPELINE_MJS相当）
  * @param {string} workDir ジョブの作業ディレクトリ
  * @param {object} opts startJob() へ渡されるものと同じ形。sub/mode/breath/subStyle/
- *   captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/
+ *   captionFont/captionFill/captionOutlineColor/captionInner/captionBand/captionPos/exportPreset/
  *   durationMin を含みうる（すべて任意）。
  * @returns {string[]} spawn("node", argv) にそのまま渡せるargv配列
  */
@@ -856,6 +858,11 @@ export function buildRenderArgs(pipelinePath, workDir, opts) {
   if (opts.captionOutlineColor) renderArgs.push("--caption-outline-color", String(opts.captionOutlineColor));
   if (opts.captionInner) renderArgs.push("--caption-inner", String(opts.captionInner));
   if (opts.captionBand) renderArgs.push("--caption-band", String(opts.captionBand));
+  // 字幕の縦位置（G-UI-CAPPOS）。0（画面の一番下）も正当な指定なので、真偽ではなく
+  // 「指定されたか」で判定する。truthy 判定にすると 0 だけ黙って落ちる。
+  if (opts.captionPos !== undefined && opts.captionPos !== null && opts.captionPos !== "") {
+    renderArgs.push("--caption-pos", String(opts.captionPos));
+  }
   if (opts.exportPreset) renderArgs.push("--export", String(opts.exportPreset));
   if (opts.durationMin) renderArgs.push("--duration-min", String(opts.durationMin));
 
