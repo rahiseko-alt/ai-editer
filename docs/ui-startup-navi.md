@@ -31,17 +31,24 @@
 ```powershell
 Get-NetTCPConnection -LocalPort 5178 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 $repo = Get-ChildItem -Path $HOME -Recurse -Depth 4 -Directory -Filter ai-editer -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-if (-not $repo) { Write-Host "リポジトリが見つかりません。クローン先を教えてください。" -ForegroundColor Red } else { Write-Host "場所: $repo" -ForegroundColor Green; Set-Location $repo; git pull; node video-shorts/server/index.mjs }
+if (-not $repo) { Write-Host "リポジトリが見つかりません。クローン先を教えてください。" -ForegroundColor Red } else { Set-Location $repo; Write-Host "場所: $repo" -ForegroundColor Green; git checkout main; git pull; Write-Host ("ブランチ: " + (git rev-parse --abbrev-ref HEAD) + " / 版: " + (git rev-parse --short HEAD)) -ForegroundColor Green; node video-shorts/server/index.mjs }
 ```
 
-この1ブロックが「残っているサーバを止める → リポジトリを探す → 移動する → 更新する → 起動する」
-を全部やる。**マスターがパスを覚えておく必要は無い。**
+この1ブロックが「残っているサーバを止める → リポジトリを探す → 移動する → **main へ切り替える** →
+更新する → いまのブランチと版を表示する → 起動する」を全部やる。
+**マスターがパスもブランチ名も覚えておく必要は無い。**
+
+> `git checkout main` は 2026-08-15 に追加した。これが無かったため、マスターの手元が古い作業ブランチ
+> (`claude/ui-p2-quality`) のままで、`git pull` がそのブランチだけを更新し、刷新後の画面が出なかった。
 
 ### ステップ3：この1行が出れば成功
 
 ```
 [ai-editer] server listening on http://127.0.0.1:5178
 ```
+
+**先頭が `[ai-editer]` であることまで確認する。** ここが `[kosespark]` になっていたら、
+古いブランチのまま動いている（改称前の版）。ステップ2をやり直す。
 
 出ていなければ**起動していない**。ステップ5へ。
 
