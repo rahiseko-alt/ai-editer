@@ -4937,6 +4937,7 @@
         {
          "text": "webapp-mockup/app.jsのrun()が組み立てるPOST /api/jobsのクエリパラメータへ、字幕スタイル一式(subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand)・尺(durationMin)・書き出し(exportPreset)の8設定すべてが含まれる。実ブラウザで各設定を既定以外の値へ変更した状態で「作る」を押したとき、実際に送信されるリクエストのクエリ文字列にその値が載る。",
          "verify": "playwrightで実サーバに接続し、8設定それぞれについて既定以外の値を選んでから送信を実行し、ブラウザのネットワークリクエスト(page.route/waitForRequestでPOST /api/jobsを捕捉)のURLに対応するkey=valueが含まれることを確認する。8設定を1つずつ個別に変えたケースを回し、どれか1つでも欠けたら該当設定のケースがFAILすること。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-wiring-client-check.mjs",
          "evidence": "182afdd"
         }
        ],
@@ -4952,6 +4953,7 @@
         {
          "text": "server/pipeline-runner.mjsのrender argv組み立てを純粋関数buildRenderArgs(pipelinePath, workDir, opts)へ切り出し、parseJobParamsが返すキー(sub/cut/size/cutMin/mosaic/trim/breath/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を1つずつ数え上げるのではなく、この関数を通してargvへ渡す。既存の--mode/--no-sub/--breathも同じ関数を通ることで、今回の変更が既存設定の結線を壊していないことも同時に検知する。『受け取った設定が届く』という約束は、クエリ文字列の受理(parseJobParams)からargvまでの鎖全体で成立していること。",
          "verify": "実際のURLSearchParams(8設定それぞれに具体的な値を持つクエリ文字列)を組み立て、それをparseJobParams()へ通し、その**戻り値をそのままbuildRenderArgs()へ渡す**(あらかじめ用意した合成optsを直接渡すのではなく、parseJobParamsの実出力を経由させる。CodeRabbitが指摘した『検証がソース文字列やハンドコードされた値で完結し、実際の変換ロジックを通らない』弱点の再発防止)。得られたargv配列に対応する--フラグと値が実在することを配列の中身で確認する(正規表現照合は禁止)。あわせてtests/smoke.mjsの既存検査『サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる』(正規表現照合)を、この実チェーンの実測へ置き換える。",
+         "verifyCmd": "node video-shorts/tests/build-render-args-check.mjs",
          "evidence": "46d4eef"
         }
        ]
@@ -4966,6 +4968,7 @@
         {
          "text": "range外・不正形式・欠落・__proto__/constructor等のプロトタイプ汚染狙いの値が、8設定(subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)のどれについてクエリパラメータとして来ても、parseJobParamsが例外を投げず既定値へ丸め、pipeline.mjsをfail-fastさせず、ジョブが最後まで(stage=doneまで)完走する。かつ、丸めた結果が『何も指定しなかったとき』と同じ真の既定値であることを実測で確認する(クラッシュしないことだけでは満たさない。丸めた先が壊れた別の値になっていても検出できるようにする)。",
          "verify": "8設定それぞれについて少なくとも1つの不正値ケースを用意する: subStyle=unknown/captionFont=__proto__(プロトタイプ汚染狙い)/captionFill=red(不正形式)/captionOutlineColor=notacolor/captionInner=badvalue/captionBand=xyz/exportPreset=unknown(未知の名前)/durationMin=-5(範囲外)またはabc(数値でない)。それぞれ単独で含む細工クエリで、parseJobParamsの単体検査(丸めた値が既定値と一致することの確認)に加え、実サーバを起動しPOST /api/jobsから実際にジョブを走らせ、stageがerrorへ落ちずdoneへ到達すること、および出来た成果物(字幕フレームの色・書体等、測定可能な項目)が『新設定を一切送らない場合』と一致することを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-validate-check.mjs",
          "evidence": "b460a0f"
         }
        ],
@@ -4981,6 +4984,7 @@
         {
          "text": "webapp-mockup/index.htmlの字幕スタイル・尺・書き出しの各チップ/入力が持つdata-val(またはとりうる値)を全て列挙したとき、そのすべてがparseJobParamsで受理され、pipeline.mjs側の対応するパーサ(getFont/getStyle/hexToAss/getExportPreset/resolveTargetDuration)でも受理される。サーバが通した値でpipeline.mjsがfail-fastすることはない。この葉は『受理されるか』だけを見る。見た目に実際どう反映されるかはFONT/FILL/BAND/STYLE/EXPORT/DURATION-EFFECTの各葉が別途見る。",
          "verify": "index.htmlをパースしdata-groupが字幕スタイル/尺/書き出しに属するチップのdata-valを実際に抽出し、各値をparseJobParams→対応するCLIパーサへ通す検査を追加する。列挙はハードコードした期待値リストとの突合ではなく、実際にHTMLから読み取った値で行う(HTML側だけ値を増やして検査を更新し忘れる事故を防ぐ)。",
+         "verifyCmd": "node video-shorts/tests/job-params-ui-settings-check.mjs",
          "evidence": "55e793d"
         }
        ]
@@ -4995,6 +4999,7 @@
         {
          "text": "新設定(subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を一切送らない場合の出力(尺・解像度・字幕の書体/色/縁取り/背景帯の有無・書き出し画質相当のファイルサイズ)が、この変更を加える前の実測値と一致する。",
          "verify": "この変更を加える前のcommitで固定素材をrenderした出力を基準として保存し、この変更後に新設定を一切送らず同じ固定素材をrenderした出力と、尺(ffprobe)・解像度・.assの有無/内容・ファイルサイズを比較する。一致しなければFAIL。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-conditional-recover-compat-check.mjs",
          "evidence": "eeba70b"
         }
        ]
@@ -5009,6 +5014,7 @@
         {
          "text": "実ブラウザで書体チップを2種類以上(例: 明朝体・手書き風。いずれも既定=角ゴシック以外)選び、それぞれ「作る」を実行して出来た動画の字幕フレームが、(a)書体を選ばず(既定のまま)作った動画の字幕フレームと画素で異なる字形になっている、(b)選んだ2種類どうしでも互いに画素で異なる字形になっている。(b)が無いと『何を選んでも常に同じ1つの非既定書体を返す』安価な偽実装を見逃す。.assファイルにフォント名が書かれているだけでは満たさない(フォント実体が無く描画に反映されない事故を検出できない)。",
          "verify": "playwrightで実サーバに接続し、動画をアップロード→字幕あり→書体チップ(明朝体)を選択→作成を実行する。同様に書体チップ(手書き風)でも作成する。出来た2本の動画のフレームをtests/helpers/caption-style-render.mjsと同じ作法(dominantColors/画素比較に準じる字形比較)で、(1)それぞれが既定書体の出力と有意に異なること、(2)明朝体と手書き風の2本が互いに有意に異なることの両方を確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5023,6 +5029,7 @@
         {
          "text": "実ブラウザで文字色を2種類以上(例 #FF0000と#00FF00)指定してそれぞれ作成した動画の字幕領域の支配色が、指定した色にそれぞれ一致する。かつ2種類の出力が互いに異なる色になっている(『何を選んでも常に同じ1つの非既定色を返す』安価な偽実装を見逃さないため)。サーバが値を受理したのに黙って既定色へ落とす実装ではこれを満たさない。",
          "verify": "playwrightで実サーバに接続し、文字色を#FF0000へ指定して作成する。同様に#00FF00でも作成する。出来た2本の動画のフレームからtests/helpers/caption-style-render.mjsのdominantColors()で字幕領域の支配色を測り、(1)それぞれがcolorClose()で指定色と一致すること、(2)2本の支配色が互いに異なることの両方を確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5037,6 +5044,7 @@
         {
          "text": "実ブラウザで背景帯onを選んで作成した動画の字幕背景領域と、offのまま作成した動画の同領域とで、画素が明確に異なる(帯が実際に描かれている)。",
          "verify": "playwrightで背景帯on/offそれぞれで作成し、字幕背景領域の画素をtests/helpers/caption-style-render.mjsの作法で比較する。on側にだけ帯の色が現れることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5051,6 +5059,7 @@
         {
          "text": "実ブラウザでスタイルをpopとboldの**両方**へ、それぞれ既定(karaoke)から変更して作成した動画の.ass内容が、karaokeで作成した場合と構造的に異なる(SUBTITLE_STYLESが定義するタグ・アニメーション指定の違いが実際の出力へ反映されている)。かつ、popとboldの2本それぞれで、出来た動画の字幕領域に実際に文字が描画されている(空白のままではない)ことを画素で確認する。この葉はsubStyleがCLI側も含め初めて『選んだ効果が実際に出ているか』を確認する葉であり(basis-reviewer反証2)、CLI側のアニメーション精度そのものの新規画素検証までは求めないが、『指示は書けたが実際には描かれない』事故(ASS構文ミス等)は画素で検出する。",
          "verify": "playwrightで実サーバに接続し、字幕あり→スタイルpopを選択→作成を実行する。同様にboldでも作成する。出来た2本の.assファイルをkaraoke(既定)で作成したものと比較し、SUBTITLE_STYLESの定義に対応する構造上の差分が実在することを確認する。あわせて2本それぞれの出力フレームの字幕領域を、字幕なしで作成した同一素材のフレームと画素比較し、有意な差分(=文字が実際に描画されている)があることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5065,6 +5074,7 @@
         {
          "text": "実ブラウザで縁取り色を2種類以上(例 #0000FFと#FFA500。いずれも既定=黒以外)指定してそれぞれ作成した動画の字幕縁取り領域の色が、指定した色にそれぞれ一致する。かつ2種類の出力が互いに異なる色になっている(『何を選んでも常に同じ1色の縁取りしか出さない』安価な偽実装を見逃さないため)。既存のG-EDIT-CAPTION-STYLE-COLOR-OUTLINE葉(4590行台)がCLI側の描画自体は画素検証済みのため、この葉はUIから選んだ値が実際にその経路まで届くことを確認する。",
          "verify": "playwrightで実サーバに接続し、縁取り色を#0000FFへ指定して作成する。同様に#FFA500でも作成する。出来た2本の動画のフレームから、tests/helpers/caption-style-render.mjsのdominantColors()/colorClose()と同じ測定関数・同じ許容差(G-EDIT-CAPTION-STYLE-COLOR-OUTLINEが用いる面積閾値・色差許容量と同一の基準)を用いて字幕縁取り領域の色を実測し、(1)それぞれが既定(黒)と有意に異なりcolorClose()で指定色と一致すること、(2)2本の縁取り色が互いに異なることの両方を確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5079,6 +5089,7 @@
         {
          "text": "実ブラウザで内側縁取りonを色指定(例 #FFFF00)して作成した動画の字幕領域と、offのまま作成した動画の同領域とで、画素が明確に異なる(内側縁取りが実際に描かれている)。既存のG-EDIT-CAPTION-STYLE-INNER葉がCLI側の描画自体は画素検証済みのため、この葉はUIから選んだ値が実際にその経路まで届くことを確認する。",
          "verify": "playwrightで内側縁取りon(#FFFF00)/offそれぞれで作成し、字幕領域の画素をtests/helpers/caption-style-render.mjsの作法で比較する。on側にだけ内側縁取りの色が現れることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-visual-check.mjs",
          "evidence": "9f05c3d"
         }
        ]
@@ -5093,6 +5104,7 @@
         {
          "text": "画面で『話題で切る』を選んでいるときだけ『1本の目安の長さ(分)』の入力がDOM上に現れ、『分数で切る』へ切り替えると同じ入力欄がDOM上から消える(既存のcutMinがその役目を担うため)。",
          "verify": "playwrightで『話題で切る』のとき入力欄が表示されることをDOMで確認し、『分数で切る』へ切り替えたときに同じ要素が非表示になることをDOMで確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-duration-export-compose-check.mjs",
          "evidence": "6fb1f9a"
         }
        ]
@@ -5107,6 +5119,7 @@
         {
          "text": "『話題で切る』を選んでいる状態で、画面から『1本の目安の長さ』へ具体的な値(例 1分と4分の2種類)を指定してそれぞれ作成すると、出来た各候補の尺が指定値ごとの±30%の範囲(pipeline.mjsのresolveTargetDurationと同じ規則)に収まる。かつ1分指定の結果と4分指定の結果とで、候補の尺の分布が明確に異なる(『何を指定しても常に同じ固定の尺を返す』安価な偽実装を見逃さないため)。",
          "verify": "playwrightで実サーバに接続し、『話題で切る』のまま『1本の目安の長さ』へ1分を指定して作成を実行し、candidates.jsonの各候補durationを実測する。同様に4分でも作成し実測する。(1)それぞれが対応する±30%範囲内であること、(2)1分側の尺の代表値(例:中央値)が4分側の尺の代表値より明確に小さいことの両方を確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-duration-export-compose-check.mjs",
          "evidence": "6fb1f9a"
         }
        ]
@@ -5121,6 +5134,7 @@
         {
          "text": "実ブラウザで書き出しチップを選んで作成したとき、『軽くして共有』は『標準(未指定)』よりファイルサイズが小さく、『高画質で保存』は『標準』よりファイルサイズが大きい(両方向で確認する。常に圧縮を強める実装や常に画質を上げる実装のような単調な偽実装を弾くため)。",
          "verify": "playwrightで実サーバに接続し、同一の固定素材に対し書き出しチップ未選択(標準)・『軽くして共有』・『高画質で保存』のそれぞれで実際にチップを選んでから作成を実行し、出来たファイルサイズを比較する。軽くして共有 < 標準 < 高画質で保存の順であることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-duration-export-compose-check.mjs",
          "evidence": "6fb1f9a"
         }
        ]
@@ -5135,6 +5149,7 @@
         {
          "text": "画面で字幕を『なし』にしているとき、字幕の見た目(書体/スタイル/文字色/縁取り色/内側縁取り/背景帯)の設定群がDOM上に表示されない。『あり』へ切り替えると表示される。",
          "verify": "playwrightで字幕『なし』のとき該当settings-groupがDOM上で非表示であることを確認し、『あり』へ切り替えたときに表示されることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-conditional-recover-compat-check.mjs",
          "evidence": "eeba70b"
         }
        ]
@@ -5149,6 +5164,7 @@
         {
          "text": "sub=noneのまま、captionFont/captionFill/captionBand等の値をクエリへ強制的に含めてジョブを実行しても、出来た動画に字幕(.ass)自体が存在しない、またはrenderに一切使われない。",
          "verify": "実サーバへcaptionFont等を含めsub=noneで直接POSTしジョブを完走させ、出来た成果物に.assが含まれない(または空・未使用)ことを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-conditional-recover-compat-check.mjs",
          "evidence": "eeba70b"
         }
        ]
@@ -5163,6 +5179,7 @@
         {
          "text": "以下2つの組合せシナリオそれぞれで、指定したすべての設定が同時に成立する(どれか1つが他を打ち消さない)。シナリオA(視覚的に競合しない5設定): 書体(既定以外)・文字色(既定以外)・背景帯on・書き出し(軽くして共有)・1本の目安の長さ(2分、話題で切るモード)。シナリオB(実際に競合しうる組合せ。basis-reviewer反証4で追加): 内側縁取りon(内側=#FFFF00)と背景帯on(#102040)を同時に指定したとき、出来た動画のフレームで(a)黄色(#FFFF00、許容誤差20/ch)の画素が200px以上検出できる(内側縁取りが背景帯に隠れて消えていない。G-EDIT-CAPTION-STYLE-INNERと同じ基準)、(b)帯の矩形外周の充填率が90%以上(背景帯が内側縁取りに侵食されて欠けていない。G-EDIT-CAPTION-STYLE-BAND-ONと同じ基準)。かつ1本の目安の長さ(2分)と間を詰める(trim=on)を同時に指定したとき、出来た各候補の尺がDURATION-EFFECT葉と同じ±30%の範囲(この場合1.4〜2.6分)に収まる。",
          "verify": "playwrightで実サーバに接続し、シナリオAの5設定を同時に指定して作成を実行し、出来た動画の字幕フレーム(書体・文字色・背景帯)・ファイルサイズ(書き出し)・candidates.jsonの尺(目安の長さ)を実測してそれぞれが単独指定時の期待値と一致することを確認する。続けてシナリオBを実行し、(1)内側縁取り+背景帯を同時にonにした出力を、caption-style-inner-check.mjs/caption-style-band-check.mjsと同じ測定式(黄色画素数200px以上・帯充填率90%以上)で実測すること、(2)目安の長さ+trim=onを同時に指定した出力のcandidates.jsonの各候補durationが1.4分(84秒)以上2.6分(156秒)以下に収まることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-duration-export-compose-check.mjs",
          "evidence": "6fb1f9a"
         }
        ]
@@ -5177,6 +5194,7 @@
         {
          "text": "字幕スタイル・尺・書き出しの設定を選んだ状態で作成が失敗(例: 存在しないフォントキーを強制指定・話し声なし素材)した後、ページをリロードせずに再度『作る』を押すとき、直前に選んだ設定値が画面上に残っている(reloadを跨ぐ永続化は対象外)。",
          "verify": "playwrightで設定を選んでから失敗する条件(話し声が無い合成素材)で作成を実行し、失敗表示後にDOM上の各チップ/入力の値が選択直後の値のままであることを確認する。",
+         "verifyCmd": "node video-shorts/tests/ui-settings-conditional-recover-compat-check.mjs",
          "evidence": "eeba70b"
         }
        ]
