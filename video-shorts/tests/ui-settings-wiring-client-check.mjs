@@ -29,7 +29,8 @@ const CASES = [
   },
   {
     key: "captionFont", expectPair: "captionFont=mincho",
-    act: (page) => page.click('[data-group="captionFont"] .chip[data-val="mincho"]'),
+    // 2026-08-16: 書体はチップからプルダウンへ変更（マスター指示④）
+    act: (page) => page.selectOption('[data-group="captionFont"]', "mincho"),
   },
   {
     key: "captionFill", expectPair: "captionFill=%23ff0000",

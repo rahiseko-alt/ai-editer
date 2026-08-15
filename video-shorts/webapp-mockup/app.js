@@ -90,6 +90,18 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
   });
 });
 
+// プルダウン（select[data-group]）も、チップと同じく state へ書き戻す。
+// 2026-08-16 マスター指示④「字幕のフォントはプルダウンで選べるようにしろ」。
+// 選択肢が5つ以上ある設定はチップだと横に広がりすぎるため、プルダウンにする。
+document.querySelectorAll("select[data-group]").forEach((sel) => {
+  const g = sel.dataset.group;
+  if (!g) return;
+  sel.addEventListener("change", () => {
+    state[g] = sel.value;
+    refresh();
+  });
+});
+
 // ---- 端末切替タブ ----
 document.querySelectorAll(".device-tab").forEach((tab) => {
   tab.addEventListener("click", () => {

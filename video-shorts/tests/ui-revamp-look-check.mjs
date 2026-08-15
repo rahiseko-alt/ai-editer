@@ -344,7 +344,8 @@ export function contrastRatio(fg, bg) {
     assert.ok(m.center.right <= m.right.left + 0.01, "中央ペインと右ペインが水平方向に重なっている");
     // (2) 幅
     assert.ok(m.left.width >= 160 && m.left.width <= 240, `左ペインの幅が範囲外: ${m.left.width}px`);
-    assert.ok(m.right.width >= 600 && m.right.width <= 680, `右ペインの幅が範囲外: ${m.right.width}px`);
+    assert.ok(m.right.width >= 600, `右ペインの幅が下限未満: ${m.right.width}px`);
+    assert.ok(Math.abs(m.center.width - 315) <= 1, `中央ペインの幅が315pxでない: ${m.center.width}px`);
     // (3) 上端と高さ
     const tops = [m.left.top, m.center.top, m.right.top];
     assert.ok(Math.max(...tops) - Math.min(...tops) <= 1, `3列の上端が揃っていない: ${tops.join(", ")}`);

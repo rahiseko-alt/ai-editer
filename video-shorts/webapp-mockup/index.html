@@ -20,7 +20,7 @@
   <!-- ===== 上部バー ===== -->
   <header class="topbar" role="banner" data-testid="app-header">
     <div class="brand">
-      <span class="spark" aria-hidden="true">✦</span> AI-Editer
+      AI-Editer
     </div>
   </header>
 
@@ -79,13 +79,13 @@
         <h2 class="group-label" id="h-caption-style">字幕の見た目</h2>
 
         <p class="group-note">書体</p>
-        <div class="chips chips-wrap" data-group="captionFont" data-testid="setting-row" data-setting-key="captionFont" role="group" aria-label="字幕の書体">
-          <button class="chip" data-val="kaku" aria-pressed="false">角ゴシック</button>
-          <button class="chip" data-val="maru" aria-pressed="false">丸ゴシック</button>
-          <button class="chip" data-val="mincho" aria-pressed="false">明朝体</button>
-          <button class="chip" data-val="hand" aria-pressed="false">手書き風</button>
-          <button class="chip" data-val="marker" aria-pressed="false">マーカー風</button>
-        </div>
+        <select class="setting-select" id="caption-font" data-group="captionFont" data-testid="setting-row" data-setting-key="captionFont" aria-label="字幕の書体">
+          <option value="kaku">角ゴシック</option>
+          <option value="maru">丸ゴシック</option>
+          <option value="mincho">明朝体</option>
+          <option value="hand">手書き風</option>
+          <option value="marker">マーカー風</option>
+        </select>
 
         <p class="group-note">スタイル</p>
         <div class="chips chips-wrap" data-group="subStyle" data-testid="setting-row" data-setting-key="subStyle" role="group" aria-label="字幕のスタイル">
