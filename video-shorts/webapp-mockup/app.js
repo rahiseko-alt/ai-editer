@@ -7,6 +7,13 @@ const state = {
   file: null, sub: "none", mosaic: "none", trim: "none", breath: "",
   cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
+  // 字幕スタイル一式・尺の指示・書き出しプリセット(G-EDIT-UI-SETTINGS-WIRING-CLIENT)。
+  // 既定値はすべて「未指定」を表す空文字列(captionInner/captionBandはoff)。run()の送信処理は
+  // このオブジェクトを丸ごと走査するので、新しいキーをここへ足すだけで自動的に送信対象になる
+  // (params.set(...)を個別に書き足す必要はない＝過去2回の「足し忘れ」事故の再発防止)。
+  subStyle: "", captionFont: "", captionFill: "", captionOutlineColor: "",
+  captionInner: "off", captionBand: "off",
+  exportPreset: "", durationMin: "",
 };
 const $ = (id) => document.getElementById(id);
 
@@ -66,12 +73,19 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     });
     btn.classList.add("is-on"); btn.setAttribute("aria-pressed", "true");
     state[g] = btn.dataset.val;
-    if (g === "sub") updateSubDesc();
+    if (g === "sub") { updateSubDesc(); updateCaptionStyleVisibility(); }
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
     if (g === "trim") updateTrimDesc();
     if (g === "breath") updateBreathDesc();
-    if (g === "cut") showCut();
+    if (g === "cut") { showCut(); updateDurationVisibility(); }
     if (g === "size") updateVideoArea(btn);
+    if (g === "exportPreset") updateExportDesc();
+    // 内側縁取り・背景帯: on/offチップの選択そのものは他設定と同じ総称ハンドラで拾えるが、
+    // サーバへ送る実際の値は「off」または「選んだ色」の1本の文字列にまとめる
+    // (G-EDIT-UI-SETTINGS-BAND)。色input(caption-inner-color/caption-band-color)の表示切替も
+    // ここで行う。
+    if (g === "captionInner") applyCaptionToggle("captionInner", "caption-inner-color", "caption-inner-color-row", btn.dataset.val);
+    if (g === "captionBand") applyCaptionToggle("captionBand", "caption-band-color", "caption-band-color-row", btn.dataset.val);
     refresh();
   });
 });
@@ -143,6 +157,13 @@ function updateSubDesc() {
   if (!el) return;
   el.textContent = state.sub === "on" ? "話した言葉を自動で字幕に焼き込みます。" : "字幕は付けません。";
 }
+
+// 字幕の見た目カード(書体/スタイル/文字色/縁取り色/内側縁取り/背景帯)は、
+// 字幕「あり」のときだけ画面に出す(G-EDIT-UI-SETTINGS-CONDITIONAL-UI)。
+function updateCaptionStyleVisibility() {
+  const el = $("card-caption-style");
+  if (el) el.classList.toggle("hidden", state.sub !== "on");
+}
 function updateMosaicStepRow() {
   // モザイクを選ばないときは m の段が来ないので、進捗の行も出さない。
   const li = document.querySelector('#progress li[data-k="m"]');
@@ -183,10 +204,73 @@ function updateMosaicDesc() {
     : "写り込んだ顔はそのまま出ます。";
 }
 
+// ---- 字幕の見た目: 内側縁取り・背景帯(on/off + 色) ----
+// on/offのチップ自体は総称ハンドラ(state[g] = btn.dataset.val)で拾えるが、サーバへ送る実際の値は
+// 「off」または「選んだ色(#RRGGBB)」の1本の文字列にまとめる(G-EDIT-UI-SETTINGS-BAND)。
+// stateKey: "captionInner"|"captionBand" / colorInputId: 対応する<input type=color> /
+// rowId: 色inputを包む行(offのときは隠す) / val: クリックしたチップのdata-val("on"|"off")
+function applyCaptionToggle(stateKey, colorInputId, rowId, val) {
+  const row = $(rowId);
+  if (val === "on") {
+    if (row) row.classList.remove("hidden");
+    const colorInput = $(colorInputId);
+    state[stateKey] = colorInput ? colorInput.value : "off";
+  } else {
+    if (row) row.classList.add("hidden");
+    state[stateKey] = "off";
+  }
+}
+// 色input自体を変えたとき、対応するトグルが「あり」なら、その色を今の値として反映する
+// (offのままなら色inputを動かしても送信値は"off"のまま＝矛盾した値を送らない)。
+function bindCaptionColorInput(colorInputId, rowId, stateKey) {
+  const el = $(colorInputId);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    const row = $(rowId);
+    if (row && !row.classList.contains("hidden")) state[stateKey] = el.value;
+  });
+}
+bindCaptionColorInput("caption-inner-color", "caption-inner-color-row", "captionInner");
+bindCaptionColorInput("caption-band-color", "caption-band-color-row", "captionBand");
+
+// 文字色・縁取り色は総称チップハンドラの対象外(<input type=color>)なので個別に反映する。
+function bindCaptionColorField(inputId, stateKey) {
+  const el = $(inputId);
+  if (!el) return;
+  el.addEventListener("input", () => { state[stateKey] = el.value; });
+}
+bindCaptionColorField("caption-fill", "captionFill");
+bindCaptionColorField("caption-outline-color", "captionOutlineColor");
+
+// ---- 書き出しプリセットの説明文 ----
+function updateExportDesc() {
+  const el = $("export-desc");
+  if (!el) return;
+  const t = {
+    "": "これまでどおりの画質・大きさで書き出します。",
+    youtube: "YouTubeへ上げる前提の高画質で書き出します。",
+    sns: "SNS(Instagram/TikTok)投稿向けに画質と大きさのバランスを取ります。",
+    x: "Xの上限に収まりやすいよう、強めに圧縮します。",
+    archive: "手元に原版として残す用の高画質です(ファイルは大きくなります)。",
+    light: "メール添付やチャット共有向けに軽くします(画質より小ささを優先)。",
+  };
+  el.textContent = t[state.exportPreset] ?? t[""];
+}
+
 // ---- カット詳細の表示切替＋入力 ----
 function showCut() {
   document.querySelectorAll(".cut-note").forEach((p) => p.classList.toggle("hidden", p.dataset.for !== state.cut));
 }
+// 「1本の目安の長さ」は『話題で切る』のときだけ意味を持つ(分数で切るモードではcutMinが
+// その役目を担う)ので、そのときだけ画面に出す(G-EDIT-UI-SETTINGS-DURATION-VISIBILITY)。
+function updateDurationVisibility() {
+  const el = $("card-duration");
+  if (el) el.classList.toggle("hidden", state.cut !== "topic");
+}
+const durationMinInput = $("duration-min");
+if (durationMinInput) durationMinInput.addEventListener("input", () => {
+  state.durationMin = durationMinInput.value; refresh();
+});
 // サーバー(server/job-params.mjs)の正規化(1-60の有限値のみ許可・それ以外は既定3)と
 // 表示・送信内容を一致させる（空/範囲外のまま「0分」等と表示してサーバー設定とずれるのを防ぐ）。
 function normalizeCutMin(raw) {
@@ -433,15 +517,17 @@ function run() {
   // 進捗リセット
   document.querySelectorAll("#progress li").forEach((li) => li.classList.remove("active", "done"));
 
-  const params = new URLSearchParams({
-    sub: state.sub,
-    mosaic: state.mosaic,
-    trim: state.trim,
-    breath: state.breath,
-    cut: state.cut,
-    size: state.size,
-    name: state.file.name,
-  });
+  // G-EDIT-UI-SETTINGS-WIRING-CLIENT: 設定を1つずつ手で列挙するのをやめ、stateを丸ごと
+  // 走査してから必要なキーだけ整形する。新しい設定はstate(冒頭のオブジェクト)へキーを
+  // 足すだけで、ここを触らなくても自動的に送信対象になる(過去2回=顔モザイク・つなぎ目の間で
+  // 「画面には足したのに送信処理へ反映し忘れる」事故が起きた反省による)。
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(state)) {
+    if (["file", "device", "cutMin"].includes(k)) continue; // 個別処理する項目(下)は除く
+    if (v === "" || v == null) continue; // 未指定は送らない(サーバー側の既定に従う)
+    params.set(k, String(v));
+  }
+  params.set("name", state.file.name);
   if (state.cut === "minutes") params.set("cutMin", String(state.cutMin));
   fetch(`/api/jobs?${params}`, withTokenHeader({ method: "POST", body: state.file }))
     .then((res) => {
@@ -829,6 +915,9 @@ $("btn-show-result").addEventListener("click", openResult);
 
 showCut();
 updateSubDesc();
+updateCaptionStyleVisibility();
+updateDurationVisibility();
+updateExportDesc();
 refresh();
 // 初期サイズチップの動画領域を反映（デバイス枠は固定のため触らない）
 // requestAnimationFrame でレイアウト確定後に実行（clientWidth/Height が 0 でない保証）
