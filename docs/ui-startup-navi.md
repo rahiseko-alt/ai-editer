@@ -26,6 +26,29 @@
 
 ### ステップ1：PowerShell を新しく開く
 
+#### （初回だけ）文字起こしを速くする鍵を入れる
+
+鍵が無いと文字起こしはこの PC の CPU で動く（2026-08-16 実測：2分29秒の素材で編集全体が約5分）。
+Groq の鍵を入れると文字起こしがクラウドで走り、ここが大きく縮む。**鍵を入れると、音声だけが
+Groq へ送信される**（画面の説明文も自動でその旨に切り替わる）。
+
+1. https://console.groq.com/keys で鍵（`gsk_` で始まる文字列）を作る。
+2. 下のブロックの `gsk_ここに鍵を貼る` を実際の鍵へ置き換えて、まるごと貼る。
+
+```powershell
+$repo = Get-ChildItem -Path $HOME -Recurse -Depth 4 -Directory -Filter ai-editer -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+$envFile = Join-Path $repo "video-shorts\.env"
+$key = "gsk_ここに鍵を貼る"
+$lines = if (Test-Path $envFile) { Get-Content $envFile | Where-Object { $_ -notmatch '^GROQ_API_KEY=' } } else { @() }
+Set-Content -Path $envFile -Value ($lines + "GROQ_API_KEY=$key") -Encoding ascii
+Write-Host "鍵を書きました: $envFile" -ForegroundColor Green
+```
+
+- `.env` は Git の管理外（`.gitignore` に入っている）なので、鍵がリポジトリへ入ることはない。
+- 入れ替えるときは同じブロックをもう一度実行する（古い行は消してから書き直す作りにしてある）。
+- 効いているかは、画面を開いたときの説明文が
+  「文字起こしは Groq のクラウドで行います。音声だけが Groq へ送信されます」に変わるかで分かる。
+
 ### ステップ2：次のブロックをまるごと貼って、**最後に Enter を押す**
 
 ```powershell

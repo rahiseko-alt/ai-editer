@@ -9,7 +9,13 @@
 // （getFont/getStyle は Object.hasOwn 済みで __proto__/constructor 等のプロトタイプ汚染狙いの
 // キーも自前キーとして扱わない＝正引きに失敗し既定値へ丸まる）。
 
-import { getFont, getStyle, hexToAss } from "../src/subtitle-styles.mjs";
+import {
+  CAPTION_POS_MAX,
+  CAPTION_POS_MIN,
+  getFont,
+  getStyle,
+  hexToAss,
+} from "../src/subtitle-styles.mjs";
 import { getExportPreset } from "../src/export-presets.mjs";
 
 const SUPPORTED_CUTS = new Set(["topic", "minutes"]);
@@ -67,6 +73,19 @@ export function parseJobParams(searchParams) {
   const captionBand =
     captionBandRaw === "off" ? "off" : hexToAss(captionBandRaw) !== null ? captionBandRaw : "";
 
+  // 字幕の縦位置（G-UI-CAPPOS。画面のプレビュー上でつまみを動かして決める）。単位は
+  // 「画面の高さに対する％」で 0=一番下。未指定は undefined＝スタイルの既定位置に従う。
+  // 0 も正当な指定なので、真偽ではなく「有限数か・範囲内か」で判定する。
+  const captionPosRaw = (searchParams.get("captionPos") ?? "").trim();
+  const captionPosNum = Number(captionPosRaw);
+  const captionPos =
+    captionPosRaw !== "" &&
+    Number.isFinite(captionPosNum) &&
+    captionPosNum >= CAPTION_POS_MIN &&
+    captionPosNum <= CAPTION_POS_MAX
+      ? captionPosNum
+      : undefined;
+
   // 書き出しプリセット名。既定は空＝未指定扱い(pipeline.mjs 側の既定standardに従う)。
   const exportPresetRaw = searchParams.get("exportPreset") ?? "";
   const exportPreset = getExportPreset(exportPresetRaw) ? exportPresetRaw : "";
@@ -91,6 +110,7 @@ export function parseJobParams(searchParams) {
     captionOutlineColor,
     captionInner,
     captionBand,
+    captionPos,
     exportPreset,
     durationMin,
   };

@@ -279,10 +279,15 @@ export async function renderSegment({
  *          captionInner?: string, captionBand?: string}} flags
  * @returns {object | null}
  */
-function buildCaptionOverrides(flags) {
-  const { captionFont, captionFill, captionOutlineColor, captionInner, captionBand } = flags;
-  if (!captionFont && !captionFill && !captionOutlineColor && !captionInner && !captionBand) return null;
+export function buildCaptionOverrides(flags) {
+  const { captionFont, captionFill, captionOutlineColor, captionInner, captionBand, captionPos } = flags;
+  const hasPos = captionPos !== undefined && String(captionPos).trim() !== "";
+  if (!captionFont && !captionFill && !captionOutlineColor && !captionInner && !captionBand && !hasPos) {
+    return null;
+  }
   const overrides = {};
+  // 位置は 0 も正当な指定（画面の一番下）なので、真偽ではなく「指定されたか」で判定する。
+  if (hasPos) overrides.posPercent = Number(captionPos);
   if (captionFont) overrides.fontKey = captionFont;
   if (captionFill) overrides.fillHex = captionFill;
   if (captionOutlineColor) overrides.outlineColorHex = captionOutlineColor;
@@ -295,7 +300,7 @@ async function cmdRender(workDir, opts = {}) {
   const {
     flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
     exportPreset = DEFAULT_EXPORT, exportOverrides = {},
-    captionFont, captionFill, captionOutlineColor, captionInner, captionBand,
+    captionFont, captionFill, captionOutlineColor, captionInner, captionBand, captionPos,
     breath,
   } = opts;
   // つなぎ目に戻す「息継ぎの間」の上限（秒）。off/0 で従来どおり（間を作らない）。
@@ -317,7 +322,7 @@ async function cmdRender(workDir, opts = {}) {
   // 1つでも指定されていれば resolveCaptionStyle() で合成したオブジェクトを使う。
   // 未指定なら従来どおり subStyle(文字列キー)のまま渡し、挙動を変えない。
   const captionOverrides = buildCaptionOverrides({
-    captionFont, captionFill, captionOutlineColor, captionInner, captionBand,
+    captionFont, captionFill, captionOutlineColor, captionInner, captionBand, captionPos,
   });
   let resolvedCaptionStyle = null;
   if (!noSub && captionOverrides) {
@@ -648,6 +653,8 @@ async function main() {
         captionOutlineColor: flagValue(rest, "--caption-outline-color", undefined),
         captionInner: flagValue(rest, "--caption-inner", undefined),
         captionBand: flagValue(rest, "--caption-band", undefined),
+        // G-UI-CAPPOS: 字幕の縦位置（画面の高さに対する％。0=一番下）。省略時はスタイルの既定。
+        captionPos: flagValue(rest, "--caption-pos", undefined),
         // G-EDIT-BREATH: つなぎ目に戻す息継ぎの間の上限（秒）。off で従来どおり。
         breath: flagValue(rest, "--breath", undefined),
       });
@@ -677,6 +684,7 @@ async function main() {
       log("               （個別指定。--export の上から1項目ずつ上書きできる）");
       log("             [--caption-font <kaku|maru|mincho|hand|marker>]（字幕の書体。省略時は既定）");
       log("             [--caption-fill <#RRGGBB>]（文字色。省略時はスタイルの既定色）");
+      log("             [--caption-pos <0-90>]（字幕の縦位置。画面の高さに対する％。0=一番下）");
       log("             [--caption-outline-color <#RRGGBB>]（外側縁取り色。省略時は黒）");
       log("             [--caption-inner <#RRGGBB|off>]（内側の二重縁取り。省略時はoff）");
       log("             [--caption-band <#RRGGBB(AA)|off>]（背景帯。省略時はoff）");

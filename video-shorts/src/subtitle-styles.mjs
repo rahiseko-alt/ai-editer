@@ -198,6 +198,14 @@ export const DEFAULT_BOX = { enabled: false, color: "&H80000000" };
 export const DEFAULT_INNER_OUTLINE = { enabled: false, color: "&H0000FFFF", width: 4 };
 
 /**
+ * 字幕の縦位置(G-UI-CAPPOS)として受け付ける範囲。単位は「画面の高さに対する％」で、
+ * 0＝画面の一番下、90＝画面のほぼ上。上限を100にしないのは、100だと文字の下端が画面の
+ * 上端と一致して文字全体が画面外へ出るため（選べるのに何も映らない位置を作らない）。
+ */
+export const CAPTION_POS_MIN = 0;
+export const CAPTION_POS_MAX = 90;
+
+/**
  * "#RRGGBB" または "#RRGGBBAA" 形式の色を ASS の &HAABBGGRR 形式へ変換する。
  * ASSのAAは「不透明度の逆」（00=不透明・FF=透明）なので、入力のAA(通常表記=不透明度)は反転する。
  * 不正な形式なら null（呼出側はfail-fastでエラーにする。既定色へ黙って落とさない）。
@@ -266,6 +274,24 @@ export function resolveCaptionStyle(styleKey, overrides = {}) {
       color: ass,
       width: overrides.innerOutline.width ?? DEFAULT_INNER_OUTLINE.width,
     };
+  }
+
+  // 字幕の縦位置（G-UI-CAPPOS。画面プレビュー上でつまみを動かして決める）。
+  // 絶対px(marginV)ではなく「canvas高さに対する割合」で持つ。縦(1080x1920)と横(1920x1080)で
+  // 基準になる高さが違うため、％を絶対pxへ畳むのはここではできない。実pxへの換算は出力canvas
+  // の高さを知っている srt-builder.buildAss() が行う。
+  if (overrides.posPercent !== undefined) {
+    const p = Number(overrides.posPercent);
+    if (!Number.isFinite(p) || p < CAPTION_POS_MIN || p > CAPTION_POS_MAX) {
+      throw new Error(
+        `字幕の位置の指定「${overrides.posPercent}」が不正です(${CAPTION_POS_MIN}〜${CAPTION_POS_MAX}の数値で指定)。`,
+      );
+    }
+    style.marginVRatio = p / 100;
+    // 位置を明示したときは必ず下端基準(Alignment=2)にする。pop プリセットの既定 Alignment=5
+    // (画面中央)は ASS の仕様上 MarginV を無視するため、そのままだと指定した位置が効かない
+    // ＝「選べるのに効かない設定」になる。
+    style.align = 2;
   }
 
   return style;

@@ -327,7 +327,8 @@ try {
     };
     return {
       subStyle: activeVal('[data-group="subStyle"] .chip.is-on'),
-      captionFont: activeVal('[data-group="captionFont"] .chip.is-on'),
+      // 2026-08-16: 書体はプルダウンになったので value を読む（マスター指示④）
+      captionFont: document.querySelector('[data-group="captionFont"]')?.value ?? null,
       captionFill: document.getElementById("caption-fill").value,
       durationMin: document.getElementById("duration-min").value,
       exportPreset: activeVal('[data-group="exportPreset"] .chip.is-on'),
@@ -347,7 +348,7 @@ try {
     });
     await page.click('[data-group="sub"] .chip[data-val="on"]');
     await page.click('[data-group="subStyle"] .chip[data-val="pop"]');
-    await page.click('[data-group="captionFont"] .chip[data-val="mincho"]');
+    await page.selectOption('[data-group="captionFont"]', "mincho");
     await page.fill("#caption-fill", "#ff0000");
     await page.dispatchEvent("#caption-fill", "input");
     await page.fill("#duration-min", "2");

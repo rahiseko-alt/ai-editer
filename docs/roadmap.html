@@ -119,36 +119,20 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "G-UI-REVAMP-WIRING",
-  "next": "WIRING の穴を埋める。新UIから操作して確かめる検査が1本も無い7設定(cut / cutMin / size / mosaic / trim / breath / name)について、まず送信内容(POST /api/jobs のクエリ)を実ブラウザ操作から確かめる検査を新設する。cutMin は cut=minutes を先に選ぶ前提操作が要る(app.js:531)。そのうえで各葉の出力側の観測量に閾値・単位・許容幅を入れて凍結し、出力実測まで通す。既に新UIで実測済みの9設定(sub/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/durationMin/exportPreset)は、既存検査を該当葉の verifyCmd として引き当てる。所要時間は既存6本で約6.8分と実測済み。",
+  "next": "①マスターの手元へ GROQ_API_KEY を入れて、2分29秒の素材で編集時間を再実測する（鍵なしの基準値は 06:58→07:03 の約5分）。②字幕の位置を実素材で1本焼いて、選んだ位置に出ているかをマスターに目で確認してもらう。③その後 G-UI-REVAMP-WIRING の穴（新UIから操作して確かめる検査が1本も無い7設定: cut / cutMin / size / mosaic / trim / breath / name）へ戻る。",
   "handoff": {
    "done": [
-    "マスターから『動画は成功です』の報告を受け、Windows実機での動画作成成功を確認。PR #123（roadmap更新）をCI全12件緑でマージした（squash 9661345）。meta.active を実在の todo ノードへ移し、stale pointer を解消した。",
-    "backlog ①Windowsテスト構造の穴 ②音のカット端フェード について『ユーザーに得があるのか』を実測ベースで評価して報告した。①は出力が一切変わらない開発側の保険で、今回の穴は PR #122 の機械検査で既に塞がっており、最も効かせたい部分（本物のclaudeの起動）は CI に本物のclaudeを置けない以上そもそも検証できない。②は主要経路（trim）に既に SEAM_FADE_SEC=0.005秒 が実装済みで、G-EDIT-TRIM-D の実測でも継ぎ目の段差は 0.00%（周辺の中央値 1.57〜1.68%）。どちらも今やる価値は薄いと判断し、代わりに未完了で成果物に直接出るもの（顔モザイクUI・SSEトークン・REFRAME・処理時間）を提示した。",
-    "マスターの判断で UI 最優先へ切り替え。実サーバ(node server/index.mjs)＋Playwright/Chromium で現物の画面を起動して撮影し、欠陥を実測で5件特定した: ①番号⑤が2つ（つなぎ目の間／カットの目安）②『1本の目安の長さ』だけ番号なし ③案内文が『そのあと①〜④を上から選ぶだけです』(app.js:298)なのに実際は7項目 ④/favicon.ico が404 ⑤設定カード7枚が動画を入れる前から全展開。",
-    "マスター指示3点（①色を変えろ・背景は白 ②ヘッダーの無料版/有料版はこちらを削除 ③現状を0ベースにして主要ツールと近しい形へ根本刷新）を受領。主要ツール(Opus Clip/Descript/Veed/CapCut web)の構成を調べたうえで、案A(3ペイン: 左=手順とライブラリ／中央=プレビュー／右=設定インスペクタ)と案B(ウィザード)のモックを実際にHTMLでレンダリングして画像で提示し、案A＋アクセント色ニアブラック #0d1117 で承認を得た。",
-    "承認済みの構成を前提に、原子ツリーを docs/roadmap.html へ描いた。G-UI-REVAMP は30葉で、分解軸を1本にしない規律に従い5系統へ割った: LOOK(見た目4)/INFO(情報設計3)/WIRING(経路軸・15設定を1設定=1葉)/FLOW(故障モード軸5)/ACCESS(アクター軸3)。あわせて2つ目の指示に対応する G-OPS-UI-VIEW を4葉で描いた(手順書の発見/実行できる/内部スクロールでも切れずに撮れる/マスターへ届く)。全葉 status=todo で、まだ凍結していない。",
-    "basis-reviewer を回し(マスター承認済み)、反証26件を受領した。内訳は基準そのもの24件(原子性2・被覆22)＋探り起因2件で、平易さは反証なし。9分弱で、外部レビューなら数時間かかる指摘が出た。",
-    "反証を全部反映してツリーを描き直し、34葉→46葉にした。事実誤りの是正3件: ①WIRING-INNER/-BAND の非既定値を off から色指定へ反転(app.js:15 の既定が既に off で同値比較=永久に合格できない基準だった) ②WIRING-EXPORT の観測量を音声ビットレートへ変更(crf/preset は出力ファイルに残らず観測不能) ③WIRING-CUTMIN へ cut=minutes の前提操作を明記(app.js:531 で cutMin は単独送信されない)。被覆漏れの是正: RESULT(3葉・成果物の受け取り)・CAPTION(3葉・字幕直し)・ACCESS-MODAL・ACCESS-FONTSIZE・WIRING-NAME・WIRING-CONDITIONAL を新設。原子性の是正: LOOK-WHITE から罫線条項を LOOK-RULE へ分離、OPS-HANDOFF を DOC(文書側)と EMIT(実行側)へ分離。",
-    "LOOK(5葉)とINFO(3葉)は凍結水準まで詰めた。実装者が後から選べる余地を消すため、検査用フック契約(data-testid: app-header/pane-left/pane-center/pane-right/guide-text/btn-run/btn-pick-file/step-item[data-step-no]/setting-row[data-setting-key]/progress-step[data-k])を criteria と同時に凍結した。LOOK-WHITE は背景色だけでなく全子孫と::before/::afterのbackground-imageがnoneであることを条件に加え、現行のbody::before(radial-gradient3枚)を移植した偽実装で背景色検査は通るがベール検査だけが落ちる、という対照を明記した。他の枝は各葉の detail に未解消の反証を貼って未凍結のまま残した。",
-    "LOOK(5葉)+INFO(3葉)を実装して done 化した。3ペイン化は既存テストが .two-col/#col-settings/#col-preview とHTML上のDOM順に依存していたため、id・class・DOM順を温存し grid-column だけで見た目を作る方針にして回避した。検査は tests/ui-revamp-look-check.mjs(12項目)と tests/ui-revamp-info-check.mjs(7項目)を新設し pnpm test へ登録。対照(偽実装)はファイル書き換えではなく検査内で注入する形にしてコミットへ残した(戻し忘れで検査が嘘になるのを構造的に防ぐため)。既存の画面系テスト13本は引き続き全て緑。",
-    "PR #124 をマージ(squash 92b1cdc)。UI刷新の LOOK(5葉)+INFO(3葉) が main に入った。",
-    "WIRING の着手前調査として probe#2 を実行した。刷新後のUIに対して既存の実ブラウザ検査6本を回し、全て PASS・合計約6.8分と実測。あわせて被覆マップを取り、新UIから操作して確かめる検査が1本も無い設定が7件(cut/cutMin/size/mosaic/trim/breath/name)あることを特定した。操作セレクタと合成素材の生成手順も数値で確定して WIRING の detail へ記録した。",
-    "マスター指示『毎回手順を固定しろ。ステップ0すべてのターミナルを閉じる』を受け、起動手順を固定した。docs/ui-startup-navi.md を唯一の正とし、ステップ0〜5を固定。リポジトリを探す→移動→更新→起動を1ブロックにまとめ、マスターがパスを覚えなくてよい形にした。AGENTS.md へ規律(全文提示・省略禁止・移動コマンドを省かない・出力を見る前に原因を言わない)を追加し、.claude/skills/ui-startup-navi/ として発動条件込みで登録した。roadmap へ G-OPS-UI-VIEW-STARTNAVI を追加(機械検査は未作成のため todo)。",
-    "マスターの手元Windowsで刷新後のUIが正しく表示され、失敗の理由も画面に出ることを確認した(PR #122 の理由表示の修正が効いている)。一方で新しい実害バグを発見・修正した: 字幕ありのジョブが fc-list(fontconfig) を必要とする関門で必ず失敗していた。関門が checkFontAvailable(DEFAULT_FONT=IPAGothic) を見ていたが、(a)fc-list も sh も Windows に無く成立しない (b)実際に焼かれるのは同梱フォント(kaku)で IPAGothic は使わない、という二重の誤り。画面経路とCLI経路の両方を checkBundledFont() へ置き換え、PATHを空にして fontconfig 不在を再現する検査を追加した(5項目・対照2本)。",
-    "マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」に対応。右ペインを 320px -> 640px へ倍にし(中央は 1fr なので 1365px 幅で 845px -> 525px)、広がった右ペインを2列に置いて縦スクロールを半減させた(1列あたり298px。動画とサイズのカードのみ横幅いっぱい)。凍結済みの G-UI-REVAMP-LOOK-3PANE の許容幅を 280〜360px から 600〜680px へ変更し、検査側の数値も合わせた。"
+    "PR #126（UI調整①〜④＋⑥の修正）を出し、CIの結果を確認した。",
+    "マスター指摘⑤『字幕の位置を中央のプレビュー上で決めたい』を実装した。中央プレビューの動画領域(.video-area)の中に見本(.cap-ghost)を置き、上下ドラッグと矢印キーで位置を決められるようにした。決めた値は captionPos として POST /api/jobs → parseJobParams → buildRenderArgs → --caption-pos → resolveCaptionStyle(posPercent) → .ass の MarginV まで一本で通す。pop プリセットは既定 Alignment=5 で ASS 仕様上 MarginV を見ないため、位置を指定したときだけ Alignment=2 へ落とす（そうしないと『動かせるのに効かない』設定になる）。既定の位置は画面に数値を書き写さず GET /api/env が src/subtitle-styles.mjs から計算して配る。",
+    "マスター指示『Aにしろ。表示も変えろ』に対応した。文字起こしの Groq 対応は既に実装済み（src/transcribe.py の auto 解決）で、使われていなかったのは GROQ_API_KEY が無かったためだった。鍵の入れ方を docs/ui-startup-navi.md へ手順として追加し、画面に固定で書いてあった『この動画はこのPCの中だけで処理されます（外部に送りません）』を、GET /api/env の実態に応じて切り替わる文へ変えた。",
+    "検査を2本足した: video-shorts/tests/caption-pos-check.mjs（20件）と video-shorts/tests/transcribe-backend-note-check.mjs（8件）。どちらも package.json の test チェーンへ登録済み。"
    ],
    "trouble": [
-    "スクリーンショットだけを見て『PC表示では⑥サイズ以降が切れていて操作できない』と誤診しかけた。実際は body 自身が内部スクロール領域(height:900px, overflow-y:auto)で、document.scrollHeight=900 に対し body.scrollHeight=1153。Playwright の fullPage:true は document の全高しか撮らないため、残り253pxが写らないだけだった。マスターへ報告する前に DOM で裏を取って撤回した。詳細と教訓は docs/failures.md 2026-08-15 に記録し、この罠自体を G-OPS-UI-VIEW-FULLPAGE の葉として立てた。",
-    "主要ツールのUI構成を WebSearch で調べたが、返ってくるのは比較・ランキング記事ばかりで、画面構成の一次情報がほとんど取れなかった。検索を重ねるより、モックを実際にレンダリングして画像で見せて選んでもらう方が速く確実だった。次に同種の『最新のUIに寄せろ』系の指示を受けたときは、最初からモック提示に振る。",
-    "AGENTS.md は基準凍結前の basis-reviewer 通過を必須にしているが、本セッションには『ユーザーが要求しない限りサブエージェントを起動しない』というセッション指示も掛かっており、両者が衝突している。ツリーは todo のまま置き、凍結の前にマスターへ実行可否を確認することにした。",
-    "自分で描いたツリーに、実物と食い違う事実誤りが3件あった(既定値の取り違え2件・観測不能な量を測る1件)。いずれも実装コードを1回読めば分かるもので、ツリーを描く前に job-params.mjs だけでなく app.js の state 既定値と export-presets.mjs の中身まで当たっていれば防げた。「設定名の一覧」を見て割るだけでは足りず、各設定の既定値と観測可能性まで確認してから criteria を書くこと。",
-    "自分で書いた検査が、自分の実装の不備を3件検出した。①ペインの境目 #e6e8eb は白との比 1.23:1 で、自分で凍結した下限 1.5:1 を満たしていなかった(境目専用の --rule #c9ced6 = 約1.67:1 を導入して是正)。②btn-pick-file のフックを白いドロップ枠に付けており、承認済みモックAにあった黒い『ファイルを選ぶ』ボタンが実装に無かった(枠内へ実装してフックを移動)。③対照の後始末が効いていなかった(playwright の addStyleTag は id オプションを取らないため、注入したタグを getElementById で消せていなかった)。いずれも基準ではなく実装と検査を直した。基準を緩める誘惑が最も強い場面だったので記録しておく。",
-    "criteria を凍結した直後に自分で穴を見つけた。LOOK-WHITE の検査範囲を『4領域とその子孫』と書いたが、消したかったベールは body::before にあり、body は4領域の祖先で子孫でもないため対象外に落ちていた。verify に書いた対照(ベールを移植すると落ちる)が、書いたままでは成立しない状態だった。実装着手前に html・body を範囲へ加えて是正した。範囲の書き方は『どこを測るか』であって、測りたい対象が範囲に入っているかは別途たしかめる必要がある。",
-    "起動手順を毎回その場で組み立てていたため、マスターを2回続けて詰まらせた。2回目の ERR_CONNECTION_REFUSED は、手順に『リポジトリのフォルダで』としか書かず移動コマンドを書かなかったのが直接の原因で、マスターは C:\\Users\\user で実行していた。出力(not a git repository / Cannot find module)に答えが全部書いてあった。『〜のフォルダで』は手順ではない。",
-    "固定したはずの起動ナビに『git checkout main』が抜けており、固定した直後の初回実行で穴が出た。マスターの手元は古い作業ブランチ claude/ui-p2-quality で、pull がそのブランチだけを更新し刷新前の画面が出た。教訓は3つ: ①『更新する』は『pull する』ではない(どのブランチを見ているかを先に固定する) ②成功の合図は出た/出ないだけでなく中身(プロダクト名・ブランチ・SHA)まで指定する ③手順を固定した直後こそ、その手順で1回通す。"
+    "字幕位置の実装中、背景帯だけが取り残される欠陥を自分の検査で見つけた。帯の縦位置を st.mode === 'pop' で分岐していたため、位置指定で Alignment=2 へ落ちても帯だけ画面中央に残っていた。判定を align 基準へ直した。",
+    "『位置を指定しなければ従来どおり』の対照で pop だけ落ちた。scaleToken が 0 を 1 へ持ち上げる既存の作法によるもので、今回の変更による退行ではない。期待値を scaleToken 経由へ直した。"
    ]
   },
-  "updated": "2026-08-14",
+  "updated": "2026-08-16",
   "basisChanges": [
    {
     "id": "G-EDIT-TRIM-F",
@@ -474,6 +458,12 @@
     "criteriaHash": "37a9c8045f5a904b6817ff9b07ea2a0787a685569f18b22f01a375937e74309e",
     "at": "2026-08-15",
     "reason": "マスター指示『あとUI悪すぎる。中央は今の半分で良い。右を倍のサイズにしろ』による設計変更。右ペインの許容幅を 280〜360px から 600〜680px へ変更した(実装は 640px。従来の 320px のちょうど倍)。変更したのは右ペインの幅の範囲だけで、3列の並び順・非重なり・左ペインの幅の範囲(160〜240px)・上端一致(±1px)・高さ一致(±1px)・ヘッダーを除いた表示領域との一致(±1px)は一切変更していない。緩めた変更ではなく、マスターが求める見た目へ範囲を移動したもの。検査側(tests/ui-revamp-look-check.mjs)の数値も同じ範囲へ合わせ、実測 640px で PASS することを確認済み。"
+   },
+   {
+    "id": "G-UI-REVAMP-LOOK-3PANE",
+    "criteriaHash": "eace039135fc39414893597bb52b26bff4d67774198b7d46984c26c4100732a0",
+    "at": "2026-08-16",
+    "reason": "マスター指示『まだ中央が広い。現状の60%まで横幅を小さくする』による設計変更。中央ペインを固定315px(1365px幅での実測525pxの60%)にし、右ペインを minmax(640px,1fr) として残り幅を占める形へ変更した。これに伴い criteria の幅条件を『右600〜680px』から『中央315px(±1px)かつ右600px以上(上限なし)』へ改めた。左ペインの幅の範囲(160〜240px)・3列の並び順・非重なり・上端一致(±1px)・高さ一致(±1px)・ヘッダーを除いた表示領域との一致(±1px)は一切変更していない。緩めた変更ではなく、マスターが求める見た目へ条件を移動したもの。検査側(tests/ui-revamp-look-check.mjs)も同じ条件へ合わせ、実測(中央315px/右850px)で PASS を確認済み。"
    }
   ]
  },
@@ -5296,13 +5286,13 @@
          "status": "done",
          "criteria": [
           {
-           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、右ペイン幅は600px以上680px以下（いずれも境界を含む）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、中央ペイン幅は315px（±1px）、右ペイン幅は600px以上（上限なし。残り幅を占める）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
            "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で / を開き、3ペインと app-header の getBoundingClientRect を取得する。(1) left の昇順が pane-left→pane-center→pane-right と一致し、前の right が次の left 以下であること。(2) 幅が上記の範囲に収まること。(3) top の最大差、height の最大差、および height と (800 - app-header.height) の差が、いずれも 1px 以下であること。丸めは比較前に行わず、生の float 値の差の絶対値で判定する。対照2本を実測する。対照1: 現行の webapp-mockup/index.html（2カラム）を同じ検査に掛け、ペインが3つ揃わず FAIL すること。対照2: pane-right だけ height:50% にした偽実装で (3) だけが FAIL すること。",
            "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
            "evidence": "2a00366"
           }
          ],
-         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 2カラムのままの実装はペインが3つ揃わず落ちる(刷新前の webapp-mockup は pane-left が存在しない)。 ②正しい実装で1回実測: viewport 1280x800 で pane-left/center/right の left=0/200/960、幅=200/760/320、上端=49(3件の差 0px)、高さ=751(3件の差 0px)。ヘッダーを除いた表示領域 751px と一致(差 0px)。 ③意図的に壊したものを当てる: 右ペインだけ height:50% にすると3列の高さの差が 1px を超えて不合格になることを確認した。 【2026-08-15 基準変更】マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」により、右ペインの許容幅を 280〜360px から 600〜680px へ変更した(実装は 640px)。左ペインの範囲と、上端一致・高さ一致・重なり無しの条件は変更していない。"
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 2カラムのままの実装はペインが3つ揃わず落ちる(刷新前の webapp-mockup は pane-left が存在しない)。 ②正しい実装で1回実測: viewport 1280x800 で pane-left/center/right の left=0/200/960、幅=200/760/320、上端=49(3件の差 0px)、高さ=751(3件の差 0px)。ヘッダーを除いた表示領域 751px と一致(差 0px)。 ③意図的に壊したものを当てる: 右ペインだけ height:50% にすると3列の高さの差が 1px を超えて不合格になることを確認した。 【2026-08-15 基準変更】マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」により、右ペインの許容幅を 280〜360px から 600〜680px へ変更した(実装は 640px)。左ペインの範囲と、上端一致・高さ一致・重なり無しの条件は変更していない。 【2026-08-16 基準変更】マスター指示「まだ中央が広い。現状の60%まで横幅を小さくする」により、中央を固定315px(1365px幅での525pxの60%)、右ペインを残り全部(minmax(640px,1fr))へ変更した。左ペインの幅・上端一致・高さ一致・重なり無しは変更していない。"
         }
        ]
       },
@@ -5951,6 +5941,102 @@
         }
        ],
        "detail": "【未凍結】着手時に、上記verifyを実行する検査ファイルを作って pnpm test へ登録し、探り3本を実行してから凍結する。現時点で docs/ui-startup-navi.md・AGENTS.md の規律・skill の3点は作成済みだが、機械検査はまだ無い。 【2026-08-15 v2へ是正】固定した直後の初回実行で穴が出た。git checkout main が無く、pull が古い作業ブランチ(claude/ui-p2-quality)だけを更新していた。起動ログの先頭が [kosespark] だったのが見分けられる合図だったが、ステップ3が『server listening が出れば成功』としか書いておらずプロダクト名を見る指示が無かったため取りこぼした。ブロックへ git checkout main とブランチ・版の表示を追加し、ステップ3を [ai-editer] で始まることまで確認する形へ改めた。"
+      }
+     ]
+    },
+    {
+     "id": "G-UI-CAPPOS",
+     "kind": "state",
+     "theme": "字幕を画面のどこに出すかを、作る前にプレビュー上で決められる",
+     "meaning": "マスター指示（2026-08-16 ⑤）『字幕の位置をこの時点で決めたい。中央のスマホやPCの画面上であらかじめ設定できないか？』への対応。決めた位置が実際の成果物に効くところまでを1本の鎖として見る",
+     "children": [
+      {
+       "id": "G-UI-CAPPOS-PREVIEW",
+       "kind": "state",
+       "theme": "中央のプレビューに字幕の見本が出て、上下に動かせる",
+       "meaning": "位置を決める操作そのもの。ここが動かなければ他が正しくても何も指定できない",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "字幕『あり』のとき、中央プレビューの動画領域(.video-area)の中に data-testid=caption-ghost の見本が表示され、字幕『なし』のときは表示されない。見本は上下ドラッグでも矢印キーでも位置が変わり、変えた値が画面の数値表示(data-testid=caption-pos-value)と一致する。",
+         "verify": "実サーバ(node video-shorts/server/index.mjs)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1400x900 で / を開く。(1) 字幕なしの初期状態で caption-ghost が hidden であることを確認。(2) 字幕チップ on を押し、hidden が外れ、style.bottom が既定値(src/subtitle-styles.mjs の karaoke.marginV=360 を基準高さ1920で割った 18.8%)と一致することを確認。(3) 要素へフォーカスし ArrowUp を2回押して style.bottom が変わることと、caption-pos-value の文言にその数値が含まれることを確認。(4) mouse.down→move→up で動画領域の上方へドラッグし、style.bottom の数値が増える(=上へ動く)ことを確認。対照: 字幕なしのケースで hidden であることを同じ検査内で見る(常時表示する偽実装を弾く)。あわせて pageerror が0件であることを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
+         "evidence": "6e44256"
+        }
+       ],
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: caption-ghost が無い状態では locator が空になり、hidden 判定の evaluate 自体が落ちる。②正しい実装で1回実測: 既定 bottom=18.8%、ArrowUp×2 で 20.8%、動画領域の上から30%地点へのドラッグで 62.6% を実測した。③意図的に壊したものを当てる: 字幕なしのケースを同じ検査に入れてあるので、可視性の出し分けを外すと必ず落ちる。"
+      },
+      {
+       "id": "G-UI-CAPPOS-SEND",
+       "kind": "state",
+       "theme": "決めた位置が、実行したときにサーバへ実際に送られる",
+       "meaning": "画面で動かせても送られなければ効かない。顔モザイク・つなぎ目の間で実際に2回起きた形なので、送信を独立に見る",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "プレビュー上で位置を動かしてから実行すると、POST /api/jobs のクエリ文字列に captionPos が載り、その値が画面に表示されている位置と一致する。位置を動かしていない（既定のまま／既定に戻した）ときは captionPos を送らない。",
+         "verify": "実サーバ＋Playwright/Chromium で / を開き、字幕 on にしてから見本をドラッグで動かす。ダミーの mp4 を #file へ入れ、#btn-run → #confirm-run と進めて page.waitForRequest で POST /api/jobs を捕捉し、URL の captionPos が caption-ghost の style.bottom と一致することを確認する。対照: 画面を再読込して字幕 on → ArrowUp で一度動かす → data-testid=caption-pos-reset を押し、caption-ghost の dataset.capPos が空文字へ戻る(=run() の走査規則で送信対象から外れる)ことを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
+         "evidence": "6e44256"
+        }
+       ],
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: state へ captionPos キーが無ければ URLSearchParams に載らず、waitForRequest 後の一致比較で落ちる。②正しい実装で1回実測: ドラッグ後の送信値が画面表示と一致することを実測した。③意図的に壊したものを当てる: 『既定に戻す』の対照で、値が残っている実装なら空文字にならず落ちる。"
+      },
+      {
+       "id": "G-UI-CAPPOS-OUTPUT",
+       "kind": "state",
+       "theme": "選んだ位置のとおりに、出来た動画の字幕が置かれる",
+       "meaning": "送信されても出力に効かなければ意味がない。ASS の Style 行の MarginV／Alignment を実測して、位置の指定が最後まで届いていることを見る",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "位置を p％ 指定して生成した .ass の Caption スタイル行の MarginV が、出力canvasの高さ H に対して round(H × p/100) と一致する。縦(1080x1920)でも横(1920x1080)でも高さ基準で解釈される。pop プリセット（既定 Alignment=5＝画面中央で ASS 仕様上 MarginV を見ない）に位置を指定した場合は Alignment=2 へ落ち、MarginV が指定どおりになる。背景帯を on にしたとき、帯の描画位置も同じ向きに動く。",
+         "verify": "video-shorts/src/subtitle-styles.mjs の resolveCaptionStyle(styleKey,{posPercent}) と video-shorts/src/srt-builder.mjs の buildAss() を実際に呼び、生成された .ass 文字列から 'Style: Caption,' 行を取り出して Alignment(第11欄)と MarginV(第14欄)を数値で読む。p=0/12.5/33/90 の4点(下端・低め・中間・上限の境界を含む)で round(1920×p/100) と一致することを確認。横向きは 1920x1080 で p=25 が round(1080×0.25) になることを確認。pop は位置未指定で Alignment=5、位置指定で Alignment=2 かつ MarginV=round(1920×0.4) を確認。背景帯は box.enabled で生成される \\pos(x,y) の y が、p=5 のときより p=70 のときの方が小さい（＝上へ動く）ことを確認。対照: 位置を指定しない場合、3プリセットすべてで MarginV が scaleToken(プリセット既定,1)、Alignment がプリセット既定のままであることを確認する（位置指定を無視する実装と、常に上書きする実装の両方を弾く）。",
+         "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
+         "evidence": "6e44256"
+        }
+       ],
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: posPercent を読まない実装では MarginV がプリセット既定のままなので、p=0/12.5/33/90 の一致比較で落ちる。②正しい実装で1回実測: p=33 → MarginV=634、横1920x1080 の p=25 → MarginV=270、pop の p=40 → Alignment=2 / MarginV=768 を実測した。③意図的に壊したものを当てる: pop の Alignment を 5 のままにすると『指定しても効かない』状態になり、Alignment=2 の確認で落ちる（実装中に実際にこの経路を踏み、align を st.mode ではなく st.align 優先へ直した）。"
+      },
+      {
+       "id": "G-UI-CAPPOS-VALIDATE",
+       "kind": "state",
+       "theme": "おかしな位置の値が来ても、編集が失敗しない",
+       "meaning": "サーバは受理した値だけを反映し、受理しない値は既定へ丸める。細工したクエリでジョブを落とさない（G-EDIT-UI-SETTINGS-VALIDATE と同じ規律）",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "server/job-params.mjs の parseJobParams は captionPos として 0 と 90（境界）および中間値を受理し、範囲外(-1 / 91)・数値でない値(abc / 空 / 空白)・プロトタイプ汚染狙い(__proto__)・Infinity / NaN はすべて undefined へ丸める。丸めた場合 server/pipeline-runner.mjs の buildRenderArgs は --caption-pos を付けない。受理した場合は 0 であっても argv へ渡す。",
+         "verify": "video-shorts/server/job-params.mjs の parseJobParams(new URLSearchParams({captionPos: v})) を、受理側 v=0/90/33.5、丸め側 v='-1'/'91'/'abc'/''/'  '/'__proto__'/'Infinity'/'NaN' および captionPos キー自体が無い場合について呼び、戻り値の captionPos を assert する。続けて buildRenderArgs('/p/pipeline.mjs','/w', parseJobParams(...)) の argv 配列を実測し、v=0/45/90 では '--caption-pos' の次要素が String(v) であること、未指定では '--caption-pos' が argv に含まれないことを確認する。対照: 0 を truthy 判定で落とす実装だと v=0 のケースだけが落ちる（0＝画面の一番下は正当な指定なので、これを黙って捨てるのは欠陥）。あわせて resolveCaptionStyle が -1 / 90超 / 'abc' / NaN / Infinity に対して例外を投げる（黙って既定色ならぬ既定位置へ落とさない）ことを確認する。",
+         "verifyCmd": "node video-shorts/tests/caption-pos-check.mjs",
+         "evidence": "6e44256"
+        }
+       ],
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: captionPos を返さない parseJobParams では受理側3件が undefined になって落ちる。②正しい実装で1回実測: 0/90/33.5 が素通し、範囲外・不正8件すべてが undefined、argv に '--caption-pos','0' が入ることを実測した。③意図的に壊したものを当てる: buildRenderArgs を `if (opts.captionPos)` の truthy 判定に戻すと v=0 のケースだけが落ちることを確認した。"
+      }
+     ]
+    },
+    {
+     "id": "G-UI-BACKEND-NOTE",
+     "kind": "state",
+     "theme": "動画がどこで処理されるかの説明が、実際の動きと合っている",
+     "meaning": "マスター指示（2026-08-16）で文字起こしを Groq のクラウドへ切り替える運用にしたため、画面に固定で書いてあった『このPCの中だけで処理されます（外部に送りません）』が実態と食い違う状態になった。表示を実態に追随させ、食い違いを機械で検出できるようにする",
+     "children": [
+      {
+       "id": "G-UI-BACKEND-NOTE-TRUTH",
+       "kind": "state",
+       "theme": "鍵を入れたら「音声をGroqへ送る」と画面に出て、入れていなければ「外へ送らない」と出る",
+       "meaning": "書いてあることと実際の動きが食い違わないこと。実害は『外部に送りません』と読んで安心した人の音声が、実際にはクラウドへ送られること",
+       "status": "done",
+       "criteria": [
+        {
+         "text": "同じサーバを GROQ_API_KEY 無し／有りの2通りで起動し、画面 / を開いたときに data-testid=privacy-note の要素へ出る説明文が、それぞれ『外部へ送らない』趣旨／『Groq へ音声を送信する』趣旨になっている。2通りで実際に別の文が出る。読み込み中の仮文言のまま残らない。判定は特定の語句の一致ではなく意味で行い、『このPCの中だけ』『端末の中だけ』『送信しません』のような言い換えも、クラウド経路では不合格として検出できる。",
+         "verify": "実サーバ(node video-shorts/server/index.mjs)を PORT 5294 に GROQ_API_KEY='' で、PORT 5295 に GROQ_API_KEY='gsk_dummy_for_test_only' で起動する（値の有無だけを見る実装なので Groq へは接続しない）。Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で各々 / を開き、data-testid=privacy-note のすべての要素の textContent と dataset.transcribe を採る。dataset.transcribe が local/cloud と一致すること、checkBackendNote(kind,text) が null を返すこと、2通りの文が異なることを確認する。対照3本を同じ検査に置く: (a) 変更前の固定文言『この動画はこのPCの中だけで処理されます（外部に送りません）。』が local では通り cloud では落ちること、(b) 『処理はこのPCの中だけで行います。』『音声を外部へ送信しません。』『動画は端末の中だけで処理され、外部には送りません。』の3つの言い換えがすべて cloud で落ちること、(c) 読み込み中の仮文言『文字起こしの処理先を確認しています…』が local/cloud の両方で落ちること。",
+         "verifyCmd": "node video-shorts/tests/transcribe-backend-note-check.mjs",
+         "evidence": "6e44256"
+        }
+       ],
+       "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: 表示を差し替えない実装では仮文言のまま残り、(c) の対照と同じ条件で落ちる。②正しい実装で1回実測: 鍵なしで dataset.transcribe='local'、鍵ありで 'cloud' となり、2通りで別の文が出ることを実測した（GET /api/env は {\"transcribe\":\"local\"} / {\"transcribe\":\"cloud\"} を返す）。③意図的に壊したものを当てる: 変更前の固定文言を判定関数へ直接食わせ、cloud のケースで検出できることを確認した。語句一致だけの判定では言い換えを見逃すため、3通りの言い換えも同時に確認している。"
       }
      ]
     },
