@@ -18,7 +18,7 @@ import {
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
-import { resolveJobSettings, renderLabel, subscribeJob } from "../server/pipeline-runner.mjs";
+import { resolveJobSettings, renderLabel, subscribeJob, buildRenderArgs } from "../server/pipeline-runner.mjs";
 import { parseJobParams } from "../server/job-params.mjs";
 import { parseBreathOption } from "../src/breath-handles.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
@@ -594,9 +594,12 @@ t("サーバ: /api/jobs で受け取った設定が、1つも落ちずに startJ
 });
 
 t("サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる", () => {
-  const runner = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
-  assert.ok(/renderArgs\.push\("--breath", String\(opts\.breath\)\)/.test(runner),
-    "renderArgs に --breath が入る");
+  // ソース文字列の正規表現照合ではなく、buildRenderArgs() を実際に呼び出しargvを実測する
+  // (G-EDIT-UI-SETTINGS-WIRING-SERVER。ソース照合はCodeRabbitが実際に指摘した弱点そのもの)。
+  const argv = buildRenderArgs("/tmp/pipeline.mjs", "/tmp/work/job1", { breath: "0.4" });
+  const i = argv.indexOf("--breath");
+  assert.ok(i !== -1, "argv に --breath が入っていない");
+  assert.strictEqual(argv[i + 1], "0.4", "--breath の値が渡した breath と一致しない");
   // 渡す値は pipeline.mjs が受け付ける形であること（サーバが弾いた値で fail-fast させない）。
   for (const v of ["off", "0.4", "1"]) {
     const got = parseJobParams(new URLSearchParams({ breath: v })).breath;
