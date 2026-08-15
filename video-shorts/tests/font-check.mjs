@@ -19,6 +19,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkFontAvailable } from "../src/font-check.mjs";
+import { fontFilePath, getFont, DEFAULT_FONT_KEY } from "../src/subtitle-styles.mjs";
 import { DEFAULT_FONT } from "../src/srt-builder.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -78,16 +79,36 @@ if (!has("ffmpeg")) {
     { encoding: "utf-8", env: extraEnv, cwd: path.join(ROOT, "..") },
   );
 
+  // 2026-08-15 に期待値を反転した。旧実装は「システムフォントが1つも無ければ止める」
+  // だったが、実際に焼かれるのは同梱フォント(src/fonts/)であり、システムのフォント有無は
+  // 無関係である。しかも fc-list を必要とするため Windows では字幕ありが常に失敗していた
+  // (docs/failures.md 2026-08-15)。関門は checkBundledFont() へ移した。
   const rNoFontSubOn = runInit(envNoFont, "on");
   check(
-    "フォントが無い環境で --sub on だと、init が非ゼロ終了する（文字起こしより前）",
-    rNoFontSubOn.status !== 0,
-    `status=${rNoFontSubOn.status}`,
+    "システムにフォントが1つも無くても --sub on の init は成功する（同梱フォントを使うため）",
+    rNoFontSubOn.status === 0,
+    `status=${rNoFontSubOn.status} stderr=${rNoFontSubOn.stderr}`,
+  );
+
+  // 本当の関門が効いていることの対照: 同梱フォントのファイルを一時的に隠すと止まる。
+  const bundledPath = fontFilePath(DEFAULT_FONT_KEY);
+  const hiddenPath = bundledPath + ".hidden-for-test";
+  let rHidden;
+  try {
+    fs.renameSync(bundledPath, hiddenPath);
+    rHidden = runInit(process.env, "on");
+  } finally {
+    if (fs.existsSync(hiddenPath)) fs.renameSync(hiddenPath, bundledPath);
+  }
+  check(
+    "対照: 同梱フォントのファイルを隠すと --sub on の init は非ゼロ終了する（本当の関門）",
+    rHidden.status !== 0,
+    `status=${rHidden.status}`,
   );
   check(
-    "その失敗メッセージに、使おうとしたフォント名が挙げられている",
-    (rNoFontSubOn.stderr || "").includes(DEFAULT_FONT),
-    rNoFontSubOn.stderr,
+    "対照: その失敗メッセージに、使おうとした書体の名前が挙げられている",
+    (rHidden.stderr || "").includes(getFont(DEFAULT_FONT_KEY).label),
+    rHidden.stderr,
   );
 
   const rNoFontSubOff = runInit(envNoFont, "off");
