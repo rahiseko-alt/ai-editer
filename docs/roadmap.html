@@ -6045,7 +6045,7 @@
          "text": "編集中カード(#editing-card)を表示した状態で、そのカードの中に目で見えている文字（display:none / visibility:hidden / opacity:0 / 描画矩形が2px以下の要素を除いた文字）が「編集中」だけである。カードの中に目で見える svg / canvas / img が1つも無い。時刻の形（数字:2桁数字）の文字が出ていない。段階の文言(#editing-status)は DOM に残っているが描画矩形が2px以下（読み上げ専用）である。失敗したとき（is-error）は「編集できませんでした」を含む理由が目に見える形で出る。",
          "verify": "実サーバ(node video-shorts/server/index.mjs)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1365x830 で / を開き、#editing-card から hidden を外して表示する。カード配下を再帰的に歩き、getComputedStyle と getBoundingClientRect で「目に見える」要素だけのテキストノードを連結して判定する（要素の有無ではなく画面に出る文字で見るのは、SVG を消して別の飾りを足す抜け道を塞ぐため）。対照4本を同じ検査の中で実測する。対照1: 刷新前の中身（段階の文言と『0:23 経過 ・ ふつう1〜3分で終わります』）をその場で注入すると落ちること。対照2: 図が1枚あると落ちること。対照3: カードが空だと落ちること。対照4: 失敗表示に切り替えたとき理由が見えること。あわせて pageerror が0件であることを確認する。",
          "verifyCmd": "node video-shorts/tests/editing-card-simple-check.mjs",
-         "evidence": "PENDING"
+         "evidence": "00adab1"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: カードが空だと『文字が1つも出ていない』で落ちる（対照3）。②正しい実装で1回実測: 見えている文字が「編集中」だけ、図0枚、#editing-status は 0x0（.sr-only）であることを実測した。③意図的に壊したものを当てる: 刷新前の段階文言と経過時間を注入すると落ちることを実測した（対照1）。読み上げ専用の #editing-status を残しているのは意図で、DOM ごと消すと画面を見ない人へ進行が一切伝わらなくなるため。"
