@@ -119,7 +119,7 @@
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
   "active": "G-UI-REVAMP-WIRING",
-  "next": "LOOK(5葉)+INFO(3葉)は done。次は WIRING(17葉)。着手前に各葉の detail に貼った未解消の反証を潰して凍結する: ①固定素材のパス+SHA-256+使用区間の確定(video-shorts/tests/fixtures/ から境界値分析で選ぶ) ②出力側の観測量に閾値・単位・許容幅を入れる ③probe#2(正しい実装で1回実測)を回し、17葉x2回のフルパイプライン実行が現実の時間で回るかを計測する。WIRING は既存の tests/ui-settings-*.mjs のセレクタ更新を伴うため、刷新と同一PRで進めないとCIが割れる。そのあと FLOW(5)→RESULT(3)→CAPTION(3)→ACCESS(5)→OPS(5)。",
+  "next": "WIRING の穴を埋める。新UIから操作して確かめる検査が1本も無い7設定(cut / cutMin / size / mosaic / trim / breath / name)について、まず送信内容(POST /api/jobs のクエリ)を実ブラウザ操作から確かめる検査を新設する。cutMin は cut=minutes を先に選ぶ前提操作が要る(app.js:531)。そのうえで各葉の出力側の観測量に閾値・単位・許容幅を入れて凍結し、出力実測まで通す。既に新UIで実測済みの9設定(sub/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/durationMin/exportPreset)は、既存検査を該当葉の verifyCmd として引き当てる。所要時間は既存6本で約6.8分と実測済み。",
   "handoff": {
    "done": [
     "マスターから『動画は成功です』の報告を受け、Windows実機での動画作成成功を確認。PR #123（roadmap更新）をCI全12件緑でマージした（squash 9661345）。meta.active を実在の todo ノードへ移し、stale pointer を解消した。",
@@ -130,7 +130,9 @@
     "basis-reviewer を回し(マスター承認済み)、反証26件を受領した。内訳は基準そのもの24件(原子性2・被覆22)＋探り起因2件で、平易さは反証なし。9分弱で、外部レビューなら数時間かかる指摘が出た。",
     "反証を全部反映してツリーを描き直し、34葉→46葉にした。事実誤りの是正3件: ①WIRING-INNER/-BAND の非既定値を off から色指定へ反転(app.js:15 の既定が既に off で同値比較=永久に合格できない基準だった) ②WIRING-EXPORT の観測量を音声ビットレートへ変更(crf/preset は出力ファイルに残らず観測不能) ③WIRING-CUTMIN へ cut=minutes の前提操作を明記(app.js:531 で cutMin は単独送信されない)。被覆漏れの是正: RESULT(3葉・成果物の受け取り)・CAPTION(3葉・字幕直し)・ACCESS-MODAL・ACCESS-FONTSIZE・WIRING-NAME・WIRING-CONDITIONAL を新設。原子性の是正: LOOK-WHITE から罫線条項を LOOK-RULE へ分離、OPS-HANDOFF を DOC(文書側)と EMIT(実行側)へ分離。",
     "LOOK(5葉)とINFO(3葉)は凍結水準まで詰めた。実装者が後から選べる余地を消すため、検査用フック契約(data-testid: app-header/pane-left/pane-center/pane-right/guide-text/btn-run/btn-pick-file/step-item[data-step-no]/setting-row[data-setting-key]/progress-step[data-k])を criteria と同時に凍結した。LOOK-WHITE は背景色だけでなく全子孫と::before/::afterのbackground-imageがnoneであることを条件に加え、現行のbody::before(radial-gradient3枚)を移植した偽実装で背景色検査は通るがベール検査だけが落ちる、という対照を明記した。他の枝は各葉の detail に未解消の反証を貼って未凍結のまま残した。",
-    "LOOK(5葉)+INFO(3葉)を実装して done 化した。3ペイン化は既存テストが .two-col/#col-settings/#col-preview とHTML上のDOM順に依存していたため、id・class・DOM順を温存し grid-column だけで見た目を作る方針にして回避した。検査は tests/ui-revamp-look-check.mjs(12項目)と tests/ui-revamp-info-check.mjs(7項目)を新設し pnpm test へ登録。対照(偽実装)はファイル書き換えではなく検査内で注入する形にしてコミットへ残した(戻し忘れで検査が嘘になるのを構造的に防ぐため)。既存の画面系テスト13本は引き続き全て緑。"
+    "LOOK(5葉)+INFO(3葉)を実装して done 化した。3ペイン化は既存テストが .two-col/#col-settings/#col-preview とHTML上のDOM順に依存していたため、id・class・DOM順を温存し grid-column だけで見た目を作る方針にして回避した。検査は tests/ui-revamp-look-check.mjs(12項目)と tests/ui-revamp-info-check.mjs(7項目)を新設し pnpm test へ登録。対照(偽実装)はファイル書き換えではなく検査内で注入する形にしてコミットへ残した(戻し忘れで検査が嘘になるのを構造的に防ぐため)。既存の画面系テスト13本は引き続き全て緑。",
+    "PR #124 をマージ(squash 92b1cdc)。UI刷新の LOOK(5葉)+INFO(3葉) が main に入った。",
+    "WIRING の着手前調査として probe#2 を実行した。刷新後のUIに対して既存の実ブラウザ検査6本を回し、全て PASS・合計約6.8分と実測。あわせて被覆マップを取り、新UIから操作して確かめる検査が1本も無い設定が7件(cut/cutMin/size/mosaic/trim/breath/name)あることを特定した。操作セレクタと合成素材の生成手順も数値で確定して WIRING の detail へ記録した。"
    ],
    "trouble": [
     "スクリーンショットだけを見て『PC表示では⑥サイズ以降が切れていて操作できない』と誤診しかけた。実際は body 自身が内部スクロール領域(height:900px, overflow-y:auto)で、document.scrollHeight=900 に対し body.scrollHeight=1153。Playwright の fullPage:true は document の全高しか撮らないため、残り253pxが写らないだけだった。マスターへ報告する前に DOM で裏を取って撤回した。詳細と教訓は docs/failures.md 2026-08-15 に記録し、この罠自体を G-OPS-UI-VIEW-FULLPAGE の葉として立てた。",
@@ -5593,7 +5595,8 @@
          ],
          "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【追加】当初漏れていた（basis-reviewer 反証）。cutMin 欄は cut=minutes 時のみ、caption-inner-color-row / caption-band-color-row は「あり」選択時のみ表示（index.html:98-111, app.js:210-234）。既存の tests/ui-settings-conditional-recover-compat-check.mjs が守っていた経路。"
         }
-       ]
+       ],
+       "detail": "【probe#2 実測 2026-08-15（着手前の計測）】既存の実ブラウザ×実サーバ×実ffmpeg検査6本を刷新後のUIに対して実行し、所要時間と合否を測った: ui-settings-wiring-client 33秒 PASS / ui-settings-validate 66秒 PASS / ui-settings-conditional-recover-compat 18秒 PASS / ui-settings-duration-export-compose 224秒 PASS / ui-settings-visual 69秒 PASS / job-params-ui-settings 0秒 PASS。合計 約6.8分。文字起こし(transcribe.py)と区間選定(claude)を固定応答へ差し替えているため、17葉ぶんでも現実の時間で回る見込みが立った（basis-reviewer が疑った『誰も満たせない基準』ではない）。\n\n【刷新の回帰チェック】上記6本が刷新後のUIで全て PASS したことは、3ペイン化で既存の配線が切れていないことの一次証拠である（id・class・DOM順を温存した設計判断が効いた）。ただしこれは『壊れていないらしい』までであり、17葉それぞれの受入事実を測ったものではない。\n\n【被覆マップ（着手前に確定）】ブラウザから実際に操作して送信内容を確かめている設定は9件: sub / subStyle / captionFont / captionFill / captionOutlineColor / captionInner / captionBand / durationMin / exportPreset（tests/ui-settings-wiring-client-check.mjs ほか）。**新UIから操作して確かめる検査が1本も無い設定が7件ある: cut / cutMin / size / mosaic / trim / breath / name。** ここが WIRING の実際の穴であり、最初に埋める対象。条件表示(CONDITIONAL)は tests/ui-settings-conditional-recover-compat-check.mjs が担っている。\n\n【操作セレクタ（実測で確定）】cut=[data-group=\"cut\"] .chip[data-val=\"topic|minutes\"] / cutMin=#cut-min（#cut-detail 内。cut=minutes のときのみ表示） / size=[data-group=\"size\"] .chip[data-val=\"9:16|16:9\"] / mosaic=[data-group=\"mosaic\"] .chip[data-val=\"none|on\"] / trim=[data-group=\"trim\"] .chip[data-val=\"none|on\"] / breath=[data-group=\"breath\"] .chip[data-val=\"\"(おまかせ)|\"0.4\"(短め)|\"1\"(長め)|\"off\"(なし)] / name=#file へ setInputFiles したファイル名。\n\n【合成素材（着手前に確定）】tests/helpers/ui-settings-e2e-harness.mjs が ffmpeg の lavfi で合成する。コミットしない合成素材のため、AGENTS.md の定めどおり合成手順を数値で確定する: 色模様つき = testsrc(size=指定, rate=15, duration=指定) + sine(frequency=440, duration=指定)、無地黒 = color(size=指定, color=black, rate=15) + sine(frequency=440)。字幕の背景帯・内側縁取りを測る葉では testsrc だと充填率が69〜73%まで落ちて90%基準を割るため、無地黒を使う（実測済みの既知事項）。各葉が使う size と duration、および測る区間は、その葉の着手時に数値で固定する。"
       },
       {
        "id": "G-UI-REVAMP-FLOW",
