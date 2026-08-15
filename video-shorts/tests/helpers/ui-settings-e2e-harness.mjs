@@ -221,7 +221,8 @@ export async function runJobViaBrowser(page, opts) {
     await page.click('[data-group="sub"] .chip[data-val="on"]');
   }
   if (opts.captionFont) {
-    await page.click(`[data-group="captionFont"] .chip[data-val="${opts.captionFont}"]`);
+    // 2026-08-16: 書体はチップからプルダウンへ変更（マスター指示④）。
+    await page.selectOption('[data-group="captionFont"]', opts.captionFont);
   }
   if (opts.subStyle) {
     await page.click(`[data-group="subStyle"] .chip[data-val="${opts.subStyle}"]`);

@@ -2947,3 +2947,24 @@ CI は最終ゲートだが、判定しているのは「製品が正しいこ�
      説明できない設定は、実装が間違っているか、画面が間違っている。
 - **再発防止**: `updateBreathVisibility()` を追加し、`cut!=="minutes"` のとき `#card-breath` を隠す。
   実測で「話題で切る→つなぎ目の間は非表示／分数で切る→表示」「1本の目安の長さはその逆」を確認した。
+
+## 2026-08-16 — 変更の追随範囲を tests/ だけで探し、共有ハーネスを見落とした
+
+- **事象**: 字幕の書体をチップからプルダウンへ変えた際、`tests/*.mjs` を grep して2本を
+  `selectOption` へ直した。しかし CI が `COMPOSE-A` で落ちた。原因は
+  `tests/helpers/ui-settings-e2e-harness.mjs:224` が
+  `page.click('[data-group="captionFont"] .chip[data-val="..."]')` のままだったこと。
+- **根因**: 探索範囲を `tests/*.mjs`（直下のみ）に限ったため、`tests/helpers/` 配下の
+  **共有ハーネス**が視野に入らなかった。しかもハーネスは複数の検査から使われるため、
+  影響範囲は直接書き換えた2本より広い。
+- **教訓**:
+  1. **UI の操作方法を変えたら、探索は「その要素を指すすべての箇所」で行う。**
+     ファイルの階層で絞らない。今回なら `grep -rn 'data-group="captionFont"' --include=*.mjs .`
+     を最初に打つべきだった（実際、後からこれを打って一発で残りが出た）。
+  2. **共有ヘルパは最後に見つかる。** 個別の検査が直っていても、ヘルパが古いと
+     ヘルパを使う検査すべてが落ちる。壊れ方が「1本だけ落ちる」ではなく
+     「まとめて落ちる」ので、CI の1周を丸ごと無駄にする。
+- **再発防止**: ハーネスを `selectOption` へ追随させ、`captionFont` を指す箇所が
+  helpers を含めて全て揃っていることを `grep -rn --include=*.mjs` で確認した。
+  ui-settings 系 e2e 4本（duration-export-compose 185s / visual 67s /
+  conditional-recover-compat 17s / wiring-client 12s）を実測して全 PASS。
