@@ -33,6 +33,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { fontFilePath, DEFAULT_FONT_KEY } from "../src/subtitle-styles.mjs";
 import { fileURLToPath } from "node:url";
 import { probeSize } from "../src/render-vertical.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
@@ -299,7 +300,11 @@ async function main() {
       "経路A/C: 書き出しプリセット一覧がソースと配布物で一致する(入れ忘れが無い)"
     );
 
-    // ── (3) 経路B: フォント確認ゲートが文字起こし前に効く(M3のゲートがB経路で回帰していないか) ──
+    // ── (3) 経路B: フォントの関門が文字起こし前に効く ──
+    // 2026-08-15 に期待値を反転した。旧実装は「システムフォント(fc-list)が1つも無ければ止める」
+    // だったが、実際に焼かれるのは同梱フォント(src/fonts/)であり、システムのフォント有無は無関係。
+    // しかも fc-list を必要とするため Windows では字幕ありが常に失敗していた
+    // (docs/failures.md 2026-08-15)。関門は checkBundledFont() へ移した。
     const fakeNoFontDir = path.join(WORK, "no-font-bin");
     fs.mkdirSync(fakeNoFontDir, { recursive: true });
     fs.writeFileSync(path.join(fakeNoFontDir, "fc-list"), "#!/bin/sh\nexit 0\n");
@@ -311,24 +316,45 @@ async function main() {
     const noFontJobId = makeUniqueJobId("e2e-three-paths-nofont.mp4");
     jobIds.push(noFontJobId);
     const noFontStarted = startJob(noFontJobId, path.resolve(input), { sub: "on", cut: "topic", size: "9:16" });
-    check(noFontStarted === true, "経路B(フォント無し環境): startJob 自体は受理される(拒否は非同期側)");
+    check(noFontStarted === true, "経路B(システムフォント無し環境): startJob が受理される");
     const noFontLines = await waitForJob(noFontJobId);
     check(
-      noFontLines.some((l) => /^event:\s*job-error\b/m.test(l)),
-      "経路B(フォント無し環境): ジョブが job-error で終わる(文字起こし前に止まる)",
+      noFontLines.some((l) => /^event:\s*done\b/m.test(l)),
+      "経路B(システムフォント無し環境): sub=on でもジョブは done まで進む(同梱フォントを使うため)",
       noFontLines.join("").slice(0, 400)
+    );
+
+    // ── (3b) 対照: 本当の関門。同梱フォントのファイルを隠すと、文字起こし前に止まる ──
+    const bundledPath = fontFilePath(DEFAULT_FONT_KEY);
+    const hiddenPath = bundledPath + ".hidden-for-e2e";
+    fs.rmSync(pyMarker, { force: true });
+    const noBundledJobId = makeUniqueJobId("e2e-three-paths-nobundled.mp4");
+    jobIds.push(noBundledJobId);
+    let noBundledLines;
+    try {
+      fs.renameSync(bundledPath, hiddenPath);
+      const started = startJob(noBundledJobId, path.resolve(input), { sub: "on", cut: "topic", size: "9:16" });
+      check(started === true, "対照: 経路B(同梱フォント欠落): startJob 自体は受理される(拒否は非同期側)");
+      noBundledLines = await waitForJob(noBundledJobId);
+    } finally {
+      if (fs.existsSync(hiddenPath)) fs.renameSync(hiddenPath, bundledPath);
+    }
+    check(
+      noBundledLines.some((l) => /^event:\s*job-error\b/m.test(l)),
+      "対照: 経路B(同梱フォント欠落): ジョブが job-error で終わる(文字起こし前に止まる)",
+      noBundledLines.join("").slice(0, 400)
     );
     check(
       !fs.existsSync(pyMarker),
-      "経路B(フォント無し環境): transcribe.py(の身代わり)が一度も起動されない(=文字起こし開始前に止まっている)"
+      "対照: 経路B(同梱フォント欠落): transcribe.py(の身代わり)が一度も起動されない(=文字起こし開始前に止まっている)"
     );
-    const noFontState = JSON.parse(
-      fs.readFileSync(path.join(ROOT, "work", noFontJobId, "state.json"), "utf-8")
+    const noBundledState = JSON.parse(
+      fs.readFileSync(path.join(ROOT, "work", noBundledJobId, "state.json"), "utf-8")
     );
     check(
-      noFontState.errorCode === "font_missing",
-      "経路B(フォント無し環境): state.json の errorCode が font_missing になる",
-      JSON.stringify(noFontState.errorCode)
+      noBundledState.errorCode === "font_missing",
+      "対照: 経路B(同梱フォント欠落): state.json の errorCode が font_missing になる",
+      JSON.stringify(noBundledState.errorCode)
     );
 
     // 対照: sub=none(字幕なし)なら、同じフォント無し環境でもゲートは働かず先へ進む

@@ -78,10 +78,15 @@ try {
 
   // (2) 同梱フォントファイルパスを一時的に欠落させた場合(角ゴシック=kakuを使う)。
   {
+    // 2026-08-15: ジョブ作成(makeJob = pipeline init)は、フォントを隠す**前**に行う。
+    // init 側にも同梱フォントの関門を入れたため(Windows対応。docs/failures.md 2026-08-15)、
+    // 隠したあとに init すると work ディレクトリ自体が作られず、この (2)(3) が測りたい
+    // 「render 段階での fail-fast」まで到達できない。
+    const workDir = makeJob();
+    const workDir3 = makeJob();
     const kakuPath = fontFilePath("kaku");
     renamedAway = `${kakuPath}.movedaway-for-test`;
     fs.renameSync(kakuPath, renamedAway);
-    const workDir = makeJob();
     const r = spawnSync(process.execPath,
       [PIPELINE, "render", workDir, "--caption-font", "kaku"],
       { cwd: ROOT, encoding: "utf-8" });
@@ -100,7 +105,6 @@ try {
     // 既定書体(DEFAULT_FONT_KEY=kaku)へ解決するため、そのkakuの同梱ファイルが欠落していれば
     // --caption-fontを渡していなくてもfail-fastしなければならない(検証が--caption-fontの
     // 明示指定にだけ効いていて、既定書体解決時に抜けていないことの確認)。
-    const workDir3 = makeJob();
     const r3 = spawnSync(process.execPath,
       [PIPELINE, "render", workDir3, "--caption-fill", "#FF0000"],
       { cwd: ROOT, encoding: "utf-8" });

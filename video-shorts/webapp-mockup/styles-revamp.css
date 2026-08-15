@@ -37,7 +37,10 @@
   --shadow-panel: none;
 
   --pane-left-w: 200px;
-  --pane-right-w: 320px;
+  /* 2026-08-15 マスター指示「中央は今の半分で良い。右を倍のサイズにしろ」により
+     右ペインを 320px -> 640px へ倍にした。中央は 1fr なので、その分だけ狭くなる
+     (1280px 幅で 760px -> 440px)。 */
+  --pane-right-w: 640px;
   --pane-break: 900px;     /* この幅未満で縦積みへ落ちる */
 }
 
@@ -156,14 +159,17 @@ html::before, html::after, body::before, body::after { content: none; background
    #card-video 等の grid-column 指定も 1 列目へ寄せる。 */
 .three-pane > .pane-right.col-settings {
   display: grid;
-  grid-template-columns: 1fr;
+  /* 右ペインを 640px へ広げた(2026-08-15 マスター指示)ので、2列に置いて縦スクロールを半減させる。
+     1列あたり約 300px となり、広げる前の 320px 1列と同じ読みやすさを保てる。 */
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: none;
   gap: 12px;
   align-content: start;
 }
-.three-pane > .pane-right.col-settings > .settings-group {
-  grid-column: 1 / -1;
-}
+/* 動画を入れる枠だけは横幅いっぱい（ドロップ先は大きい方が扱いやすい） */
+.three-pane > .pane-right.col-settings > #card-video { grid-column: 1 / -1; }
+/* 字幕の見た目は項目が多いので横幅いっぱい */
+.three-pane > .pane-right.col-settings > #card-caption-style { grid-column: 1 / -1; }
 
 /* ===== 8. プレビュー枠を無彩色にする（暖色の名残を消す）===== */
 .three-pane .device-frame { background: #ffffff; border-color: var(--line); }
