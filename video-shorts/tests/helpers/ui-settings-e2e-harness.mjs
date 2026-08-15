@@ -119,6 +119,26 @@ export async function makeSample(dir, { size = "640x360", durationSec = SAMPLE_D
   return out;
 }
 
+/**
+ * 話し声つきの無地(黒)背景の合成動画を作る。testsrc(色模様)は字幕の背景帯・内側縁取り等、
+ * 色を厳密に画素比較する検査だと模様が縁の色判定へ混ざり誤判定を生む(実測で確認済み: COMPOSE
+ * シナリオの背景帯充填率がtestsrc使用時69〜73%となり90%基準を割った。閾値はcaption-style-
+ * band-check.mjs等CLI側の黒背景検査と揃えているため、素材側を黒に合わせるのが正しい直し方)。
+ * 色を厳密に測る葉(FONT/FILL/BAND/OUTLINE/INNER/STYLE/COMPOSEの画素確認)はこちらを使うこと。
+ */
+export async function makeBlackSample(dir, { size = "640x360", durationSec = SAMPLE_DURATION_SEC } = {}) {
+  const out = path.join(dir, `black-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
+  await runFfmpeg([
+    "-y", "-v", "error",
+    "-f", "lavfi", "-i", `color=size=${size}:color=black:rate=15:duration=${durationSec}`,
+    "-f", "lavfi", "-i", `sine=frequency=440:duration=${durationSec}`,
+    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-shortest",
+    out,
+  ]);
+  return out;
+}
+
 /** transcribe.pyの代わりに固定transcriptを書くだけの`python`をPATHへ差し込む。 */
 export function installFakePython(transcript = TRANSCRIPT) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "vs-fake-python-uis-"));
