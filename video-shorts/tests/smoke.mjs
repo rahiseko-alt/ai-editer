@@ -775,20 +775,21 @@ t("字幕直し: CLI にも同じ工程がある（画面経路だけの機能�
   assert.ok(/aiCaptionFixStage\(/.test(src), "CLI が工程を呼んでいない");
 });
 
+// 2026-08-16: 編集中カードの進捗の点(.estep)と STEP_ORDER は、マスター指示で表示ごと
+// 削除した。受け皿の実体は「段階に対応する文言(EDITING_LABEL)」と「進捗欄の行
+// (#progress li[data-k])」の2つで、そちらは残っているのでこの2つで見る。
 t("UI: 字幕直し段(c)の進捗表示の受け皿がある", () => {
   const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/STEP_ORDER\s*=\s*\[[^\]]*"c"/.test(app), "STEP_ORDER に c が入っている");
   assert.ok(/^\s*c:\s*"/m.test(app), "EDITING_LABEL に c の文言がある");
   const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
-  assert.ok(/data-k="c"/.test(html), "進捗欄に c の行がある");
+  assert.ok(/<li data-k="c"/.test(html), "進捗欄に c の行がある");
 });
 
 t("UI: モザイク段(m)の進捗表示の受け皿がある", () => {
   const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/STEP_ORDER\s*=\s*\[[^\]]*"m"/.test(app), "STEP_ORDER に m が入っている");
   assert.ok(/^\s*m:\s*"/m.test(app), "EDITING_LABEL に m の文言がある");
   const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
-  assert.ok(/data-k="m"/.test(html), "進捗欄に m の行がある");
+  assert.ok(/<li data-k="m"/.test(html), "進捗欄に m の行がある");
 });
 
 // ---- P0-5-B: レンダラー未実装の選択肢(1:1 / 4:5 / 本数で切る)がUIから除去されている ----

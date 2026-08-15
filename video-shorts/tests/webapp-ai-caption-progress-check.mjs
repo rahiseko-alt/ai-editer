@@ -2,7 +2,7 @@
 // 実行中→完了の表示遷移が既存の段（文字起こしt・場面選びs等）と同じ形で起きることの検証
 // — roadmap葉 G-EDIT-CAPTION-AI-K2
 //
-// 【なぜブラウザ実測が要るか】webapp-mockup/app.jsのSTEP_ORDER/EDITING_LABEL/data-k="c"の
+// 【なぜブラウザ実測が要るか】webapp-mockup/app.jsのEDITING_LABEL/data-k="c"の
 // 存在は静的なソース読解で確認できるが、それだけでは「実際にジョブを流したときに、
 // #progress li[data-k="c"] が本当に
 // active→done とクラスを切り替えるか」「その切り替えが文字起こし(t)の後・場面選び(s)の前
