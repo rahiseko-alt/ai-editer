@@ -60,6 +60,57 @@
         <p class="group-note" id="sub-desc">字幕は付けません。</p>
       </section>
 
+      <!-- グループ2b: 字幕の見た目（字幕=あり のときだけ表示。
+           G-EDIT-UI-SETTINGS-FONT/FILL/BAND/STYLE/CONDITIONAL-UI） -->
+      <section class="settings-group hidden" id="card-caption-style" aria-labelledby="h-caption-style">
+        <h2 class="group-label" id="h-caption-style">字幕の見た目</h2>
+
+        <p class="group-note">書体</p>
+        <div class="chips chips-wrap" data-group="captionFont" role="group" aria-label="字幕の書体">
+          <button class="chip" data-val="kaku" aria-pressed="false">角ゴシック</button>
+          <button class="chip" data-val="maru" aria-pressed="false">丸ゴシック</button>
+          <button class="chip" data-val="mincho" aria-pressed="false">明朝体</button>
+          <button class="chip" data-val="hand" aria-pressed="false">手書き風</button>
+          <button class="chip" data-val="marker" aria-pressed="false">マーカー風</button>
+        </div>
+
+        <p class="group-note">スタイル</p>
+        <div class="chips chips-wrap" data-group="subStyle" role="group" aria-label="字幕のスタイル">
+          <button class="chip" data-val="karaoke" aria-pressed="false">ワードハイライト</button>
+          <button class="chip" data-val="pop" aria-pressed="false">1語ずつポップ</button>
+          <button class="chip" data-val="bold" aria-pressed="false">太字ライン</button>
+        </div>
+
+        <div class="caption-color-row">
+          <label for="caption-fill">文字色</label>
+          <input type="color" id="caption-fill" value="#ffffff" />
+        </div>
+        <div class="caption-color-row">
+          <label for="caption-outline-color">縁取り色</label>
+          <input type="color" id="caption-outline-color" value="#000000" />
+        </div>
+
+        <p class="group-note">内側縁取り</p>
+        <div class="chips" data-group="captionInner" role="group" aria-label="内側縁取りのあり・なし">
+          <button class="chip is-on" data-val="off" aria-pressed="true">なし</button>
+          <button class="chip" data-val="on" aria-pressed="false">あり</button>
+        </div>
+        <div class="caption-color-row hidden" id="caption-inner-color-row">
+          <label for="caption-inner-color">内側縁取りの色</label>
+          <input type="color" id="caption-inner-color" value="#ffff00" />
+        </div>
+
+        <p class="group-note">背景帯</p>
+        <div class="chips" data-group="captionBand" role="group" aria-label="背景帯のあり・なし">
+          <button class="chip is-on" data-val="off" aria-pressed="true">なし</button>
+          <button class="chip" data-val="on" aria-pressed="false">あり</button>
+        </div>
+        <div class="caption-color-row hidden" id="caption-band-color-row">
+          <label for="caption-band-color">背景帯の色</label>
+          <input type="color" id="caption-band-color" value="#000000" />
+        </div>
+      </section>
+
       <!-- グループ2.5: 顔モザイク -->
       <section class="settings-group" id="card-mosaic" aria-labelledby="h-mosaic">
         <h2 class="group-label" id="h-mosaic">
@@ -117,6 +168,16 @@
         </div>
       </section>
 
+      <!-- グループ3b: 1本の目安の長さ（カット=話題で切る のときだけ表示。G-EDIT-UI-SETTINGS-DURATION-VISIBILITY） -->
+      <section class="settings-group hidden" id="card-duration" aria-labelledby="h-duration">
+        <h2 class="group-label" id="h-duration">1本の目安の長さ</h2>
+        <p class="duration-note">
+          <label for="duration-min">目安：</label>
+          <input type="number" id="duration-min" min="1" max="60" />
+          分くらいで、AIが話題の切れ目を判断してまとめます（空欄ならAIにおまかせ）。
+        </p>
+      </section>
+
       <!-- グループ4: サイズ -->
       <section class="settings-group" id="card-size" aria-labelledby="h-size">
         <h2 class="group-label" id="h-size">
@@ -132,6 +193,22 @@
             <span class="size-use">YouTube 通常</span>
           </button>
         </div>
+      </section>
+
+      <!-- グループ7: 書き出し -->
+      <section class="settings-group" id="card-export" aria-labelledby="h-export">
+        <h2 class="group-label" id="h-export">
+          <span class="step-n" aria-hidden="true">7</span> 書き出し
+        </h2>
+        <div class="chips chips-wrap" data-group="exportPreset" role="group" aria-label="書き出しの用途">
+          <button class="chip is-on" data-val="" aria-pressed="true">標準</button>
+          <button class="chip" data-val="youtube" aria-pressed="false">YouTube向け</button>
+          <button class="chip" data-val="sns" aria-pressed="false">SNS向け</button>
+          <button class="chip" data-val="x" aria-pressed="false">X向け</button>
+          <button class="chip" data-val="archive" aria-pressed="false">高画質で保存</button>
+          <button class="chip" data-val="light" aria-pressed="false">軽くして共有</button>
+        </div>
+        <p class="group-note" id="export-desc">これまでどおりの画質・大きさで書き出します。</p>
       </section>
 
     </div><!-- /col-settings -->
