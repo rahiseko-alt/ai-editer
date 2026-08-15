@@ -43,3 +43,6 @@ __pycache__/
 
 # 個人のClaude Code設定上書き（チーム共有のsettings.jsonとは別）
 .claude/settings.local.json
+
+# 診断ツールの出力（実行のたびに上書きされる作業ファイル）
+video-shorts/diagnose-claude-log.txt
