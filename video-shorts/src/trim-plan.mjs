@@ -68,6 +68,10 @@ export function planTrim(words, opts = {}) {
   const minSilence = opts.minSilence ?? DEFAULT_MIN_SILENCE;
   const cutSilence = opts.cutSilence !== false;
   const cutFillers = opts.cutFillers !== false;
+  // 息継ぎのために戻した間（クリップ相対秒）。ここは詰めない。
+  const protect = (Array.isArray(opts.protect) ? opts.protect : [])
+    .filter((r) => r && Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start);
+  const isProtected = (r) => protect.some((p) => r.start < p.end - 1e-9 && r.end > p.start + 1e-9);
 
   const list = (words || [])
     .filter((w) => w && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
@@ -109,8 +113,11 @@ export function planTrim(words, opts = {}) {
       continue;
     }
     // 無音。短い間は詰めない（不自然に詰まらないように）。
-    if (cutSilence && r.end - r.start >= minSilence) cuts.push({ ...r, reason: "silence" });
-    else keep.push(r);
+    // 息継ぎのために意図して戻した間（protect）は、長さに関わらず詰めない。ここを詰めると
+    // breath が戻した間を trim が削り取り、機能が丸ごと無効化される（G-EDIT-BREATH-TRIM）。
+    if (cutSilence && r.end - r.start >= minSilence && !isProtected(r)) {
+      cuts.push({ ...r, reason: "silence" });
+    } else keep.push(r);
   }
 
   const merged = toFrameSpans(mergeSpans(keep), opts.fps);

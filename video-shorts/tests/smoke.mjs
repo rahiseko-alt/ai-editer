@@ -20,6 +20,7 @@ import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
 import { resolveJobSettings, renderLabel, subscribeJob } from "../server/pipeline-runner.mjs";
 import { parseJobParams } from "../server/job-params.mjs";
+import { parseBreathOption } from "../src/breath-handles.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import {
   ALLOWED_ENV_VARS,
@@ -552,6 +553,72 @@ t("UI: 間を詰めるのチップ群に「あり」の選択肢がある", () =
   assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
 });
 
+// ── つなぎ目の間（G-EDIT-BREATH-SERVER）─────────────────────────────
+// CLI にだけ結線して画面へ結線し忘れると、利用者は常に既定 0.7 秒固定で off にもできない。
+// digest は既定 ON なのでサーバ経由の全ジョブが影響を受ける（mosaic/trim と同じ取りこぼし）。
+t("parseJobParams: breath の既定は空（pipeline.mjs 側の既定に従う）", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams()).breath, "");
+});
+
+t("parseJobParams: breath=off と秒数はそのまま通る", () => {
+  assert.strictEqual(parseJobParams(new URLSearchParams({ breath: "off" })).breath, "off");
+  assert.strictEqual(parseJobParams(new URLSearchParams({ breath: "0.4" })).breath, "0.4");
+});
+
+t("parseJobParams: 範囲外・不正な breath は既定へ丸める（pipeline.mjs を fail-fast させない）", () => {
+  for (const v of ["-1", "99", "abc", "1e999"]) {
+    assert.strictEqual(parseJobParams(new URLSearchParams({ breath: v })).breath, "",
+      `breath=${v} は既定へ丸まる`);
+  }
+});
+
+// /api/jobs のハンドラが設定を1つずつ数え上げて startJob へ渡し直していると、設定を足した
+// ときにここへの書き足しを忘れて「画面で選べるのに一切効かない」設定が出来る（breath で実際に
+// 起きた。docs/failures.md 2026-08-14）。parseJobParams が返す設定が漏れなく startJob へ届く
+// ことを、フィールド名を数え上げずに確かめる。
+t("サーバ: /api/jobs で受け取った設定が、1つも落ちずに startJob へ渡る", () => {
+  const idx = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
+  const m = idx.match(/startJob\(\s*jobId\s*,\s*inputPath\s*,\s*([^)]*)\)/);
+  assert.ok(m, "startJob の呼び出しが見つかる");
+  const arg = m[1].trim();
+  assert.ok(!arg.startsWith("{"),
+    `startJob へは設定の束をそのまま渡すこと（フィールドを数え上げると足し忘れる）。実際: ${arg}`);
+  // その束が parseJobParams の戻り値そのものであること。
+  const bound = new RegExp(`const\\s+${arg}\\s*=\\s*parseJobParams\\(`);
+  assert.ok(bound.test(idx), `${arg} は parseJobParams の戻り値であること`);
+  // 束の中身は parseJobParams の実際の戻り値で確かめる（ソースの見た目ではなく値）。
+  const p = parseJobParams(new URLSearchParams({ breath: "0.4", trim: "on", mosaic: "on" }));
+  for (const k of ["sub", "cut", "size", "cutMin", "mosaic", "trim", "breath"]) {
+    assert.ok(k in p, `parseJobParams の戻り値に ${k} が入っている`);
+  }
+});
+
+t("サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる", () => {
+  const runner = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
+  assert.ok(/renderArgs\.push\("--breath", String\(opts\.breath\)\)/.test(runner),
+    "renderArgs に --breath が入る");
+  // 渡す値は pipeline.mjs が受け付ける形であること（サーバが弾いた値で fail-fast させない）。
+  for (const v of ["off", "0.4", "1"]) {
+    const got = parseJobParams(new URLSearchParams({ breath: v })).breath;
+    assert.strictEqual(parseBreathOption(got).ok, true, `breath=${v} は pipeline.mjs が受け付ける`);
+  }
+});
+
+t("UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指定がある", () => {
+  const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
+  const m = html.match(/data-group="breath"[^]*?<\/div>/);
+  assert.ok(m, "つなぎ目の間のチップ群が画面にある");
+  assert.ok(/data-val=""/.test(m[0]), "おまかせ（既定）がある");
+  assert.ok(/data-val="off"/.test(m[0]), "なし（間を入れない）がある");
+  assert.ok(/data-val="0\.4"/.test(m[0]) && /data-val="1"/.test(m[0]), "長さを選べる");
+});
+
+t("UI: 選んだ間の長さが /api/jobs のパラメータに載る", () => {
+  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+  assert.ok(/breath:\s*state\.breath/.test(app), "送信パラメータに breath が入る");
+  assert.ok(/breath:\s*""/.test(app), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+});
+
 t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
   const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
   assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");
@@ -559,11 +626,11 @@ t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () =>
 });
 
 t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {
-  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
-  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
-  assert.ok(recv && /\btrim\b/.test(recv[1]), "parseJobParams の結果から trim を受け取っていない");
-  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
-  assert.ok(pass && /\btrim\b/.test(pass[1]), "startJob へ trim を渡していない");
+  // 個別のフィールドを数え上げるのではなく、parseJobParams の戻り値に trim が在ることと、
+  // その束がまるごと startJob へ渡ること（上の「1つも落ちずに」の検査）で担保する。
+  assert.ok("trim" in parseJobParams(new URLSearchParams({ trim: "on" })),
+    "parseJobParams の戻り値に trim が入っている");
+  assert.strictEqual(parseJobParams(new URLSearchParams({ trim: "on" })).trim, "on");
 });
 
 t("サーバ: 渡された trim を state.json へ書く（ここを落とすと一度も詰まらない）", () => {
@@ -639,15 +706,10 @@ t("UI: 選んだモザイクの値が /api/jobs のパラメータに載る", ()
 // 工程レベルのテスト(tests/mosaic-ui-check.py)は工程を直接叩くので全緑のまま通る。
 // 実際に一度その状態を作ってしまったので、配線そのものを機械で押さえる。
 t("サーバ: 受け取った mosaic をジョブ設定として startJob へ渡す", () => {
-  const src = fs.readFileSync(path.join(ROOT, "server", "index.mjs"), "utf-8");
-  const recv = src.match(/const \{([^}]*)\}\s*=\s*parseJobParams\(/);
-  assert.ok(recv, "parseJobParams の戻り値を受け取っている");
-  assert.ok(/\bmosaic\b/.test(recv[1]),
-    "parseJobParams から mosaic を受け取っている（受け取らないと画面の選択が捨てられる）");
-  const pass = src.match(/startJob\([^)]*\{([^}]*)\}/);
-  assert.ok(pass, "startJob へ設定オブジェクトを渡している");
-  assert.ok(/\bmosaic\b/.test(pass[1]),
-    "startJob へ mosaic を渡している（渡さないとモザイク工程は永久に呼ばれない）");
+  // 同上。束をまるごと渡す形にしたので、フィールドごとの取りこぼしは構造的に起きない。
+  assert.ok("mosaic" in parseJobParams(new URLSearchParams({ mosaic: "on" })),
+    "parseJobParams の戻り値に mosaic が入っている（無いと画面の選択が捨てられる）");
+  assert.strictEqual(parseJobParams(new URLSearchParams({ mosaic: "on" })).mosaic, "on");
 });
 
 t("サーバ: モザイク工程(stage m)を走行中として扱う（二重起動を防ぐ）", () => {

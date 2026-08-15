@@ -4,7 +4,7 @@
 // サイズ選択→.video-area の px のみを変更（contain 計算）。枠は一切変更しない。
 
 const state = {
-  file: null, sub: "none", mosaic: "none", trim: "none",
+  file: null, sub: "none", mosaic: "none", trim: "none", breath: "",
   cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
 };
@@ -69,6 +69,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     if (g === "sub") updateSubDesc();
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
     if (g === "trim") updateTrimDesc();
+    if (g === "breath") updateBreathDesc();
     if (g === "cut") showCut();
     if (g === "size") updateVideoArea(btn);
     refresh();
@@ -156,6 +157,20 @@ function updateTrimDesc() {
   el.textContent = state.trim === "on"
     ? "黙っている時間と「えーと」「あのー」を詰めます。話した中身はそのまま残ります。"
     : "黙っている時間と「えーと」はそのまま残ります。";
+}
+
+// つなぎ目の間（G-EDIT-BREATH-SERVER）。「間」という言葉だけでは何が起きるか分からないので、
+// 出来上がりがどう聞こえるかで言い直す。
+function updateBreathDesc() {
+  const el = $("breath-desc");
+  if (!el) return;
+  const t = {
+    "": "見どころを繋いだ所に、一呼吸ぶんの間が入ります。",
+    "0.4": "見どころを繋いだ所の間を短めにします。テンポよく聞こえます。",
+    1: "見どころを繋いだ所の間を長めにします。ゆったり聞こえます。",
+    off: "間を入れません。前の言葉が終わった瞬間に次が始まります。",
+  };
+  el.textContent = t[state.breath] ?? t[""];
 }
 
 function updateMosaicDesc() {
@@ -422,6 +437,7 @@ function run() {
     sub: state.sub,
     mosaic: state.mosaic,
     trim: state.trim,
+    breath: state.breath,
     cut: state.cut,
     size: state.size,
     name: state.file.name,

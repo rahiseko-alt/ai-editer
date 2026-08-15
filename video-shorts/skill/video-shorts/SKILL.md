@@ -153,6 +153,15 @@ node pipeline.mjs select work/<id>
 node pipeline.mjs render work/<id> --duration-min <分> --export <youtube|sns|x|archive|light|standard> --caption-font <kaku|maru|mincho|hand|marker> --caption-fill <#RRGGBB> --caption-outline-color <#RRGGBB> --caption-inner <#RRGGBB> --caption-band <#RRGGBB>
 ```
 - 「おまかせ」「標準」と答えた場合は、それぞれのオプションを省略してよい（既定の動きになる）。
+- **ダイジェスト（`--mode digest`）のつなぎ目には、既定で「息継ぎの間」が入る**（`--breath`、既定0.7秒）。
+  素材に元々あった無音（ルームトーン）を捨てずに前後へ残す方式なので、通常は指定不要。
+  「もっとテンポよく詰めたい」と言われたら `--breath 0.3` のように短くし、
+  「間は要らない・従来どおりでよい」なら `--breath off` を渡す。
+  素材が元々その箇所に持っていた間より長い間は作らないので、指定を大きくしても不自然には伸びない。
+```powershell
+node pipeline.mjs render work/<id> --breath 0.3    # 詰めたいとき
+node pipeline.mjs render work/<id> --breath off    # 間を付けないとき
+```
 - `--no-sub` は「手順2で答えた字幕設定を、この回だけ変更したい場合」の明示的な上書き用オプション。
 ```powershell
 node pipeline.mjs render work/<id> --no-sub
