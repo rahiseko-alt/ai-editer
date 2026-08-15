@@ -118,8 +118,8 @@
 <script type="application/json" id="roadmap-data">{
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
-  "active": "G-EDIT-UI-SETTINGS",
-  "next": "PR #122（Windows実機でclaude起動が失敗し真因も消える2欠陥の修正）をマージし、マスターの手元Windowsで動画作成が通ることを確認する。動いたら backlog: ①Windows対応の穴（テスト用の偽claudeが拡張子なしファイルのためWindowsでは原理的に起動不可＝現行のテスト構造ではWindows経路を検証できない。CIへWindowsジョブを足すかの判断も含む）②音のカット端への10〜50msフェード（無音が全く無く伸ばせない箇所に素の切り口が残る。renderClipの音声経路がtrimの有無で分岐しているため別葉として切り出す）。いずれも着手前に『案件の絶対起点』どおり原子ツリーへ描いてから作業する。",
+  "active": "G-TESTINFRA-WINCI",
+  "next": "マスターの手元Windowsで動画作成が成功したことを実機確認済み（マスター報告「動画は成功です」／修正はPR #122・squash 8353919）。よってPR #122起点の宿題は完了。次は backlog を上から順に着手する: ①Windows対応の穴（テスト用の偽claudeが拡張子なしファイルとして書かれるためWindowsのspawnでは原理的に起動できず、現行のテスト構造ではWindows経路を検証しようとしても検証できない。既存のtodoノード G-TESTINFRA-WINCI と併せ、CIへWindowsジョブを足すかの判断も含めて扱う）②音のカット端への10〜50msフェード（無音が全く無く伸ばせない箇所に素の切り口が残る。renderClipの音声経路がtrimの有無で分岐しているため別葉として切り出す）。いずれも『案件の絶対起点』どおり、着手前に原子ツリーへ描き criteria/verify を凍結してから実装に入る（ツリー確定前の実装着手は禁止）。",
   "handoff": {
    "done": [
     "マスター指示「裏側で動いていいけどUI上で操作できるようにできるか」を受け、字幕スタイル一式・尺の指示・書き出しプリセットの8設定をCLI専用からブラウザ画面へ開放するG-EDIT-UI-SETTINGSに着手。basis-reviewerを3ラウンド通し反証19件(第1回7件・第2回9件・第3回3件)へ対応し、18葉で凍結。",
@@ -131,7 +131,8 @@
     "マスターの手元Windowsで実際に動かしたところ、画面から動画作成を実行すると『claude 終了コード 1。stderr: 』とだけ出て失敗した。ターミナルでのclaude単体利用は6ヶ月間正常・ログイン済みで、このサーバ経由のときだけ失敗する状態。仮説3本（フラグの妥当性／Windows固有のプロセス起動／認証情報の到達性）を独立サブエージェント3体へ並列調査させ、原因を2つ特定してPR #122で修正した。",
     "【原因1】claudeは『起動前の失敗』(不正フラグ等)をstderrへ、『実行中の失敗』(認証・通信・モデル・クォータ)を結果としてstdoutへ出す(公式ドキュメント Run Claude Code programmatically)。src/claude-run.mjsのcloseハンドラは非0終了時にstdoutBufを読まずに捨てており、後者が起きると手掛かりがゼロになっていた。調査担当がANTHROPIC_BASE_URLを到達不能値にして『終了コード1・stderr 0バイト・診断は全部stdout』の完全再現に成功。stderr/stdout両方を報告へ含める形へ修正し、偽claudeで修正前後の差(修正前=『stderr: 』のみ／修正後=理由が表示)を実測した。",
     "【原因2】src/claude-safety.mjsのALLOWED_ENV_VARSがPOSIX名だけで構成されており、Windows必須の変数が1つも無かった。WindowsのPowerShellはHOMEを定義しない(定義するのはGit Bash等MSYS系のみ)ため許可リストを通過するホーム情報がゼロになり、%USERPROFILE%\\.claude\\.credentials.jsonへ到達できない。加えてSystemRoot不在はWinsockのプロバイダDLL読込を壊す既知の事故パターン(golang/go#25513が同型)で、claudeは起動直後に必ずHTTPS通信を行う。USERPROFILE/SystemRoot/windir/APPDATA/LOCALAPPDATA等を追加。秘密情報を渡さない方針は不変で、ANTHROPIC_API_KEY等の遮断をWindows模擬環境で実測確認した。",
-    "再発防止として機械検査を3本追加。tests/claude-safety-win-env-check.mjs(許可リストがClaude Code CLI自身の定めるWindows最小集合を満たすかを対照表と突き合わせ。Linux上で判定できる形。この検査で実際にUSERNAMEの漏れを発見し追加した)、tests/claude-run-failure-surface-check.mjs(非0終了時にstderr/stdout両方が呼び出し側へ届くことを偽claudeで実際に失敗させて実測)、tests/claude-run-real-check.mjs(本物のclaudeを本番と同じ経路で起こす疎通検査。CIには本物のclaudeが無いためpnpm test未登録・手元実行用)。あわせてsrc/digest-editor.mjsの--model退避判定がstderrだけを見ていた関連バグも修正した。"
+    "再発防止として機械検査を3本追加。tests/claude-safety-win-env-check.mjs(許可リストがClaude Code CLI自身の定めるWindows最小集合を満たすかを対照表と突き合わせ。Linux上で判定できる形。この検査で実際にUSERNAMEの漏れを発見し追加した)、tests/claude-run-failure-surface-check.mjs(非0終了時にstderr/stdout両方が呼び出し側へ届くことを偽claudeで実際に失敗させて実測)、tests/claude-run-real-check.mjs(本物のclaudeを本番と同じ経路で起こす疎通検査。CIには本物のclaudeが無いためpnpm test未登録・手元実行用)。あわせてsrc/digest-editor.mjsの--model退避判定がstderrだけを見ていた関連バグも修正した。",
+    "マスターの手元Windows実機で動画作成が通ることを確認した（マスター報告「動画は成功です」）。PR #122 はCI全12件緑のうえ squash 8353919 でマージ済みで、meta.next が求めていた実機確認はこれで完了。以降は backlog 2件（Windows検証構造の穴／音のカット端フェード）へ移る。"
    ],
    "trouble": [
     "Windows実機の不具合に対し、原因を確かめずに『環境変数HOMEを設定する』等の当てずっぽうの対処をマスターへ2回続けて指示し、いずれも外して信頼を損ねた。真因が見えなかったのは製品コードがstdout(=真因の唯一の出所)を捨てていたためだが、それを調べる前に手を動かしたのが誤り。マスターから『小手先の修正は禁止。0ベースで修正プランを練れ。サブに徹底リサーチさせろ。原因を3個考えろ』と指示され、独立3系統の並列調査に切り替えて初めて原因が確定した。症状が説明できないうちは対処を提案せず、まず観測できる形にすること。",
