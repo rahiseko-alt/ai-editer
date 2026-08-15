@@ -103,14 +103,7 @@ body {
 
 .hidden { display: none !important; }
 
-/* ===== 背景（静的グラデ・warm tone）===== */
-body::before {
-  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(ellipse 60% 45% at 12% 88%, rgba(77,122,77,.11), transparent 62%),
-    radial-gradient(ellipse 55% 42% at 88% 8%, rgba(193,170,140,.11), transparent 58%),
-    radial-gradient(ellipse 48% 42% at 72% 96%, rgba(120,150,170,.06), transparent 60%);
-}
+/* 背景のグラデーション(body::before)は 2026-08-15 の刷新で削除（地は純白）。 */
 
 /* ===== レイヤー z-index ===== */
 .topbar, .two-col { position: relative; z-index: 1; }

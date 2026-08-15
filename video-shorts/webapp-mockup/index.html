@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI-Editer 無料版 — 動画をショートに（モック）</title>
+  <title>AI-Editer — 動画をショートに</title>
+  <link rel="icon" href="/favicon.ico" sizes="16x16" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles-cards.css" />
   <link rel="stylesheet" href="styles-overlay.css" />
   <link rel="stylesheet" href="styles-editing.css" />
+  <link rel="stylesheet" href="styles-revamp.css" />
 </head>
 <body>
   <!-- デザイン確認用モック。実処理は未接続。
@@ -16,24 +18,34 @@
        デバイス枠固定・内側の.video-areaだけがサイズに応じてcontain表示。 -->
 
   <!-- ===== 上部バー ===== -->
-  <header class="topbar" role="banner">
+  <header class="topbar" role="banner" data-testid="app-header">
     <div class="brand">
       <span class="spark" aria-hidden="true">✦</span> AI-Editer
-      <span class="badge">無料版</span>
     </div>
-    <button class="pro-btn" id="pro-btn">有料版はこちら →</button>
   </header>
 
   <!-- ===== 本体 2カラム ===== -->
-  <main class="two-col" role="main">
+  <main class="two-col three-pane" role="main">
+
+    <!-- ==================== 左：手順とライブラリ ==================== -->
+    <nav class="pane-left" data-testid="pane-left" aria-label="手順">
+      <p class="rail-head">ステップ</p>
+      <ol class="rail-steps">
+        <li class="rail-step" data-testid="step-item" data-step-no="1">動画を入れる</li>
+        <li class="rail-step" data-testid="step-item" data-step-no="2">仕上げを選ぶ</li>
+        <li class="rail-step" data-testid="step-item" data-step-no="3">書き出す</li>
+      </ol>
+      <p class="rail-head">ライブラリ</p>
+      <p class="rail-note" id="rail-privacy">この動画はこのPCの中だけで処理されます（外部に送りません）。</p>
+    </nav>
 
     <!-- ==================== 左：設定カラム ==================== -->
-    <div class="col-settings" id="col-settings">
+    <div class="col-settings pane-right" id="col-settings" data-testid="pane-right">
 
       <!-- グループ1: 動画 -->
       <section class="settings-group" id="card-video" aria-labelledby="h-video">
         <h2 class="group-label" id="h-video">
-          <span class="step-n" aria-hidden="true">1</span> 動画
+          動画
         </h2>
         <label class="drop" id="drop" for="file" tabindex="0" role="button" aria-label="動画をドロップまたはクリックで選択">
           <input type="file" id="file" accept="video/*" hidden />
@@ -51,7 +63,7 @@
       <!-- グループ2: 字幕 -->
       <section class="settings-group" id="card-sub" aria-labelledby="h-sub">
         <h2 class="group-label" id="h-sub">
-          <span class="step-n" aria-hidden="true">2</span> 字幕
+          字幕
         </h2>
         <div class="chips sub-toggle" data-group="sub" role="group" aria-label="字幕のあり・なし">
           <button class="chip sub-chip is-on" data-val="none" aria-pressed="true">なし</button>
@@ -114,7 +126,7 @@
       <!-- グループ2.5: 顔モザイク -->
       <section class="settings-group" id="card-mosaic" aria-labelledby="h-mosaic">
         <h2 class="group-label" id="h-mosaic">
-          <span class="step-n" aria-hidden="true">3</span> 顔を隠す
+          顔を隠す
         </h2>
         <div class="chips mosaic-toggle" data-group="mosaic" role="group" aria-label="顔モザイクのあり・なし">
           <button class="chip mosaic-chip is-on" data-val="none" aria-pressed="true">なし</button>
@@ -126,7 +138,7 @@
       <!-- 無音・言い淀みを詰める（G-EDIT-TRIM） -->
       <section class="settings-group" id="card-trim" aria-labelledby="h-trim">
         <h2 class="group-label" id="h-trim">
-          <span class="step-n" aria-hidden="true">4</span> 間を詰める
+          間を詰める
         </h2>
         <div class="chips trim-toggle" data-group="trim" role="group" aria-label="間を詰めるあり・なし">
           <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">なし</button>
@@ -138,7 +150,7 @@
       <!-- グループ4b: つなぎ目の間（G-EDIT-BREATH-SERVER） -->
       <section class="settings-group" id="card-breath" aria-labelledby="h-breath">
         <h2 class="group-label" id="h-breath">
-          <span class="step-n" aria-hidden="true">5</span> つなぎ目の間
+          つなぎ目の間
         </h2>
         <div class="chips breath-toggle" data-group="breath" role="group" aria-label="つなぎ目の間の長さ">
           <button class="chip breath-chip is-on" data-val="" aria-pressed="true">おまかせ</button>
@@ -152,7 +164,7 @@
       <!-- グループ3: カット -->
       <section class="settings-group" id="card-cut" aria-labelledby="h-cut">
         <h2 class="group-label" id="h-cut">
-          <span class="step-n" aria-hidden="true">5</span> カットの目安
+          カットの目安
         </h2>
         <div class="chips chips-wrap" data-group="cut" role="group" aria-label="カット方法">
           <button class="chip is-on" data-val="topic" aria-pressed="true">話題で切る</button>
@@ -181,7 +193,7 @@
       <!-- グループ4: サイズ -->
       <section class="settings-group" id="card-size" aria-labelledby="h-size">
         <h2 class="group-label" id="h-size">
-          <span class="step-n" aria-hidden="true">6</span> サイズ
+          サイズ
         </h2>
         <div class="size-chips" data-group="size" role="group" aria-label="動画サイズ">
           <button class="chip size-chip is-on" data-val="9:16" data-ar="9/16" aria-pressed="true">
@@ -198,7 +210,7 @@
       <!-- グループ7: 書き出し -->
       <section class="settings-group" id="card-export" aria-labelledby="h-export">
         <h2 class="group-label" id="h-export">
-          <span class="step-n" aria-hidden="true">7</span> 書き出し
+          書き出し
         </h2>
         <div class="chips chips-wrap" data-group="exportPreset" role="group" aria-label="書き出しの用途">
           <button class="chip is-on" data-val="" aria-pressed="true">標準</button>
@@ -214,7 +226,7 @@
     </div><!-- /col-settings -->
 
     <!-- ==================== 右：確認カラム ==================== -->
-    <div class="col-preview" id="col-preview">
+    <div class="col-preview pane-center" id="col-preview" data-testid="pane-center">
 
       <!-- 端末切替タブ -->
       <div class="device-tabs" role="group" aria-label="プレビュー端末切替">
@@ -251,7 +263,7 @@
           <span class="step-star" aria-hidden="true">✦</span> AIの確認
         </h2>
         <div class="bubble">
-          <p id="ai-text">上で動画と設定を選ぶと、ここで内容を確認します。</p>
+          <p id="ai-text" data-testid="guide-text">上で動画と設定を選ぶと、ここで内容を確認します。</p>
           <ul class="summary hidden" id="summary" aria-live="polite"></ul>
         </div>
       </div>

@@ -295,7 +295,7 @@ function refresh() {
   $("cta-hint").classList.toggle("hidden", ready);
   const t = $("ai-text"), sm = $("summary");
   if (!ready) {
-    t.textContent = "まずは動画を1つ入れてください。左上の枠にドラッグ、またはクリックで選べます。そのあと①〜④を上から選ぶだけです。";
+    t.textContent = "はじめに動画を入れてください。左の枠にドラッグ、またはクリックで選べます。そのあとは右の設定を上から順に選ぶだけです。";
     sm.classList.add("hidden"); sm.innerHTML = ""; return;
   }
   t.textContent = "準備OK！　あとは『編集実行』を押すだけです。内容はこちら：";

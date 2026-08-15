@@ -1,0 +1,174 @@
+/* styles-revamp.css — 2026-08-15 のUI刷新（G-UI-REVAMP の LOOK / INFO）。
+   マスター指示: ①色を変えろ・背景は白 ②ヘッダーの無料版/有料版はこちらを削除
+                 ③現状を0ベースにして主要ツールと近しい形（3ペイン）へ刷新。
+   アクセントはニアブラック #0d1117（マスター承認済み）。
+
+   既存の styles.css / styles-cards.css / styles-editing.css / styles-overlay.css の
+   あとに読み込み、変数と骨組みだけを上書きする。既存の id・class・DOM順は温存して
+   あるため、既存テスト（webapp-mobile-layout-check / -static-check ほか）は影響を受けない。 */
+
+/* ===== 1. 配色：地は純白、アクセントはニアブラック ===== */
+:root {
+  --bg: #ffffff;
+  --surface-0: #ffffff;
+  --surface-1: #ffffff;
+  --surface-2: #f4f5f7;
+  --surface-3: #edeff2;
+
+  --ink: #0d1117;          /* 白背景に対し約 18.9:1 */
+  --muted: #4a5259;        /* 白背景に対し約 8.0:1（AA の 4.5:1 を余裕で満たす） */
+  --line: #e6e8eb;
+
+  --accent: #0d1117;
+  --accent-text: #ffffff;  /* #0d1117 の上で約 18.9:1 */
+  --ok: #0d1117;
+
+  --chip-on-bg: #f4f5f7;
+  --chip-on-border: #0d1117;
+  --chip-on-text: #0d1117;
+  --chip-off-bg: transparent;
+  --chip-off-border: #d3d7dd;
+  --chip-off-text: #3a4149;
+
+  /* 影は白背景では線に置き換える（面を濁らせないため） */
+  --shadow-card: none;
+  --shadow-card-hover: none;
+  --shadow-panel: none;
+
+  --pane-left-w: 200px;
+  --pane-right-w: 320px;
+  --pane-break: 900px;     /* この幅未満で縦積みへ落ちる */
+}
+
+/* 地を白で塗り切る（背景画像・グラデーションは一切置かない） */
+html, body { background: var(--bg); background-image: none; }
+html::before, html::after, body::before, body::after { content: none; background-image: none; }
+
+/* ===== 2. ヘッダー ===== */
+.topbar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
+}
+.brand { color: var(--ink); }
+.spark { color: var(--ink); }
+
+/* ===== 3. 3ペイン（左=手順 / 中央=プレビュー / 右=設定）=====
+   DOM順は 左 → 設定 → プレビュー のまま（既存の静的検査が DOM順に依存するため）。
+   見た目の並びは grid-column で決める。 */
+.three-pane {
+  display: grid;
+  grid-template-columns: var(--pane-left-w) 1fr var(--pane-right-w);
+  align-items: stretch;
+  gap: 0;
+  height: calc(100vh - var(--topbar-h));
+  padding: 0;
+  background: #ffffff;
+}
+.three-pane > .pane-left { grid-column: 1; grid-row: 1; }
+.three-pane > .pane-center { grid-column: 2; grid-row: 1; }
+.three-pane > .pane-right { grid-column: 3; grid-row: 1; }
+
+.three-pane > .pane-left,
+.three-pane > .pane-center,
+.three-pane > .pane-right {
+  background: #ffffff;
+  background-image: none;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* 区切りは色の差ではなく罫線で示す（LOOK-RULE） */
+.three-pane > .pane-left { border-right: 1px solid var(--line); padding: 16px 10px; }
+.three-pane > .pane-center { border-right: 1px solid var(--line); padding: 20px; }
+.three-pane > .pane-right { padding: 14px 16px; }
+
+/* ===== 4. 左ペイン（手順・ライブラリ）===== */
+.rail-head {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  letter-spacing: .07em; padding: 6px 10px 8px; margin: 0;
+}
+.rail-steps { list-style: none; margin: 0 0 8px; padding: 0; }
+.rail-step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  color: var(--ink); font-size: 13px;
+}
+.rail-step::before {
+  content: attr(data-step-no);
+  flex: none;
+  width: 19px; height: 19px; border-radius: 50%;
+  border: 1.5px solid var(--chip-off-border);
+  display: grid; place-items: center;
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  background-image: none;
+}
+.rail-step:first-child { background: var(--surface-2); font-weight: 600; }
+.rail-step:first-child::before { background: var(--ink); border-color: var(--ink); color: #ffffff; }
+.rail-note { color: var(--muted); font-size: 11.5px; padding: 10px; margin: 0; }
+
+/* ===== 5. カード・チップ・ボタン（白地に合わせる）===== */
+.settings-group {
+  background: #ffffff;
+  background-image: none;
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.chip.is-on, .chip[aria-pressed="true"] {
+  background: var(--chip-on-bg);
+  border-color: var(--chip-on-border);
+  color: var(--chip-on-text);
+  font-weight: 600;
+}
+.btn.cta {
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  box-shadow: none;
+}
+.btn.cta:disabled { opacity: .35; }
+.group-note, .cta-hint, .progress-note { color: var(--muted); }
+
+/* ===== 6. 狭い画面（縦積み）=====
+   grid-column の指定を外して DOM順（左 → 設定 → プレビュー）で縦に積む。 */
+@media (max-width: 900px) {
+  .three-pane {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .three-pane > .pane-left,
+  .three-pane > .pane-center,
+  .three-pane > .pane-right {
+    grid-column: 1;
+    grid-row: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-y: visible;
+  }
+}
+
+/* ===== 7. 右ペインは1列にする =====
+   既存の .col-settings は 2列グリッド（左カラム 760px 前提）だったため、
+   320px の右ペインでは文字が詰まる。刷新後は縦1列に積む。
+   #card-video 等の grid-column 指定も 1 列目へ寄せる。 */
+.three-pane > .pane-right.col-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: none;
+  gap: 12px;
+  align-content: start;
+}
+.three-pane > .pane-right.col-settings > .settings-group {
+  grid-column: 1 / -1;
+}
+
+/* ===== 8. プレビュー枠を無彩色にする（暖色の名残を消す）===== */
+.three-pane .device-frame { background: #ffffff; border-color: var(--line); }
+.three-pane .device-screen,
+.three-pane .pc-screen { background: var(--surface-3); }
+.three-pane .device-notch,
+.three-pane .device-home { background: var(--surface-2); }
+.three-pane .pc-topbar { background: var(--surface-2); }
+.three-pane .video-area { background: var(--surface-3); }
