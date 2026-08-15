@@ -13,11 +13,13 @@
 // この検査が確認すること:
 //   (1) A/B/C 共通で選べる設定(mode=topic/sub=on/orient=縦)を同じ凍結素材へ適用したとき、
 //       候補本数・出力解像度(縦長)・字幕(.ass、hookの中身を含む)の有無が3経路で一致する。
-//   (2) --duration-min/--export のようなCLI専用フラグを扱うモジュール(export-presets.mjs)が、
+//   (2) --duration-min/--export のようなCLI専用だったフラグを扱うモジュール(export-presets.mjs)が、
 //       ソース側と配布物(経路C)側で同じ設定を返す(=配布物への入れ忘れを検出できる)。
-//       画面(経路B)はこれらのフラグを渡す配線を持たない(server/job-params.mjs が
-//       sub/cut/size/cutMin/mosaic/trim/name の7項目しか受け取らない、既知の制約
-//       §4 Constraints)ため、B は比較対象に含めない。
+//       画面(経路B)は、G-EDIT-UI-SETTINGS(2026-08-15)によりexportPreset/durationMin等を含む
+//       8設定の配線が追加されたため、旧来「これらのフラグを渡す配線を持たない」としていた
+//       前提はもう成立しない。実クエリ文字列をparseJobParams()で解決してからstartJob()へ渡す形で
+//       Bも比較対象へ含め、exportPreset=snsが実際の出力ファイルサイズへ反映されることを確認する
+//       (下記(2')。INV-1: 3経路の一致に画面を含める)。
 //   (3) B(画面)は、M3で追加したフォント確認ゲート(文字起こし前に止まる)が実際に効く。
 //       旧実装はこのゲートが pipeline.mjs の cmdInit だけにあり、画面経路は init を経由せず
 //       直接 transcribe.py を起動するため素通りしていた(M7で発覚した回帰。
@@ -35,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import { probeSize } from "../src/render-vertical.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
 import { startJob, subscribeJob, unsubscribeJob } from "../server/pipeline-runner.mjs";
+import { parseJobParams } from "../server/job-params.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url))); // = video-shorts/
 const PIPELINE_SRC = path.join(ROOT, "pipeline.mjs");
@@ -210,6 +213,38 @@ async function main() {
     const bWorkDir = path.join(ROOT, "work", bJobId);
     const bOutDir = path.join(ROOT, "output", bJobId);
     const bCand = JSON.parse(fs.readFileSync(path.join(bOutDir, "candidates.json"), "utf-8"));
+
+    // ── (2') 経路B: exportPreset(かつてCLI専用だった書き出しプリセット)が実HTTPクエリ経由でも
+    // 実際の出力へ反映される(G-EDIT-UI-SETTINGS完了により、旧来「画面はこのフラグの配線を
+    // 持たない」としていた前提が崩れたため。parseJobParams()で実クエリ文字列を解決してから
+    // startJob()へ渡すことで、A/Cが直接import()するモジュール関数比較(下の(2))とは別に、
+    // 実際にHTTPの境界を通した場合の反映まで確認する)。
+    const bExportJobId = makeUniqueJobId("e2e-three-paths-b-export.mp4");
+    jobIds.push(bExportJobId);
+    const bExportQuery = new URLSearchParams({
+      sub: "on", cut: "topic", size: "9:16", mosaic: "none", trim: "none", exportPreset: "sns", name: "b-export.mp4",
+    });
+    const bExportOpts = parseJobParams(bExportQuery);
+    check(bExportOpts.exportPreset === "sns", "経路B: parseJobParamsがexportPreset=snsを受理する");
+    const bExportStarted = startJob(bExportJobId, path.resolve(input), bExportOpts);
+    check(bExportStarted === true, "経路B(exportPreset=sns): startJob が受理された");
+    const bExportLines = await waitForJob(bExportJobId);
+    check(
+      bExportLines.some((l) => /^event:\s*done\b/m.test(l)),
+      "経路B(exportPreset=sns): ジョブが done で終わる",
+      bExportLines.join("").slice(0, 400)
+    );
+    const bExportOutDir = path.join(ROOT, "output", bExportJobId);
+    const bExportCand = JSON.parse(fs.readFileSync(path.join(bExportOutDir, "candidates.json"), "utf-8"));
+    const bDefaultSize = fs.statSync(bCand.candidates[0].path).size;
+    const bExportSize = fs.statSync(bExportCand.candidates[0].path).size;
+    check(
+      bDefaultSize !== bExportSize,
+      "経路B: exportPreset=snsを指定した出力が、未指定(標準)の出力とファイルサイズで異なる" +
+        "(=HTTPクエリ経由でexportPresetが実際にレンダリングへ反映されている。対照: 常に同じ" +
+        "設定で焼く実装だとここが一致してしまう)",
+      `標準=${bDefaultSize}B sns=${bExportSize}B`
+    );
 
     // ── (1) 3経路の成果物突き合わせ ──────────────────────────────────
     check(

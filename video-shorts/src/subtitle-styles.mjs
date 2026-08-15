@@ -167,9 +167,17 @@ export function scaleToken(n, scale) {
   return Math.max(1, Math.round(n * scale));
 }
 
-/** スタイル名の正引き。未知なら null（呼出側で利用可能一覧を提示してエラーにする） */
+/**
+ * スタイル名の正引き。未知なら null（呼出側で利用可能一覧を提示してエラーにする）。
+ * getFont() と同じく Object.hasOwn で確認する（2026-08-15 修正）。修正前は `SUBTITLE_STYLES[name]`
+ * という素朴なプロパティアクセスだったため、name="__proto__" のとき継承された Object.prototype
+ * が返り（truthy）、未知スタイルとして弾かれずに通過していた。resolveCaptionStyle() はこれを
+ * ベーススタイルとして `{ ...base, ... }` へ展開するため、Object.prototype の列挙可能な
+ * 自前プロパティは無く空オブジェクトへ潰れ、mode/fontSize等が全て undefined のまま描画され
+ * 壊れる（G-EDIT-UI-SETTINGS-VALIDATE：意地悪な値でジョブを失敗させない、を満たせなくなる）。
+ */
 export function getStyle(name) {
-  return SUBTITLE_STYLES[name] || null;
+  return typeof name === "string" && Object.hasOwn(SUBTITLE_STYLES, name) ? SUBTITLE_STYLES[name] : null;
 }
 
 /** Web UI / CLI ヘルプ用：選択肢の一覧（key・label・description） */

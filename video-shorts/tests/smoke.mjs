@@ -18,7 +18,7 @@ import {
 import { chunkSegments, parseResponse, buildPrompt } from "../src/select-segments.mjs";
 import { wordsInRange, groupCaptions, buildAss } from "../src/srt-builder.mjs";
 import { mergeShortSegments } from "../src/snap-boundaries.mjs";
-import { resolveJobSettings, renderLabel, subscribeJob } from "../server/pipeline-runner.mjs";
+import { resolveJobSettings, renderLabel, subscribeJob, buildRenderArgs } from "../server/pipeline-runner.mjs";
 import { parseJobParams } from "../server/job-params.mjs";
 import { parseBreathOption } from "../src/breath-handles.mjs";
 import { makeUniqueJobId } from "../src/job-id.mjs";
@@ -594,9 +594,12 @@ t("サーバ: /api/jobs で受け取った設定が、1つも落ちずに startJ
 });
 
 t("サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる", () => {
-  const runner = fs.readFileSync(path.join(ROOT, "server", "pipeline-runner.mjs"), "utf-8");
-  assert.ok(/renderArgs\.push\("--breath", String\(opts\.breath\)\)/.test(runner),
-    "renderArgs に --breath が入る");
+  // ソース文字列の正規表現照合ではなく、buildRenderArgs() を実際に呼び出しargvを実測する
+  // (G-EDIT-UI-SETTINGS-WIRING-SERVER。ソース照合はCodeRabbitが実際に指摘した弱点そのもの)。
+  const argv = buildRenderArgs("/tmp/pipeline.mjs", "/tmp/work/job1", { breath: "0.4" });
+  const i = argv.indexOf("--breath");
+  assert.ok(i !== -1, "argv に --breath が入っていない");
+  assert.strictEqual(argv[i + 1], "0.4", "--breath の値が渡した breath と一致しない");
   // 渡す値は pipeline.mjs が受け付ける形であること（サーバが弾いた値で fail-fast させない）。
   for (const v of ["off", "0.4", "1"]) {
     const got = parseJobParams(new URLSearchParams({ breath: v })).breath;
@@ -613,16 +616,36 @@ t("UI: つなぎ目の間のチップ群に、なし／おまかせ／長さ指�
   assert.ok(/data-val="0\.4"/.test(m[0]) && /data-val="1"/.test(m[0]), "長さを選べる");
 });
 
+// G-EDIT-UI-SETTINGS-WIRING-CLIENT: run()の送信処理は state を Object.entries() で丸ごと
+// 走査し、個別のキー(k)がEXCLUDEDリスト([file, device, cutMin])に無ければ自動的に送信対象へ
+// なる（params.set(...)を1つずつ書き足す形をやめた＝過去2回の「足し忘れ」事故の再発防止）。
+// よって「breath/trim/mosaicが送られるか」は「stateの初期キーに存在し、かつEXCLUDEDに
+// 含まれていないか」という実際の判定メカニズムで見る（`breath:\s*state\.breath`のような
+// 個別記述のソース照合は、この丸ごと走査の実装では意味を失う）。
+function readAppJs() {
+  return fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
+}
+function stateBlock(app) {
+  const m = app.match(/const state = \{[^]*?\n\};/);
+  assert.ok(m, "state の初期値ブロックが見つからない");
+  return m[0];
+}
+function excludedKeys(app) {
+  const m = app.match(/\[("file", "device", "cutMin"|"device", "file", "cutMin"|[^\]]*)\]\.includes\(k\)/);
+  assert.ok(m, "run()の送信ループの除外リストが見つからない");
+  return m[0];
+}
+
 t("UI: 選んだ間の長さが /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/breath:\s*state\.breath/.test(app), "送信パラメータに breath が入る");
-  assert.ok(/breath:\s*""/.test(app), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+  const app = readAppJs();
+  assert.ok(/breath:\s*""/.test(stateBlock(app)), "画面の初期値はおまかせ（pipeline.mjs の既定に従う）");
+  assert.ok(!/"breath"/.test(excludedKeys(app)), "breath が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/trim:\s*state\.trim/.test(app), "送信パラメータに trim が入る");
-  assert.ok(/trim:\s*"none"/.test(app), "画面の初期値が none（既定で詰めない）");
+  const app = readAppJs();
+  assert.ok(/trim:\s*"none"/.test(stateBlock(app)), "画面の初期値が none（既定で詰めない）");
+  assert.ok(!/"trim"/.test(excludedKeys(app)), "trim が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {
@@ -698,8 +721,9 @@ t("UI: 候補に区間の時刻を持たせている（そのクリップの語�
 });
 
 t("UI: 選んだモザイクの値が /api/jobs のパラメータに載る", () => {
-  const app = fs.readFileSync(path.join(ROOT, "webapp-mockup", "app.js"), "utf-8");
-  assert.ok(/mosaic:\s*state\.mosaic/.test(app), "送信パラメータに mosaic が入る");
+  const app = readAppJs();
+  assert.ok(/mosaic:\s*"none"/.test(stateBlock(app)), "画面の初期値が none（既定でモザイクを掛けない）");
+  assert.ok(!/"mosaic"/.test(excludedKeys(app)), "mosaic が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 // 画面→サーバの配線。ここが抜けると「画面で選んでもモザイクが掛からない」のに
