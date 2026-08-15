@@ -118,8 +118,8 @@
 <script type="application/json" id="roadmap-data">{
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
-  "active": "G-EDIT-BREATH",
-  "next": "CLI専用になっている利用者向け設定を、ブラウザ画面から操作できるようにする（マスター指示 2026-08-15）。画面に出ていないのは①字幕スタイル一式(--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band/--sub-style、PR #116で実装)②尺の指示(--target-min/--duration-min/--min-sec)③書き出しプリセット(--export)の3群。既存のチップ群と同じ作法で今の画面に足す。その後に音のカット端への10〜50msフェード（backlog: 無音が全く無く伸ばせない箇所に素の切り口が残る。renderClip の音声経路が trim の有無で分岐しているため別葉として切り出す）。",
+  "active": "G-EDIT-UI-SETTINGS",
+  "next": "G-EDIT-UI-SETTINGSの11葉を実装する。順序はM1(buildRenderArgs切り出し)→M2(job-params.mjsへ8設定追加)→M3(画面へ設定群追加)→M4(実ブラウザ×実サーバ×出力実測の検査)→M5(e2e-three-paths-check.mjsの前提更新)→M6(evidence記入・PR)。詳細計画（User Goal/Journey/Acceptance Criteria/Adversarial Review）はマスター承認済み。完了後は音のカット端への10〜50msフェード（backlog: 無音が全く無く伸ばせない箇所に素の切り口が残る）。",
   "handoff": {
    "done": [
     "PR #116（字幕スタイル自由指定・12葉）をマージ。",
@@ -4911,6 +4911,158 @@
       }
      ],
      "status": "done"
+    },
+    {
+     "id": "G-EDIT-UI-SETTINGS",
+     "kind": "state",
+     "theme": "字幕の見た目・1本の長さ・書き出し画質を、CLIを使わずブラウザ画面だけで選べる",
+     "meaning": "マスターがコマンドを打たなくても、これまで作った字幕スタイル(PR #116)・尺の指示(M4)・書き出しプリセット(M5)を実際に使える。設定を1つ足すたびに「画面で選べるのに一切効かない」事故を繰り返さない",
+     "detail": "2026-08-15 マスター指示「裏側でお前動いていいけど、UI上で操作できるようにできるか？」を受けて着手。現状ブラウザ画面から操作できるのは6項目(字幕あり/なし・切り方・サイズ・顔モザイク・間を詰める・つなぎ目の間)だけで、字幕スタイル一式(--caption-font/--caption-fill/--caption-outline-color/--caption-inner/--caption-band/--sub-style)・尺の指示(--duration-min)・書き出しプリセット(--export)はCLIからしか触れない。\n\n【前提の確認】build-dist.mjsはserver/とwebapp-mockup/を配布物から除外しており(コメント上「保留経路」)、tests/e2e-three-paths-check.mjsも画面を「実際の入口ではない・退行検知用」と明記している。マスターへ確認し、「ブラウザ画面を本番の制御盤にする」「利用者は現状マスター本人(実客はまだ無い)」の2点を確定した。配布物(build-dist.mjs)へserver/webapp-mockup/を含めるかは別判断とし、今回のNon-goalとする(R1として残す)。\n\n【繰り返されている事故】設定を画面から足したのに結線が欠けて効かない事故が過去2回発生: 顔モザイク(G-EDIT-MOSAIC-UI-O-2)、つなぎ目の間(docs/failures.md 2026-08-14最終項、外部レビューでCritical判定)。いずれも「parseJobParamsは返しているのにハンドラが渡し忘れる」形。今回はbuildRenderArgs()という純粋関数へrender argvの組み立てを切り出し、argv実測の検査に置き換えることで、この事故の起きる構造そのものを塞ぐ(G-EDIT-UI-SETTINGS-WIRING)。\n\n【対象外(Non-goal)】エンコーダの生ノブ(--vcodec/--crf/--abitrate/--enc-preset)個別追加は--exportが利用者向けの言葉で既に包んでいるため対象外。--min-secは--duration-min指定時に無視される実装のため、両方出すと「効かない設定」を自ら作ることになるので対象外(pipeline.mjs:369-370)。--api/--mode/--orientは開発用または既存チップが既に担っているため対象外。画面構成そのものの作り直しも対象外(今の画面に足す)。\n\n【分解の軸】機能軸(字幕の見た目/尺/書き出し)だけでなく、経路軸(画面→クエリ→検証→argv→出力)、故障モード軸(結線の欠落/不正値でのジョブ失敗/未指定時の退行/条件付き表示の取り違え)、Journey軸(失敗後のやり直し・複数設定の同時指定)を横断して葉を起こしてある。UAC(利用者から観測できる受入事実)は実ブラウザ→実サーバ→出力実測で検証し、ソース文字列の正規表現照合は用いない(つなぎ目の間で外部レビューが指摘した弱点そのものの再発防止)。詳細な計画はUser Goal/Journey/Acceptance Criteria/Adversarial Reviewを含め、セッション開始時にマスター承認済み。",
+     "children": [
+      {
+       "id": "G-EDIT-UI-SETTINGS-WIRING",
+       "kind": "state",
+       "theme": "画面で選んだ設定が、1つも取りこぼされずに実際のレンダリングコマンドへ届く",
+       "meaning": "設定を1つ足すたびに『選べるのに効かない』事故を繰り返さない構造にする(過去2回発生: mosaic・breath)",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "server/pipeline-runner.mjsのrender argv組み立てを純粋関数buildRenderArgs(pipelinePath, workDir, opts)へ切り出し、parseJobParamsが返すキー(sub/cut/size/cutMin/mosaic/trim/breath/subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を1つずつ数え上げるのではなく、この関数を通してargvへ渡す。既存の--mode/--no-sub/--breathも同じ関数を通ることで、今回の変更が既存設定の結線を壊していないことも同時に検知する。",
+         "verify": "buildRenderArgs()を直接呼び出し、戻り値のargv配列を実測する単体検査を追加する(ソース文字列の正規表現照合は禁止。つなぎ目の間でCodeRabbitが指摘した弱点そのものであるため)。各キーに具体的な値を渡し、対応する--フラグと値がargvに実在することを配列の中身で確認する。あわせてtests/smoke.mjsの既存検査『サーバ: startJob が受け取った breath が pipeline.mjs render の --breath になる』(正規表現照合)をbuildRenderArgsの実測へ置き換える。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-VALIDATE",
+       "kind": "state",
+       "theme": "変な値・欠けた値・意地悪な値を画面から(または直接クエリで)送っても、ジョブは失敗せず既定の見た目で仕上がる",
+       "meaning": "画面のバグや悪意ある入力で、利用者から見て『原因不明の失敗』にしない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "range外・不正形式・欠落・__proto__/constructor等のプロトタイプ汚染狙いの値がクエリパラメータとして来ても、parseJobParamsが例外を投げず既定値へ丸め、pipeline.mjsをfail-fastさせず、ジョブが最後まで(stage=doneまで)完走する。",
+         "verify": "captionFill=red(不正形式)/durationMin=-5(範囲外)/exportPreset=unknown(未知の名前)/captionFont=__proto__(プロトタイプ汚染狙い)を含む細工クエリで、parseJobParamsの単体検査(丸めた値の確認)に加え、実サーバを起動しPOST /api/jobsから実際にジョブを走らせ、stageがerrorへ落ちずdoneへ到達することを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-ACCEPT",
+       "kind": "state",
+       "theme": "画面のどの選択肢を選んでも、サーバとpipeline.mjsが必ず受理する",
+       "meaning": "画面に用意した選択肢が、実は一部だけpipeline.mjsに拒否される(選べるのに失敗する)状態を無くす",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "webapp-mockup/index.htmlの字幕スタイル・尺・書き出しの各チップ/入力が持つdata-val(またはとりうる値)を全て列挙したとき、そのすべてがparseJobParamsで受理され、pipeline.mjs側の対応するパーサ(getFont/getStyle/hexToAss/getExportPreset/resolveTargetDuration)でも受理される。サーバが通した値でpipeline.mjsがfail-fastすることはない。",
+         "verify": "index.htmlをパースしdata-groupが字幕スタイル/尺/書き出しに属するチップのdata-valを実際に抽出し、各値をparseJobParams→対応するCLIパーサへ通す検査を追加する。列挙はハードコードした期待値リストとの突合ではなく、実際にHTMLから読み取った値で行う(HTML側だけ値を増やして検査を更新し忘れる事故を防ぐ)。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-COMPAT",
+       "kind": "state",
+       "theme": "設定を何も選ばなければ、これまでと同じ動画が出る",
+       "meaning": "新しい選択肢を足したことで、これまでどおり使っている人の成果物が黙って変わらない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "新設定(subStyle/captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/durationMin)を一切送らない場合の出力(尺・解像度・字幕の書体/色/縁取り/背景帯の有無・書き出し画質相当のファイルサイズ)が、この変更を加える前の実測値と一致する。",
+         "verify": "この変更を加える前のcommitで固定素材をrenderした出力を基準として保存し、この変更後に新設定を一切送らず同じ固定素材をrenderした出力と、尺(ffprobe)・解像度・.assの有無/内容・ファイルサイズを比較する。一致しなければFAIL。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-FONT",
+       "kind": "state",
+       "theme": "画面で書体を選ぶと、出来た動画の字幕がその書体で描かれる",
+       "meaning": "12葉かけて作った字幕スタイル機能(PR #116)が、画面から実際に使える",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "実ブラウザで書体チップ(明朝体など既定=角ゴシック以外のもの)を選び「作る」を実行して出来た動画の字幕フレームが、書体を選ばず(既定のまま)作った動画の字幕フレームと画素で異なる字形になっている。.assファイルにフォント名が書かれているだけでは満たさない(フォント実体が無く描画に反映されない事故を検出できない)。",
+         "verify": "playwrightで実サーバに接続し、動画をアップロード→字幕あり→書体チップ(既定以外)を選択→作成を実行する。出来た動画のフレームをtests/helpers/caption-style-render.mjsと同じ作法(dominantColors/画素比較に準じる字形比較)で、既定書体の出力と比較し、有意に異なることを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-FILL",
+       "kind": "state",
+       "theme": "画面で文字色を選ぶと、出来た動画の字幕がその色になる",
+       "meaning": "画面から色を選んでも実は無視される、という事故を防ぐ",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "実ブラウザで文字色を指定(例 #FF0000)して作成した動画の字幕領域の支配色が、指定した色に一致する。サーバが値を受理したのに黙って既定色へ落とす実装ではこれを満たさない。",
+         "verify": "playwrightで実サーバに接続し、文字色を#FF0000へ指定して作成する。出来た動画のフレームからtests/helpers/caption-style-render.mjsのdominantColors()で字幕領域の支配色を測り、colorClose()で指定色と一致することを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-BAND",
+       "kind": "state",
+       "theme": "画面で背景帯のon/offを選ぶと、出来た動画にその通り帯が出る・出ない",
+       "meaning": "見た目のオン/オフが画面の見た目どおりに動画へ反映される",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "実ブラウザで背景帯onを選んで作成した動画の字幕背景領域と、offのまま作成した動画の同領域とで、画素が明確に異なる(帯が実際に描かれている)。",
+         "verify": "playwrightで背景帯on/offそれぞれで作成し、字幕背景領域の画素をtests/helpers/caption-style-render.mjsの作法で比較する。on側にだけ帯の色が現れることを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-DURATION",
+       "kind": "state",
+       "theme": "画面で『1本の目安の長さ』を指定すると、出来た候補の尺がその指示に従う",
+       "meaning": "『3分くらいで』という指示が画面からも通じる",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "『話題で切る』を選んでいるときだけ画面に『1本の目安の長さ(分)』の入力が現れ、指定した値を送って作成すると、出来た各候補の尺が指定値の±30%の範囲(pipeline.mjsのresolveTargetDurationと同じ規則)に収まる。『分数で切る』を選んでいるときはこの入力欄自体が画面に現れない(既存のcutMinがその役目を担うため、両方出すと利用者が混乱する)。",
+         "verify": "playwrightで『話題で切る』のときに入力欄が表示されることをDOMで確認し、値(例 2分)を指定して作成、candidates.jsonの各候補durationを実測し範囲内であることを確認する。続けて『分数で切る』へ切り替えたときに同じ入力欄が非表示になることをDOMで確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-EXPORT",
+       "kind": "state",
+       "theme": "画面で書き出しの用途を選ぶと、出来たファイルの大きさ・画質がその用途に合う",
+       "meaning": "『SNS用に軽く』『保存用に高画質で』が画面から選べる",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "同一の固定素材で書き出し設定を変えて作成したとき、『軽くして共有』は『標準』よりファイルサイズが小さく、『高画質で保存』は『標準』よりファイルサイズが大きい(両方向で確認する。常に圧縮を強める実装や常に画質を上げる実装のような単調な偽実装を弾くため)。",
+         "verify": "同一固定素材でexportPreset未指定(標準)・light・archiveの3本を実際にrenderし、出来たファイルサイズを比較する。light<標準<archiveの順であることを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-CONDITIONAL",
+       "kind": "state",
+       "theme": "字幕なしを選んだときは、字幕の見た目の設定が画面に出ず、成果物にも影響しない",
+       "meaning": "使わない設定が画面を埋めない。字幕なしなのに帯だけ描かれる、のような矛盾した成果物を出さない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "画面で字幕を『なし』にしているとき、字幕の見た目(書体/スタイル/文字色/縁取り色/内側縁取り/背景帯)の設定群がDOM上に表示されない。かつ、これらの値を(画面を介さず)クエリへ強制的に含めてジョブを実行しても、出来た動画に字幕(.ass)自体が存在しない。",
+         "verify": "playwrightで字幕『なし』のとき該当settings-groupがhidden相当(表示されない)であることをDOMで確認する。あわせて実サーバへcaptionFont等を含めsub=noneで直接POSTし、出来た成果物に.assが含まれない(または空)ことを確認する。"
+        }
+       ]
+      },
+      {
+       "id": "G-EDIT-UI-SETTINGS-RECOVER",
+       "kind": "state",
+       "theme": "作成に失敗しても、もう一度作るときにさっき選んだ設定を選び直さずに済む",
+       "meaning": "フォント不在などで一度失敗しても、画面の選択がリセットされず実用的にやり直せる",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "字幕スタイル・尺・書き出しの設定を選んだ状態で作成が失敗(例: 存在しないフォントキーを強制指定・話し声なし素材)した後、ページをリロードせずに再度『作る』を押すとき、直前に選んだ設定値が画面上に残っている(reloadを跨ぐ永続化は対象外)。",
+         "verify": "playwrightで設定を選んでから失敗する条件(話し声が無い合成素材)で作成を実行し、失敗表示後にDOM上の各チップ/入力の値が選択直後の値のままであることを確認する。"
+        }
+       ]
+      }
+     ]
     },
     {
      "id": "STAGE-2",
