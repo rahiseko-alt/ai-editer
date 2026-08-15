@@ -807,6 +807,41 @@ export function renderLabel(orient) {
   return orient === "landscape" ? "横長の動画に整えています" : "縦長の動画に整えています";
 }
 
+/**
+ * node pipeline.mjs render の argv 組み立て（G-EDIT-UI-SETTINGS-WIRING-SERVER）。
+ * 設定を1つずつ数え上げる書き方（renderArgs.push(...)を呼び出し側に並べる）は、設定を
+ * 1つ足すたびに結線を忘れる事故を過去2回起こしている（顔モザイク・つなぎ目の間。
+ * docs/failures.md 2026-08-14）。ここへ集約し、戻り値のargvを検査から直接実測できる
+ * 純粋関数にすることで、結線漏れを機械的に検出できるようにする。
+ *
+ * @param {string} pipelinePath pipeline.mjs の絶対パス（PIPELINE_MJS相当）
+ * @param {string} workDir ジョブの作業ディレクトリ
+ * @param {object} opts startJob() へ渡されるものと同じ形。sub/mode/breath/subStyle/
+ *   captionFont/captionFill/captionOutlineColor/captionInner/captionBand/exportPreset/
+ *   durationMin を含みうる（すべて任意）。
+ * @returns {string[]} spawn("node", argv) にそのまま渡せるargv配列
+ */
+export function buildRenderArgs(pipelinePath, workDir, opts) {
+  const noSub = opts.sub === "none";
+  const { mode } = resolveJobSettings(opts);
+
+  const renderArgs = [pipelinePath, "render", workDir, "--mode", mode];
+  if (noSub) renderArgs.push("--no-sub");
+  // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH-SERVER）。渡し忘れると、画面から選んでも
+  // 常に既定 0.7 秒固定になり off にもできない（trim/mosaic と同じ結線の取りこぼし）。
+  if (opts.breath) renderArgs.push("--breath", String(opts.breath));
+  if (opts.subStyle) renderArgs.push("--sub-style", String(opts.subStyle));
+  if (opts.captionFont) renderArgs.push("--caption-font", String(opts.captionFont));
+  if (opts.captionFill) renderArgs.push("--caption-fill", String(opts.captionFill));
+  if (opts.captionOutlineColor) renderArgs.push("--caption-outline-color", String(opts.captionOutlineColor));
+  if (opts.captionInner) renderArgs.push("--caption-inner", String(opts.captionInner));
+  if (opts.captionBand) renderArgs.push("--caption-band", String(opts.captionBand));
+  if (opts.exportPreset) renderArgs.push("--export", String(opts.exportPreset));
+  if (opts.durationMin) renderArgs.push("--duration-min", String(opts.durationMin));
+
+  return renderArgs;
+}
+
 /** 実際の段階実行（内部・エラーは呼び元でキャッチ） */
 async function runJob(jobId, inputAbsPath, opts) {
   const workDir = path.join(WORK_ROOT, jobId);
@@ -939,11 +974,7 @@ async function runJob(jobId, inputAbsPath, opts) {
   job.stage = "r";
   broadcast(jobId, { stage: "r", status: "active", label: renderLabel(orient) });
 
-  const renderArgs = [PIPELINE_MJS, "render", workDir, "--mode", mode];
-  if (noSub) renderArgs.push("--no-sub");
-  // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH-SERVER）。渡し忘れると、画面から選んでも
-  // 常に既定 0.7 秒固定になり off にもできない（trim/mosaic と同じ結線の取りこぼし）。
-  if (opts.breath) renderArgs.push("--breath", String(opts.breath));
+  const renderArgs = buildRenderArgs(PIPELINE_MJS, workDir, opts);
 
   await spawnAndLog(
     "node",
