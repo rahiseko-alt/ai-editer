@@ -22,10 +22,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  ROOT, WORK_ROOT, OUT_ROOT, ffmpegAvailable, makeSample, makeBlackSample, TOPIC_CLAUDE,
+  WORK_ROOT, OUT_ROOT, ffmpegAvailable, makeSample, makeBlackSample, TOPIC_CLAUDE,
   installFakePython, installFakeClaude, startServer, stopServer,
   chromium, chromiumLaunchOptions, runJobViaBrowser, readCandidates,
-  extractFramePng, readPixelsRgb, dominantColors, colorClose, bboxOf,
+  extractFramePng, readPixelsRgb, colorClose,
 } from "./helpers/ui-settings-e2e-harness.mjs";
 import { pixelAt } from "./helpers/caption-style-render.mjs";
 import { computeCanvas } from "../src/render-vertical.mjs";

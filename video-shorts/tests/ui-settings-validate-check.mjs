@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import {
-  ROOT, WORK_ROOT, OUT_ROOT, ffmpegAvailable, makeSample, TOPIC_CLAUDE,
+  WORK_ROOT, OUT_ROOT, ffmpegAvailable, makeSample, TOPIC_CLAUDE,
   installFakePython, installFakeClaude, startServer, stopServer, readCandidates,
   extractFramePng, readPixelsRgb,
 } from "./helpers/ui-settings-e2e-harness.mjs";

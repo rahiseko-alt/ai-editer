@@ -27,7 +27,7 @@ import path from "node:path";
 import http from "node:http";
 import { spawnSync } from "node:child_process";
 import {
-  ROOT, WORK_ROOT, OUT_ROOT, ffmpegAvailable, makeSample, TOPIC_CLAUDE,
+  WORK_ROOT, ffmpegAvailable, makeSample, TOPIC_CLAUDE,
   installFakePython, installFakeClaude, startServer, stopServer,
   chromium, chromiumLaunchOptions, readCandidates,
   extractFramePng, readPixelsRgb, dominantColors, colorClose,

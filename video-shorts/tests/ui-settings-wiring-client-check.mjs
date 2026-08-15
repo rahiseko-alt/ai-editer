@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  ROOT, ffmpegAvailable, makeSample, installFakePython, installFakeClaude, TOPIC_CLAUDE,
+  ffmpegAvailable, makeSample, installFakePython, installFakeClaude, TOPIC_CLAUDE,
   startServer, stopServer, chromium, chromiumLaunchOptions,
 } from "./helpers/ui-settings-e2e-harness.mjs";
 
