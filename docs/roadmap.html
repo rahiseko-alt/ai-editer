@@ -118,31 +118,27 @@
 <script type="application/json" id="roadmap-data">{
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
-  "active": "G-TESTINFRA-WINCI",
-  "next": "マスターの手元Windowsで動画作成が成功したことを実機確認済み（マスター報告「動画は成功です」／修正はPR #122・squash 8353919）。よってPR #122起点の宿題は完了。次は backlog を上から順に着手する: ①Windows対応の穴（テスト用の偽claudeが拡張子なしファイルとして書かれるためWindowsのspawnでは原理的に起動できず、現行のテスト構造ではWindows経路を検証しようとしても検証できない。既存のtodoノード G-TESTINFRA-WINCI と併せ、CIへWindowsジョブを足すかの判断も含めて扱う）②音のカット端への10〜50msフェード（無音が全く無く伸ばせない箇所に素の切り口が残る。renderClipの音声経路がtrimの有無で分岐しているため別葉として切り出す）。いずれも『案件の絶対起点』どおり、着手前に原子ツリーへ描き criteria/verify を凍結してから実装に入る（ツリー確定前の実装着手は禁止）。",
+  "active": "G-UI-REVAMP-WIRING",
+  "next": "LOOK(5葉)+INFO(3葉)は done。次は WIRING(17葉)。着手前に各葉の detail に貼った未解消の反証を潰して凍結する: ①固定素材のパス+SHA-256+使用区間の確定(video-shorts/tests/fixtures/ から境界値分析で選ぶ) ②出力側の観測量に閾値・単位・許容幅を入れる ③probe#2(正しい実装で1回実測)を回し、17葉x2回のフルパイプライン実行が現実の時間で回るかを計測する。WIRING は既存の tests/ui-settings-*.mjs のセレクタ更新を伴うため、刷新と同一PRで進めないとCIが割れる。そのあと FLOW(5)→RESULT(3)→CAPTION(3)→ACCESS(5)→OPS(5)。",
   "handoff": {
    "done": [
-    "マスター指示「裏側で動いていいけどUI上で操作できるようにできるか」を受け、字幕スタイル一式・尺の指示・書き出しプリセットの8設定をCLI専用からブラウザ画面へ開放するG-EDIT-UI-SETTINGSに着手。basis-reviewerを3ラウンド通し反証19件(第1回7件・第2回9件・第3回3件)へ対応し、18葉で凍結。",
-    "M1〜M5を4並列サブエージェント(M4)＋直接実装(M1/M2/M3/M5)で実装。webapp-mockup/app.jsのrun()を『設定を1つずつ手で列挙する』形から『stateを丸ごと走査する』形へ書き換え(WIRING-CLIENT)、server/pipeline-runner.mjsへbuildRenderArgs()を純粋関数として切り出し(WIRING-SERVER)、job-params.mjsへ8設定を追加(副産物としてgetStyle()のプロトタイプ汚染脆弱性を発見・修正)。",
-    "実ブラウザ×実サーバ×実ffmpegのE2E検査を6ファイル新設(WIRING-CLIENT/VALIDATE/CONDITIONAL・RECOVER・COMPAT/FONT・FILL・BAND・OUTLINE・INNER・STYLE/DURATION・EXPORT・COMPOSE)。実装時に2件の実バグ相当の問題を検出・修正: ①COMPOSEの背景帯充填率検査が長尺fixtureの文字と測定帯が重なり誤って割れていた(製品側は.assの座標が計算式と完全一致=正常。検査の素材選びを直した) ②並列実装した4エージェントのうち1つ(M4-B)は自己申告のPASSが実は未検証で、独立に再実行して初めて②の欠陥が判明した。",
-    "e2e-three-paths-check.mjsの『画面はexport等の配線を持たない』という前提記述を実態に合わせ更新し、exportPreset=snsが実HTTPクエリ経由でも出力へ反映されることを検査に追加(M5)。",
-    "凍結後にWIRING-CLIENT/VALIDATEへ実際の探り(偽実装を当てて落ちることを確認→復元)を実行し、実測件数をdetailへ記録。video-shorts全体のpnpm test(100件超・全ブロック0 FAIL)・scripts test・build・audit・roadmap機械検査(evidence/criteria凍結/done-gate)すべて緑を確認し、18葉すべてをdone化・evidence(コミットSHA)とverifyCmdを記入。",
-    "PR #120 を作成しCI(ci-green/roadmap-required/CodeQL/起動スモーク)全緑を確認のうえマージ（squash 932129b）。マスターへ実画面のスクリーンショット2枚（字幕なし/字幕ありで設定カード群が現れる状態）を提示。マスターからは手元環境で直接操作したいとの要望があり、ローカル起動手順（git clone → node server/index.mjs → http://127.0.0.1:5178）を案内した（このリモート実行環境はサーバがloopback限定のため画面を直接渡せない旨も説明）。",
-    "マスターの手元Windowsで実際に動かしたところ、画面から動画作成を実行すると『claude 終了コード 1。stderr: 』とだけ出て失敗した。ターミナルでのclaude単体利用は6ヶ月間正常・ログイン済みで、このサーバ経由のときだけ失敗する状態。仮説3本（フラグの妥当性／Windows固有のプロセス起動／認証情報の到達性）を独立サブエージェント3体へ並列調査させ、原因を2つ特定してPR #122で修正した。",
-    "【原因1】claudeは『起動前の失敗』(不正フラグ等)をstderrへ、『実行中の失敗』(認証・通信・モデル・クォータ)を結果としてstdoutへ出す(公式ドキュメント Run Claude Code programmatically)。src/claude-run.mjsのcloseハンドラは非0終了時にstdoutBufを読まずに捨てており、後者が起きると手掛かりがゼロになっていた。調査担当がANTHROPIC_BASE_URLを到達不能値にして『終了コード1・stderr 0バイト・診断は全部stdout』の完全再現に成功。stderr/stdout両方を報告へ含める形へ修正し、偽claudeで修正前後の差(修正前=『stderr: 』のみ／修正後=理由が表示)を実測した。",
-    "【原因2】src/claude-safety.mjsのALLOWED_ENV_VARSがPOSIX名だけで構成されており、Windows必須の変数が1つも無かった。WindowsのPowerShellはHOMEを定義しない(定義するのはGit Bash等MSYS系のみ)ため許可リストを通過するホーム情報がゼロになり、%USERPROFILE%\\.claude\\.credentials.jsonへ到達できない。加えてSystemRoot不在はWinsockのプロバイダDLL読込を壊す既知の事故パターン(golang/go#25513が同型)で、claudeは起動直後に必ずHTTPS通信を行う。USERPROFILE/SystemRoot/windir/APPDATA/LOCALAPPDATA等を追加。秘密情報を渡さない方針は不変で、ANTHROPIC_API_KEY等の遮断をWindows模擬環境で実測確認した。",
-    "再発防止として機械検査を3本追加。tests/claude-safety-win-env-check.mjs(許可リストがClaude Code CLI自身の定めるWindows最小集合を満たすかを対照表と突き合わせ。Linux上で判定できる形。この検査で実際にUSERNAMEの漏れを発見し追加した)、tests/claude-run-failure-surface-check.mjs(非0終了時にstderr/stdout両方が呼び出し側へ届くことを偽claudeで実際に失敗させて実測)、tests/claude-run-real-check.mjs(本物のclaudeを本番と同じ経路で起こす疎通検査。CIには本物のclaudeが無いためpnpm test未登録・手元実行用)。あわせてsrc/digest-editor.mjsの--model退避判定がstderrだけを見ていた関連バグも修正した。",
-    "マスターの手元Windows実機で動画作成が通ることを確認した（マスター報告「動画は成功です」）。PR #122 はCI全12件緑のうえ squash 8353919 でマージ済みで、meta.next が求めていた実機確認はこれで完了。以降は backlog 2件（Windows検証構造の穴／音のカット端フェード）へ移る。"
+    "マスターから『動画は成功です』の報告を受け、Windows実機での動画作成成功を確認。PR #123（roadmap更新）をCI全12件緑でマージした（squash 9661345）。meta.active を実在の todo ノードへ移し、stale pointer を解消した。",
+    "backlog ①Windowsテスト構造の穴 ②音のカット端フェード について『ユーザーに得があるのか』を実測ベースで評価して報告した。①は出力が一切変わらない開発側の保険で、今回の穴は PR #122 の機械検査で既に塞がっており、最も効かせたい部分（本物のclaudeの起動）は CI に本物のclaudeを置けない以上そもそも検証できない。②は主要経路（trim）に既に SEAM_FADE_SEC=0.005秒 が実装済みで、G-EDIT-TRIM-D の実測でも継ぎ目の段差は 0.00%（周辺の中央値 1.57〜1.68%）。どちらも今やる価値は薄いと判断し、代わりに未完了で成果物に直接出るもの（顔モザイクUI・SSEトークン・REFRAME・処理時間）を提示した。",
+    "マスターの判断で UI 最優先へ切り替え。実サーバ(node server/index.mjs)＋Playwright/Chromium で現物の画面を起動して撮影し、欠陥を実測で5件特定した: ①番号⑤が2つ（つなぎ目の間／カットの目安）②『1本の目安の長さ』だけ番号なし ③案内文が『そのあと①〜④を上から選ぶだけです』(app.js:298)なのに実際は7項目 ④/favicon.ico が404 ⑤設定カード7枚が動画を入れる前から全展開。",
+    "マスター指示3点（①色を変えろ・背景は白 ②ヘッダーの無料版/有料版はこちらを削除 ③現状を0ベースにして主要ツールと近しい形へ根本刷新）を受領。主要ツール(Opus Clip/Descript/Veed/CapCut web)の構成を調べたうえで、案A(3ペイン: 左=手順とライブラリ／中央=プレビュー／右=設定インスペクタ)と案B(ウィザード)のモックを実際にHTMLでレンダリングして画像で提示し、案A＋アクセント色ニアブラック #0d1117 で承認を得た。",
+    "承認済みの構成を前提に、原子ツリーを docs/roadmap.html へ描いた。G-UI-REVAMP は30葉で、分解軸を1本にしない規律に従い5系統へ割った: LOOK(見た目4)/INFO(情報設計3)/WIRING(経路軸・15設定を1設定=1葉)/FLOW(故障モード軸5)/ACCESS(アクター軸3)。あわせて2つ目の指示に対応する G-OPS-UI-VIEW を4葉で描いた(手順書の発見/実行できる/内部スクロールでも切れずに撮れる/マスターへ届く)。全葉 status=todo で、まだ凍結していない。",
+    "basis-reviewer を回し(マスター承認済み)、反証26件を受領した。内訳は基準そのもの24件(原子性2・被覆22)＋探り起因2件で、平易さは反証なし。9分弱で、外部レビューなら数時間かかる指摘が出た。",
+    "反証を全部反映してツリーを描き直し、34葉→46葉にした。事実誤りの是正3件: ①WIRING-INNER/-BAND の非既定値を off から色指定へ反転(app.js:15 の既定が既に off で同値比較=永久に合格できない基準だった) ②WIRING-EXPORT の観測量を音声ビットレートへ変更(crf/preset は出力ファイルに残らず観測不能) ③WIRING-CUTMIN へ cut=minutes の前提操作を明記(app.js:531 で cutMin は単独送信されない)。被覆漏れの是正: RESULT(3葉・成果物の受け取り)・CAPTION(3葉・字幕直し)・ACCESS-MODAL・ACCESS-FONTSIZE・WIRING-NAME・WIRING-CONDITIONAL を新設。原子性の是正: LOOK-WHITE から罫線条項を LOOK-RULE へ分離、OPS-HANDOFF を DOC(文書側)と EMIT(実行側)へ分離。",
+    "LOOK(5葉)とINFO(3葉)は凍結水準まで詰めた。実装者が後から選べる余地を消すため、検査用フック契約(data-testid: app-header/pane-left/pane-center/pane-right/guide-text/btn-run/btn-pick-file/step-item[data-step-no]/setting-row[data-setting-key]/progress-step[data-k])を criteria と同時に凍結した。LOOK-WHITE は背景色だけでなく全子孫と::before/::afterのbackground-imageがnoneであることを条件に加え、現行のbody::before(radial-gradient3枚)を移植した偽実装で背景色検査は通るがベール検査だけが落ちる、という対照を明記した。他の枝は各葉の detail に未解消の反証を貼って未凍結のまま残した。",
+    "LOOK(5葉)+INFO(3葉)を実装して done 化した。3ペイン化は既存テストが .two-col/#col-settings/#col-preview とHTML上のDOM順に依存していたため、id・class・DOM順を温存し grid-column だけで見た目を作る方針にして回避した。検査は tests/ui-revamp-look-check.mjs(12項目)と tests/ui-revamp-info-check.mjs(7項目)を新設し pnpm test へ登録。対照(偽実装)はファイル書き換えではなく検査内で注入する形にしてコミットへ残した(戻し忘れで検査が嘘になるのを構造的に防ぐため)。既存の画面系テスト13本は引き続き全て緑。"
    ],
    "trouble": [
-    "Windows実機の不具合に対し、原因を確かめずに『環境変数HOMEを設定する』等の当てずっぽうの対処をマスターへ2回続けて指示し、いずれも外して信頼を損ねた。真因が見えなかったのは製品コードがstdout(=真因の唯一の出所)を捨てていたためだが、それを調べる前に手を動かしたのが誤り。マスターから『小手先の修正は禁止。0ベースで修正プランを練れ。サブに徹底リサーチさせろ。原因を3個考えろ』と指示され、独立3系統の並列調査に切り替えて初めて原因が確定した。症状が説明できないうちは対処を提案せず、まず観測できる形にすること。",
-    "この不具合が素通りした構造的な原因: (1)CIは全8ジョブがubuntuでWindows検証がゼロ (2)claudeを扱うテスト17ファイルが全て偽claudeへの差し替えで、本物のclaudeがこの起動方法(引数・制限env・隔離cwd)で動くかを検証したテストが1本も無かった (3)既存の『検査』はNO_TOOLS_ARGSがリテラルと等しいことをassertする同語反復か、ソース文字列の正規表現照合に留まっていた。『検査が有る』ことと『効くことを検査している』ことは別である。",
-    "偽claudeは拡張子なしファイル(path.join(binDir,'claude')+chmod)として書かれるため、Windowsのspawnでは原理的に起動できない。つまり現行のテスト構造ではWindows経路を検証しようとしても検証できない。backlogとして残した。",
-    "並列実装した4本のサブエージェント(M4-A〜D)のうち1本(M4-B)は、完了報告が『バックグラウンドのテスト実行を待っている』という状態のまま終了しており、実際には一度もPASSを確認していなかった。他3本の完了報告(15/8/13 PASS)を信じて統合するのではなく、念のため自分でも同じテストを再実行したところ、M4-Bだけ実際に2件FAIL(COMPOSE-Aの背景帯充填率が90%基準に対し68.8%)していることが判明した。サブエージェントの『完了』ステータスは実行結果を保証しない。",
-    "上記の欠陥は製品側ではなく検査側の測定条件のミスだった: 長尺fixture(尺検証のため120秒ぶんの同じ文字を1本のキャプションとして並べる)の文字が、CLI側の参照検査(短い固定文言『帯テスト』が前提)と同じ上下端全幅サンプリングの測定帯へ重なり、実際には正しく描かれている背景帯を『充填率不足』と誤判定していた。.assの実座標(x1/y1/w/height)を計算式と直接突き合わせて完全一致することを確認してから検査側の測定範囲を直す、という手順を踏んだ(製品側を疑う前に測定方法を検証する)。",
-    "basis-reviewerは3ラウンド行っても『探り済みでない』という反証が残り続けた。『後で実装フェーズに探りを行う』という予告は、G-EDIT-BREATHの実際の運用(基準確定と探りの実行が同じタイミング)と食い違っており、予告だけでは反証を解消できないと明確に指摘された。実装が揃ってから実際に偽実装を当てて探りを実行し、実測件数をdetailへ記録して初めて解消した。",
-    "roadmap更新時、verify-done-gate.mjsが要求するverifyCmdフィールドを1回目のコミットで入れ忘れ、ローカルでdone-gateを走らせて初めて気付いた(BASE_REF=origin/main HEAD_REF=HEAD node scripts/verify-done-gate.mjsが「verifyCmd未設定」で18件エラー)。18葉をdoneにする際は、evidenceだけでなくverifyCmdもセットで書く(先例=G-EDIT-BREATHの葉を確認すること)。",
-    "チェックアウト時、meta.handoff.doneに前回セッション(G-EDIT-BREATH完了時)の項目を消さず追記してしまっていた。skillの規約どおり『前回の値を消してから今回の値を上書き』が正しい(蓄積したい失敗はdocs/failures.mdへ)。"
+    "スクリーンショットだけを見て『PC表示では⑥サイズ以降が切れていて操作できない』と誤診しかけた。実際は body 自身が内部スクロール領域(height:900px, overflow-y:auto)で、document.scrollHeight=900 に対し body.scrollHeight=1153。Playwright の fullPage:true は document の全高しか撮らないため、残り253pxが写らないだけだった。マスターへ報告する前に DOM で裏を取って撤回した。詳細と教訓は docs/failures.md 2026-08-15 に記録し、この罠自体を G-OPS-UI-VIEW-FULLPAGE の葉として立てた。",
+    "主要ツールのUI構成を WebSearch で調べたが、返ってくるのは比較・ランキング記事ばかりで、画面構成の一次情報がほとんど取れなかった。検索を重ねるより、モックを実際にレンダリングして画像で見せて選んでもらう方が速く確実だった。次に同種の『最新のUIに寄せろ』系の指示を受けたときは、最初からモック提示に振る。",
+    "AGENTS.md は基準凍結前の basis-reviewer 通過を必須にしているが、本セッションには『ユーザーが要求しない限りサブエージェントを起動しない』というセッション指示も掛かっており、両者が衝突している。ツリーは todo のまま置き、凍結の前にマスターへ実行可否を確認することにした。",
+    "自分で描いたツリーに、実物と食い違う事実誤りが3件あった(既定値の取り違え2件・観測不能な量を測る1件)。いずれも実装コードを1回読めば分かるもので、ツリーを描く前に job-params.mjs だけでなく app.js の state 既定値と export-presets.mjs の中身まで当たっていれば防げた。「設定名の一覧」を見て割るだけでは足りず、各設定の既定値と観測可能性まで確認してから criteria を書くこと。",
+    "自分で書いた検査が、自分の実装の不備を3件検出した。①ペインの境目 #e6e8eb は白との比 1.23:1 で、自分で凍結した下限 1.5:1 を満たしていなかった(境目専用の --rule #c9ced6 = 約1.67:1 を導入して是正)。②btn-pick-file のフックを白いドロップ枠に付けており、承認済みモックAにあった黒い『ファイルを選ぶ』ボタンが実装に無かった(枠内へ実装してフックを移動)。③対照の後始末が効いていなかった(playwright の addStyleTag は id オプションを取らないため、注入したタグを getElementById で消せていなかった)。いずれも基準ではなく実装と検査を直した。基準を緩める誘惑が最も強い場面だったので記録しておく。",
+    "criteria を凍結した直後に自分で穴を見つけた。LOOK-WHITE の検査範囲を『4領域とその子孫』と書いたが、消したかったベールは body::before にあり、body は4領域の祖先で子孫でもないため対象外に落ちていた。verify に書いた対照(ベールを移植すると落ちる)が、書いたままでは成立しない状態だった。実装着手前に html・body を範囲へ加えて是正した。範囲の書き方は『どこを測るか』であって、測りたい対象が範囲に入っているかは別途たしかめる必要がある。"
    ]
   },
   "updated": "2026-08-14",
@@ -5197,6 +5193,734 @@
          "verify": "playwrightで設定を選んでから失敗する条件(話し声が無い合成素材)で作成を実行し、失敗表示後にDOM上の各チップ/入力の値が選択直後の値のままであることを確認する。",
          "verifyCmd": "node video-shorts/tests/ui-settings-conditional-recover-compat-check.mjs",
          "evidence": "eeba70b"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "G-UI-REVAMP",
+     "kind": "state",
+     "theme": "動画編集ツールの標準的な画面になり、初めて触る人でも迷わず最後まで操作できる",
+     "meaning": "2026-08-15 マスター指示『①色を変えろ。背景は白 ②ヘッダーの無料版/有料版はこちらの表示を削除 ③UIを根本的に刷新しろ。現状を0ベースにして、動画編集SaaSやアプリの最新の主要ツールと近しいものにしろ』を受けた刷新。構成は案A（左=手順とライブラリ／中央=プレビュー／右=設定インスペクタ）、アクセント色はニアブラック #0d1117 でマスター承認済み。",
+     "detail": "【basis-reviewer 2026-08-15・反証26件を反映】原子性2件（LOOK-WHITE に罫線条項が混入→LOOK-RULE へ分離／OPS-HANDOFF が文書側と実行側の2事実→分離）、被覆22件、探り2件。被覆の是正として RESULT(3葉・成果物の受け取り)・CAPTION(3葉・字幕直し)・ACCESS-MODAL・ACCESS-FONTSIZE・WIRING-NAME・WIRING-CONDITIONAL を新設した。事実誤りの是正として WIRING-INNER/-BAND の非既定値を反転（既定が既に off だった）、WIRING-EXPORT の観測量を音声ビットレートへ変更（crf/preset は出力に残らない）、WIRING-CUTMIN に cut=minutes の前提操作を明記した。凍結済みは LOOK(5)・INFO(3) のみで、他の枝は各葉の detail に未解消の反証を貼ってある。",
+     "children": [
+      {
+       "id": "G-UI-REVAMP-LOOK",
+       "kind": "state",
+       "theme": "画面の色と骨組みが、指示どおりの形になっている",
+       "meaning": "マスターの3指示（背景を白／無料版・有料版の表示を削除／3ペインへ刷新）が、実物の画面で満たされている",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-LOOK-WHITE",
+         "kind": "state",
+         "theme": "画面の地の色が、どこを取っても真っ白で、色のついたベールが掛かっていない",
+         "meaning": "現行は body::before に3枚のグラデーションが全面に敷かれており、下地の色だけ白にしてもベールが残る。ベール込みで白を判定する",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "幅1280pxで / を開いたとき、画面の地の部分（ヘッダーを含む app-header / pane-left / pane-center / pane-right の4領域）に、白以外の塗りが一切無い。具体的に2つを同時に満たす。(a) 4領域それぞれの実効背景色が rgb(255,255,255) である。(b) html・body・上記4領域、およびそれらの全子孫要素、ならびにそれら各々の ::before / ::after 疑似要素の background-image がすべて none である（結果オーバーレイ等の、地の部分ではないモーダル配下は対象外とする）（＝グラデーションや画像によるベールが無い）。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で http://127.0.0.1:5178/ を開く。(a) app-header / pane-left / pane-center / pane-right の4要素について getComputedStyle の backgroundColor を取り、rgba(0,0,0,0) なら祖先を遡って最初の不透明色を実効背景色とし、4件すべてが \"rgb(255, 255, 255)\" であることを確認する。(b) html・body・同4要素とその全子孫（ただし result-overlay 配下を除く）について、getComputedStyle(el) / (el,\"::before\") / (el,\"::after\") の backgroundImage がすべて \"none\" であることを確認する。対照は2本とも実測する。対照1: 中央ペインの背景を #fafbfc に戻した偽実装で (a) が FAIL する。対照2: 現行の webapp-mockup/styles.css:106-113 の body::before（radial-gradient 3枚）を刷新後の画面へ移植した偽実装で、(a) は PASS のまま (b) だけが FAIL する（＝ベールを (a) では検出できず (b) が捕まえることの証明）。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の是正 2026-08-15】当初 (b) の対象を「4領域とその子孫」と書いていたが、現行のベールは body::before に載っており、body は4領域の祖先で子孫でもないため対象外に落ちていた。すなわち verify に書いた対照（現行の body::before を移植した偽実装が (b) で落ちる）が、書いたままでは成立しない穴だった。実装着手前に html・body を対象へ加えて是正した（範囲の拡大＝強化であり、緩めではない）。 【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 背景色だけを白にしてベールを残した実装は (b) で落ちる。実際に刷新前の body::before(radial-gradient3枚)をページへ注入して実測したところ、(a)は4領域とも rgb(255,255,255) のまま素通りし、(b)だけが検出した。 ②正しい実装で1回実測: app-header/pane-left/pane-center/pane-right の実効背景色は4件とも rgb(255,255,255)。html/body/4領域とその全子孫(result-overlay配下を除く)の background-image は 0 件。 ③意図的に壊したものを当てる: 上記のベール注入がそのまま③を兼ねる。注入後に (b) が 1 件検出し、除去後に 0 件へ戻ることまで検査内で確認している。"
+        },
+        {
+         "id": "G-UI-REVAMP-LOOK-RULE",
+         "kind": "state",
+         "theme": "3つの列の境目が、色の違いではなく細い線で分かれている",
+         "meaning": "白一色にすると領域の切れ目が消えるため、区切りを線で示す。白背景とは別々に失敗しうるので葉を分けた（basis-reviewer 反証: atomic）",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "幅1280pxで、pane-left と pane-center の境目、および pane-center と pane-right の境目のそれぞれに、幅1px以上2px以下の罫線が引かれている。罫線の色は白ではなく、白背景とのコントラスト比が 1.5:1 以上（境目が視認できる下限）である。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で / を開く。pane-left の borderRightWidth（または pane-center の borderLeftWidth）と、pane-center の borderRightWidth（または pane-right の borderLeftWidth）を getComputedStyle から取得し、いずれも 1px 以上 2px 以下であることを確認する。同じ要素の border 色を取り、白背景 rgb(255,255,255) とのコントラスト比を WCAG 2.1 の式で計算して 1.5 以上であることを確認する。対照: 罫線を border:0 にした偽実装で FAIL すること、および罫線色を #ffffff にした偽実装でコントラスト条件だけが FAIL することを、2本とも実測する。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 罫線を引かない実装(border 0px)は太さの条件で落ちる。 ②正しい実装で1回実測: pane-left と pane-center の borderRightWidth はともに 1px、色は #c9ced6 で白とのコントラスト比 約1.67:1。初回実装では --line(#e6e8eb) を使っており実測 1.23:1 で、凍結した下限 1.5:1 を満たさず実際に FAIL した。境目専用の --rule を導入して是正した。 ③意図的に壊したものを当てる: 罫線色を白(#ffffff)にすると比 1.00:1 となり不合格になることを確認した。"
+        },
+        {
+         "id": "G-UI-REVAMP-LOOK-HEADER",
+         "kind": "state",
+         "theme": "ヘッダーから「無料版」「有料版はこちら」の表示が消えている",
+         "meaning": "指示された2つの表示を、文字列とリンクの両面から消えたと判定できるようにする",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "app-header の中に「無料版」「有料版」のいずれの文字列も存在せず、かつ有料版へ誘導するリンク(a要素)が1つも存在しない。CSS で隠しただけ（display:none 等で DOM に残す）は不可で、DOM 自体から取り除く。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、app-header の textContent に「無料版」「有料版」が含まれないことと、app-header 内の a 要素のうち href が http/https で始まる外部リンク、または textContent に「有料」を含むものが0件であることを、表示状態に依らず querySelectorAll の結果（DOM 上）で確認する。対照: 現行の webapp-mockup/index.html を同じ検査に掛け、「無料版」バッジと「有料版はこちら →」リンクの2件が検出されて FAIL することを実測する。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 表示を CSS で隠しただけの実装は、DOM を見る検査(querySelectorAll・textContent)で落ちる。 ②正しい実装で1回実測: 刷新後のヘッダーの textContent は「✦ AI-Editer」のみで、「無料版」「有料版」を含まず、外部リンクは 0 件。 ③意図的に壊したものを当てる: ヘッダーへ「無料版」バッジと「有料版はこちら →」リンクを実際に差し戻したところ、文字列2件とリンク1件がいずれも検出された。"
+        },
+        {
+         "id": "G-UI-REVAMP-LOOK-CONTRAST",
+         "kind": "state",
+         "theme": "文字とボタンが、白い背景の上でしっかり読める濃さになっている",
+         "meaning": "「色を変えろ」の結果を、目視の好みではなくコントラスト比の数値で担保する。測る箇所を後から選べないよう対象を名指しで凍結する",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "次の対象すべてが WCAG 2.1 AA のコントラスト基準を満たす。(1) btn-run と btn-pick-file の背景色が #0d1117 ±各チャンネル8 の範囲内（＝R,G,B それぞれ 5..21, 9..25, 25..41）で、その上の文字とのコントラスト比が 4.5:1 以上。(2) guide-text、全 step-item のラベル、全 setting-row のラベルと補足文の、実際に描画されている全要素について、背景とのコントラスト比が 4.5:1 以上。判定対象は計算後のフォントサイズが 24px 未満（または 18.66px 未満かつ bold でない）の通常テキストとし、それ以上の大きい文字は 3:1 以上とする。disabled 状態の要素と placeholder は対象に含めない（無効であることを薄さで示す慣行のため）。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、上記セレクタで対象要素を列挙する（要素が0件なら検査を FAIL とする＝空振りで緑にしない）。各要素の color と実効 backgroundColor、fontSize、fontWeight を getComputedStyle から取得し、WCAG 2.1 の相対輝度式（sRGB を線形化して 0.2126R+0.7152G+0.0722B、比は (L明+0.05)/(L暗+0.05)）でコントラスト比を計算する。通常テキストは 4.5 以上、大きい文字は 3.0 以上であることを全件について確認する。btn-run / btn-pick-file は backgroundColor の各チャンネルが上記範囲内であることも確認する。対照: setting-row の補足文の色を #b8bec6（白背景に対し約2.1:1）へ変えた偽実装を当て、補足文のケースだけが FAIL することを実測する。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 色を変えずに見た目だけ整えた実装は、ボタン背景がニアブラック±8から外れて落ちる。 ②正しい実装で1回実測: btn-run と btn-pick-file の背景は rgb(13,17,23)、文字は白でコントラスト比は基準の 4.5:1 を大きく上回る。案内文・手順ラベル・設定の見出しと補足・CTA補足の計 21 要素すべてが基準を満たす。初回実装では btn-pick-file のフックを白いドロップ枠に付けており rgb(255,255,255) で実際に FAIL した。承認済みモックAどおり枠内へニアブラックのボタンを実装して是正した。 ③意図的に壊したものを当てる: 補足文の色を #b8bec6(白背景に対し約 2.1:1)にすると不合格になることを確認した。"
+        },
+        {
+         "id": "G-UI-REVAMP-LOOK-3PANE",
+         "kind": "state",
+         "theme": "PCで開くと、左に手順・中央に動画・右に設定の3列が、同じ高さで並ぶ",
+         "meaning": "「主要ツールと近しい形」を、印象ではなく矩形の位置・幅・高さで判定する",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "幅1280pxで pane-left / pane-center / pane-right の3矩形が横に並ぶ。(1) x座標が 左 < 中央 < 右 の順で、隣り合う矩形が水平方向に重ならない。(2) 左ペイン幅は160px以上240px以下、右ペイン幅は280px以上360px以下（いずれも境界を含む）。(3) 3矩形の上端が互いに ±1px 以内で揃い、3矩形の高さが互いに ±1px 以内で等しく、かつヘッダーを除いた表示領域の高さ（window.innerHeight - app-header の高さ）と ±1px 以内で等しい。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)、viewport 1280x800 で / を開き、3ペインと app-header の getBoundingClientRect を取得する。(1) left の昇順が pane-left→pane-center→pane-right と一致し、前の right が次の left 以下であること。(2) 幅が上記の範囲に収まること。(3) top の最大差、height の最大差、および height と (800 - app-header.height) の差が、いずれも 1px 以下であること。丸めは比較前に行わず、生の float 値の差の絶対値で判定する。対照2本を実測する。対照1: 現行の webapp-mockup/index.html（2カラム）を同じ検査に掛け、ペインが3つ揃わず FAIL すること。対照2: pane-right だけ height:50% にした偽実装で (3) だけが FAIL すること。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-look-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 2カラムのままの実装はペインが3つ揃わず落ちる(刷新前の webapp-mockup は pane-left が存在しない)。 ②正しい実装で1回実測: viewport 1280x800 で pane-left/center/right の left=0/200/960、幅=200/760/320、上端=49(3件の差 0px)、高さ=751(3件の差 0px)。ヘッダーを除いた表示領域 751px と一致(差 0px)。 ③意図的に壊したものを当てる: 右ペインだけ height:50% にすると3列の高さの差が 1px を超えて不合格になることを確認した。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-INFO",
+       "kind": "state",
+       "theme": "画面の案内と、実際に操作できるものが食い違わない",
+       "meaning": "2026-08-15 の実測で見つかった「番号⑤の重複」「案内文①〜④と実際7項目の不一致」「favicon 404」を、機械が再発検出できる形で塞ぐ",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-INFO-GUIDE",
+         "kind": "state",
+         "theme": "画面の案内文が、実際に選べる項目の数と食い違わない",
+         "meaning": "現行は「そのあと①〜④を上から選ぶだけです」と書いてあるのに実際は7項目あり、案内が嘘になっている",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "guide-text の文に、設定項目の個数を指す数量表現が一切含まれない。数量表現とは、表記の種類を問わず「個数として読める数」を指し、丸数字(①〜⑳)・半角/全角アラビア数字・漢数字(一〜二十)・助数詞つき表現(◯つ/◯項目/◯個/◯ステップ)・範囲表現(〜/～/から/-)のいずれの形も含む。案内は「上から順に選ぶだけです」のように、個数に依存しない書き方にする。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、guide-text の textContent を取得する。次の正規表現群のいずれにも一致しないことを確認する: 丸数字 [①-⑳]、アラビア数字 [0-9０-９]、漢数字 [一二三四五六七八九十]、助数詞 (つ|項目|個|ステップ)の直前に上記いずれかの数表記があるもの。対照は3本とも実測し、いずれも FAIL することを示す（＝表記を変えても検出できることの証明）。対照1: 現行 webapp-mockup/app.js:298 の「そのあと①〜④を上から選ぶだけです」。対照2: 同じ意味の言い換え「そのあと4つを上から選ぶだけです」。対照3: 漢数字の言い換え「そのあと四つを上から選ぶだけです」。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-info-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: 丸数字だけを弾く実装は、別表記の言い換えで素通りする。実際に「4つ」「四つ」を判定関数へ食わせて、丸数字以外も検出できることを確認した。 ②正しい実装で1回実測: 刷新後の案内文「はじめに動画を入れてください。左の枠にドラッグ、またはクリックで選べます。そのあとは右の設定を上から順に選ぶだけです。」に数量表現は 0 件。 ③意図的に壊したものを当てる: 対照3本(現行文言の①〜④／「4つ」／「四つ」)をすべて検出できることを実測した。1本でも取りこぼせばこの葉は FAIL する。"
+        },
+        {
+         "id": "G-UI-REVAMP-INFO-STEPNO",
+         "kind": "state",
+         "theme": "手順の番号が飛んだり重なったりしていない",
+         "meaning": "現行は「つなぎ目の間」と「カットの目安」が両方⑤で、「1本の目安の長さ」だけ番号が無い",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "pane-left 内の data-testid=step-item を持つ要素の集合（＝手順として数える範囲。これ以外の要素は手順に数えない）について、各要素が data-step-no を必ず持ち、その値を DOM 順に並べた配列が [1,2,…,n]（n は step-item の個数）と完全一致する。番号を持たない step-item が1つでもあれば不合格とする。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、pane-left 配下の [data-testid=\"step-item\"] を DOM 順に取得する（0件なら FAIL＝空振りで緑にしない）。各要素の data-step-no を数値化した配列が [1..n] と完全一致することを確認する。対照3本を実測する。対照1: 2番目の data-step-no を 1 に書き換えた偽実装（重複）で FAIL。対照2: 3番目の data-step-no を削除した偽実装（欠番）で FAIL。対照3: 現行 webapp-mockup/index.html の .settings-group（番号が 1,2,無,3,4,5,5,無,6,7 の状態）を同じ規則で数えた場合に FAIL。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-info-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: step-item が 0 件の実装(番号を持つ要素が無い)は、空振りを不合格とする判定で落ちる。 ②正しい実装で1回実測: 刷新後の pane-left の step-item は3件で、data-step-no は [1,2,3]。 ③意図的に壊したものを当てる: 実ページの DOM を(A)2番目を1にして重複させる (B)3番目の番号を消して欠番にする の2通りに壊すと、いずれも不合格になることを実測した。あわせて刷新前の並び(1,2,無,3,4,5,5,無,6,7)も不合格になることを確認した。"
+        },
+        {
+         "id": "G-UI-REVAMP-INFO-FAVICON",
+         "kind": "state",
+         "theme": "画面を開いたときに、裏側で読み込みエラーが出ない",
+         "meaning": "現行は /favicon.ico が 404 を返しており、ブラウザの開発者コンソールにエラーが出続けている",
+         "status": "done",
+         "criteria": [
+          {
+           "text": "/ を実ブラウザで開いてネットワークが静まるまでの間に、ステータス 400 以上のレスポンスが1件も無い。ブラウザが既定で要求する /favicon.ico も 200 を返す。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き（waitUntil:\"networkidle\"）、page の response イベントで status>=400 のレスポンスを収集して0件であることを確認する。あわせて curl --noproxy '*' で GET http://127.0.0.1:5178/favicon.ico を実行し 200 が返ることを確認する。対照: favicon の配信ルートを外した偽実装を当て、2つの検査が両方とも FAIL することを実測する（2026-08-15 の現行実測値: /favicon.ico=404）。",
+           "verifyCmd": "node video-shorts/tests/ui-revamp-info-check.mjs",
+           "evidence": "2a00366"
+          }
+         ],
+         "detail": "【凍結前の探り3本(2026-08-15 実行)】①何も作っていない偽物を当てる: アイコンを配信しない実装は /favicon.ico が 404 になり落ちる(2026-08-15 の刷新前の実測値がまさに 404)。 ②正しい実装で1回実測: webapp-mockup/favicon.ico を追加し MIME マップへ .ico を足した結果、/favicon.ico は 200 で中身のあるファイルを返す。ページ読み込み中に 400 以上を返したレスポンスは 0 件。 ③意図的に壊したものを当てる: 配信されていないパス(/favicon-not-served-control.ico)を同じ判定に掛けると 400 以上を検出することを実測した(検出手段が「有るとき有ると言える」ことの対照)。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-WIRING",
+       "kind": "state",
+       "theme": "刷新前にできた設定が、刷新後の画面でも1つ残らずそのまま効く",
+       "meaning": "画面を作り直すと、既に動いていた設定の配線が黙って切れる事故が起きる（過去2回=顔モザイク・つなぎ目の間で実際に発生）。job-params.mjs が受け付ける16項目を1項目=1葉で覆い、加えて条件表示の出し入れを1葉立てた",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-WIRING-SUB",
+         "kind": "state",
+         "theme": "新しい画面で「字幕を付けるかどうか」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から sub が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕を付けるかどうか」を既定(none)以外(on)に選んで実行すると、POST /api/jobs のクエリに sub が載り、かつ既定で実行した場合との比較で出力に差が出る（出力の映像に字幕が焼き込まれる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕を付けるかどうか」を on に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに sub が期待値で載ることを確認する。(2) 同じ素材を既定(none)でも実行し、2つの出力を比較して「出力の映像に字幕が焼き込まれる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-STYLE",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の見せ方」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から subStyle が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の見せ方」を既定(karaoke)以外(bold)に選んで実行すると、POST /api/jobs のクエリに subStyle が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass のスタイル定義が karaoke のものと異なる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の見せ方」を bold に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに subStyle が期待値で載ることを確認する。(2) 同じ素材を既定(karaoke)でも実行し、2つの出力を比較して「生成された .ass のスタイル定義が karaoke のものと異なる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-FONT",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の書体」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から captionFont が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の書体」を既定(kaku)以外(mincho)に選んで実行すると、POST /api/jobs のクエリに captionFont が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass の Fontname が mincho の書体名になる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の書体」を mincho に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに captionFont が期待値で載ることを確認する。(2) 同じ素材を既定(kaku)でも実行し、2つの出力を比較して「生成された .ass の Fontname が mincho の書体名になる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-FILL",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の文字色」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から captionFill が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の文字色」を既定(未指定)以外(#ff0000)に選んで実行すると、POST /api/jobs のクエリに captionFill が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass の PrimaryColour が #ff0000 に対応する値になる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の文字色」を #ff0000 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに captionFill が期待値で載ることを確認する。(2) 同じ素材を既定(未指定)でも実行し、2つの出力を比較して「生成された .ass の PrimaryColour が #ff0000 に対応する値になる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-OUTLINE",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の外側の縁取り色」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から captionOutlineColor が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の外側の縁取り色」を既定(未指定)以外(#0000ff)に選んで実行すると、POST /api/jobs のクエリに captionOutlineColor が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass の OutlineColour が #0000ff に対応する値になる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の外側の縁取り色」を #0000ff に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに captionOutlineColor が期待値で載ることを確認する。(2) 同じ素材を既定(未指定)でも実行し、2つの出力を比較して「生成された .ass の OutlineColour が #0000ff に対応する値になる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-INNER",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の内側の縁取り」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から captionInner が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の内側の縁取り」を既定(off(画面の既定は『なし』))以外(#ffff00)に選んで実行すると、POST /api/jobs のクエリに captionInner が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass に内側縁取りの描画が現れる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の内側の縁取り」を #ffff00 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに captionInner が期待値で載ることを確認する。(2) 同じ素材を既定(off(画面の既定は『なし』))でも実行し、2つの出力を比較して「生成された .ass に内側縁取りの描画が現れる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【是正済み】当初 非既定値を off としていたが、app.js:15 の既定が既に captionInner:\"off\" で同値比較になっていた（basis-reviewer 反証）。非既定値を色指定側へ反転した。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-BAND",
+         "kind": "state",
+         "theme": "新しい画面で「字幕の背景帯」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から captionBand が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「字幕の背景帯」を既定(off(画面の既定は『なし』))以外(#000000)に選んで実行すると、POST /api/jobs のクエリに captionBand が載り、かつ既定で実行した場合との比較で出力に差が出る（生成された .ass に背景帯の描画が現れる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「字幕の背景帯」を #000000 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに captionBand が期待値で載ることを確認する。(2) 同じ素材を既定(off(画面の既定は『なし』))でも実行し、2つの出力を比較して「生成された .ass に背景帯の描画が現れる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【是正済み】当初 非既定値を off としていたが、app.js:15 の既定が既に captionBand:\"off\" で同値比較になっていた（basis-reviewer 反証）。非既定値を色指定側へ反転した。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-MOSAIC",
+         "kind": "state",
+         "theme": "新しい画面で「顔を隠すかどうか」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から mosaic が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「顔を隠すかどうか」を既定(none)以外(on)に選んで実行すると、POST /api/jobs のクエリに mosaic が載り、かつ既定で実行した場合との比較で出力に差が出る（出力の映像から素顔が消える）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「顔を隠すかどうか」を on に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに mosaic が期待値で載ることを確認する。(2) 同じ素材を既定(none)でも実行し、2つの出力を比較して「出力の映像から素顔が消える」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-TRIM",
+         "kind": "state",
+         "theme": "新しい画面で「黙っている時間を詰めるかどうか」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から trim が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「黙っている時間を詰めるかどうか」を既定(none)以外(on)に選んで実行すると、POST /api/jobs のクエリに trim が載り、かつ既定で実行した場合との比較で出力に差が出る（出力の尺が、詰めない指定より短くなる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「黙っている時間を詰めるかどうか」を on に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに trim が期待値で載ることを確認する。(2) 同じ素材を既定(none)でも実行し、2つの出力を比較して「出力の尺が、詰めない指定より短くなる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-BREATH",
+         "kind": "state",
+         "theme": "新しい画面で「つなぎ目に戻す息継ぎの間」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から breath が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「つなぎ目に戻す息継ぎの間」を既定(未指定(0.7秒))以外(off)に選んで実行すると、POST /api/jobs のクエリに breath が載り、かつ既定で実行した場合との比較で出力に差が出る（つなぎ目に入る間が無くなり、出力の尺が既定より短くなる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「つなぎ目に戻す息継ぎの間」を off に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに breath が期待値で載ることを確認する。(2) 同じ素材を既定(未指定(0.7秒))でも実行し、2つの出力を比較して「つなぎ目に入る間が無くなり、出力の尺が既定より短くなる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-CUT",
+         "kind": "state",
+         "theme": "新しい画面で「切り方（話題で切る／分数で切る）」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から cut が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「切り方（話題で切る／分数で切る）」を既定(topic)以外(minutes)に選んで実行すると、POST /api/jobs のクエリに cut が載り、かつ既定で実行した場合との比較で出力に差が出る（分数で切る経路が実際に動き、出力クリップの尺が指定分数に沿う）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「切り方（話題で切る／分数で切る）」を minutes に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに cut が期待値で載ることを確認する。(2) 同じ素材を既定(topic)でも実行し、2つの出力を比較して「分数で切る経路が実際に動き、出力クリップの尺が指定分数に沿う」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-CUTMIN",
+         "kind": "state",
+         "theme": "新しい画面で「何分で切るか」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から cutMin が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「何分で切るか」を既定(3)以外(5)に選んで実行すると、POST /api/jobs のクエリに cutMin が載り、かつ既定で実行した場合との比較で出力に差が出る（出力クリップの尺が5分の指定に沿う）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「何分で切るか」を 5 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに cutMin が期待値で載ることを確認する。(2) 同じ素材を既定(3)でも実行し、2つの出力を比較して「出力クリップの尺が5分の指定に沿う」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【前提操作】cutMin は cut=minutes のときしか送信されない（app.js:531）。verify は必ず先に cut=minutes を選ぶこと（basis-reviewer 反証で判明）。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-DURATION",
+         "kind": "state",
+         "theme": "新しい画面で「1本の目安の長さ」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から durationMin が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「1本の目安の長さ」を既定(未指定)以外(45)に選んで実行すると、POST /api/jobs のクエリに durationMin が載り、かつ既定で実行した場合との比較で出力に差が出る（出力クリップの尺が45分の指示に沿う）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「1本の目安の長さ」を 45 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに durationMin が期待値で載ることを確認する。(2) 同じ素材を既定(未指定)でも実行し、2つの出力を比較して「出力クリップの尺が45分の指示に沿う」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-SIZE",
+         "kind": "state",
+         "theme": "新しい画面で「縦型か横型か」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から size が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「縦型か横型か」を既定(9:16)以外(16:9)に選んで実行すると、POST /api/jobs のクエリに size が載り、かつ既定で実行した場合との比較で出力に差が出る（出力動画の解像度が 1920x1080 になる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「縦型か横型か」を 16:9 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに size が期待値で載ることを確認する。(2) 同じ素材を既定(9:16)でも実行し、2つの出力を比較して「出力動画の解像度が 1920x1080 になる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-EXPORT",
+         "kind": "state",
+         "theme": "新しい画面で「書き出しプリセット」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から exportPreset が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「書き出しプリセット」を既定(未指定(standard))以外(sns)に選んで実行すると、POST /api/jobs のクエリに exportPreset が載り、かつ既定で実行した場合との比較で出力に差が出る（出力動画の音声ビットレートが standard(192k)ではなく sns(128k)相当になる）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「書き出しプリセット」を sns に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに exportPreset が期待値で載ることを確認する。(2) 同じ素材を既定(未指定(standard))でも実行し、2つの出力を比較して「出力動画の音声ビットレートが standard(192k)ではなく sns(128k)相当になる」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【是正済み】当初『書き出し設定が standard と異なる』としていたが、crf/preset は出力ファイルに残らず観測不能だった（basis-reviewer 反証、export-presets.mjs）。観測可能な音声ビットレートへ置き換えた。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-NAME",
+         "kind": "state",
+         "theme": "新しい画面で「入れた動画のファイル名」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から name が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「入れた動画のファイル名」を既定(未送信時は upload.mp4 へ丸まる)以外(識別可能な固有名)に選んで実行すると、POST /api/jobs のクエリに name が載り、かつ既定で実行した場合との比較で出力に差が出る（成果物の名前が、入れた動画のファイル名に由来する）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「入れた動画のファイル名」を 識別可能な固有名 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに name が期待値で載ることを確認する。(2) 同じ素材を既定(未送信時は upload.mp4 へ丸まる)でも実行し、2つの出力を比較して「成果物の名前が、入れた動画のファイル名に由来する」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【追加】当初の15葉から漏れていた（basis-reviewer 反証）。job-params.mjs が受け付ける16項目のうち唯一葉が無かった。"
+        },
+        {
+         "id": "G-UI-REVAMP-WIRING-CONDITIONAL",
+         "kind": "state",
+         "theme": "新しい画面で「条件を満たしたときだけ出る設定欄の出し入れ」を選ぶと、その通りの動画が出てくる",
+         "meaning": "刷新後の画面から (条件表示) が実HTTPで送信され、出力まで効いていることを、画面操作から出力実測まで一本で確認する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "刷新後の画面で「条件を満たしたときだけ出る設定欄の出し入れ」を既定(非表示)以外(表示→非表示→再表示)に選んで実行すると、POST /api/jobs のクエリに (条件表示) が載り、かつ既定で実行した場合との比較で出力に差が出る（隠して戻したときに、選んでいた値が失われない）。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で刷新後の / を開き、「条件を満たしたときだけ出る設定欄の出し入れ」を 表示→非表示→再表示 に設定して実行する。(1) page.waitForRequest で POST /api/jobs を捕捉し、クエリに (条件表示) が期待値で載ることを確認する。(2) 同じ素材を既定(非表示)でも実行し、2つの出力を比較して「隠して戻したときに、選んでいた値が失われない」ことを実測する。対照: 当該コントロールの値を state へ書き込む処理だけを外した偽実装を当て、この葉のケースだけが FAIL し、他設定のケースは PASS のままであることを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 ②出力側の観測量に閾値・単位・許容幅が無い（「差が出る」の定量化）。③probe#2（正しい実装で1回実測）が未実行で、この葉の基準が達成可能かが未確認。とくに17葉×2回のフルパイプライン実行が現実の時間で回るかを実測すること。 【追加】当初漏れていた（basis-reviewer 反証）。cutMin 欄は cut=minutes 時のみ、caption-inner-color-row / caption-band-color-row は「あり」選択時のみ表示（index.html:98-111, app.js:210-234）。既存の tests/ui-settings-conditional-recover-compat-check.mjs が守っていた経路。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-FLOW",
+       "kind": "state",
+       "theme": "うまくいっている時も、失敗した時も、いま何が起きているか画面で分かる",
+       "meaning": "刷新で見た目だけ新しくして、進捗表示・失敗表示・復帰といった「うまくいかない時の道」を落とさない",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-FLOW-GUARD",
+         "kind": "state",
+         "theme": "動画を入れていないうちは、実行ボタンが押せない",
+         "meaning": "空実行でサーバ側のエラーに落ちるのではなく、押せないことが画面で分かる",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "動画を1本も入れていない状態で btn-run が disabled であり、クリックしても POST /api/jobs が飛ばない。動画を入れると disabled が外れる。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、(1) 初期状態で btn-run.disabled が true、(2) click しても3秒間 POST /api/jobs が発生しない、(3) 素材を input へ set したあと disabled が false になる、を確認する。対照: disabled 制御を外した偽実装で (1)(2) が FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-FLOW-PROGRESS",
+         "kind": "state",
+         "theme": "処理中は、どこまで進んだかが画面で分かる",
+         "meaning": "長い処理の間、止まっているのか進んでいるのか分からない状態を作らない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "サーバが SSE で送る段階(stage)の集合と、画面の progress-step の data-k の集合が完全一致する。実行中、サーバが送った各段階の active/done がすべて画面へ反映され、その順序がサーバの送信順と一致する。現行の段階は t(文字起こし)/c(字幕修正)/s(場面選択)/r(整形)/m(モザイク、mosaic=on のときのみ)の5つ。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で mosaic=on にして実行し、SSE の各イベント到着ごとに progress-step の状態を記録する。(1) 画面の data-k 集合が {t,c,s,r,m} と完全一致すること、(2) サーバが送った全段階について active→done の遷移が観測されること、(3) 遷移順がサーバ送信順と一致すること、を確認する。対照: 5段階のうち1つ(r)だけ DOM 更新を外した偽実装を当て、その段階で FAIL することを実測する（「2つ以上遷移すれば合格」では検出できないことを示す）。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 当初『少なくとも2つ以上の段階』としていたが、5段階のうち3段階を配線し忘れても合格する基準だった（basis-reviewer 反証）。全段階一致へ是正済み。"
+        },
+        {
+         "id": "G-UI-REVAMP-FLOW-FAIL",
+         "kind": "state",
+         "theme": "失敗したときは、理由が画面に出る",
+         "meaning": "2026-08-15 の Windows 不具合で「失敗したことしか分からない」状態が実害を出したため、刷新後も理由が画面へ届くことを担保する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "ジョブが失敗したとき、サーバが返した失敗理由の文字列（伏字化処理を通したあとの文字列）が画面に表示される。「失敗しました」だけの汎用文言ではなく、サーバ由来の理由が本文として読める。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で、失敗を注入したサーバ設定（方法は1つに固定して凍結する）でジョブを実行し、失敗表示要素の textContent に、サーバが返した理由の文字列が伏字化後の形でそのまま含まれることを確認する。対照: 表示側を汎用文言のみに固定した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ①失敗のさせ方が『固定素材 または 失敗注入』の二択のままで1つに凍結されていない（basis-reviewer 反証）。②P1-14 の鍵の伏字化と衝突しうる文字列の比較方法（伏字後の文字列と比較する旨）を、実装を見て確定すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-FLOW-CANTEDIT",
+         "kind": "state",
+         "theme": "編集できない動画を入れたときは、そのことが伝わる",
+         "meaning": "既存の「この動画は編集できません」の道を刷新で落とさない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "音声が無い等で編集できない素材を入れて実行したとき、編集できない旨のカードが表示され、そこから素材を選び直す操作へ到達できる。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で no-speech と判定される素材を入れて実行し、編集不可の要素が表示されること、その中の再選択操作をクリックで初期状態へ戻れることを確認する。対照: 当該分岐の表示処理を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-FLOW-RECONNECT",
+         "kind": "state",
+         "theme": "途中で通信が切れても、画面が置き去りにならない",
+         "meaning": "既存の SSE 再接続の道を刷新で落とさない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "処理中に SSE 接続が切断されたあと、再接続によって進捗の反映が再開し、最終的に完了が画面へ届く。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で実行を開始し、途中で SSE 接続を切断（切り方は1つに固定して凍結する）したあと、再接続後に進捗の DOM 更新が再開し、完了イベントで結果表示へ遷移することを確認する。対照: 再接続処理を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 切り方が『サーバ側で閉じる または page.route で中断』の二択のままで1つに凍結されていない（basis-reviewer 反証）。素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-RESULT",
+       "kind": "state",
+       "theme": "出来上がった動画を、ちゃんと受け取れる",
+       "meaning": "親は『最後まで操作できる』と言っているのに、成功したあとの受け取り経路に葉が1つも無く、作り直しで壊れても全部緑のままだった（basis-reviewer 反証・100%ルール）",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-RESULT-LIST",
+         "kind": "state",
+         "theme": "出来上がったショートが、一覧に並んで見える",
+         "meaning": "作った物が見つからなければ、作れていないのと同じ",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "実行が完了したあと、生成されたクリップが一覧として画面に並び、件数がサーバの返す候補数と一致する。採用候補と使わない候補の切り替えができる。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で実行を完了させ、一覧要素の件数がサーバの候補APIが返す件数と一致すること、切り替え操作で表示される集合が変わることを確認する。対照: 一覧描画を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-RESULT-PLAY",
+         "kind": "state",
+         "theme": "出来上がったまとめ動画を、その場で再生できる",
+         "meaning": "受け取る前に中身を確かめられる",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "完了後、まとめ動画(ダイジェスト)を画面上で再生でき、再生位置が進む。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で実行を完了させ、動画要素の play() 後に currentTime が 0 より大きくなることを確認する。対照: 再生要素の src 配線を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-RESULT-DOWNLOAD",
+         "kind": "state",
+         "theme": "出来上がったショートを、手元に保存できる",
+         "meaning": "最終的に受け取れなければ製品として成立しない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "一覧の各クリップにダウンロード手段があり、実際に取得すると 200 で中身のあるファイルが返る。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で完了後、各クリップのダウンロード先へ実際にリクエストし、200 かつ Content-Length が 0 より大きいことを確認する。対照: ダウンロード導線を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-CAPTION",
+       "kind": "state",
+       "theme": "字幕を直して、焼き直せる",
+       "meaning": "字幕の手直し・用語登録・焼き直しは0ベースの作り直しで最も落としやすい既存機能なのに、葉が1つも無かった（basis-reviewer 反証・100%ルール）",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-CAPTION-EDIT",
+         "kind": "state",
+         "theme": "AIが間違えた字幕を、自分で直せる",
+         "meaning": "誤字が残ったまま出せないので、直す手段が要る",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "完了後、字幕の文言を画面で編集して保存でき、保存した内容が再取得しても保たれる。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で完了後、字幕編集要素の文言を変更して保存し、再読み込み後も変更が残ることを確認する。対照: 保存処理を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-CAPTION-TERMS",
+         "kind": "state",
+         "theme": "よく出る固有名詞を登録して、次から間違えないようにできる",
+         "meaning": "同じ誤変換を毎回直す手間を無くす",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "画面から用語を登録でき、登録した用語がサーバの用語辞書へ反映される。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で用語を登録し、用語APIの返す内容に反映されることを確認する。対照: 登録処理を外した偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。 P1-19-A（用語辞書への書き込み上限）が todo のままなので、上限との関係を確認すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-CAPTION-REBAKE",
+         "kind": "state",
+         "theme": "直した字幕で、焼き直せる",
+         "meaning": "直しても反映されなければ意味が無い",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "直した字幕で焼き直しを実行すると、出力の字幕が直した内容になる。焼き直し中は編集がロックされる。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で字幕を直して焼き直しを実行し、出力の .ass または画素で直した文言が反映されていること、実行中は編集要素が操作不能になることを確認する。対照: 焼き直しの入力に直した字幕を渡さない偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 素材が『固定素材』としか書けていない（AGENTS.md は パス＋SHA-256＋使う区間 を要求）。video-shorts/tests/fixtures/ から境界値分析で選び、SHA-256 と使用区間を凍結すること。測定環境(CIランナー固定版・ffmpeg/Chromium版)も併記すること。"
+        }
+       ]
+      },
+      {
+       "id": "G-UI-REVAMP-ACCESS",
+       "kind": "state",
+       "theme": "マウスが使えない人も、スマホの人も、同じことができる",
+       "meaning": "既存で done になっているキーボード操作・モーダル操作・文字サイズ・スマホ幅・読み上げを、刷新で落とさない",
+       "children": [
+        {
+         "id": "G-UI-REVAMP-ACCESS-KEYBOARD",
+         "kind": "state",
+         "theme": "キーボードだけで、動画を入れてから実行まで到達できる",
+         "meaning": "マウスを使わずに主要動線を最後まで通せる",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "Tab と Enter/Space だけで、ファイル選択の起動 → 設定の変更 → 実行ボタンの押下、まで到達できる。途中でフォーカスが不可視要素へ落ちない。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、Tab を順に送りながら document.activeElement を追跡する。(1) btn-pick-file・全 setting-row のコントロール・btn-run がすべてフォーカス到達可能、(2) 各時点の activeElement が可視（矩形の幅高さが0でなく visibility/display で隠れていない）、(3) setting-row 上で Space/Enter により値が変わる、を確認する。対照: btn-run へ tabindex=\"-1\" を付けた偽実装で FAIL することを実測する。"
+          }
+         ]
+        },
+        {
+         "id": "G-UI-REVAMP-ACCESS-MODAL",
+         "kind": "state",
+         "theme": "ポップアップを開いても、キーボードの人が迷子にならない",
+         "meaning": "既存で done の P2-8-A〜D（初期フォーカス／閉じ込め／Escで閉じる／元へ復帰）を、刷新で作り直すモーダルでも保つ",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "結果オーバーレイと編集不可カードについて、(1)開いた直後のフォーカスがその中にある (2)Tabがその外へ出ない (3)Escで閉じる (4)閉じたあとフォーカスが開く前の要素へ戻る、の4つが成り立つ。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で各モーダルを開き、(1)〜(4) を document.activeElement の追跡で確認する。対照: フォーカストラップを外した偽実装で (2) が FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 【追加】当初漏れていた（basis-reviewer 反証）。既存 done の P2-8-A〜D と tests/webapp-modal-focus-check.mjs / webapp-cantedit-focus-check.mjs が対象。この4つは独立して落ちうるため、凍結前に4葉へ割るか、1つの受入結果として扱う根拠を書くこと。"
+        },
+        {
+         "id": "G-UI-REVAMP-ACCESS-FONTSIZE",
+         "kind": "state",
+         "theme": "文字が小さすぎて読めない箇所が無い",
+         "meaning": "既存で done の P2-6（文字サイズ）を刷新で落とさない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "画面に表示される全テキスト要素の計算後フォントサイズが、既存 P2-6 で定めた下限以上である。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、全テキスト要素の fontSize を getComputedStyle から取得して下限以上であることを確認する。対照: 1箇所を下限未満にした偽実装で FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 【追加】当初漏れていた（basis-reviewer 反証）。既存 tests/webapp-font-size-static-check.mjs の下限値を読み、同じ数値で凍結すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-ACCESS-MOBILE",
+         "kind": "state",
+         "theme": "画面の幅が変わっても、はみ出さずに全部操作できる",
+         "meaning": "3列から縦積みへの切り替え幅を決め、その境目の前後で崩れないことを担保する",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "縦積みへ切り替わる幅(ブレークポイント)を1つ定め、幅 390px / (境目-1)px / 境目px / (境目+1)px / 1280px の5点すべてで、(1)横スクロールが発生しない (2)全操作要素が viewport 幅に収まる (3)境目未満では3ペインが縦に積まれ、境目以上では横に並ぶ、が成り立つ。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で上記5つの viewport 幅それぞれについて / を開き、(1) documentElement.scrollWidth <= clientWidth (2) 全操作要素の矩形の right <= viewport幅 (3) 3ペインの矩形が縦積み/横並びのどちらかに一致、を確認する。対照: 右ペインに固定幅 320px を残した偽実装で 390px のケースが FAIL することを実測する。"
+          }
+         ],
+         "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: ブレークポイントの具体値が未確定（basis-reviewer 反証: 境界値分析）。実装の CSS を決める時点で1つに固定し、既存 tests/webapp-mobile-layout-check.mjs との整合を確認すること。"
+        },
+        {
+         "id": "G-UI-REVAMP-ACCESS-ARIA",
+         "kind": "state",
+         "theme": "読み上げを使う人にも、いまどれを選んでいるかが伝わる",
+         "meaning": "見た目の色だけで選択状態を表すと、読み上げ利用者には何も伝わらない",
+         "status": "todo",
+         "criteria": [
+          {
+           "text": "全 setting-row の選択状態が、色だけでなく aria 属性（aria-pressed / aria-selected / role=radio の aria-checked のいずれか）で表現され、値を変えると当該属性も追随して変わる。【検査用フック契約(この葉の凍結と同時に確定。刷新後の画面はこれを必ず備える)】data-testid: app-header / pane-left / pane-center / pane-right / guide-text / btn-run / btn-pick-file / step-item(各項目。番号は data-step-no) / setting-row(各設定行。設定キーは data-setting-key) / progress-step(各段階。段階記号は data-k)。",
+           "verify": "実サーバ(node video-shorts/server/index.mjs、127.0.0.1:5178)＋Playwright/Chromium(video-shorts/tests/helpers/launch-chromium.mjs 経由)で / を開き、各 setting-row について選択中の要素が該当 aria 属性で \"true\"、非選択が \"false\" を持つことを確認する。別の値をクリック後に属性が入れ替わることを確認する。対照: aria 更新処理を外した偽実装で、クリック後の入れ替わりが起きず FAIL することを実測する。"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "G-OPS-UI-VIEW",
+     "kind": "state",
+     "theme": "「UIを表示して行え」と言えば、AIが毎回同じ手順で画面を出して見せられる",
+     "meaning": "2026-08-15 マスター指示『UIを表示して行う、と指示した場合の手順をAIに渡して正確に迅速に行うAI向けマニュアルの作成と運用方法の確立』。手順が口伝だと、セッションごとに撮り方が変わり、誤診（実際には正常なのに壊れて見える）が起きる。",
+     "children": [
+      {
+       "id": "G-OPS-UI-VIEW-DISCOVER",
+       "kind": "state",
+       "theme": "「UIを見せて」と言えば、AIがその場で正しい手順に入る",
+       "meaning": "手順書があっても、指示から手順へ辿り着けなければ運用は成立しない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "凍結した代表指示文のリスト（『UIを表示して』『画面を見せて』『今の画面どうなってる』など、着手前に文言を固定する）を与えたとき、AI が当該スキルを選択して手順に入る。",
+         "verify": "凍結した代表指示文のそれぞれについて、スキル選択の結果が当該スキルになることを実測する。対照: 当該スキルを無効化した状態で同じ指示文を与え、選択されないことを確認する。"
+        }
+       ],
+       "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 当初は description に3語が含まれるかという語句一致で測っており、これは『到達できる』という受入能力ではなく実装手段のフィンガープリントだった（basis-reviewer 反証。2026-08-11 に指標2が同じ理由で廃止された前例あり）。加えて criteria と verify で語のリストが食い違っていた。代表指示文リストの凍結と、選択結果を実測する方法の確定が要る。"
+      },
+      {
+       "id": "G-OPS-UI-VIEW-RUN",
+       "kind": "state",
+       "theme": "手順書のとおりに実行すると、実際に画面の画像が出てくる",
+       "meaning": "手順書が現実に動くことを、書いてある通りに実行して確かめる",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "手順書のコマンドを、書かれた順に書かれた引数で実行すると、指定した出力先に画面の PNG が生成される。画像は白紙ではなく実際の画面内容を含む（画素の最頻色の占有率が98%未満）。",
+         "verify": "手順書のコマンドをそのまま実行し、(1) 指定パスに PNG が生成される (2) 画素の最頻色の占有率が98%未満である、を確認する。対照: サーバを起動しない状態で同手順を実行し、手順書が定めた失敗検出で止まり、白紙の画像を成果物として残さないことを実測する。"
+        }
+       ]
+      },
+      {
+       "id": "G-OPS-UI-VIEW-FULLPAGE",
+       "kind": "state",
+       "theme": "画面の下の方まで、切れずに写る",
+       "meaning": "2026-08-15 に実際に踏んだ罠：body が内部スクロール領域のため fullPage:true が全高を撮らず、私自身が『⑥以降が切れている』と誤診しかけた",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "撮影した画像の高さが、次式で定める『実効全高』以上である。実効全高 = max(document.documentElement.scrollHeight, および position が fixed/sticky でない全要素のうち scrollHeight > clientHeight であるものの (要素の文書内 top + scrollHeight) の最大値)。許容誤差は 0 とし、下回れば不合格とする。あわせて、文書内で最も下にある可視要素が画像の範囲内に収まる。",
+         "verify": "刷新後の画面と現行画面の両方に対し手順書の撮影手順を実行し、生成画像の高さが上式の実効全高以上であることを確認する。対照: 素朴な fullPage:true で撮る方法を当て、画像高さが実効全高に届かず FAIL することを実測する（2026-08-15 の現行実測値: document.scrollHeight=900 に対し body.scrollHeight=1153）。"
+        }
+       ],
+       "detail": "【未凍結】basis-reviewer(2026-08-15)の反証が未解消のため、この葉はまだ凍結していない。着手前に次を解消して凍結する: 『内部スクロール領域を考慮した値』の算出式が未定義だったため上式を置いたが、固定ヘッダー(position:fixed)の扱いと、入れ子のスクロール領域が複数ある場合の合成規則を、実装時に実測して確定すること（basis-reviewer 反証）。"
+      },
+      {
+       "id": "G-OPS-UI-VIEW-DOC",
+       "kind": "state",
+       "theme": "手順書に、画像へ必ず添える情報が明記されている",
+       "meaning": "文書側の約束。実行側とは別々に落ちうるので葉を分けた（basis-reviewer 反証: atomic）",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "手順書の本文に、撮影した画像へ必ず添える3情報（撮影したURL／viewport の幅と高さ／撮影時点のコミットSHA）を添える義務が明文で書かれている。",
+         "verify": "手順書ファイルを読み、3情報それぞれの記載義務が明文で存在することを確認する。対照: 1つを削った状態で FAIL することを実測する。"
+        }
+       ]
+      },
+      {
+       "id": "G-OPS-UI-VIEW-EMIT",
+       "kind": "state",
+       "theme": "撮った画像に、いつ・どこを・どの版で撮ったかが必ず付いてくる",
+       "meaning": "文書に書くだけでなく、実行すると実際にその情報が出ることを別に担保する",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "手順を1回実行すると、生成物（画像に添えるメタ情報ファイルまたは標準出力）に、撮影したURL・viewport の幅と高さ・撮影時点のコミットSHA の3つが、実際の値として含まれる。",
+         "verify": "手順を1回実行し、生成物に3情報が実値で含まれることを確認する（コミットSHA は git rev-parse HEAD の出力と一致すること）。対照: 3情報のうち1つを出力しない実装を当て、FAIL することを実測する。"
         }
        ]
       }
