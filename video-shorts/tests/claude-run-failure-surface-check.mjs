@@ -19,7 +19,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runClaudeJson } from "../src/claude-run.mjs";
+import { runClaudeJson, summarizeStdoutFailure } from "../src/claude-run.mjs";
 
 let pass = 0, fail = 0;
 const tmpDirs = [];
@@ -108,6 +108,46 @@ try {
       /空/.test(caught.message),
       `出力が無かったことが読み取れない: ${caught.message}`
     );
+  });
+
+  // ── 理由がJSONの末尾寄りにあっても切り落とさない ─────────────────────────
+  // 実機(Windows)で発生: --output-format json の失敗エンベロープは、人間が読むべき result を
+  // usage/session_id 等の機械向けフィールドの後ろに置く。頭から切り詰めると理由だけが落ちる。
+  await t("失敗JSONのresultが末尾寄りにあっても、理由が表示される", async () => {
+    const envelope = JSON.stringify({
+      is_error: true, duration_api_ms: 0, num_turns: 1, stop_reason: "stop_sequence",
+      session_id: "77700525-d27a-4461-91d8-da0c0c72fbf7", total_cost_usd: 0,
+      usage: {
+        input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+        output_tokens: 0, server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+        service_tier: "standard", cache_creation: { ephemeral_1h_input_tokens: 0 },
+      },
+      result: "MARKER_REASON_AT_TAIL",
+    });
+    // 前提の確認: この JSON は素朴に400文字で切ると理由へ到達しない（＝検査が意味を持つ形）
+    assert.ok(
+      !envelope.slice(0, 400).includes("MARKER_REASON_AT_TAIL"),
+      "前提が崩れている: 400文字以内に理由が入ってしまい、この検査が何も守らない"
+    );
+    installFakeClaude(
+      `process.stdout.write(${JSON.stringify(envelope)});\nprocess.exit(1);`
+    );
+    let caught = null;
+    try { await runClaudeJson({ stdin: "hi", cwd: mkCwd() }); }
+    catch (e) { caught = e; }
+    assert.ok(caught, "失敗するはずが成功した");
+    assert.ok(
+      caught.message.includes("MARKER_REASON_AT_TAIL"),
+      `末尾のresultが切り落とされている: ${caught.message}`
+    );
+  });
+
+  await t("summarizeStdoutFailure: JSONでない出力はそのまま見せる(フォールバック)", async () => {
+    assert.ok(summarizeStdoutFailure("plain text failure").includes("plain text failure"));
+    assert.strictEqual(summarizeStdoutFailure(""), "");
+    assert.strictEqual(summarizeStdoutFailure(null), "");
+    // 既知フィールドが無いJSONは生のまま（黙って空にしない）
+    assert.ok(summarizeStdoutFailure('{"unknown":1}').includes("unknown"));
   });
 
   // ── 対照: 成功時はエラーにせず、ちゃんと結果を返す(検出力の裏付け) ──────────

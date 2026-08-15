@@ -24,6 +24,37 @@ export const DEFAULT_CLAUDE_TIMEOUT_MS = 300_000;
 export const SIGKILL_GRACE_MS = 5_000;
 
 /**
+ * 失敗時の stdout から「人間が読むべき理由」を取り出して1行にする。
+ *
+ * claude -p --output-format json の失敗は、stdout へ JSON エンベロープで返る。理由の本文は
+ * result（無ければ error / message）に入るが、これは usage や session_id など機械向けの数値の
+ * **後ろ**に置かれるため、生の JSON を頭から切り詰めると理由だけが落ちる。実機(Windows)で
+ * 実際にこれが起き、`{"is_error":true,...,"usage":{...` までしか出ずに原因が読めなかった。
+ * 読めるときは理由を先に立て、読めないときだけ生の文字列にフォールバックする。
+ *
+ * @param {string} stdout 子プロセスの stdout 全文
+ * @param {number} [limit] 1フィールドあたりの最大文字数
+ * @returns {string}
+ */
+export function summarizeStdoutFailure(stdout, limit = 600) {
+  const raw = String(stdout ?? "").trim();
+  if (!raw) return "";
+  let envelope;
+  try {
+    envelope = JSON.parse(raw);
+  } catch {
+    return raw.slice(0, limit); // JSON でなければ素の出力をそのまま（切り詰めて）見せる
+  }
+  if (!envelope || typeof envelope !== "object") return raw.slice(0, limit);
+  // 理由が入りうるフィールドを、人間可読な順に拾う。
+  for (const key of ["result", "error", "message", "terminal_reason", "stop_reason"]) {
+    const v = envelope[key];
+    if (typeof v === "string" && v.trim()) return `${key}=${v.trim().slice(0, limit)}`;
+  }
+  return raw.slice(0, limit); // 既知のフィールドが無ければ生のまま
+}
+
+/**
  * claude -p を1回起動し、返答の本文（文字列）を返す。
  *
  * --strict-mcp-config（--mcp-config 未指定）で MCP サーバーをゼロにする。
@@ -115,9 +146,16 @@ export function runClaudeJson({
         // 捨てていたため、Windows実機で認証に到達できず落ちたとき、画面には
         // 「claude 終了コード 1。stderr: 」とだけ出て真因が一切分からなかった
         // （docs/failures.md 2026-08-15）。両方を報告に含める。
+        //
+        // stdout は --output-format json のため JSON エンベロープで返る。人間が読むべき理由は
+        // その result フィールドに入っているが、これは **JSON の末尾寄りに置かれる**ため、
+        // 頭から切り詰めると理由だけがちょうど落ちる（実機で発生: is_error や usage の数値だけが
+        // 表示され、result に到達する前に400文字で切れた）。読めるときは result を先に立てる。
         const parts = [];
         if (stderrBuf.trim()) parts.push(`stderr: ${stderrBuf.slice(0, 400)}`);
-        if (stdoutBuf.trim()) parts.push(`stdout: ${stdoutBuf.slice(0, 400)}`);
+        if (stdoutBuf.trim()) {
+          parts.push(`stdout: ${summarizeStdoutFailure(stdoutBuf)}`);
+        }
         if (parts.length === 0) parts.push("stderr/stdout とも空でした");
         const err = new Error(`claude 終了コード ${code}。${parts.join(" / ")}`);
         err.stderr = stderrBuf; // 呼び出し側が失敗の中身で分岐できるよう、切り詰めない全文も渡す
