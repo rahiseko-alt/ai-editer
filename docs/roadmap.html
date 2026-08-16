@@ -6623,6 +6623,22 @@
        "detail": "【2026-08-16 新設】basis-reviewer 指摘。この検査は当初 resolveCaptionStyle() の戻り値しか渡しておらず、製品の既定経路（pipeline.mjs の `style: resolvedCaptionStyle ?? subStyle` と recaption-stage.mjs）を一度も測っていなかった。その経路は素のプリセット（Fontsize 84 / Outline 14 / Shadow 8 / 同梱外の書体）へ落ちており、直したはずの字の大きさ・折り返し・縁取り・影がまるごと元に戻っていたのに 40 PASS だった。実装は buildAss の入口で必ず resolveCaptionStyle() を通すようにした。探り: この直しを戻すと 7件が実際に落ちることを確認済み。"
       },
       {
+       "id": "G-CAP-FIT-RECAPTION",
+       "kind": "state",
+       "theme": "字幕を直して焼き直しても、選んだ見た目のままで出る",
+       "meaning": "書体や色を選んで作った動画が、字幕を直した瞬間に既定の見た目へ戻らない",
+       "status": "doing",
+       "criteria": [
+        {
+         "text": "初回に作ったとき「明朝体」を選んでいれば、字幕を直して焼き直したあとの字幕も明朝体で焼かれる。判定は、焼き直しが実際に書き出した .ass の Caption の Style 行の書体名で行う（state に値があるかではなく、焼く直前の値で見る）。",
+         "verify": "焼き直しに必要な最小の材料（素材動画・state.json・transcript.json・candidates.json）を作り、src/recaption-stage.mjs の recaptionStage() を実際に走らせて recaption-1.ass を書き出させ、Caption の Style 行の Fontname を読む。明朝体を選んだ場合に Noto Serif JP Black であることを見る。対照: state に見た目が残っていない場合（＝直す前の実装が常にそうだった状態）は既定の Noto Sans JP Black になり、選んだ書体と違う値が出ることを実測する（この検査に見分ける力があることの裏付け）。",
+         "verifyCmd": "node video-shorts/tests/recaption-style-persist-check.mjs",
+         "evidence": null
+        }
+       ],
+       "detail": "【2026-08-16 新設】basis-reviewer 指摘。src/recaption-stage.mjs:101 が state.subStyle を読んでいたが、state を作る pipeline.mjs はそのフィールドを書いておらず常に undefined だった。画面で書体を選んで作った動画でも、字幕を直して焼き直した瞬間に既定の角ゴシックへ戻っていた。pipeline.mjs が「実際に buildAss へ渡した値」そのものを state.captionStyle として残し、焼き直しはそれを読む形にした。実測: 明朝体を選ぶと Noto Serif JP Black / 残っていないと Noto Sans JP Black。"
+      },
+      {
        "id": "G-CAP-FIT-WRAP",
        "kind": "state",
        "theme": "本当に長い字幕は、画面からはみ出さずに折り返される",

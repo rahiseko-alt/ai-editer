@@ -521,6 +521,14 @@ async function cmdRender(workDir, opts = {}) {
   // 字幕なしのときは黒帯(pad)で余白を残す理由が無いので、中央crop-fillで枠いっぱいに映す
   // （黒帯だらけで映像が小さく見える、という実素材での指摘。docs/failures.md 2026-08-14）。
   const fit = noSub ? "cover" : "pad";
+  // 焼き直し（recaption）でも同じ見た目で焼けるように、実際に buildAss へ渡す値を state へ残す。
+  // 【2026-08-16 の欠陥】これが無かったため recaption-stage.mjs は state.subStyle（存在しない
+  // フィールド＝undefined）を渡しており、画面で選んだ書体・スタイルが焼き直しで既定へ戻っていた
+  // （basis-reviewer 指摘）。state に「実際に使った値」そのものを置くのが、取りこぼしの無い形。
+  const captionStyleForAss = resolvedCaptionStyle ?? subStyle;
+  state.captionStyle = noSub ? null : captionStyleForAss;
+  saveState(workDir, state);
+
   const canvas = computeCanvas(orientation, srcW, srcH, fit);
 
   for (let i = 0; i < resolved.length; i++) {
@@ -545,7 +553,7 @@ async function cmdRender(workDir, opts = {}) {
         judge: trimJudge,
         subtitle: noSub ? null : {
           path: path.join(workDir, `clip-${i + 1}.ass`),
-          style: resolvedCaptionStyle ?? subStyle, width: canvas.w, height: canvas.h,
+          style: captionStyleForAss, width: canvas.w, height: canvas.h,
         },
         exportPreset, exportOverrides, fit,
         output: outFile,

@@ -98,7 +98,14 @@ export async function recaptionStage({ workDir, outDir, onLog }) {
       const assPath = path.join(workDir, `recaption-${i + 1}.ass`);
       fs.writeFileSync(
         assPath,
-        buildAss(assWords, c.hook, clipDuration, { style: state.subStyle, width, height }),
+        // 初回レンダが実際に使った字幕の見た目を state から読む（pipeline.mjs が state.captionStyle
+        // へ残す）。旧実装は state.subStyle という存在しないフィールドを読んでおり常に undefined＝
+        // 画面で選んだ書体・スタイルが焼き直しで既定へ戻っていた（2026-08-16 / basis-reviewer 指摘）。
+        buildAss(assWords, c.hook, clipDuration, {
+          style: state.captionStyle ?? state.subStyle,
+          width,
+          height,
+        }),
         "utf-8",
       );
       const tmpOut = resolveInside(outDir, `${safeName}.recaption-tmp.mp4`);
