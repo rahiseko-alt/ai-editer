@@ -377,8 +377,13 @@ function readRoadmapAt(ref) {
   if (!ref) {
     return readFileSync(roadmapAbsPath, "utf8");
   }
+  // maxBuffer: 既定は 1MiB。docs/roadmap.html は 2026-08-16 に 1MiB を超え、
+  // 既定のままだと ENOBUFS で「比較不能」ではなく「クラッシュ」になった（CI が
+  // roadmap-required で落ちた）。roadmap は葉が増えるほど育つファイルなので、
+  // 現実的な上限として 64MiB を与える。
   return execFileSync("git", ["show", `${ref}:${ROADMAP_REL_PATH}`], {
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
   });
 }
 
