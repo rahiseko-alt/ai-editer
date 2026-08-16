@@ -20,7 +20,9 @@
 //
 // 【素材設計・境界値】
 //  - 素材長 4.0 秒・10fps。語は先頭 0.0-0.5秒("A")と末尾 3.5-4.0秒("B")の2語だけで、
-//    間の 3.0 秒は無音（既定の無音しきい値 0.20 秒を大きく超える）→ 詰めると 1.0 秒残る。
+//    間の 3.0 秒は無音（既定の無音しきい値 0.20 秒を大きく超える）→ 詰めると 1.3 秒残る。
+//    2026-08-16: マスター指示「発言の後にだけ、余韻を0.3秒存在させる」により、詰める無音の
+//    直前に残る発言があるとき 0.3 秒を残すようになった。語 0.5+0.5 秒＋余韻 0.3 秒＝1.3 秒。
 //    ffprobe の実測許容は ±0.15 秒（1コマ=0.1秒の2コマ弱ぶん。fps境界の丸めを吸収しつつ、
 //    4.0秒との取り違えは検出できる十分小さい値）。
 //  - 解像度は 320x180（1080x1920 へは6.75倍ぶんの拡大になるため、computeCanvas() の
@@ -55,7 +57,7 @@ const OUT_DIR = path.join(OUT_ROOT, JOB_ID);
 
 const SRC_W = 320, SRC_H = 180, SRC_FPS = 10;
 const TOTAL_SEC = 4.0;
-const EXPECT_TRIMMED_SEC = 1.0; // word "A"(0.5s) + word "B"(0.5s)
+const EXPECT_TRIMMED_SEC = 1.3; // word "A"(0.5s) + 余韻(0.3s) + word "B"(0.5s)
 const DURATION_TOLERANCE_SEC = 0.15;
 const GUARDED_W = 320, GUARDED_H = 568; // computeCanvas(portrait, 320, 180) の実測値
 
@@ -114,6 +116,15 @@ async function main() {
     JSON.stringify({
       id: JOB_ID, input: sample, mode: "topic", sub: "on", orient: "portrait", trim: "on",
     }, null, 2),
+    "utf-8",
+  );
+
+  // 2026-08-16: trim:"on" のときは、どこを詰めてよいかのAIの判断(trim-judge.json)が要る
+  // （G-EDIT-TRIM2-FAILSTOP。無いと render は止まる）。この検査の主題は焼き直しの計画なので、
+  // AI が「どの間も詰めてよい」と答えた状態を再現する。
+  fs.writeFileSync(
+    path.join(WORK_DIR, "trim-judge.json"),
+    JSON.stringify({ fillers: [], cutGaps: [0, 1], total: 2, dropped: [] }),
     "utf-8",
   );
 

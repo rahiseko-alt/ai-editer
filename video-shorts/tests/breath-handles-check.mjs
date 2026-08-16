@@ -309,6 +309,18 @@ try {
     }
     fs.writeFileSync(path.join(workDir, "transcript.json"), JSON.stringify(tr), "utf-8");
     fs.writeFileSync(path.join(workDir, "llm-response.json"), JSON.stringify(llm), "utf-8");
+    // 2026-08-16: 「間を詰める」を選んだときは、どこを詰めてよいかのAIの判断（trim-judge.json）が
+    // 要る（G-EDIT-TRIM2-FAILSTOP。無いと render は止まる）。この検査が確かめたいのは
+    // 「詰めても、息継ぎのために戻した間が削られないこと」なので、AI が「どの間も詰めてよい」と
+    // 答えた状態を再現する（＝いちばん厳しい条件。それでも protect が守られることを見る）。
+    if (opts.statePatch?.trim === "on" || opts.statePatch?.trimSilence === "on") {
+      const idx = (tr.words || []).map((_, i) => i);
+      fs.writeFileSync(
+        path.join(workDir, "trim-judge.json"),
+        JSON.stringify({ fillers: [], cutGaps: idx, total: idx.length, dropped: [] }),
+        "utf-8",
+      );
+    }
     const r = spawnSync(process.execPath,
       [PIPELINE, "render", workDir, "--mode", "digest", ...extraArgs],
       { cwd: ROOT, encoding: "utf-8" });
