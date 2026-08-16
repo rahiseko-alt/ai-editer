@@ -74,7 +74,13 @@ export const TRANSCRIPT = {
 /** topicモード(claude-select)用の固定応答: 全区間をkeepする。 */
 export const TOPIC_CLAUDE = {
   kind: "route",
-  rules: [{ needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) }],
+  // 2026-08-16: 「間を詰める」の判断工程(src/trim-judge.mjs)が増えたので、偽claudeも
+  // 両方の依頼へ答える。答えないと、判断が取れないものとして正しくジョブが止まる
+  // （＝FAILSTOP が効いている）が、検査の意図はそこではない。
+  rules: [
+    { needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) },
+    { needle: "話し言葉を編集する人", answer: JSON.stringify({ fillers: [], cutGaps: [] }) },
+  ],
   fallback: JSON.stringify({
     segments: [
       { keepText: SEG1_TEXT, hook: "H1" },
@@ -98,6 +104,7 @@ export function digestClaude() {
     kind: "route",
     rules: [
       { needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) },
+      { needle: "話し言葉を編集する人", answer: JSON.stringify({ fillers: [], cutGaps: [] }) },
       { needle: "辛口の編集レビュアー", answer: critique },
     ],
     fallback: draft,
