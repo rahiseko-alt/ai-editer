@@ -164,6 +164,21 @@ html::before, html::after, body::before, body::after { content: none; background
 /* 選んだ動画を出す帯も、カードの中の「もう1枚の枠」になっていたので枠を外す
    （地の色だけ残して、ここが情報の塊であることは示す）。 */
 .settings-group .filebar { border: 0; }
+
+/* 画面に浮く窓と、編集済み動画一覧のパネルも同じ枠にする（G-UI-CARDFRAME-OVERLAY）。
+   basis-reviewer(2026-08-16)の指摘: マスターの指示は画面全体なのに、揃えたのは右ペインと
+   中央の2枚だけで、編集中の小窓(角丸14px)・編集できませんの窓(16px)・確認の窓(半透明の線と地)・
+   編集後にいちばん見る一覧パネル(線なし・半透明の地)が別々の描き方のまま残っていた。
+   地を半透明にしないのは、背後の色が透けてカードごとに違う地色に見えてしまうため。 */
+.editing-card,
+.cantedit-card,
+.confirm-card,
+.result-panel {
+  background: var(--card-bg);
+  border: var(--card-border-w) solid var(--card-border-c);
+  border-radius: var(--card-radius);
+  box-shadow: none;
+}
 /* プレビューの端末枠は「カード」ではなく端末の形なので枠は残すが、線の太さと色だけ
    カードと揃える（画面の中に別の線の作法を持ち込まない）。 */
 .three-pane .device-frame { border-width: 1px; box-shadow: none; }
@@ -230,10 +245,12 @@ html::before, html::after, body::before, body::after { content: none; background
 .three-pane .video-area { background: var(--surface-3); }
 
 /* ===== 9. ファイル選択の主ボタン（承認済みモックAの「ファイルを選ぶ」）===== */
+/* 枠は引かない（塗りだけでボタンに見える）。線の色と地の色が同じで見た目に効いていないのに、
+   「カードの中の枠」としては1本の線として数えられてしまうため（G-UI-CARDFRAME-NONEST）。 */
 .drop-btn {
   display: inline-flex; align-items: center; justify-content: center;
   height: 36px; padding: 0 16px; margin-top: 14px;
-  border-radius: 8px; border: 1px solid var(--accent);
+  border-radius: 8px; border: 0;
   background: var(--accent); color: var(--accent-text);
   font-size: 13px; font-weight: 600;
 }
