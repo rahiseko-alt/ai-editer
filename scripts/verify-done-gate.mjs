@@ -150,7 +150,12 @@ export function formatDoneGateViolation(v) {
  */
 function readRoadmapAt(ref) {
   if (!ref) return readFileSync(roadmapAbsPath, "utf8");
-  return execFileSync("git", ["show", `${ref}:${ROADMAP_REL_PATH}`], { encoding: "utf8" });
+  // maxBuffer: 既定の 1MiB を docs/roadmap.html が超えたため明示する
+  // （verify-criteria-freeze.mjs と同じ理由。2026-08-16）。
+  return execFileSync("git", ["show", `${ref}:${ROADMAP_REL_PATH}`], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
 }
 
 /**

@@ -116,13 +116,72 @@ html::before, html::after, body::before, body::after { content: none; background
 .rail-step:first-child::before { background: var(--ink); border-color: var(--ink); color: #ffffff; }
 .rail-note { color: var(--muted); font-size: 11.5px; padding: 10px; margin: 0; }
 
-/* ===== 5. カード・チップ・ボタン（白地に合わせる）===== */
-.settings-group {
-  background: #ffffff;
+/* ===== 5. カード・チップ・ボタン（白地に合わせる）=====
+   2026-08-16 マスター指示③「UIがカードの枠があったりなかったりで統一感が無い。
+   編集SaaSなどを参考にして統一感を出せ」。
+   画面上の「まとまりを囲う入れ物」を1種類の枠に揃える。対象は
+     ・右ペイン直下の設定カード（.settings-group）すべて
+     ・中央ペイン直下の「AIの確認」(.summary-wrap) と「実行」(.actions-wrap)
+   枠の値は1か所（--card-* 変数）に持ち、個別に上書きしない。
+   中央ペインの2つは今まで枠が無く、右ペインだけ枠がある状態だったのが不揃いの正体。 */
+:root {
+  --card-bg: #ffffff;
+  --card-border-w: 1px;
+  --card-border-c: var(--line);
+  --card-radius: 12px;
+  --card-pad: 12px;
+}
+.settings-group,
+.three-pane > .pane-center > .summary-wrap,
+.three-pane > .pane-center > .actions-wrap {
+  background: var(--card-bg);
   background-image: none;
-  border: 1px solid var(--line);
+  border: var(--card-border-w) solid var(--card-border-c);
+  border-radius: var(--card-radius);
+  padding: var(--card-pad);
+  box-shadow: none;
+  /* 枠の見た目を時間で変えない。右ペインのカードだけが .24s かけて色や影を変えると、
+     同じ瞬間に画面上のカードが別々の見た目になる（＝不揃いに見える）。 */
+  transition: none;
+}
+/* ホバーで浮き上がる演出は、右ペインのカードだけが動いて不揃いに見えるのでやめる
+   （中央ペインのカードには元から無かった）。 */
+.settings-group:hover {
+  transform: none;
+  background: var(--card-bg);
+  border-color: var(--card-border-c);
   box-shadow: none;
 }
+/* カードの中に「別の枠を持つ入れ物」を二重に置かない。
+   .bubble は独自の枠と灰色の地を持っていたため、カードの中にもう1枚カードがある
+   見え方になっていた。中身だけを残して枠を外す。 */
+.three-pane > .pane-center > .summary-wrap .bubble {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+/* 選んだ動画を出す帯も、カードの中の「もう1枚の枠」になっていたので枠を外す
+   （地の色だけ残して、ここが情報の塊であることは示す）。 */
+.settings-group .filebar { border: 0; }
+
+/* 画面に浮く窓と、編集済み動画一覧のパネルも同じ枠にする（G-UI-CARDFRAME-OVERLAY）。
+   basis-reviewer(2026-08-16)の指摘: マスターの指示は画面全体なのに、揃えたのは右ペインと
+   中央の2枚だけで、編集中の小窓(角丸14px)・編集できませんの窓(16px)・確認の窓(半透明の線と地)・
+   編集後にいちばん見る一覧パネル(線なし・半透明の地)が別々の描き方のまま残っていた。
+   地を半透明にしないのは、背後の色が透けてカードごとに違う地色に見えてしまうため。 */
+.editing-card,
+.cantedit-card,
+.confirm-card,
+.result-panel {
+  background: var(--card-bg);
+  border: var(--card-border-w) solid var(--card-border-c);
+  border-radius: var(--card-radius);
+  box-shadow: none;
+}
+/* プレビューの端末枠は「カード」ではなく端末の形なので枠は残すが、線の太さと色だけ
+   カードと揃える（画面の中に別の線の作法を持ち込まない）。 */
+.three-pane .device-frame { border-width: 1px; box-shadow: none; }
 .chip.is-on, .chip[aria-pressed="true"] {
   background: var(--chip-on-bg);
   border-color: var(--chip-on-border);
@@ -186,10 +245,12 @@ html::before, html::after, body::before, body::after { content: none; background
 .three-pane .video-area { background: var(--surface-3); }
 
 /* ===== 9. ファイル選択の主ボタン（承認済みモックAの「ファイルを選ぶ」）===== */
+/* 枠は引かない（塗りだけでボタンに見える）。線の色と地の色が同じで見た目に効いていないのに、
+   「カードの中の枠」としては1本の線として数えられてしまうため（G-UI-CARDFRAME-NONEST）。 */
 .drop-btn {
   display: inline-flex; align-items: center; justify-content: center;
   height: 36px; padding: 0 16px; margin-top: 14px;
-  border-radius: 8px; border: 1px solid var(--accent);
+  border-radius: 8px; border: 0;
   background: var(--accent); color: var(--accent-text);
   font-size: 13px; font-weight: 600;
 }

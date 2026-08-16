@@ -415,9 +415,13 @@ try {
             `.assの背景帯Dialogueに指定した帯色(${bandAss})が無い`,
           );
 
-          // (5) 実際に焼かれたフレーム: 背景帯が矩形として充填されている(充填率90%以上)。
+          // (5) 実際に焼かれたフレーム: 背景帯が矩形として充填されている。
+          // しきい値 90%→60%（2026-08-16 / G-CAP-FIT）。字幕の折り返しの見積りを実測値へ
+          // 直した結果、1行が画面の横幅の 84% を使うようになり、帯の矩形のうち文字と縁取りが
+          // 覆う面積が増えた（直す前は横幅の半分しか使っておらず、帯の大半が素通しだった）。
+          // 帯そのものは何も変えていない。実測 72.7% に対し 60% で余裕を持たせる。
           const ratio = fillRatioInRect(composedA.buf, canvas.w, rect, hexToRgb(BAND_HEX));
-          assert.ok(ratio >= 0.9, `背景帯の充填率が90%未満: ${(ratio * 100).toFixed(1)}%`);
+          assert.ok(ratio >= 0.6, `背景帯の充填率が60%未満: ${(ratio * 100).toFixed(1)}%`);
 
           // (6) 実際に焼かれたフレーム: 指定した文字色が背景帯の矩形内(=文字が乗る領域)で
           //     実際に検出できる(文字が既定色や背景帯色に埋もれていない)。
@@ -445,9 +449,9 @@ try {
           const yellowCount = countColorInRect(r.buf, canvas.w, rect, hexToRgb(INNER_HEX));
           assert.ok(yellowCount >= 200, `内側縁取り(黄)の画素が200px未満: ${yellowCount}px`);
 
-          // (b) 背景帯の矩形外周の充填率が90%以上(caption-style-band-check.mjsと同じ基準)。
+          // (b) 背景帯の矩形外周の充填率（しきい値は上の(5)と同じ理由で 60%）。
           const ratio = fillRatioInRect(r.buf, canvas.w, rect, hexToRgb(BAND_HEX_B));
-          assert.ok(ratio >= 0.9, `背景帯の充填率が90%未満: ${(ratio * 100).toFixed(1)}%`);
+          assert.ok(ratio >= 0.6, `背景帯の充填率が60%未満: ${(ratio * 100).toFixed(1)}%`);
 
           // (c) 目安の長さ(2分)+間を詰める(trim)を同時指定しても、各候補の尺が84〜156秒に収まる。
           for (const c of r.candidates) {
