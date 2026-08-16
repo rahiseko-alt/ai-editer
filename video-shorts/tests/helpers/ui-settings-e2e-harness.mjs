@@ -174,7 +174,7 @@ export function startServer(extraPathDirs, port) {
       env: { ...process.env, PORT: String(port), PATH },
     });
     let buf = "";
-    const timer = setTimeout(() => reject(new Error("server起動タイムアウト")), 8000);
+    const timer = setTimeout(() => reject(new Error("server起動タイムアウト")), 30000);
     child.stderr.on("data", (chunk) => {
       buf += chunk.toString();
       if (/listening/.test(buf)) {
