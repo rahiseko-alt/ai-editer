@@ -22,13 +22,13 @@ export function wordsInRange(words, start, end) {
 }
 
 /** words を maxChars 程度の字幕行（キャプション）にまとめる */
-export function groupCaptions(words, maxChars = 18) {
+export function groupCaptions(words, maxChars = 18, fits = null) {
   const lines = [];
   let cur = { text: "", start: null, end: 0 };
   for (const word of words) {
     if (cur.start === null) cur.start = word.start;
     const next = cur.text + word.w;
-    if (next.length > maxChars && cur.text.length > 0) {
+    if ((fits ? !fits(next) : next.length > maxChars) && cur.text.length > 0) {
       lines.push({ ...cur });
       cur = { text: word.w, start: word.start, end: word.end };
     } else {
@@ -41,13 +41,13 @@ export function groupCaptions(words, maxChars = 18) {
 }
 
 /** words を maxChars 程度の行にまとめる。各行に words[] を保持（karaoke mode 用） */
-export function groupCaptionsWords(words, maxChars = 14) {
+export function groupCaptionsWords(words, maxChars = 14, fits = null) {
   const lines = [];
   let cur = { words: [], text: "", start: null, end: 0 };
   for (const word of words) {
     if (cur.start === null) cur.start = word.start;
     const next = cur.text + word.w;
-    if (next.length > maxChars && cur.words.length > 0) {
+    if ((fits ? !fits(next) : next.length > maxChars) && cur.words.length > 0) {
       lines.push({ words: cur.words, start: cur.start, end: cur.end });
       cur = { words: [word], text: word.w, start: word.start, end: word.end };
     } else {
@@ -294,8 +294,8 @@ function applyInnerOutline(events, st, scale) {
 }
 
 /** karaoke: 行を出しつつ、現在の単語だけ highlight 色で 1 語ずつ移動表示 */
-function karaokeEvents(relWords, st, maxChars, budgetPx, fs) {
-  const lines = groupCaptionsWords(relWords, maxChars);
+function karaokeEvents(relWords, st, maxChars, budgetPx, fs, fits) {
+  const lines = groupCaptionsWords(relWords, maxChars, fits);
   const ev = [];
   for (const line of lines) {
     const ws = line.words;
@@ -350,8 +350,8 @@ function popEvents(relWords, duration, budgetPx, fs, st) {
 }
 
 /** line: 行単位でまとめて表示（現状互換） */
-function lineEvents(relWords, maxChars, budgetPx, fs, st) {
-  const captions = groupCaptions(relWords, maxChars);
+function lineEvents(relWords, maxChars, budgetPx, fs, st, fits) {
+  const captions = groupCaptions(relWords, maxChars, fits);
   return captions.map((c) => {
     const text = splitByDisplayWidth(c.text, budgetPx, fs, st.wideRatio, st.narrowRatio)
       .map(escAss)
@@ -413,11 +413,16 @@ export function buildAss(relWords, hook, duration, opts = {}) {
       .join("\\N");
     events.push(`Dialogue: 0,${assTime(0)},${assTime(duration)},Hook,,0,0,0,,{\\an8}${hookLines}`);
   }
+  // 行のまとめ方も「文字数」ではなく「実際に描いたときの幅」で決める（2026-08-16 / G-CAP-FIT）。
+  // 幅の見積りだけ直しても、行を作る段が 14文字/18文字 で切っていては画面の横幅を使い切れない
+  // （basis-reviewer 2巡目の指摘。全角なら 14文字=84%だが、半角中心の字幕は 14文字=38%しか
+  //  使わない）。opts.maxChars が明示されたときだけ従来どおり文字数で切る（既存検査の互換）。
+  const fitsLine = opts.maxChars != null ? null : (text) => textWidthPx(text, scaledFontSize, st.wideRatio, st.narrowRatio) <= budgetPx;
   if (st.mode === "karaoke")
-    events = events.concat(karaokeEvents(relWords, st, maxChars, budgetPx, scaledFontSize));
+    events = events.concat(karaokeEvents(relWords, st, maxChars, budgetPx, scaledFontSize, fitsLine));
   else if (st.mode === "pop")
     events = events.concat(popEvents(relWords, duration, budgetPx, scaledFontSize, st));
-  else events = events.concat(lineEvents(relWords, maxChars, budgetPx, scaledFontSize, st));
+  else events = events.concat(lineEvents(relWords, maxChars, budgetPx, scaledFontSize, st, fitsLine));
 
   events = applyInnerOutline(events, st, scale);
 

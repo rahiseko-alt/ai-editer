@@ -48,7 +48,11 @@ const BAR_MIN_H = 3;
 const MOTION_MIN_RATIO = 0.25;
 // 動きを減らす設定のときでも、帯が描かれていると言える「地と違う画素」の割合の下限。
 const BAR_INK_MIN_RATIO = 0.2;
-// 3ペインそれぞれの測定点（画面の一部だけを暗くする実装を通さないため3か所固定）。
+// 暗くなった面積の下限。3点の抜き取りでは「右の設定カラムだけ覆わない暗幕」を通してしまった
+// （basis-reviewer 2巡目が実演。画面の35.5%が明るいままでも14項目すべて合格した）ため、
+// 画面全体を1画素ずつ数える方式へ変えた。カードの矩形は明るいままが正しいので除く。
+const DIM_AREA_MIN = 0.95;
+// 3ペインそれぞれの測定点（明るさの下がり幅を数値で見るための抜き取り。面積の判定は上の定数）。
 const PTS = {
   左: { x: 20, y: 260, width: 150, height: 110 },
   中央: { x: 230, y: 640, width: 120, height: 60 },
@@ -165,6 +169,30 @@ function startServer() {
     return { x: Math.round(r.x + 8), y: Math.round(r.y + 6), width: 24, height: 8 };
   };
 
+  /** 画面全体を撮って RGB バッファで返す。 */
+  const grabFull = async (p) => grab(p, { x: 0, y: 0, width: 1365, height: 830 });
+  /** 2枚を1画素ずつ比べ、カードの矩形を除いて「暗くなった画素」の割合を出す。 */
+  const darkenedArea = (a, b, cardRect) => {
+    let dark = 0,
+      total = 0;
+    for (let y = 0; y < 830; y++) {
+      for (let x = 0; x < 1365; x++) {
+        if (
+          cardRect &&
+          x >= cardRect.x - 2 && x <= cardRect.x + cardRect.width + 2 &&
+          y >= cardRect.y - 2 && y <= cardRect.y + cardRect.height + 2
+        ) continue;
+        const i = (y * 1365 + x) * 3;
+        total++;
+        const la = 0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
+        const lb = 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2];
+        if (lb < la - 3) dark++;
+      }
+    }
+    return dark / total;
+  };
+
+  const fullBefore = await grabFull(page);
   const before = await lumas(page);
   await page.evaluate(() => window.showEditing());
   await page.waitForTimeout(500); // 暗幕のフェード(.25s)が終わるまで待つ
@@ -179,8 +207,19 @@ function startServer() {
       ` ／ カードの中=${lumaCard.toFixed(1)}`,
   );
 
+  const cardRect = await page.evaluate(() => {
+    const b = document.getElementById("editing-card").getBoundingClientRect();
+    return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) };
+  });
+  const darkArea = darkenedArea(fullBefore, await grabFull(page), cardRect);
+  console.log(`[実測] 暗くなった面積（カードを除く）= ${(darkArea * 100).toFixed(1)}%`);
+
   /* ══════ ① 暗幕：3ペインすべてが少し暗くなる ══════ */
-  await t("DIM-BG: 編集中になると、左・中央・右のどこも画面が少し暗くなる", () => {
+  await t("DIM-BG: 編集中になると、カードの外の画面がまるごと（面積の95%以上）暗くなる", () => {
+    assert.ok(
+      darkArea >= DIM_AREA_MIN,
+      `暗くなっていない所が残っている: 暗くなった面積 ${(darkArea * 100).toFixed(1)}%（下限 ${DIM_AREA_MIN * 100}%）`,
+    );
     for (const k of Object.keys(PTS)) {
       const d = drop(k);
       assert.ok(
@@ -224,24 +263,22 @@ function startServer() {
     }
   });
 
-  await t("DIM-BG 対照: 右ペインだけ覆わない暗幕にすると落ちる（一部だけ暗い実装を通さない）", async () => {
-    // basis-reviewer(2026-08-16) が旧基準を素通りさせた偽装そのもの。
-    // 右ペインの実際の左端から右を覆わない暗幕にする（画面幅に依らず「右だけ明るい」を作る）。
+  await t("DIM-BG 対照: 右端465pxを覆わない暗幕にすると落ちる（一部だけ暗い実装を通さない）", async () => {
+    // basis-reviewer(2026-08-16 2巡目) が旧基準を素通りさせた偽装そのもの。
+    // 旧基準は3点の抜き取りだったため、画面の35.5%が明るいままでも合格していた。
     await page.evaluate(() => {
-      const right = document.querySelector('[data-testid="pane-right"]').getBoundingClientRect();
-      document.getElementById("editing-scrim").style.inset =
-        `0 ${Math.round(window.innerWidth - right.left)}px 0 0`;
+      document.getElementById("editing-scrim").style.inset = "0 465px 0 0";
     });
-    await page.waitForTimeout(150);
-    const l = await lumas(page);
+    await page.waitForTimeout(200);
+    const area = darkenedArea(fullBefore, await grabFull(page), cardRect); // 偽装を当てたまま測る
     await page.evaluate(() => {
       document.getElementById("editing-scrim").style.inset = "";
     });
-    await page.waitForTimeout(150);
-    const dRight = (before["右"] - l["右"]) / before["右"];
+    await page.waitForTimeout(200);
+    console.log(`  [実測] 右を覆わない暗幕での暗くなった面積 = ${(area * 100).toFixed(1)}%`);
     assert.ok(
-      dRight < DIM_MIN_RATIO,
-      `右ペインを覆わない暗幕なのに右が暗いと判定された: 下がり ${(dRight * 100).toFixed(1)}%`,
+      area < DIM_AREA_MIN,
+      `右を覆わない暗幕なのに面積の条件を満たしてしまった: ${(area * 100).toFixed(1)}%`,
     );
   });
 
