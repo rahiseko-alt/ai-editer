@@ -6270,12 +6270,13 @@
        "kind": "state",
        "theme": "編集を始めると、編集中の窓の外の画面が少し暗くなる",
        "meaning": "いま編集中で触れない、ということが画面全体の明るさで分かる",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "編集中の表示にしたとき、編集中の窓の矩形を除いた画面の画素のうち、95%以上が編集前より暗くなっている（輝度が3以上下がっている）。点の抜き取りではなく面積で見るのは、画面の一部だけを覆う暗幕を通さないため。あわせて、左・中央・右それぞれの測定点で下がり幅が 8%以上 60%以下 に収まる（上限は「少し」暗くする指示に対し真っ暗にしないため）。",
          "verify": "実サーバ＋Playwright/Chromium（Chromium 141.0.7390.37 / playwright ^1.48.0 / ubuntu-24.04）、viewport 1365x830 で / を開く。編集前と編集中に画面全体(1365x830)を撮り、readPixelsRgb で展開して1画素ずつ輝度を比べ、編集中カードの矩形（±2px）を除いた画素のうち暗くなった割合を出す。あわせて左(20,260,150x110)/中央(230,640,120x60)/右(600,120,200x60)の下がり幅を出す。対照1: 暗幕を display:none にすると3点とも編集前との差が2以下。対照2: 暗幕を inset:0 465px 0 0（右端465pxを覆わない）にすると、面積が95%を割る。",
-         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs"
+         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 再実行)】①何も作っていない偽物を当てる: 暗幕の色を transparent にすると3点とも下がり 0.0% で落ちることを実測した。②正しい実装で1回実測: 左 255.0→173.7(31.9%) / 中央 237.3→162.0(31.7%) / 右 255.0→173.7(31.9%)。③意図的に壊したものを当てる: basis-reviewer が『右ペインだけ暗くしない暗幕』(inset:0 465px 0 0)で旧基準を素通りさせたため、その偽装を落とせることを対照2として基準に入れた。【2026-08-16 基準の訂正】3ペインの点を測る方式は、右端465pxを覆わない暗幕を素通りさせた（basis-reviewer 2巡目が実演。画面の35.5%が明るいままでも14項目すべて合格）。面積で数える方式へ変え、その偽装を対照に据えた。実測: 正しい実装 99.2% / 右端465pxを覆わない偽装 65.2%。"
@@ -6301,12 +6302,13 @@
        "kind": "state",
        "theme": "編集が終わると暗さが元へ戻り、画面が暗いまま残らない",
        "meaning": "編集が終わったのに画面が暗いままで操作できない、という状態にならない",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "編集の表示を終えたあと、左・中央・右の測定点すべての明るさが編集前と 2 以内（0〜255）で一致する。",
          "verify": "実サーバ＋Playwright/Chromium（版は上と同じ）。window.hideEditing() を呼び、フェード(.25秒)と hidden 付与(300ms)を待ってから3か所を撮り、編集前との差を出す。",
-         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs"
+         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 再実行)】①偽物: 明るさだけを見ると『透明にしただけで要素は残る』実装を通すため、display が none であることを別条件にし、対照でその検出が効くことを実測する。②実測: hideEditing 後に3点とも編集前と一致し display が none。③壊す: 対照として hidden の付与を止めると落ちることを実測する。【2026-08-16 分割】1葉に「明るさが戻る」「暗幕の要素が消えて操作できる」の2つが入っていた（basis-reviewer 2巡目）。操作できることは G-UI-EDITMODE-DIM-CLICKABLE へ分けた。"
@@ -6332,12 +6334,13 @@
        "kind": "state",
        "theme": "動きを止める設定の人には動かさないが、帯そのものは見えている",
        "meaning": "画面の動きで気分が悪くなる人に動きを押し付けず、かつ動きを消した代わりに何も見えなくなることも無い",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "ブラウザ/OS の「動きを減らす」設定(prefers-reduced-motion: reduce)のとき、動きを示す帯を 200ms 間隔で撮った6枚の総当たり15組の差がすべて 0 である（＝動かない）。",
          "verify": "実サーバ＋Playwright/Chromium（版は上と同じ）。newContext({ reducedMotion: 'reduce' }) で開き、#editing-bar の範囲を 200ms 間隔で6枚撮って countDiffPixels（しきい値10）の15組がすべて 0 であることを見る。",
-         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs"
+         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 再実行)】①偽物: 帯を見えなくする実装は (b) で落ちる。②実測: reduce の文脈で差はすべて 0、帯の範囲の画素は地と違うものが多数（塗りが全幅・薄さ .45）。③壊す: basis-reviewer が @media reduce 内で visibility:hidden にする偽物で旧基準を素通りさせたため、その偽装を落とせることを対照として基準に入れた。【2026-08-16 分割】1葉に「動かない」「帯が見えている」「編集中の文字が出ている」の3つが入っていた（basis-reviewer 2巡目）。動かないことだけを残し、帯が見えていることは G-UI-EDITMODE-MOTION-REDUCED-VISIBLE へ分けた。文字の約束は G-UI-EDITCARD-SIMPLE の担当なのでこの葉からは外した。"
@@ -6363,12 +6366,13 @@
        "kind": "state",
        "theme": "動きを減らす設定でも、動きを示す帯そのものは見えている",
        "meaning": "動きを消した代わりに何も見えなくなる、を防ぐ",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "動きを減らす設定(prefers-reduced-motion: reduce)のとき、帯の範囲の画素のうち 20% 以上が、その周りのカードの地の色と 10 以上違う（＝帯が実際に描かれている）。",
          "verify": "reducedMotion:'reduce' の文脈で #editing-bar の範囲とカードの地（帯の外の余白）を撮り、違う画素の割合を出す。対照: 動きを減らす設定のときだけ帯を visibility:hidden にすると落ちる。",
-         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs"
+         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【2026-08-16 新設】G-UI-EDITMODE-MOTION-REDUCED から分割（basis-reviewer 2巡目の原子性の指摘）。実測 100.0%。"
@@ -6378,12 +6382,13 @@
        "kind": "state",
        "theme": "編集が終わると、暗幕が画面の操作を邪魔しない",
        "meaning": "要素だけ残ってクリックを吸い取る、が起きない",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "編集の表示を終えたあと、暗幕(#editing-scrim)の getComputedStyle().display が none である。",
          "verify": "window.hideEditing() を呼び、フェードと hidden 付与を待ってから display を読む。対照: hidden クラスを付けず opacity だけ 0 にする実装だと display が none にならないことを確かめる。",
-         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs"
+         "verifyCmd": "node video-shorts/tests/editing-mode-look-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【2026-08-16 新設】G-UI-EDITMODE-DIM-CLEAR から分割（basis-reviewer 2巡目の原子性の指摘）。"
@@ -6489,12 +6494,13 @@
        "kind": "state",
        "theme": "1行に収まる字幕が、途中で折り返されない",
        "meaning": "画面の横幅の半分しか使わず、単語の途中で改行される、が起きない",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "縦型 1080x1920・既定の設定（1行の文字数上限を検査側から差し替えない＝製品と同じ呼び方）で、可用幅(960px)に収まる長さの字幕は改行されず1行で描かれ、その1行の墨の幅が可用幅の 60% 以上になる。全角中心の字幕と半角中心の字幕の両方で成り立つ。さらに、折り返しが起きた場合も、字幕に出た文字を全部つなげると入力した言葉と一字も違わない（あふれた分を黙って捨てない）。",
          "verify": "同梱フォントだけを fontsdir に指定して ffmpeg の ass フィルタで焼き、画素を読む。buildAss へ maxChars を渡さず（製品経路 pipeline.mjs と同じ）に組み、bboxOf で墨の幅を測る。半角中心の字幕（英単語）でも同じ判定を行う。文字の消失は、Caption の Dialogue から ASSタグと強制改行を除いた本文を（連続する重複を1つにまとめて）連結し、入力と完全一致することで見る。対照3本: (a) 旧来の見積り（全角=1.30×文字サイズ）へ戻すと墨の幅が 60% を割る。(b) あふれた分を切り捨てる細工をすると、連結が入力と一致しなくなる。(c) 半角中心の字幕でも 60% を満たす。",
-         "verifyCmd": "node video-shorts/tests/caption-fit-check.mjs"
+         "verifyCmd": "node video-shorts/tests/caption-fit-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①偽物: 折り返しを一切しない実装でもこの葉は通るので、対になる G-CAP-FIT-WRAP で「本当に収まらないものははみ出さずに折り返す」を別に見る（2葉で挟む）。②実測: 旧実装では『今日は動画編集の話をします』のような12文字が2行に割れ、墨の幅が可用幅の約50%だった。③壊す: 見積りを旧値へ戻すと落ちることを対照として実測する。【2026-08-16 基準の訂正】最初の凍結では検査が buildAss へ maxChars:999 を渡しており、行の長さを決めている当の値（既定14文字）を無効化したまま測っていた（basis-reviewer 2巡目）。製品経路では14文字で切られるため、半角中心の字幕は幅の38.5%しか使わず、この葉自身の下限60%を割っていた。行のまとめ方そのものを文字数から幅へ変え、検査も製品と同じ呼び方に直した。実測: 全角 84.4% / 半角 86.7%。あわせて『あふれた分を捨てる』型の偽実装が素通りしたため、文字が消えないことを条件に加えた。"
@@ -6552,12 +6558,13 @@
        "kind": "state",
        "theme": "縁取りが細すぎず、明るい背景の上でも文字の輪郭が残る",
        "meaning": "白い場面で白い字が背景に溶けて読めなくなる、を防ぐ",
-       "status": "doing",
+       "status": "done",
        "criteria": [
         {
          "text": "同梱5書体すべてについて、白い背景に焼いたときの文字の帯の中で、暗い画素（RGB すべて128未満）が 20% 以上ある。",
          "verify": "白背景に白い文字＋黒い縁取りで『今日は動画編集の話』を焼き、文字の帯の中の暗い画素の割合を数える。対照: 縁取りを1pxまで細くすると5書体すべてが下限を割ることを実測する。",
-         "verifyCmd": "node video-shorts/tests/caption-fit-check.mjs"
+         "verifyCmd": "node video-shorts/tests/caption-fit-check.mjs",
+         "evidence": "a09c8f7"
         }
        ],
        "detail": "【2026-08-16 新設】太すぎない側(G-CAP-FIT-OUTLINE)しか無く、縁取りを1pxにした実装が素通りした（basis-reviewer 2巡目）。実測: 出荷値 36.9〜46.5% / 縁取り1px 8.2〜10.1%。下限20%は両者をはっきり分ける値。"
