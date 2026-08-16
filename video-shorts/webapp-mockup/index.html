@@ -344,9 +344,20 @@
     </aside>
   </div>
 
-  <!-- ===== 編集中ウィンドウ（通常画面の上にふわっと浮く小窓・暗幕なし）===== -->
+  <!-- ===== 編集中の暗幕（2026-08-16 マスター指示①「編集モードになったら少し画面が暗くなって、
+       編集中のみが少し明るめに表示されるようにしろ」）=====
+       編集中カード(z-index:70)の真下(69)に敷く。カードの外だけを暗くするので、
+       カードは相対的に明るく浮き上がる。カードの中には入れない（中に入れると
+       カードごと暗くなる／編集中カードの中身を見る既存検査の対象にも入ってしまう）。 -->
+  <div class="editing-scrim hidden" id="editing-scrim" data-testid="editing-scrim" aria-hidden="true"></div>
+
+  <!-- ===== 編集中ウィンドウ（暗幕の上にふわっと浮く小窓）===== -->
   <div class="editing-card hidden" id="editing-card" role="status" aria-label="編集中">
     <p class="editing-title">編集中</p>
+    <!-- 動いていることを示す帯（2026-08-16 マスター指示②）。終わりが読めない処理の定番である
+         「行ったり来たりする細い帯（indeterminate progress bar）」。文字も図(svg/canvas/img)も
+         持たないので、表示は「編集中」の1行だけという既存の約束を崩さない。 -->
+    <div class="editing-bar" id="editing-bar" data-testid="editing-bar" aria-hidden="true"><span class="editing-bar-fill"></span></div>
     <p class="editing-status sr-only" id="editing-status">動画を読み込んでいます</p>
     <div class="editing-error hidden" id="editing-error">
       <p class="editing-error-msg" id="editing-error-msg">編集できませんでした</p>

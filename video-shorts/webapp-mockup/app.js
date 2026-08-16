@@ -624,18 +624,30 @@ $("cantedit-retry").addEventListener("click", () => {
   $("file").click();   // すぐ選び直せるようファイル選択を開く
 });
 
+// 編集中は暗幕(#editing-scrim)とカード(#editing-card)を必ず一緒に出し入れする。
+// 片方だけ残ると「画面が暗いまま操作できない」か「カードだけ浮いて暗くならない」になる。
 function showEditing() {
   const c = $("editing-card");
+  const s = $("editing-scrim");
   c.classList.remove("is-error");
   $("editing-error").classList.add("hidden");
   $("editing-status").textContent = "動画を読み込んでいます";
+  s.classList.remove("hidden");
   c.classList.remove("hidden");
-  requestAnimationFrame(() => c.classList.add("show"));
+  requestAnimationFrame(() => {
+    s.classList.add("show");
+    c.classList.add("show");
+  });
 }
 function hideEditing() {
   const c = $("editing-card");
+  const s = $("editing-scrim");
   c.classList.remove("show");
-  setTimeout(() => c.classList.add("hidden"), 300);
+  s.classList.remove("show");
+  setTimeout(() => {
+    c.classList.add("hidden");
+    s.classList.add("hidden");
+  }, 300);
 }
 
 function run() {
