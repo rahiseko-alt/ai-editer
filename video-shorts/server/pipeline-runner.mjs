@@ -852,6 +852,10 @@ export function buildRenderArgs(pipelinePath, workDir, opts) {
   // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH-SERVER）。渡し忘れると、画面から選んでも
   // 常に既定 0.7 秒固定になり off にもできない（trim/mosaic と同じ結線の取りこぼし）。
   if (opts.breath) renderArgs.push("--breath", String(opts.breath));
+  // 「間を詰める」の2つのつまみ（G-EDIT-TRIM2）。渡し忘れると、画面で片方だけ選んでも
+  // 両方効く／両方効かないという、選べるのに効かない状態になる。
+  if (opts.trimSilence) renderArgs.push("--trim-silence", String(opts.trimSilence));
+  if (opts.trimFiller) renderArgs.push("--trim-filler", String(opts.trimFiller));
   if (opts.subStyle) renderArgs.push("--sub-style", String(opts.subStyle));
   if (opts.captionFont) renderArgs.push("--caption-font", String(opts.captionFont));
   if (opts.captionFill) renderArgs.push("--caption-fill", String(opts.captionFill));
@@ -912,6 +916,8 @@ async function runJob(jobId, inputAbsPath, opts) {
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
     // （顔モザイクで同じ取りこぼしをしたので、結線を smoke.mjs で押さえる）。
     trim: opts.trim === "on" ? "on" : "none",
+    trimSilence: opts.trimSilence === "on" ? "on" : "none",
+    trimFiller: opts.trimFiller === "on" ? "on" : "none",
   });
 
   const job = jobs.get(jobId);

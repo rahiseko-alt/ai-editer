@@ -547,7 +547,7 @@ t("UI: 間を詰めるのチップ群に「あり」の選択肢がある", () =
   const html = fs.readFileSync(path.join(ROOT, "webapp-mockup", "index.html"), "utf-8");
   // チップ群の中だけを切り出して見る。HTML全体への正規表現だと、他のグループの
   // data-val="on" に食いついて、こちらの「あり」を消しても通ってしまう。
-  const m = html.match(/data-group="trim"[^]*?<\/div>/);
+  const m = html.match(/data-group="trimSilence"[^]*?<\/div>/);
   assert.ok(m, "間を詰めるのチップ群が画面にある");
   assert.ok(/data-val="on"/.test(m[0]), "そのチップ群の中に「あり」がある");
   assert.ok(/data-val="none"/.test(m[0]), "そのチップ群の中に「なし」がある");
@@ -588,7 +588,7 @@ t("サーバ: /api/jobs で受け取った設定が、1つも落ちずに startJ
   assert.ok(bound.test(idx), `${arg} は parseJobParams の戻り値であること`);
   // 束の中身は parseJobParams の実際の戻り値で確かめる（ソースの見た目ではなく値）。
   const p = parseJobParams(new URLSearchParams({ breath: "0.4", trim: "on", mosaic: "on" }));
-  for (const k of ["sub", "cut", "size", "cutMin", "mosaic", "trim", "breath"]) {
+  for (const k of ["sub", "cut", "size", "cutMin", "mosaic", "trimSilence", "trimFiller", "breath"]) {
     assert.ok(k in p, `parseJobParams の戻り値に ${k} が入っている`);
   }
 });
@@ -644,8 +644,11 @@ t("UI: 選んだ間の長さが /api/jobs のパラメータに載る", () => {
 
 t("UI: 選んだ間詰めの値が /api/jobs のパラメータに載る", () => {
   const app = readAppJs();
-  assert.ok(/trim:\s*"none"/.test(stateBlock(app)), "画面の初期値が none（既定で詰めない）");
-  assert.ok(!/"trim"/.test(excludedKeys(app)), "trim が送信除外リストに入っていない＝自動的に送信対象になる");
+  // 2026-08-16（B案）: 1つだったつまみが2つへ割れた。どちらも既定は none（詰めない）。
+  assert.ok(/trimSilence:\s*"none"/.test(stateBlock(app)), "黙っている時間の初期値が none（既定で詰めない）");
+  assert.ok(/trimFiller:\s*"none"/.test(stateBlock(app)), "言い淀みの初期値が none（既定で消さない）");
+  assert.ok(!/"trimSilence"/.test(excludedKeys(app)), "trimSilence が送信除外リストに入っていない＝自動的に送信対象になる");
+  assert.ok(!/"trimFiller"/.test(excludedKeys(app)), "trimFiller が送信除外リストに入っていない＝自動的に送信対象になる");
 });
 
 t("サーバ: 受け取った trim をジョブ設定として startJob へ渡す", () => {

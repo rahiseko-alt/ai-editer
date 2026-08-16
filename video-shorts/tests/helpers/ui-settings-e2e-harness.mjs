@@ -257,7 +257,10 @@ export async function runJobViaBrowser(page, opts) {
     await page.click(`[data-group="exportPreset"] .chip[data-val="${val}"]`);
   }
   if (opts.trim) {
-    await page.click('[data-group="trim"] .chip[data-val="on"]');
+    // 2026-08-16（B案）: 1つだったつまみが2つ（黙っている時間／言い淀み）へ割れた。
+    // 旧 trim=on は「両方あり」なので、両方を押す。
+    await page.click('[data-group="trimSilence"] .chip[data-val="on"]');
+    await page.click('[data-group="trimFiller"] .chip[data-val="on"]');
   }
 
   await page.click("#btn-run");
