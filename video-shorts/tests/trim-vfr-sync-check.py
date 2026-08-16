@@ -370,9 +370,14 @@ import('%s/pipeline.mjs').then(async (pl) => {
   const rv = await import('%s/src/render-vertical.mjs');
   const size = await rv.probeSize('%s');
   const start = %s, end = %s;
+  // 1秒ごとに0.6秒しゃべる＝語と語の間は0.4秒。
+  // 2026-08-16: もとは 0.7秒 しゃべる＝間 0.3秒 だった。マスター指示「発言の後にだけ、
+  // 余韻を0.3秒存在させる」により、0.3秒 以下の間は余韻で使い切って詰める余地が無くなり、
+  // 1区間も詰まらなくなった（この検査は「複数の区間に詰めている」ことが前提）。
+  // 間を 0.4秒 にして、余韻 0.3秒 を残したうえで 0.1秒 が詰まる形へ直した。
   const words = [];
-  for (let k = 0; start + k * 1.0 + 0.7 <= end; k++) {
-    words.push({ w: 'あ', start: start + k * 1.0, end: start + k * 1.0 + 0.7 });
+  for (let k = 0; start + k * 1.0 + 0.6 <= end; k++) {
+    words.push({ w: 'あ', start: start + k * 1.0, end: start + k * 1.0 + 0.6 });
   }
   const r = await pl.renderSegment({
     input: '%s',
