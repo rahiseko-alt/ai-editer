@@ -35,6 +35,12 @@ export const FONT_CATALOG = {
     description: "太く力強い、Reels/TikTokで最も見慣れた定番書体",
     family: "Noto Sans JP Black",
     file: "NotoSansJP-Black.ttf",
+    // 【実測値・2026-08-16】tests/caption-fit-check.mjs が同じ手順で測り直して照合する。
+    // wideRatio/narrowRatio: 全角・半角1文字の送り幅 ÷ 文字サイズ。折り返しの見積りに使う。
+    // outlineRatio: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い縁取り ÷ 文字サイズ。
+    wideRatio: 0.69,
+    narrowRatio: 0.473,
+    outlineRatio: 0.09,
   },
   maru: {
     key: "maru",
@@ -42,6 +48,12 @@ export const FONT_CATALOG = {
     description: "角の取れた柔らかい印象。Vlog・ライフスタイル系向け",
     family: "M PLUS Rounded 1c Black",
     file: "MPLUSRounded1c-Black.ttf",
+    // 【実測値・2026-08-16】tests/caption-fit-check.mjs が同じ手順で測り直して照合する。
+    // wideRatio/narrowRatio: 全角・半角1文字の送り幅 ÷ 文字サイズ。折り返しの見積りに使う。
+    // outlineRatio: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い縁取り ÷ 文字サイズ。
+    wideRatio: 0.72,
+    narrowRatio: 0.479,
+    outlineRatio: 0.09,
   },
   mincho: {
     key: "mincho",
@@ -49,6 +61,12 @@ export const FONT_CATALOG = {
     description: "縦線が太く横線が細い、上品・フォーマルな印象",
     family: "Noto Serif JP Black",
     file: "NotoSerifJP-Black.ttf",
+    // 【実測値・2026-08-16】tests/caption-fit-check.mjs が同じ手順で測り直して照合する。
+    // wideRatio/narrowRatio: 全角・半角1文字の送り幅 ÷ 文字サイズ。折り返しの見積りに使う。
+    // outlineRatio: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い縁取り ÷ 文字サイズ。
+    wideRatio: 0.693,
+    narrowRatio: 0.521,
+    outlineRatio: 0.09,
   },
   hand: {
     key: "hand",
@@ -56,6 +74,12 @@ export const FONT_CATALOG = {
     description: "親しみやすい手書き風。上流にBlackウェイトが無くRegular相当の太さ",
     family: "Kosugi Maru",
     file: "KosugiMaru-Regular.ttf",
+    // 【実測値・2026-08-16】tests/caption-fit-check.mjs が同じ手順で測り直して照合する。
+    // wideRatio/narrowRatio: 全角・半角1文字の送り幅 ÷ 文字サイズ。折り返しの見積りに使う。
+    // outlineRatio: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い縁取り ÷ 文字サイズ。
+    wideRatio: 1.0,
+    narrowRatio: 0.5,
+    outlineRatio: 0.06,
   },
   marker: {
     key: "marker",
@@ -63,6 +87,12 @@ export const FONT_CATALOG = {
     description: "マーカーで書いたようなカジュアルな書体。上流にBlackウェイトが無くRegular相当の太さ",
     family: "Yusei Magic",
     file: "YuseiMagic-Regular.ttf",
+    // 【実測値・2026-08-16】tests/caption-fit-check.mjs が同じ手順で測り直して照合する。
+    // wideRatio/narrowRatio: 全角・半角1文字の送り幅 ÷ 文字サイズ。折り返しの見積りに使う。
+    // outlineRatio: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い縁取り ÷ 文字サイズ。
+    wideRatio: 0.598,
+    narrowRatio: 0.417,
+    outlineRatio: 0.09,
   },
 };
 
@@ -91,15 +121,20 @@ export function fontFilePath(key) {
 
 export const SUBTITLE_STYLES = {
   karaoke: {
-    label: "ワードハイライト",
-    description: "行は白で出っぱなし、今読んでいる単語だけ黄色（Reels/TikTok定番）",
+    label: "標準",
+    description: "白1色。行は出っぱなしで、話の進みに合わせて切り替わる",
     mode: "karaoke",
     fontSize: 84,
-    base: "&H00FFFFFF", // 未到達の単語（白）
-    highlight: "&H0000FFFF", // 現在読んでいる単語（黄）
-    // 縁取り・影を強化（2026-08-14「字幕がしょぼい」の指摘を受けて）。旧値(outline9/shadow4)は
-    // fontSize比で細く、背景によっては輪郭が薄く見えた。Premiere Proの既定キャプション
-    // スタイル(太めのストローク＋視認できる影)に近づける。
+    base: "&H00FFFFFF", // 白
+    // 2026-08-16 マスター指示「そもそも話に合わせて色を変えなくて良い」により、
+    // 読んでいる語だけ黄色にする表示をやめた。highlight を base と同じにすると
+    // srt-builder 側が色の切り替えタグを一切書かない（G-CAP-FIT-COLOR）。
+    // 日本語の文字起こしは文節でまとまって返るため、1語ずつではなく文節が丸ごと
+    // 黄色くなり、二色に割れた塊に見えていた。
+    highlight: "&H00FFFFFF",
+    // outline はここでは決めない。resolveCaptionStyle() が「書体ごとに実測した比 ×
+    // fontSize」で上書きする（2026-08-16 / G-CAP-FIT-OUTLINE）。2026-08-14 に太くした
+    // 値(14=16.7%)は、隣の文字の黒とくっついて字が黒い塊に埋もれる太さだった。
     outline: 14,
     outlineColor: "&H00000000", // 既定=黒。背景の対照を得るための既定値（カスタマイズ可）
     shadow: 8,
@@ -111,7 +146,7 @@ export const SUBTITLE_STYLES = {
     mode: "pop",
     fontSize: 120,
     base: "&H00FFFFFF",
-    highlight: "&H0000FFFF",
+    highlight: "&H00FFFFFF", // 話に合わせて色は変えない（2026-08-16 マスター指示）
     outline: 16,
     outlineColor: "&H00000000",
     shadow: 9,
@@ -123,7 +158,7 @@ export const SUBTITLE_STYLES = {
     mode: "line",
     fontSize: 88,
     base: "&H00FFFFFF",
-    highlight: "&H0000FFFF",
+    highlight: "&H00FFFFFF", // 話に合わせて色は変えない（2026-08-16 マスター指示）
     outline: 13,
     outlineColor: "&H00000000",
     shadow: 7,
@@ -244,6 +279,15 @@ export function resolveCaptionStyle(styleKey, overrides = {}) {
   }
 
   const style = { ...base, fontKey, fontFamily: font.family };
+
+  // 2026-08-16 マスター指摘「字幕は縦動画にした時に酷すぎる」への対応（G-CAP-FIT）。
+  // 折り返しと縁取りは書体ごとに実測した比で決める。プリセット側に固定 px で持たせると、
+  // 書体を変えたときに必ずどちらかがずれる（幅の広い書体では早すぎる折り返し、
+  // 細い書体では太すぎる縁取り）。
+  style.wideRatio = font.wideRatio;
+  style.narrowRatio = font.narrowRatio;
+  // 縁取り: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い比（書体ごとに実測）。
+  style.outline = Math.max(1, Math.round(base.fontSize * font.outlineRatio));
 
   if (overrides.fillHex !== undefined) {
     const ass = hexToAss(overrides.fillHex);

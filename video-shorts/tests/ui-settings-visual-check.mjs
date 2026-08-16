@@ -253,18 +253,22 @@ try {
   // ============================================================
   // G-EDIT-UI-SETTINGS-STYLE
   // ============================================================
-  await t("STYLE: popはkaraoke(既定)と.ass構造が異なる(fad演出タグが有り、単語ハイライトのタグが無い)", async () => {
+  // 2026-08-16: マスター指示「そもそも話に合わせて色を変えなくて良い」により、既定(karaoke)からも
+  // 単語ハイライトの色替えタグが消えた。そのため「karaokeには色替えタグが有る」を
+  // スタイルの差の根拠にできなくなった。差の根拠を Style ヘッダ行(fontSize/配置/余白)と
+  // fad 演出タグへ移す（criteria が言う「構造的に異なる」の中身を差し替えただけで、
+  // 基準そのものは変えていない）。色替えタグが全スタイルから消えていることは、
+  // この直下の別検査と tests/caption-fit-check.mjs が担当する。
+  await t("STYLE: popはkaraoke(既定)と.ass構造が異なる(Styleヘッダとfad演出タグ)", async () => {
     const karaokeLines = captionDialogueLines(assOf("default"));
     const popLines = captionDialogueLines(assOf("pop"));
     assert.ok(karaokeLines.length > 0, "karaokeのCaption行が空");
     assert.ok(popLines.length > 0, "popのCaption行が空");
+    const kStyle = (assOf("default").match(/^Style: Caption,.*$/m) || [""])[0];
+    const pStyle = (assOf("pop").match(/^Style: Caption,.*$/m) || [""])[0];
     assert.ok(
-      karaokeLines.some((l) => /\\c&H[0-9A-Fa-f]{8}&/.test(l)),
-      "karaoke側に単語ハイライトの色替えタグ(\\c&H..&)が無い(対照が成立していない)",
-    );
-    assert.ok(
-      !popLines.some((l) => /\\c&H[0-9A-Fa-f]{8}&/.test(l)),
-      "pop側に単語ハイライトの色替えタグが残っている(karaokeと構造が同じ=偽実装の疑い)",
+      kStyle && pStyle && kStyle !== pStyle,
+      `Styleヘッダ行が既定と同一(fontSize/配置/余白が反映されていない): karaoke="${kStyle}" pop="${pStyle}"`,
     );
     assert.ok(
       popLines.some((l) => l.includes("\\fad(40,40)")),
@@ -275,13 +279,18 @@ try {
       "karaoke側にfad演出タグが付いている(popと構造が同じ=偽実装の疑い)",
     );
   });
-  await t("STYLE: boldはkaraoke(既定)と.ass構造が異なる(単語ハイライトのタグが無い)", async () => {
+  await t("STYLE: どのスタイルにも、話に合わせて色を変えるタグが入っていない", async () => {
+    // 2026-08-16 マスター指示。既定・pop・bold のどれを選んでも、字幕の途中で色が変わらない。
+    for (const key of ["default", "pop", "bold"]) {
+      const lines = captionDialogueLines(assOf(key));
+      assert.ok(lines.length > 0, `${key}のCaption行が空`);
+      const withTag = lines.filter((l) => /\\c&H[0-9A-Fa-f]{8}&/.test(l));
+      assert.deepStrictEqual(withTag, [], `${key} に色替えタグが残っている: ${withTag[0]}`);
+    }
+  });
+  await t("STYLE: boldはkaraoke(既定)と.ass構造が異なる(Styleヘッダ)", async () => {
     const boldLines = captionDialogueLines(assOf("bold"));
     assert.ok(boldLines.length > 0, "boldのCaption行が空");
-    assert.ok(
-      !boldLines.some((l) => /\\c&H[0-9A-Fa-f]{8}&/.test(l)),
-      "bold側に単語ハイライトの色替えタグが残っている(karaokeと構造が同じ=偽実装の疑い)",
-    );
     const karaokeStyle = (assOf("default").match(/^Style: Caption,.*$/m) || [""])[0];
     const boldStyle = (assOf("bold").match(/^Style: Caption,.*$/m) || [""])[0];
     assert.ok(karaokeStyle && boldStyle && karaokeStyle !== boldStyle,
