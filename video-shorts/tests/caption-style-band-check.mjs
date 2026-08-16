@@ -10,7 +10,7 @@
 // 実行: node tests/caption-style-band-check.mjs [--mode on|off]
 //   --mode 省略時は両方検査する(pnpm test から呼ぶときはこちら)。
 
-import { resolveCaptionStyle } from "../src/subtitle-styles.mjs";
+import { resolveCaptionStyle, fontSizeForHeight } from "../src/subtitle-styles.mjs";
 import {
   hasFfmpeg, renderCaptionFrame, readPixelsRgb, pixelAt, colorClose, cleanup,
 } from "./helpers/caption-style-render.mjs";
@@ -26,11 +26,15 @@ const WIDTH = 1080, HEIGHT = 1920;
 const BAND_RGB = [0x10, 0x20, 0x40]; // #102040 不透明(alpha省略=不透明)
 
 // srt-builder.mjs の buildBackgroundBand() と同じ式で、期待される帯の矩形を求める
-// (bold プリセット: fontSize=88・marginV=400。canvas は基準解像度なので scale=1)。
-function expectedBandRect() {
+// (bold プリセット。canvas は基準解像度なので scale=1)。
+// 文字サイズは style の宣言値(fontSize)ではなく、製品が実際に Style 行へ書く値を使う。
+// 2026-08-16 の G-CAP-FIT で、Fontsize は「画面の高さに対する字の実寸(emRatio)」から
+// 書体ごとに逆算する方式へ変わり、bold の宣言値 88 は Style 行に現れなくなった
+// （88 のまま固定していたため、帯の位置を 74px ずらして測っていた）。
+function expectedBandRect(style) {
   const captionMarginLR = 60;
-  const scaledFontSize = 88;
-  const marginV = 400;
+  const scaledFontSize = fontSizeForHeight(HEIGHT, { wideRatio: style.wideRatio }, style.emRatio);
+  const marginV = style.marginV;
   const bandHeight = Math.round(scaledFontSize * 1.3);
   const x1 = captionMarginLR;
   const w = WIDTH - captionMarginLR * 2;
@@ -71,7 +75,7 @@ function checkOn() {
   check("背景帯ON: レンダリングできる", r.ok, r.stderr);
   if (r.ok) {
     const buf = readPixelsRgb(r.outPng);
-    const rect = expectedBandRect();
+    const rect = expectedBandRect(style);
     const ratio = fillRatio(buf, rect, BAND_RGB);
     check(
       "背景帯ON: 想定した帯の矩形の外周(文字が来ない領域)が、指定色でほぼ塗りつぶされている(充填率90%以上)",
@@ -89,7 +93,7 @@ function checkOff() {
   check("背景帯OFF: レンダリングできる", rOff.ok, rOff.stderr);
   if (rOff.ok) {
     const buf = readPixelsRgb(rOff.outPng);
-    const rect = expectedBandRect();
+    const rect = expectedBandRect(styleOff);
     const ratio = fillRatio(buf, rect, BAND_RGB);
     check(
       "背景帯OFF: 帯ONなら塗りつぶされるはずの矩形が、背景帯OFFではほぼ塗られていない(充填率5%未満。検出力の裏付け)",
