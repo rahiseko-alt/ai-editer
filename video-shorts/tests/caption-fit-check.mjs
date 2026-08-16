@@ -414,6 +414,41 @@ t("WORDS 対照: 語の切れ目を見ない実装だと、語が途中で切れ
   );
 });
 
+t("WORDS: 1語だけで1行に入りきらないとき（URL 等）は、画面からはみ出さないことを優先して折る", () => {
+  // 「語を切らない」と「画面からはみ出さない」は、この場合だけ両立しない。
+  // 実物の字幕は必ず画面に収まる側を採るので、ここでも収まる側を優先する。
+  // ただし黙って英字の途中で切るのではなく、区切り記号の直後を優先して折る。
+  const url = "https://example.com/very/long/path/to/a/resource";
+  const ass = buildAss([{ w: url, start: 0, end: 4 }], "", 4, { width: W, height: H, style: PRODUCT_STYLE });
+  const lines = captionTexts(ass, true)[0].split("\\N");
+  console.log(`  [実測] ${JSON.stringify(lines)}`);
+  assert.strictEqual(lines.join(""), url, "URL の文字が消えている");
+  // どの行も可用幅に収まる（＝画面からはみ出さない）
+  for (const l of lines) {
+    const fill = lineWidth(l, PRODUCT_STYLE) / AVAIL;
+    assert.ok(fill <= NOWRAP_FILL_MAX, `${(fill * 100).toFixed(1)}% ではみ出している「${l}」`);
+  }
+  // 最終行以外は、区切り記号の直後で折れている（英字の途中でぶつ切りにしていない）
+  const marks = new Set(["/", "-", "_", ".", "?", "&", "=", ":", ","]);
+  for (let i = 0; i < lines.length - 1; i++) {
+    const last = lines[i][lines[i].length - 1];
+    assert.ok(marks.has(last), `${i + 1}行目が記号以外で切れている: 「${lines[i]}」`);
+  }
+});
+
+t("WORDS 対照: 区切り記号が1つも無い長い語は、記号で折れないので途中で折るしかない", () => {
+  // 対照。ここで「途中で折らない」を選ぶと画面からはみ出すので、収まる側を採っていることを示す。
+  const blob = "abcdefghijklmnopqrstuvwxyz".repeat(2);
+  const ass = buildAss([{ w: blob, start: 0, end: 4 }], "", 4, { width: W, height: H, style: PRODUCT_STYLE });
+  const lines = captionTexts(ass, true)[0].split("\\N");
+  console.log(`  [実測] ${lines.length}行に折られ、最大 ${(Math.max(...lines.map((l) => lineWidth(l, PRODUCT_STYLE) / AVAIL)) * 100).toFixed(1)}%`);
+  assert.ok(lines.length > 1, "記号の無い長い語が1行のままで、はみ出している");
+  assert.strictEqual(lines.join(""), blob, "文字が消えている");
+  for (const l of lines) {
+    assert.ok(lineWidth(l, PRODUCT_STYLE) / AVAIL <= NOWRAP_FILL_MAX, `はみ出している「${l}」`);
+  }
+});
+
 t("NOLOSS: 折り返しても、話した言葉が1文字も消えない", () => {
   const src = "今日の動画では動画編集を自動化する方法を最後まで詳しく説明していきます";
   const ass = buildAss(wordsOf(src), "", 4, { width: W, height: H, style: PRODUCT_STYLE });

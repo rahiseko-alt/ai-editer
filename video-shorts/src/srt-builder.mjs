@@ -229,6 +229,9 @@ function canBreakBefore(cur, c) {
 // 幅の足し算の丸め誤差で等分点をまたいだと誤判定しないための許容値(px)。
 const EPS_PX = 1e-6;
 
+// 1語だけで1行に入りきらないときに、折ってよい位置として扱う記号（URL 等）。
+const BREAKABLE_MARKS = new Set(["/", "-", "_", ".", "?", "&", "=", ":", ","]);
+
 function wrapChars(chars, budgetPx, advance) {
   if (!Number.isFinite(budgetPx) || chars.length === 0) return [chars];
   const widthOf = (ln) => ln.reduce((sum, c) => sum + advance(c.ch), 0);
@@ -244,13 +247,36 @@ function wrapChars(chars, budgetPx, advance) {
     const w = advance(c.ch);
     if (c.ch === " " && cur.length === 0) continue; // 行頭の空白は落とす
     if (curPx > 0 && curPx + w > budgetPx) {
-      // 語の途中で予算を超えたら、直前の空白まで戻って折り直す
+      // 語の途中で予算を超えたら、直前の空白まで戻って折り直す。
+      // 空白が無い＝その語だけで1行に入りきらない場合（URL・長い識別子）は、
+      // **画面からはみ出さないことを優先して**折る（G-CAP-FIT-WRAP / -ROUTES は
+      // 「はみ出さない」を無条件で要求する。1語を伸ばし続ける選択肢は無い）。
+      // その場合も、区切り記号（/ - _ . ? & = :）の直後を優先して折り、
+      // 英字の途中でぶつ切りにするのは記号が1つも無いときだけにする。
       let cut = -1;
       for (let i = cur.length - 1; i > 0; i--)
         if (cur[i].ch === " ") {
           cut = i;
           break;
         }
+      if (cut < 0) {
+        for (let i = cur.length - 1; i > 0; i--)
+          if (BREAKABLE_MARKS.has(cur[i - 1].ch)) {
+            cut = i; // 記号の直後で折る（記号は前の行の末尾に残す）
+            break;
+          }
+        if (cut > 0) {
+          const rest = cur.slice(cut);
+          const head = cur.slice(0, cut);
+          lines.push(head);
+          doneP += widthOf(head);
+          cur = rest;
+          curPx = widthOf(rest);
+          cur.push(c);
+          curPx += w;
+          continue;
+        }
+      }
       if (cut > 0) {
         const rest = cur.slice(cut + 1);
         const head = cur.slice(0, cut); // 行末の空白は落とす
