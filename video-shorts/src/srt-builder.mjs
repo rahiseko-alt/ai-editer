@@ -4,7 +4,7 @@
 // 既製SaaSの「全ユーザー同一字幕」を避け自前デザインを握る（差別化・RB FORKOFF）。
 // スタイルは選択式（subtitle-styles.mjs の登録を参照）: karaoke/pop/line を mode で切替。
 
-import { getStyle, DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken } from "./subtitle-styles.mjs";
+import { DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken, resolveCaptionStyle } from "./subtitle-styles.mjs";
 
 // 既定フォント（2026-08-14 是正）。旧既定 "Yu Gothic UI" はWindows専用で、この製品が
 // 動く環境（客のPC。Linux/macOSも含む想定）に存在しないことがあり、fontconfig が
@@ -25,13 +25,20 @@ export function wordsInRange(words, start, end) {
 // 「today」のような極端に短い字幕になるのを防ぐために使う（G-CAP-FIT-NOWRAP の (3)）。
 const CAPTION_MIN_FILL = 0.6;
 
+/** 語の配列を1本の文字列にする（半角どうしの間には空白を入れる）。 */
+function joinWords(words) {
+  let out = "";
+  for (const w of words) out += (needsSpace(out, w.w) ? " " : "") + w.w;
+  return out;
+}
+
 /** words を「1枚の字幕」ごとの語の配列へ割る（fits があれば幅で、無ければ文字数で判定）。 */
 function groupWordArrays(words, maxChars, fits) {
   const groups = [];
   let cur = [];
   let text = "";
   for (const word of words) {
-    const next = text + word.w;
+    const next = text + (needsSpace(text, word.w) ? " " : "") + word.w;
     if ((fits ? !fits(next) : next.length > maxChars) && cur.length > 0) {
       groups.push(cur);
       cur = [word];
@@ -57,7 +64,7 @@ function groupWordArrays(words, maxChars, fits) {
 function rebalanceShortCaptions(groups, measure, budgetPx, fits) {
   if (!measure || !Number.isFinite(budgetPx) || groups.length < 2) return groups;
   const floor = budgetPx * CAPTION_MIN_FILL;
-  const textOf = (g) => g.map((w) => w.w).join("");
+  const textOf = (g) => joinWords(g);
   for (let i = groups.length - 1; i > 0; i--) {
     while (measure(textOf(groups[i])) < floor) {
       const prev = groups[i - 1];
@@ -76,7 +83,7 @@ function rebalanceShortCaptions(groups, measure, budgetPx, fits) {
 export function groupCaptions(words, maxChars = 18, fits = null, measure = null, budgetPx = Infinity) {
   const groups = rebalanceShortCaptions(groupWordArrays(words, maxChars, fits), measure, budgetPx, fits);
   return groups.map((g) => ({
-    text: g.map((w) => w.w).join(""),
+    text: joinWords(g),
     start: g[0].start,
     end: g[g.length - 1].end,
   }));
@@ -199,6 +206,97 @@ function textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) {
   );
 }
 
+/** その文字の直前で行を折ってよいか（空白、または全角が絡む境目なら折れる）。 */
+function canBreakBefore(cur, c) {
+  if (c.ch === " ") return true;
+  if (!cur.length) return false;
+  const prev = cur[cur.length - 1].ch;
+  return charDisplayWidth(c.ch) === 2 || charDisplayWidth(prev) === 2;
+}
+
+/**
+ * 文字の並び（{ch, wordIndex}）を行へ割る。3つのことを同時にやる。
+ *
+ * 1. **語の途中で切らない**：半角の語（英単語・URL 等）は空白で折る。2026-08-16 の
+ *    basis-reviewer 指摘。旧実装は文字単位で積むだけだったので 'everyone' が
+ *    'everyon|e' に割れていた（マスターの最初の指摘「単語の途中で切れる」そのもの）。
+ *    日本語は語の切れ目に空白が無いので、従来どおり文字単位で折る。
+ * 2. **行数を先に決めて均す**：必要な行数 n = ceil(全体の幅 ÷ 予算) を先に求め、
+ *    1行の目安を「全体の幅 ÷ n」にする。予算いっぱいまで貪欲に詰めると最後の行に
+ *    端数だけが残る（実測: 82.7% / 82.8% / 20.0%）。
+ * 3. **予算は絶対に超えない**：目安は均すための目標で、上限はあくまで予算。
+ */
+// 幅の足し算の丸め誤差で等分点をまたいだと誤判定しないための許容値(px)。
+const EPS_PX = 1e-6;
+
+function wrapChars(chars, budgetPx, advance) {
+  if (!Number.isFinite(budgetPx) || chars.length === 0) return [chars];
+  const widthOf = (ln) => ln.reduce((sum, c) => sum + advance(c.ch), 0);
+  const total = widthOf(chars);
+  // 必要な行数を先に決め、その等分点を境目の目安にする。1行ぶんの目安を毎行使い回すと、
+  // 端数が積もって行数が1つ増えてしまうので、**累計**で比べる。
+  const lineCount = Math.max(1, Math.ceil(total / budgetPx));
+  const lines = [];
+  let cur = [];
+  let curPx = 0;
+  let doneP = 0; // 確定した行の合計幅
+  for (const c of chars) {
+    const w = advance(c.ch);
+    if (c.ch === " " && cur.length === 0) continue; // 行頭の空白は落とす
+    if (curPx > 0 && curPx + w > budgetPx) {
+      // 語の途中で予算を超えたら、直前の空白まで戻って折り直す
+      let cut = -1;
+      for (let i = cur.length - 1; i > 0; i--)
+        if (cur[i].ch === " ") {
+          cut = i;
+          break;
+        }
+      if (cut > 0) {
+        const rest = cur.slice(cut + 1);
+        const head = cur.slice(0, cut); // 行末の空白は落とす
+        lines.push(head);
+        doneP += widthOf(head);
+        cur = rest;
+        curPx = widthOf(rest);
+      } else {
+        lines.push(cur);
+        doneP += curPx;
+        cur = [];
+        curPx = 0;
+      }
+    } else if (
+      curPx > 0 &&
+      // 決めた行数より多く折らない（最後の行は残り全部。等分点の丸め誤差で
+      // 1行増えるのを防ぐ）
+      lines.length + 1 < lineCount &&
+      doneP + curPx + w > ((lines.length + 1) * total) / lineCount + EPS_PX &&
+      canBreakBefore(cur, c)
+    ) {
+      // 目安を超える手前で「折ってよい位置」に来たら、そこで折る（超えてから折ると
+      // 目安ぶんだけ最後の行が痩せる）。
+      // 日本語はどこでも折れる。半角の語は空白でしか折らない（空白は区切りに使い切る）。
+      lines.push(cur);
+      doneP += curPx;
+      cur = [];
+      curPx = 0;
+      if (c.ch === " ") continue;
+    }
+    cur.push(c);
+    curPx += w;
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+
+/** 語と語の間に空白が要るか（半角どうしなら要る。日本語は要らない）。 */
+function needsSpace(prevText, nextText) {
+  if (!prevText || !nextText) return false;
+  const a = prevText[prevText.length - 1];
+  const b = nextText[0];
+  if (a === " " || b === " ") return false;
+  return charDisplayWidth(a) === 1 && charDisplayWidth(b) === 1;
+}
+
 /**
  * 文字列を、1行の幅の予算(px)を超えないよう分割する（超えないならそのまま1要素の配列）。
  * グラフィム単位ではなくコードポイント単位（サロゲートペア対応）で切る。
@@ -207,22 +305,10 @@ function textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) {
 function splitByDisplayWidth(text, budgetPx, scaledFontSize, wideRatio, narrowRatio) {
   if (!Number.isFinite(budgetPx)) return [text];
   if (textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) <= budgetPx) return [text];
-  const pieces = [];
-  let cur = "";
-  let curPx = 0;
-  for (const ch of Array.from(text)) {
-    const w = charAdvancePx(ch, scaledFontSize, wideRatio, narrowRatio);
-    if (curPx > 0 && curPx + w > budgetPx) {
-      pieces.push(cur);
-      cur = ch;
-      curPx = w;
-    } else {
-      cur += ch;
-      curPx += w;
-    }
-  }
-  if (cur) pieces.push(cur);
-  return pieces.length ? pieces : [text];
+  const advance = (ch) => charAdvancePx(ch, scaledFontSize, wideRatio, narrowRatio);
+  const chars = Array.from(text).map((ch) => ({ ch, wordIndex: 0 }));
+  const out = wrapChars(chars, budgetPx, advance).map((ln) => ln.map((c) => c.ch).join(""));
+  return out.length ? out : [text];
 }
 
 /**
@@ -230,24 +316,24 @@ function splitByDisplayWidth(text, budgetPx, scaledFontSize, wideRatio, narrowRa
  * run は「同じ語から来た連続する文字」の塊で、ハイライト色の判定に元の語 index を保つ。
  */
 function wrapRuns(ws, budgetPx, fs, st) {
-  const lines = [];
-  let cur = [];
-  let curPx = 0;
+  const advance = (ch) => charAdvancePx(ch, fs, st.wideRatio, st.narrowRatio);
+  const chars = [];
   ws.forEach((w, wordIndex) => {
-    for (const ch of Array.from(w.w)) {
-      const px = charAdvancePx(ch, fs, st.wideRatio, st.narrowRatio);
-      if (curPx > 0 && Number.isFinite(budgetPx) && curPx + px > budgetPx) {
-        lines.push(cur);
-        cur = [];
-        curPx = 0;
-      }
-      const last = cur[cur.length - 1];
-      if (last && last.wordIndex === wordIndex) last.text += ch;
-      else cur.push({ text: ch, wordIndex });
-      curPx += px;
-    }
+    // 半角の語どうしは、間に空白を入れて「語の区切りが読める」ようにする
+    // （2026-08-16。groupCaptions* が語を "" で連結していたため 'Helloeveryone' になっていた）。
+    if (needsSpace(chars.length ? chars[chars.length - 1].ch : "", w.w))
+      chars.push({ ch: " ", wordIndex });
+    for (const ch of Array.from(w.w)) chars.push({ ch, wordIndex });
   });
-  if (cur.length) lines.push(cur);
+  const lines = wrapChars(chars, budgetPx, advance).map((ln) => {
+    const runs = [];
+    for (const c of ln) {
+      const last = runs[runs.length - 1];
+      if (last && last.wordIndex === c.wordIndex) last.text += c.ch;
+      else runs.push({ text: c.ch, wordIndex: c.wordIndex });
+    }
+    return runs;
+  });
   return lines.length ? lines : [[]];
 }
 
@@ -432,8 +518,18 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   const W = opts.width ?? 1080;
   const H = opts.height ?? 1920;
   const styleRef = opts.style ?? DEFAULT_SUBTITLE_STYLE;
-  const st =
-    typeof styleRef === "object" ? styleRef : getStyle(styleRef) || getStyle(DEFAULT_SUBTITLE_STYLE);
+  // スタイルを「キー名の文字列」で渡された場合も、必ず resolveCaptionStyle() を通す。
+  //
+  // 【2026-08-16 の欠陥と直し方】旧実装はここで getStyle() を呼び、素のプリセット
+  // （fontSize 84 / outline 14 / shadow 8。書体ごとの実測比 wideRatio・emRatio・
+  // outlineRatio を持たない）をそのまま使っていた。resolveCaptionStyle() が付ける
+  // これらの比が無いと、下の scaledFontSize / scaledOutline が「従来どおり」の枝へ落ちるため、
+  // G-CAP-FIT で直した字の大きさ・折り返し・縁取り・影が**まるごと元に戻る**。
+  // 実際、caption-* フラグを1つも付けない CLI 実行（pipeline.mjs の
+  // `style: resolvedCaptionStyle ?? subStyle`）と、画面の「字幕を直して焼き直す」
+  // （recaption-stage.mjs、state に subStyle が無いので undefined）が、この枝を通っていた。
+  // 直したのに直っていない経路が2つ残っていたので、入口を1つに寄せる。
+  const st = typeof styleRef === "object" ? styleRef : resolveCaptionStyle(styleRef, {});
   // resolveCaptionStyle() 由来のスタイルは st.fontFamily を持つ（書体選択・G-EDIT-CAPTION-STYLE）。
   // 持たない場合(旧来のプリセットそのまま・テスト等)は opts.fontMain / DEFAULT_FONT にフォールバック。
   const fontMain = st.fontFamily ?? opts.fontMain ?? DEFAULT_FONT;
