@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
+import { trimJudgeStage } from "../src/trim-judge.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
 import { checkBundledFont } from "../src/font-check.mjs";
@@ -967,6 +968,24 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   updateState(workDir, { stage: "captionfixed" });
   broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
+
+  // 「間を詰める」を選んでいるときだけ、どこを詰めるかを AI に判断させる（G-EDIT-TRIM2-AI-*）。
+  // 固定の単語一覧と長さの閾値だけでは「あの資料」の指示語まで消え、相手を待つ沈黙も消える。
+  // 失敗したら例外のままジョブを失敗させる（黙って一覧と閾値へ退避すると、直そうとしている
+  // 欠陥をそのまま出力に出したうえで、それを利用者に知らせないことになる＝FAILSTOP）。
+  // どちらも「なし」のときは呼ばない（判断が要らない設定まで AI に依存させない）。
+  if (opts.trimSilence === "on" || opts.trimFiller === "on") {
+    broadcast(jobId, { stage: "c", status: "active", label: "AIが詰めてよい所を選んでいます" });
+    const judged = await trimJudgeStage({
+      workDir,
+      runModel: createDefaultRunModel(workDir),
+      onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
+    });
+    broadcast(jobId, {
+      stage: "c", status: "active",
+      log: `[trim-judge] ${judged.total} 語のうち 言い淀み${judged.fillers}件 / 詰める間${judged.cutGaps}件`,
+    });
+  }
   broadcast(jobId, { stage: "c", status: "done" });
 
   // ── Stage s: 区間選定（llm-request 生成 → claude 呼び出し） ──────
