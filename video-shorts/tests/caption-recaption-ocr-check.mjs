@@ -154,10 +154,18 @@ function call(method, pathAndQuery, { body } = {}) {
 async function extractPreprocessedFrame(videoPath, tSec, outPngPath) {
   const raw = `${outPngPath}.raw.png`;
   await runFfmpeg(["-y", "-v", "error", "-ss", String(tSec), "-i", videoPath, "-frames:v", "1", raw]);
-  // negate(白黒反転) → 下部帯(65%〜95%)へ切り出し → 2倍拡大(lanczos)
+  // negate(白黒反転) → 下部帯(65%〜95%)へ切り出し → **横幅を 1080px へ揃える**(lanczos)。
+  //
+  // 【2026-08-16 の直し】ここは以前「2倍拡大」で固定していた。字幕の文字が小さかった頃
+  // (Fontsize 84・墨の高さ58px)は拡大が効いたが、G-CAP-FIT で文字を大きくした(墨の高さ100px)
+  // 結果、2倍にすると墨が200px になり tesseract の得意な大きさを大きく外れて、
+  // 「梅の花」を「梅の化」と読むようになった(実測: 2倍=梅の化 / 等倍=梅の花)。
+  // 倍率を固定すると、字の大きさを変えるたびにこの検査が壊れる。**出来上がりの大きさ**を
+  // 揃える(横1080pxへ正規化する)ほうが、字の大きさの変更に対して安定する。
+  // 小さい canvas では従来どおり拡大になる。
   await runFfmpeg([
     "-y", "-v", "error", "-i", raw,
-    "-vf", "negate,crop=iw:ih*0.3:0:ih*0.65,scale=iw*2:ih*2:flags=lanczos",
+    "-vf", "negate,crop=iw:ih*0.3:0:ih*0.65,scale=1080:-2:flags=lanczos",
     outPngPath,
   ]);
   fs.rmSync(raw, { force: true });

@@ -98,6 +98,26 @@ export const FONT_CATALOG = {
 
 export const DEFAULT_FONT_KEY = "kaku";
 
+/**
+ * 字幕の文字の大きさは「画面の高さに対する割合」で決める（2026-08-16 / G-CAP-FIT-SIZE）。
+ *
+ * 【なぜ指定値をそのまま使わないか】字幕エンジン(libass)の Fontsize は「文字そのものの大きさ」
+ * ではなく「上下の余白を含めた高さ(ascent+descent)」に効く。同梱書体でこの比は 0.598〜1.000 と
+ * バラバラなので、Fontsize を固定すると**書体を変えた瞬間に字の大きさが変わる**。
+ * 実際、直す前は Fontsize:84 に対し漢字の高さが 54px（画面の2.8%）しかなかった。
+ *
+ * マスターが選んだ案C＝実際の文字の高さを画面の高さの 5.2% にする。
+ * 実物のショート動画（Opus Clip 公式サイトの実例8本）と同じ「大きい字を短い行で積む」見た目。
+ */
+export const CAPTION_EM_RATIO = 0.052;
+
+/** 画面の高さと書体から、その書体で狙いの大きさになる Fontsize を出す。 */
+export function fontSizeForHeight(canvasH, font, emRatio = CAPTION_EM_RATIO) {
+  const targetEm = canvasH * emRatio;
+  const perUnit = font?.wideRatio || 1; // Fontsize 1 あたりの実 em（＝全角の送り幅の比）
+  return Math.max(1, Math.round(targetEm / perUnit));
+}
+
 /** 書体キーの正引き。未知なら null（__proto__ 等の継承プロパティは自前キーとして扱わない） */
 export function getFont(key) {
   return typeof key === "string" && Object.hasOwn(FONT_CATALOG, key) ? FONT_CATALOG[key] : null;
@@ -138,7 +158,9 @@ export const SUBTITLE_STYLES = {
     outline: 14,
     outlineColor: "&H00000000", // 既定=黒。背景の対照を得るための既定値（カスタマイズ可）
     shadow: 8,
-    marginV: 360, // 画面下からの余白（固定値。区間の行数が変わってもこの値は動かない）
+    // 2026-08-16 マスターが選んだ案C の位置。文字が大きくなり3行に積むようになったぶん、
+    // 下からの余白を 360→420 へ上げる（下端に寄りすぎないようにする）。
+    marginV: 420, // 画面下からの余白（固定値。区間の行数が変わってもこの値は動かない）
   },
   pop: {
     label: "1語ずつポップ",
@@ -286,8 +308,14 @@ export function resolveCaptionStyle(styleKey, overrides = {}) {
   // 細い書体では太すぎる縁取り）。
   style.wideRatio = font.wideRatio;
   style.narrowRatio = font.narrowRatio;
+  style.emRatio = CAPTION_EM_RATIO;
   // 縁取り: 「文字の帯の中に地が20%以上残る」を満たす範囲で最も太い比（書体ごとに実測）。
+  style.outlineRatio = font.outlineRatio;
   style.outline = Math.max(1, Math.round(base.fontSize * font.outlineRatio));
+  // 影は重ねない（2026-08-16 / G-CAP-FIT-NOSHADOW）。縁取りと影が二重にかかると
+  // 黒が右下にだけ伸びて輪郭が非対称ににじみ、文字が黒い塊に沈む。実物のショート動画は
+  // 縁取りのみで影を重ねていない。
+  style.shadow = 0;
 
   if (overrides.fillHex !== undefined) {
     const ass = hexToAss(overrides.fillHex);

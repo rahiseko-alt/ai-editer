@@ -33,7 +33,13 @@ const MARGIN_LR = 60; // srt-builder の captionMarginLR（基準canvasでは 60
 const AVAIL = W - MARGIN_LR * 2; // 可用幅 960px
 const FS_MEASURE = 84; // 比率の実測に使う文字サイズ（既定スタイルと同じ）
 const RATIO_TOL = 0.02; // カタログの実測比と測り直した値の許容差
-const NOWRAP_FILL_MIN = 0.6; // 1行の墨の幅が可用幅に占める割合の下限
+// 上限。1行を画面の端から端まで伸ばさない（実物のショート動画は短い行を積む）。
+const NOWRAP_FILL_MAX = 0.92;
+// 漢字1文字の実際の高さが画面の高さに占める割合（G-CAP-FIT-SIZE）。
+const EM_RATIO_MIN = 0.04;
+const EM_RATIO_MAX = 0.065;
+// 縁取りの黒の左右差の上限（G-CAP-FIT-NOSHADOW）。影を付けると片側だけ黒が伸びる。
+const SHADOW_ASYM_MAX = 0.15;
 const BG_KEEP_MIN = 0.2; // 文字の帯の中に地が残る割合の下限
 const OLD_OUTLINE_RATIO = 14 / 84; // 直す前の縁取り比（対照に使う）
 // 明るい背景の上でも文字の輪郭が残ると言える、縁取りの暗い画素の割合の下限。
@@ -192,63 +198,267 @@ t("METRICS 対照: カタログの数値を1つずらすと落ちる", () => {
 });
 
 /* ══════ ② 収まる字幕を折り返さない ══════ */
+// 【重要】この検査は「製品と同じ呼び方」でしか測らない。
+// 製品(pipeline.mjs の `style: resolvedCaptionStyle ?? subStyle` / recaption-stage.mjs)は、
+// 書体などを指定しないとき buildAss へ**スタイル名の文字列**を渡す。検査だけが
+// resolveCaptionStyle() の戻り値を渡していると、文字列経路が直っていなくても緑になる
+// （2026-08-16 basis-reviewer 指摘。実際その状態で 40 PASS だった）。
+// そこで既定の測定対象は文字列キーそのものにする。
+const PRODUCT_STYLE = DEFAULT_SUBTITLE_STYLE; // 製品の既定経路（文字列）
 const st = resolveCaptionStyle(DEFAULT_SUBTITLE_STYLE, {});
-// 可用幅の 90%(864px) に収まる全角文字数
-const fitChars = Math.floor((AVAIL * 0.9) / (st.fontSize * st.wideRatio));
-const fitText = "今日は動画編集を自動化する方法についてお話しします".slice(0, fitChars);
 
-t(`NOWRAP: 可用幅の90%に収まる字幕(${fitChars}文字)が1行で描かれ、幅を使っている`, () => {
-  const ass = buildAss(wordsOf(fitText), "", 4, { width: W, height: H, style: st });
-  const dialogues = ass.split("\n").filter((l) => l.startsWith("Dialogue"));
-  assert.ok(dialogues.length > 0, "字幕イベントが1つも無い");
-  for (const d of dialogues) assert.ok(!d.includes("\\N"), `収まるのに折り返している: ${d}`);
+/** 製品が実際に Style 行へ書いた値を読む（宣言値ではなく、焼く直前の値）。 */
+function productStyle(styleRef) {
+  const ass = buildAss([{ w: "国", start: 0, end: 2 }], "", 2, { width: W, height: H, style: styleRef });
+  const line = ass.split("\n").find((l) => l.startsWith("Style: Caption,"));
+  assert.ok(line, "Caption の Style 行が無い");
+  const f = line.slice("Style: Caption,".length).split(",");
+  return { family: f[0], fontSize: Number(f[1]), outline: Number(f[7]), shadow: Number(f[8]) };
+}
+
+// 製品が実際に使う文字サイズ。宣言値(84)ではない。
+const SCALED_FS = productStyle(PRODUCT_STYLE).fontSize;
+
+/** 1行だけを焼いて墨の幅を測る。 */
+function lineWidth(text, style) {
+  const ass = buildAss([{ w: text, start: 0, end: 2 }], "", 2, { width: W, height: H, style, maxChars: 999 });
   const b = bboxOf(bake(ass), 24);
-  assert.ok(b, "墨が見つからない");
-  const fill = (b.x2 - b.x1) / AVAIL;
-  console.log(`  [実測] 1行の墨の幅 ${b.x2 - b.x1}px / 可用幅 ${AVAIL}px = ${(fill * 100).toFixed(1)}%`);
+  return b ? b.x2 - b.x1 : 0;
+}
+/**
+ * 製品と同じ呼び方で焼いた字幕を、**字幕ごと**に行へ割って墨の幅の割合を返す。
+ *
+ * 字幕をまたいで平らにしてはいけない。最終行の幅は「折り返しの見積り」ではなく
+ * 「その字幕に残った言葉の量」で決まる（11文字の言葉で1行に9文字入るなら2行目は必ず2文字）ため、
+ * どの行が最終行かを字幕ごとに知らないと、下限の判定が測定として成立しない。
+ * @returns {{caption: string, lines: string[], fills: number[]}[]}
+ */
+function capFills(words, duration, style) {
+  const ass = buildAss(words, "", duration, { width: W, height: H, style });
+  const caps = [];
+  for (const l of ass.split("\n")) {
+    if (!l.startsWith("Dialogue") || !l.includes(",Caption,")) continue;
+    const body = (l.split(",,0,0,0,,")[1] ?? "").replace(/\{[^}]*\}/g, "");
+    if (body && body !== caps[caps.length - 1]) caps.push(body);
+  }
+  return caps.map((c) => {
+    const lines = c.split("\\N").filter((x) => x.trim());
+    return { caption: c, lines, fills: lines.map((x) => lineWidth(x, style) / AVAIL) };
+  });
+}
+/** 全角の字幕を、製品と同じ呼び方で焼いて字幕ごとの行の割合を返す。 */
+function lineFills(text, style) {
+  return capFills(wordsOf(text, 8), 8, style);
+}
+/** 字幕ごとの実測を1行のログにする。 */
+function fmt(byCap) {
+  return byCap.map((c) => c.fills.map((f) => (f * 100).toFixed(1) + "%").join(" / ")).join(" ｜ ");
+}
+
+const NOWRAP_SRC = "えっと昔僕も1時間半くらいある動画を5分にまとめてくれと言われて";
+const EN_WORDS = "Hello everyone welcome back to my channel today".split(" ").map((w, i) => ({
+  w,
+  start: i * 0.4,
+  end: (i + 1) * 0.4,
+}));
+// 1行に使ってよい幅（可用幅の90%）。実物のショート動画は1行を画面の端から端まで伸ばさない。
+const LINE_BUDGET = AVAIL * 0.9;
+// 1枚の字幕の中で、いちばん広い行といちばん狭い行の差の上限（可用幅に対する割合）。
+// 均等に割れば差は「全角1文字ぶん」＝100px＝可用幅の10.4%。20%はその1文字ぶんの余裕。
+const EVEN_MAX_GAP = 0.2;
+
+/** 幅の見積り（製品と同じ比）。 */
+function advPx(ch) {
+  const cp = ch.codePointAt(0);
+  const wide = cp >= 0x2e80 && cp <= 0xa4cf;
+  return SCALED_FS * (wide ? st.wideRatio : st.narrowRatio);
+}
+
+/**
+ * 字幕ごとの「必要な行数」。
+ * 日本語（空白なし）はどこでも折れるので、墨の総幅 ÷ 1行の予算 の切り上げ。
+ * 半角の語が混じる字幕は語の途中で折れないので、語を順に詰めたときの行数
+ * （＝語を切らずに詰められる最小の行数）。
+ */
+function neededLines(cap) {
+  const text = cap.lines.join(cap.caption.includes(" ") ? " " : "");
+  const totalPx = cap.fills.reduce((sum, f) => sum + f * AVAIL, 0);
+  if (!text.includes(" ")) return Math.max(1, Math.ceil(totalPx / LINE_BUDGET));
+  let n = 1;
+  let px = 0;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const w = [...word].reduce((sum, ch) => sum + advPx(ch), 0);
+    const sp = px > 0 ? advPx(" ") : 0;
+    if (px > 0 && px + sp + w > LINE_BUDGET) {
+      n++;
+      px = w;
+    } else px += sp + w;
+  }
+  return n;
+}
+
+t("LINES: 行数が必要最小限になっている（折り返しの見積りが過大でない）", () => {
+  const byCap = lineFills(NOWRAP_SRC, PRODUCT_STYLE).concat(capFills(EN_WORDS, 4, PRODUCT_STYLE));
+  console.log(`  [実測] ${fmt(byCap)}`);
+  for (const c of byCap) {
+    assert.strictEqual(
+      c.lines.length,
+      neededLines(c),
+      `字幕「${c.caption}」が ${c.lines.length}行。墨の量から要る行数は ${neededLines(c)}行`,
+    );
+  }
+});
+
+t("LINES 対照: 旧来の見積り（全角=1.30×文字サイズ）へ戻すと、要らない行が増える", () => {
+  const old = { ...st, wideRatio: 1.3, narrowRatio: 0.65 };
+  const byCap = lineFills(NOWRAP_SRC, old);
+  console.log(`  [実測] 旧来の見積りだと: ${fmt(byCap)}`);
   assert.ok(
-    fill >= NOWRAP_FILL_MIN,
-    `画面の横幅を使えていない: ${(fill * 100).toFixed(1)}%（下限 ${NOWRAP_FILL_MIN * 100}%）`,
+    byCap.some((c) => c.lines.length > neededLines(c)),
+    `旧来の見積りでも行数が最小のまま: ${fmt(byCap)}`,
   );
 });
 
-t("NOWRAP 対照: 旧来の見積り（全角=2カラム×0.65）へ戻すと、同じ字幕が折り返して幅を割る", () => {
-  // 旧実装の見積り＝全角1文字あたり 1.30×fontSize。style の比をそれに差し替えて再現する。
-  const old = { ...st, wideRatio: 1.3, narrowRatio: 0.65 };
-  const ass = buildAss(wordsOf(fitText), "", 4, { width: W, height: H, style: old });
-  // 行のまとめ方も幅で決めるようになったので、旧来の見積りでは1つの行に入る語が減り、
-  // 「1つの字幕の中の \N」ではなく「字幕そのものが増える」形で現れる。どちらの形であれ、
-  // マスターが見て困る症状＝1行が画面の横幅を使えないことを、焼いた墨の幅で判定する。
-  const b = bboxOf(bake(ass), 24);
-  const fill = (b.x2 - b.x1) / AVAIL;
-  console.log(`  [実測] 旧来の見積りだと ${b.x2 - b.x1}px = ${(fill * 100).toFixed(1)}%`);
-  assert.ok(fill < NOWRAP_FILL_MIN, `旧来の見積りでも幅を使えている: ${(fill * 100).toFixed(1)}%`);
+t("MAXFILL: どの行も可用幅の92%以下（1行を画面の端から端まで伸ばさない）", () => {
+  const byCap = lineFills(NOWRAP_SRC, PRODUCT_STYLE).concat(capFills(EN_WORDS, 4, PRODUCT_STYLE));
+  for (const c of byCap)
+    c.fills.forEach((f, i) => {
+      assert.ok(
+        f <= NOWRAP_FILL_MAX,
+        `${i + 1}行目が長すぎる: ${(f * 100).toFixed(1)}%（上限 ${NOWRAP_FILL_MAX * 100}%）「${c.lines[i]}」`,
+      );
+    });
+});
+
+t("MAXFILL 対照: 1行を幅いっぱいまで詰めると上限92%を超える", () => {
+  const greedy = { ...st, wideRatio: st.wideRatio / 2, narrowRatio: st.narrowRatio / 2 };
+  const byCap = lineFills(NOWRAP_SRC, greedy);
+  console.log(`  [実測] 詰め込むと: ${fmt(byCap)}`);
+  assert.ok(byCap.some((c) => c.fills.some((f) => f > NOWRAP_FILL_MAX)), `上限を超えない: ${fmt(byCap)}`);
+});
+
+t("EVEN: 日本語の字幕は、1枚の中の行の長さが揃っている（最後の行に端数が残らない）", () => {
+  const byCap = lineFills(NOWRAP_SRC, PRODUCT_STYLE);
+  for (const c of byCap) {
+    if (c.lines.length < 2) continue;
+    const gap = Math.max(...c.fills) - Math.min(...c.fills);
+    console.log(`  [実測] 「${c.caption.slice(0, 8)}…」 差 ${(gap * 100).toFixed(1)}%`);
+    assert.ok(
+      gap <= EVEN_MAX_GAP,
+      `行の長さの差が大きい: ${(gap * 100).toFixed(1)}%（上限 ${EVEN_MAX_GAP * 100}%）${fmt([c])}`,
+    );
+  }
+});
+
+/** 予算いっぱいまで貪欲に詰めた行割り（＝均さない実装の参照）。 */
+function greedySplit(text) {
+  const out = [];
+  let cur = "";
+  let px = 0;
+  for (const ch of text) {
+    const w = advPx(ch);
+    if (px > 0 && px + w > LINE_BUDGET) {
+      out.push(cur);
+      cur = ch;
+      px = w;
+    } else {
+      cur += ch;
+      px += w;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+t("EVEN 対照: 予算いっぱいまで貪欲に詰めると、最後の行に端数が残って差が開く", () => {
+  // 均さない実装（＝この直しの前）の行割りを検査側で作り、同じ測り方で落ちることを見る。
+  const lines = greedySplit("今日は動画編集の話をこれから自動化し");
+  const fills = lines.map((l) => lineWidth(l, PRODUCT_STYLE) / AVAIL);
+  const gap = Math.max(...fills) - Math.min(...fills);
+  console.log(`  [実測] 貪欲に詰めると ${fills.map((f) => (f * 100).toFixed(1) + "%").join(" / ")} → 差 ${(gap * 100).toFixed(1)}%`);
+  assert.ok(gap > EVEN_MAX_GAP, `貪欲に詰めても差が開かない: ${(gap * 100).toFixed(1)}%`);
 });
 
 /** Dialogue から本文だけを取り出す（ASSタグと強制改行を除き、連続する重複行をまとめる）。 */
-function captionTexts(ass) {
+function captionTexts(ass, keepBreaks = false) {
   const raw = ass
     .split("\n")
     .filter((l) => l.startsWith("Dialogue") && l.includes(",Caption,"))
     .map((l) => l.split(",,0,0,0,,")[1] ?? "")
-    .map((t) => t.replace(/\{[^}]*\}/g, "").replace(/\\N/g, ""));
+    .map((t) => t.replace(/\{[^}]*\}/g, ""))
+    .map((t) => (keepBreaks ? t : t.replace(/\\N/g, "")));
   const out = [];
   for (const t of raw) if (t && t !== out[out.length - 1]) out.push(t);
   return out;
 }
 
-t("NOWRAP: 折り返しても、話した言葉が1文字も消えない", () => {
-  // basis-reviewer 2巡目の指摘: 「はみ出さない」だけを見ると、あふれた分を黙って捨てる
-  // 実装が通ってしまう。字幕から言葉が消えるのは、はみ出しより重い実害。
+t("WORDS: 半角の語が、語の途中で切れない／語の区切りが読める", () => {
+  const ass = buildAss(EN_WORDS, "", 4, { width: W, height: H, style: PRODUCT_STYLE });
+  const lines = captionTexts(ass, true).flatMap((c) => c.split("\\N"));
+  console.log(`  [実測] ${JSON.stringify(lines)}`);
+  const shown = lines.join(" ").split(/\s+/).filter(Boolean);
+  const src = EN_WORDS.map((w) => w.w);
+  assert.deepStrictEqual(shown, src, `語が壊れている\n  入力: ${src.join(" ")}\n  出力: ${shown.join(" ")}`);
+});
+
+t("WORDS 対照: 語の切れ目を見ない実装だと、語が途中で切れて区切りも消える", () => {
+  // 直す前の実装＝語を空白なしで連結し、どこでも折る。検査側で同じものを作り、落ちることを見る。
+  const joined = EN_WORDS.map((w) => w.w).join("");
+  const lines = greedySplit(joined);
+  const shown = lines.join(" ").split(/\s+/).filter(Boolean);
+  console.log(`  [実測] 対照: ${JSON.stringify(lines)}`);
+  assert.notDeepStrictEqual(
+    shown,
+    EN_WORDS.map((w) => w.w),
+    "語の壊れを見分けられていない",
+  );
+});
+
+t("WORDS: 1語だけで1行に入りきらないとき（URL 等）は、画面からはみ出さないことを優先して折る", () => {
+  // 「語を切らない」と「画面からはみ出さない」は、この場合だけ両立しない。
+  // 実物の字幕は必ず画面に収まる側を採るので、ここでも収まる側を優先する。
+  // ただし黙って英字の途中で切るのではなく、区切り記号の直後を優先して折る。
+  const url = "https://example.com/very/long/path/to/a/resource";
+  const ass = buildAss([{ w: url, start: 0, end: 4 }], "", 4, { width: W, height: H, style: PRODUCT_STYLE });
+  const lines = captionTexts(ass, true)[0].split("\\N");
+  console.log(`  [実測] ${JSON.stringify(lines)}`);
+  assert.strictEqual(lines.join(""), url, "URL の文字が消えている");
+  // どの行も可用幅に収まる（＝画面からはみ出さない）
+  for (const l of lines) {
+    const fill = lineWidth(l, PRODUCT_STYLE) / AVAIL;
+    assert.ok(fill <= NOWRAP_FILL_MAX, `${(fill * 100).toFixed(1)}% ではみ出している「${l}」`);
+  }
+  // 最終行以外は、区切り記号の直後で折れている（英字の途中でぶつ切りにしていない）
+  const marks = new Set(["/", "-", "_", ".", "?", "&", "=", ":", ","]);
+  for (let i = 0; i < lines.length - 1; i++) {
+    const last = lines[i][lines[i].length - 1];
+    assert.ok(marks.has(last), `${i + 1}行目が記号以外で切れている: 「${lines[i]}」`);
+  }
+});
+
+t("WORDS 対照: 区切り記号が1つも無い長い語は、記号で折れないので途中で折るしかない", () => {
+  // 対照。ここで「途中で折らない」を選ぶと画面からはみ出すので、収まる側を採っていることを示す。
+  const blob = "abcdefghijklmnopqrstuvwxyz".repeat(2);
+  const ass = buildAss([{ w: blob, start: 0, end: 4 }], "", 4, { width: W, height: H, style: PRODUCT_STYLE });
+  const lines = captionTexts(ass, true)[0].split("\\N");
+  console.log(`  [実測] ${lines.length}行に折られ、最大 ${(Math.max(...lines.map((l) => lineWidth(l, PRODUCT_STYLE) / AVAIL)) * 100).toFixed(1)}%`);
+  assert.ok(lines.length > 1, "記号の無い長い語が1行のままで、はみ出している");
+  assert.strictEqual(lines.join(""), blob, "文字が消えている");
+  for (const l of lines) {
+    assert.ok(lineWidth(l, PRODUCT_STYLE) / AVAIL <= NOWRAP_FILL_MAX, `はみ出している「${l}」`);
+  }
+});
+
+t("NOLOSS: 折り返しても、話した言葉が1文字も消えない", () => {
   const src = "今日の動画では動画編集を自動化する方法を最後まで詳しく説明していきます";
-  const ass = buildAss(wordsOf(src), "", 4, { width: W, height: H, style: st });
+  const ass = buildAss(wordsOf(src), "", 4, { width: W, height: H, style: PRODUCT_STYLE });
   const joined = captionTexts(ass).join("");
   assert.strictEqual(joined, src, `字幕から言葉が消えている\n  入力: ${src}\n  出力: ${joined}`);
 });
 
-t("NOWRAP 対照: あふれた分を捨てる実装だと落ちる", () => {
+t("NOLOSS 対照: あふれた分を捨てる実装だと落ちる", () => {
   const src = "今日の動画では動画編集を自動化する方法を最後まで詳しく説明していきます";
-  const ass = buildAss(wordsOf(src), "", 4, { width: W, height: H, style: st });
+  const ass = buildAss(wordsOf(src), "", 4, { width: W, height: H, style: PRODUCT_STYLE });
   const truncated = ass
     .split("\n")
     .map((l) => {
@@ -261,26 +471,12 @@ t("NOWRAP 対照: あふれた分を捨てる実装だと落ちる", () => {
   assert.notStrictEqual(captionTexts(truncated).join(""), src, "切り捨てを検出できていない");
 });
 
-t("NOWRAP: 半角中心の字幕でも、画面の横幅を使う", () => {
-  // 全角だけで測ると、半角文字の字幕が幅の4割しか使わない状態を見逃す（同上の指摘）。
-  const words = "Hello everyone welcome back to my channel today".split(" ").map((w, i) => ({
-    w,
-    start: i * 0.4,
-    end: (i + 1) * 0.4,
-  }));
-  const ass = buildAss(words, "", 4, { width: W, height: H, style: st });
-  const b = bboxOf(bake(ass), 24);
-  const fill = (b.x2 - b.x1) / AVAIL;
-  console.log(`  [実測] 半角中心の1行の墨の幅 ${b.x2 - b.x1}px = ${(fill * 100).toFixed(1)}%`);
-  assert.ok(fill >= NOWRAP_FILL_MIN, `半角の字幕が幅を使えていない: ${(fill * 100).toFixed(1)}%`);
-});
-
 /* ══════ ③ 収まらない字幕ははみ出さない ══════ */
-const longChars = Math.ceil((AVAIL * 2.5) / (st.fontSize * st.wideRatio));
+const longChars = Math.ceil((AVAIL * 2.5) / (SCALED_FS * st.wideRatio));
 const longText = "あ".repeat(longChars);
 
 t(`WRAP: 可用幅の2.5倍(${longChars}文字)の字幕が、画面からはみ出さない`, () => {
-  const ass = buildAss(wordsOf(longText), "", 4, { width: W, height: H, style: st });
+  const ass = buildAss(wordsOf(longText), "", 4, { width: W, height: H, style: PRODUCT_STYLE });
   const b = bboxOf(bake(ass), 24);
   assert.ok(b, "墨が見つからない");
   console.log(`  [実測] 墨の範囲 x1=${b.x1} x2=${b.x2}（安全域 60〜1020）`);
@@ -301,6 +497,12 @@ for (const [key, font] of Object.entries(FONT_CATALOG)) {
   t(`OUTLINE: ${key} で、文字と文字の間に地が見える`, () => {
     const outline = Math.max(1, Math.round(FS_MEASURE * font.outlineRatio));
     const keep = bgKeepRatio(font.family, outline);
+    const ps = productStyle(resolveCaptionStyle(PRODUCT_STYLE, { fontKey: key }));
+    assert.strictEqual(
+      ps.outline,
+      Math.max(1, Math.round(ps.fontSize * font.outlineRatio)),
+      `製品が書いた縁取り(${ps.outline}px)が、書体の実測比から外れている`,
+    );
     console.log(`  [実測] ${key}: 縁取り ${outline}px で 地が残る割合 ${(keep * 100).toFixed(1)}%`);
     assert.ok(
       keep >= BG_KEEP_MIN,
@@ -412,6 +614,220 @@ t("COLOR: 画面から選べるスタイルに、話に合わせて色を変え�
       `画面から選べる「${s.label}」が、話に合わせて色を変える設定になっている（highlight=${s.highlight} / base=${s.base}）`,
     );
   }
+});
+
+/* ══════ ⑤' 製品の既定の呼び方で、直したとおりに焼かれる ══════ */
+//
+// 2026-08-16 basis-reviewer 指摘。この検査は当初、buildAss へ resolveCaptionStyle() の
+// **戻り値**しか渡しておらず、製品が実際に使う「スタイル名の文字列」経路を一度も測っていなかった。
+// その経路は素のプリセット（Fontsize 84 / Outline 14 / Shadow 8 / 同梱外の書体）へ落ちており、
+// 直したはずの字の大きさ・折り返し・縁取り・影が**まるごと元に戻っていた**のに 40 PASS だった。
+// ここは「呼び方が違っても同じ結果になる」ことを、焼く直前の値そのもので押さえる。
+
+t("WIRED: スタイル名の文字列で呼んでも（＝製品の既定の呼び方）、直したとおりの字幕になる", () => {
+  const byKey = productStyle(PRODUCT_STYLE);
+  const byObj = productStyle(resolveCaptionStyle(PRODUCT_STYLE, {}));
+  console.log(`  [実測] 文字列で呼ぶと ${JSON.stringify(byKey)}`);
+  assert.deepStrictEqual(byKey, byObj, "呼び方によって焼かれる字幕が違う");
+  assert.strictEqual(byKey.shadow, 0, `影が付いている: ${byKey.shadow}`);
+  assert.ok(FONT_CATALOG[st.fontKey], `同梱していない書体で焼こうとしている: ${byKey.family}`);
+  assert.strictEqual(byKey.family, FONT_CATALOG[st.fontKey].family, "同梱書体で焼いていない");
+});
+
+for (const key of Object.keys(SUBTITLE_STYLES)) {
+  t(`WIRED: 「${SUBTITLE_STYLES[key].label}」も、文字列で呼んで同じ扱いになる`, () => {
+    assert.deepStrictEqual(productStyle(key), productStyle(resolveCaptionStyle(key, {})));
+  });
+}
+
+t("WIRED 対照: 直す前の呼び方（素のプリセットをそのまま渡す）だと、直す前の値のまま焼かれる", () => {
+  const raw = productStyle({ ...SUBTITLE_STYLES[PRODUCT_STYLE] });
+  const fixed = productStyle(PRODUCT_STYLE);
+  console.log(`  [実測] 素のプリセット ${JSON.stringify(raw)}`);
+  assert.ok(
+    raw.fontSize < fixed.fontSize && raw.shadow > 0,
+    `直す前と直したあとを見分けられていない: 素=${JSON.stringify(raw)} / 直後=${JSON.stringify(fixed)}`,
+  );
+});
+
+/* ══════ ⑥ 文字がスマホで読める大きさ ══════ */
+/** 「国」を1文字だけ縁取り0で焼き、墨の高さが画面の高さに占める割合を返す。 */
+function kanjiHeightRatio(family, fontSize) {
+  const b = bboxOf(bake(plainAss("国", family, fontSize)), 24);
+  assert.ok(b, "墨が見つからない");
+  return (b.y2 - b.y1) / H;
+}
+
+for (const [key] of Object.entries(FONT_CATALOG)) {
+  t(`SIZE: ${key} の字が、スマホで読める大きさで描かれている`, () => {
+    // 指定値(Fontsize)は ascent+descent であって em ではないため、書体ごとに縦の余白の比が違う。
+    // 製品は「画面の高さに対する字の実寸」から逆算している。ここは**製品が Style 行へ書いた値**を
+    // 読み出して焼き、画素で測る（検査が自分で計算し直すと、製品が直っていなくても緑になる）。
+    const ps = productStyle(resolveCaptionStyle(PRODUCT_STYLE, { fontKey: key }));
+    const ratio = kanjiHeightRatio(ps.family, ps.fontSize);
+    console.log(`  [実測] ${key}: 製品が書いた指定値 ${ps.fontSize} → 漢字の高さ ${(ratio * 100).toFixed(1)}%`);
+    assert.ok(
+      ratio >= EM_RATIO_MIN && ratio <= EM_RATIO_MAX,
+      `${(ratio * 100).toFixed(1)}% は範囲外（${EM_RATIO_MIN * 100}〜${EM_RATIO_MAX * 100}%）`,
+    );
+  });
+}
+
+t("SIZE 対照: 直す前の指定値(84)へ戻すと、下限4.0%を割る", () => {
+  const ratio = kanjiHeightRatio(FONT_CATALOG.kaku.family, FS_MEASURE);
+  console.log(`  [実測] 指定値84: 漢字の高さ ${(ratio * 100).toFixed(1)}%`);
+  assert.ok(ratio < EM_RATIO_MIN, `直す前の指定値でも下限を満たす: ${(ratio * 100).toFixed(1)}%`);
+});
+
+/* ══════ ⑦ 縁取りの外側にもう一段の黒を重ねていない ══════ */
+/**
+ * 白い墨の左端から左へ、右端から右へ、黒が続く画素数（＝黒がはみ出している幅）を測り、
+ * 左右差の割合を返す。影は右下へ伸びるため、影があると右側だけ黒が長く伸びる。
+ *
+ * 【行ごとに数えない理由】1行ずつ「その行の白の左端から左へ黒が続く数」を数えると、
+ * その行に白が無い隣の字の縁取り（べた塗りの黒）まで数えてしまい、字の形しだいで
+ * 0〜119px と暴れる（実測）。影の有無ではなく字形を測ることになるので、
+ * 白の墨全体の外枠と、黒の墨全体の外枠の差＝「黒が外へはみ出した幅」を左右で比べる。
+ */
+function shadowAsymmetry(style) {
+  const words = wordsOf("今日は動画編集の話", 4);
+  const ass = buildAss(words, "", 4, { width: W, height: H, style });
+  const buf = readPixelsRgb(bake(ass, { bg: "0x00ff00" }));
+  const isWhite = (i) => buf[i] > 200 && buf[i + 1] > 200 && buf[i + 2] > 200;
+  const isBlack = (i) => buf[i] < 60 && buf[i + 1] < 60 && buf[i + 2] < 60;
+  const edges = (hit) => {
+    let x0 = W,
+      x1 = -1;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        if (hit((y * W + x) * 3)) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+        }
+    return [x0, x1];
+  };
+  const [wx0, wx1] = edges(isWhite);
+  const [bx0, bx1] = edges(isBlack);
+  assert.ok(wx1 >= 0 && bx1 >= 0, "白または黒の墨が見つからない");
+  const left = wx0 - bx0;
+  const right = bx1 - wx1;
+  const span = Math.max(left, right);
+  return { left, right, asym: span <= 0 ? 0 : Math.abs(left - right) / span };
+}
+
+t("NOSHADOW: 字幕の黒が文字の左右で対称（外側にもう一段の黒を重ねていない）", () => {
+  const r = shadowAsymmetry(PRODUCT_STYLE);
+  console.log(`  [実測] 左 ${r.left}px / 右 ${r.right}px → 差 ${(r.asym * 100).toFixed(1)}%`);
+  assert.ok(
+    r.asym <= SHADOW_ASYM_MAX,
+    `左右差が大きい: ${(r.asym * 100).toFixed(1)}%（上限 ${SHADOW_ASYM_MAX * 100}%）`,
+  );
+});
+
+t("NOSHADOW 対照: 影を8px付けると左右差が15%を超える", () => {
+  const r = shadowAsymmetry({ ...resolveCaptionStyle(PRODUCT_STYLE, {}), shadow: 8 });
+  console.log(`  [実測] 影8px: 左 ${r.left}px / 右 ${r.right}px → 差 ${(r.asym * 100).toFixed(1)}%`);
+  assert.ok(r.asym > SHADOW_ASYM_MAX, `影を付けても左右差が出ない: ${(r.asym * 100).toFixed(1)}%`);
+});
+
+/* ══════ ⑧ 黒が文字に対して多すぎない ══════ */
+// NOSHADOW（左右差）だけだと、黒を全周に均等に増やす実装を見逃す（basis-reviewer 指摘。
+// 実測: 縁取りを 0.09→0.20 にすると黒画素が +79% なのに左右差は 0.0% のまま）。
+// 「文字に対して黒がどれだけあるか」を総量で見る葉を別に置く。
+const INK_BLACK_MAX = 1.5; // 黒画素 ÷ 白画素 の上限。実測: 出荷値 1.10 / 縁取り2倍 1.97
+
+/** 緑の背景に焼いたとき、白い文字に対する黒（縁取り＋影）の画素の比。 */
+function blackPerWhite(style) {
+  const ass = buildAss(wordsOf("今日は動画編集の話", 4), "", 4, { width: W, height: H, style });
+  const buf = readPixelsRgb(bake(ass, { bg: "0x00ff00" }));
+  let white = 0,
+    black = 0;
+  for (let i = 0; i < buf.length; i += 3) {
+    if (buf[i] > 200 && buf[i + 1] > 200 && buf[i + 2] > 200) white++;
+    else if (buf[i] < 60 && buf[i + 1] < 60 && buf[i + 2] < 60) black++;
+  }
+  assert.ok(white > 0, "白い文字が見つからない");
+  return { white, black, ratio: black / white };
+}
+
+t("INKBALANCE: 文字のまわりの黒が、文字そのものに対して多すぎない", () => {
+  const r = blackPerWhite(PRODUCT_STYLE);
+  console.log(`  [実測] 白 ${r.white} / 黒 ${r.black} → 黒は文字の ${r.ratio.toFixed(2)} 倍`);
+  assert.ok(
+    r.ratio <= INK_BLACK_MAX,
+    `黒が多すぎる: ${r.ratio.toFixed(2)} 倍（上限 ${INK_BLACK_MAX} 倍）`,
+  );
+});
+
+t("INKBALANCE 対照: 縁取りを全周に倍増すると上限を超える（NOSHADOW では見逃す形）", () => {
+  const fat = { ...resolveCaptionStyle(PRODUCT_STYLE, {}), outlineRatio: 0.2 };
+  const r = blackPerWhite(fat);
+  console.log(`  [実測] 縁取り2倍: 黒は文字の ${r.ratio.toFixed(2)} 倍`);
+  assert.ok(r.ratio > INK_BLACK_MAX, `縁取りを倍にしても上限を超えない: ${r.ratio.toFixed(2)}`);
+});
+
+/* ══════ ⑨ 見せ方や画面の向きを変えても、はみ出さず読める大きさ ══════ */
+// basis-reviewer 指摘: ここまでの実測はすべて既定の karaoke・縦型だけだった。
+// 実際には pop / bold / 背景帯ON / 内側縁取りON / 横向き の経路がある。
+// 各経路について「画面からはみ出さない」「字が読める大きさ」の2つを、焼いた画素で見る。
+
+/** 任意の canvas で焼いて、墨の位置と漢字の高さを測る。 */
+function routeMeasure(style, cw, ch, text = "今日は動画編集の話をこれから始めます") {
+  const words = wordsOf(text, 4);
+  const ass = buildAss(words, "", 4, { width: cw, height: ch, style });
+  fs.writeFileSync(assPath, ass, "utf-8");
+  const png = path.join(tmp, "route.png");
+  const r = spawnSync(
+    "ffmpeg",
+    ["-y", "-v", "error", "-f", "lavfi", "-i", `color=size=${cw}x${ch}:color=black:d=4`,
+      "-vf", `ass=filename=${assPath}:fontsdir=${FONTS_DIR}`, "-ss", "1", "-frames:v", "1", png],
+    { encoding: "utf-8" },
+  );
+  if (r.status !== 0) throw new Error("ffmpeg 失敗: " + r.stderr);
+  const b = bboxOf(png, 24);
+  assert.ok(b, "墨が見つからない");
+  const margin = Math.max(1, Math.round(60 * Math.min(cw / 1080, ch / 1920)));
+  return { b, margin, cw, ch };
+}
+
+const ROUTES = [
+  ["1語ずつポップ", "pop", 1080, 1920],
+  ["太字ライン", "bold", 1080, 1920],
+  ["背景帯あり", resolveCaptionStyle(PRODUCT_STYLE, { box: { enabled: true, colorHex: "#102040" } }), 1080, 1920],
+  ["内側縁取りあり", resolveCaptionStyle(PRODUCT_STYLE, { innerOutline: { enabled: true, colorHex: "#ffff00" } }), 1080, 1920],
+  ["横向き(1920x1080)", PRODUCT_STYLE, 1920, 1080],
+];
+
+for (const [label, style, cw, ch] of ROUTES) {
+  t(`ROUTES: 「${label}」でも字幕が画面からはみ出さない`, () => {
+    const { b, margin } = routeMeasure(style, cw, ch);
+    console.log(`  [実測] ${label}: x ${b.x1}〜${b.x2} / y ${b.y1}〜${b.y2}（安全域 ${margin}〜${cw - margin}）`);
+    assert.ok(b.x1 >= margin, `左へはみ出している: x1=${b.x1}`);
+    assert.ok(b.x2 <= cw - margin, `右へはみ出している: x2=${b.x2}`);
+    assert.ok(b.y1 >= 0 && b.y2 <= ch, `上下へはみ出している: y ${b.y1}〜${b.y2}`);
+  });
+}
+
+t("ROUTES 対照: 折り返しを止めると、どの経路でも右へはみ出す", () => {
+  const broken = { ...resolveCaptionStyle(PRODUCT_STYLE, {}), wideRatio: 0, narrowRatio: 0 };
+  const over = ROUTES.filter(([, , cw, ch]) => {
+    const { b } = routeMeasure(broken, cw, ch, "あ".repeat(60));
+    return b.x2 > cw - 60;
+  });
+  console.log(`  [実測] 折り返しを止めるとはみ出す経路: ${over.length} / ${ROUTES.length}`);
+  assert.strictEqual(over.length, ROUTES.length, "折り返しを止めてもはみ出さない経路がある");
+});
+
+t("ROUTES: 横向き(1920x1080)でも、字が読める大きさで描かれている", () => {
+  // 縦型と同じ「画面の高さに対する割合」で見る（高さ基準なので canvas が変わっても同じ範囲）。
+  const ps = productStyle(PRODUCT_STYLE);
+  const land = Math.max(1, Math.round((1080 * st.emRatio) / st.wideRatio));
+  const ratio = (bboxOf(bake(plainAss("国", ps.family, land)), 24).y2 - bboxOf(bake(plainAss("国", ps.family, land)), 24).y1) / 1080;
+  console.log(`  [実測] 横向き: 指定値 ${land} → 漢字の高さ ${(ratio * 100).toFixed(1)}%`);
+  assert.ok(
+    ratio >= EM_RATIO_MIN && ratio <= EM_RATIO_MAX,
+    `${(ratio * 100).toFixed(1)}% は範囲外（${EM_RATIO_MIN * 100}〜${EM_RATIO_MAX * 100}%）`,
+  );
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

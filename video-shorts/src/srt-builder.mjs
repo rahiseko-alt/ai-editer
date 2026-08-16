@@ -4,7 +4,7 @@
 // 既製SaaSの「全ユーザー同一字幕」を避け自前デザインを握る（差別化・RB FORKOFF）。
 // スタイルは選択式（subtitle-styles.mjs の登録を参照）: karaoke/pop/line を mode で切替。
 
-import { getStyle, DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken } from "./subtitle-styles.mjs";
+import { DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken, resolveCaptionStyle } from "./subtitle-styles.mjs";
 
 // 既定フォント（2026-08-14 是正）。旧既定 "Yu Gothic UI" はWindows専用で、この製品が
 // 動く環境（客のPC。Linux/macOSも含む想定）に存在しないことがあり、fontconfig が
@@ -21,43 +21,78 @@ export function wordsInRange(words, start, end) {
     .map((w) => ({ w: w.w, start: Math.max(0, w.start - start), end: Math.max(0, w.end - start) }));
 }
 
-/** words を maxChars 程度の字幕行（キャプション）にまとめる */
-export function groupCaptions(words, maxChars = 18, fits = null) {
-  const lines = [];
-  let cur = { text: "", start: null, end: 0 };
+// 1枚の字幕が使う幅の下限（可用幅に対する割合）。最後の1語だけが取り残されて
+// 「today」のような極端に短い字幕になるのを防ぐために使う（G-CAP-FIT-NOWRAP の (3)）。
+const CAPTION_MIN_FILL = 0.6;
+
+/** 語の配列を1本の文字列にする（半角どうしの間には空白を入れる）。 */
+function joinWords(words) {
+  let out = "";
+  for (const w of words) out += (needsSpace(out, w.w) ? " " : "") + w.w;
+  return out;
+}
+
+/** words を「1枚の字幕」ごとの語の配列へ割る（fits があれば幅で、無ければ文字数で判定）。 */
+function groupWordArrays(words, maxChars, fits) {
+  const groups = [];
+  let cur = [];
+  let text = "";
   for (const word of words) {
-    if (cur.start === null) cur.start = word.start;
-    const next = cur.text + word.w;
-    if ((fits ? !fits(next) : next.length > maxChars) && cur.text.length > 0) {
-      lines.push({ ...cur });
-      cur = { text: word.w, start: word.start, end: word.end };
+    const next = text + (needsSpace(text, word.w) ? " " : "") + word.w;
+    if ((fits ? !fits(next) : next.length > maxChars) && cur.length > 0) {
+      groups.push(cur);
+      cur = [word];
+      text = word.w;
     } else {
-      cur.text = next;
-      cur.end = word.end;
+      cur.push(word);
+      text = next;
     }
   }
-  if (cur.text) lines.push(cur);
-  return lines;
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
+/**
+ * 短すぎる字幕を、直前の字幕から語を借りて埋める。
+ *
+ * 【なぜ要るか】貪欲に詰めると最後の1枚に端数だけが残る。英語の例では
+ * 「Hello everyone welcome back to my channel」で1枚を使い切り、次の字幕が「today」1語だけ＝
+ * 画面の3割しか使わない見た目になった（2026-08-16 実測 30.5%）。直前の字幕の末尾の語を
+ * 移せば、どちらも読める幅になる（借りた側が上限行数を超える／貸した側が短くなりすぎる
+ * ときは移さない）。語の並び順は変わらないので、字幕の順序も話した順のまま。
+ */
+function rebalanceShortCaptions(groups, measure, budgetPx, fits) {
+  if (!measure || !Number.isFinite(budgetPx) || groups.length < 2) return groups;
+  const floor = budgetPx * CAPTION_MIN_FILL;
+  const textOf = (g) => joinWords(g);
+  for (let i = groups.length - 1; i > 0; i--) {
+    while (measure(textOf(groups[i])) < floor) {
+      const prev = groups[i - 1];
+      if (prev.length < 2) break;
+      const cand = [prev[prev.length - 1], ...groups[i]];
+      if (fits && !fits(textOf(cand))) break; // 借りた側が上限行数を超える
+      if (measure(textOf(prev.slice(0, -1))) < floor) break; // 貸した側が短くなりすぎる
+      prev.pop();
+      groups[i] = cand;
+    }
+  }
+  return groups;
+}
+
+/** words を maxChars 程度の字幕行（キャプション）にまとめる */
+export function groupCaptions(words, maxChars = 18, fits = null, measure = null, budgetPx = Infinity) {
+  const groups = rebalanceShortCaptions(groupWordArrays(words, maxChars, fits), measure, budgetPx, fits);
+  return groups.map((g) => ({
+    text: joinWords(g),
+    start: g[0].start,
+    end: g[g.length - 1].end,
+  }));
 }
 
 /** words を maxChars 程度の行にまとめる。各行に words[] を保持（karaoke mode 用） */
-export function groupCaptionsWords(words, maxChars = 14, fits = null) {
-  const lines = [];
-  let cur = { words: [], text: "", start: null, end: 0 };
-  for (const word of words) {
-    if (cur.start === null) cur.start = word.start;
-    const next = cur.text + word.w;
-    if ((fits ? !fits(next) : next.length > maxChars) && cur.words.length > 0) {
-      lines.push({ words: cur.words, start: cur.start, end: cur.end });
-      cur = { words: [word], text: word.w, start: word.start, end: word.end };
-    } else {
-      cur.words.push(word);
-      cur.text = next;
-      cur.end = word.end;
-    }
-  }
-  if (cur.words.length) lines.push({ words: cur.words, start: cur.start, end: cur.end });
-  return lines;
+export function groupCaptionsWords(words, maxChars = 14, fits = null, measure = null, budgetPx = Infinity) {
+  const groups = rebalanceShortCaptions(groupWordArrays(words, maxChars, fits), measure, budgetPx, fits);
+  return groups.map((g) => ({ words: g, start: g[0].start, end: g[g.length - 1].end }));
 }
 
 /**
@@ -118,6 +153,11 @@ function charDisplayWidth(ch) {
   return WIDE_RANGES.some(([a, b]) => cp >= a && cp <= b) ? 2 : 1;
 }
 
+// 1行に使ってよい幅の上限（可用幅に対する割合）。可用幅いっぱい(1.0)まで詰めると、
+// 1行が画面の端から端まで伸びて「短い行を積む」形にならない（実物のショート動画の作法。
+// G-CAP-FIT-NOWRAP の (1)）。0.90 は、受入の上限 92% に対して測定のばらつきぶんを見た値。
+const CAPTION_LINE_FILL_MAX = 0.9;
+
 /**
  * 1行に収める幅の予算(px)を出す。canvas幅から左右の余白を引いた「可用幅」そのもの。
  *
@@ -134,8 +174,9 @@ function charDisplayWidth(ch) {
  */
 function lineBudgetPx(canvasW, marginLR) {
   const available = Number(canvasW) - marginLR * 2;
-  return available > 0 ? available : Infinity;
+  return available > 0 ? available * CAPTION_LINE_FILL_MAX : Infinity;
 }
+
 
 // 同梱していない書体（システムのフォールバック等）で使う既定の比。
 // 全角は 1.0（CJK の全角送りは em と同じ）。半角は 0.65 で、これは旧実装が
@@ -144,6 +185,11 @@ function lineBudgetPx(canvasW, marginLR) {
 //  tests/subtitle-canvas-fit-check.mjs がこの経路を押さえている）。
 const FALLBACK_WIDE_RATIO = 1.0;
 const FALLBACK_NARROW_RATIO = 0.65;
+
+// 1枚の字幕に積む行数の上限（2026-08-16 / G-CAP-FIT）。実物のショート動画は
+// 「短い行を2〜3行に積んだ塊」で出す（Opus Clip 公式サイトの実例8本で確認）。
+// 1行しか出さないと、同じ文字サイズでも情報が細切れになり読みづらい。
+export const CAPTION_MAX_LINES = 3;
 
 /** 1文字の送り幅(px)。全角か半角かで実測比を使い分ける。 */
 function charAdvancePx(ch, scaledFontSize, wideRatio, narrowRatio) {
@@ -160,6 +206,123 @@ function textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) {
   );
 }
 
+/** その文字の直前で行を折ってよいか（空白、または全角が絡む境目なら折れる）。 */
+function canBreakBefore(cur, c) {
+  if (c.ch === " ") return true;
+  if (!cur.length) return false;
+  const prev = cur[cur.length - 1].ch;
+  return charDisplayWidth(c.ch) === 2 || charDisplayWidth(prev) === 2;
+}
+
+/**
+ * 文字の並び（{ch, wordIndex}）を行へ割る。3つのことを同時にやる。
+ *
+ * 1. **語の途中で切らない**：半角の語（英単語・URL 等）は空白で折る。2026-08-16 の
+ *    basis-reviewer 指摘。旧実装は文字単位で積むだけだったので 'everyone' が
+ *    'everyon|e' に割れていた（マスターの最初の指摘「単語の途中で切れる」そのもの）。
+ *    日本語は語の切れ目に空白が無いので、従来どおり文字単位で折る。
+ * 2. **行数を先に決めて均す**：必要な行数 n = ceil(全体の幅 ÷ 予算) を先に求め、
+ *    1行の目安を「全体の幅 ÷ n」にする。予算いっぱいまで貪欲に詰めると最後の行に
+ *    端数だけが残る（実測: 82.7% / 82.8% / 20.0%）。
+ * 3. **予算は絶対に超えない**：目安は均すための目標で、上限はあくまで予算。
+ */
+// 幅の足し算の丸め誤差で等分点をまたいだと誤判定しないための許容値(px)。
+const EPS_PX = 1e-6;
+
+// 1語だけで1行に入りきらないときに、折ってよい位置として扱う記号（URL 等）。
+const BREAKABLE_MARKS = new Set(["/", "-", "_", ".", "?", "&", "=", ":", ","]);
+
+function wrapChars(chars, budgetPx, advance) {
+  if (!Number.isFinite(budgetPx) || chars.length === 0) return [chars];
+  const widthOf = (ln) => ln.reduce((sum, c) => sum + advance(c.ch), 0);
+  const total = widthOf(chars);
+  // 必要な行数を先に決め、その等分点を境目の目安にする。1行ぶんの目安を毎行使い回すと、
+  // 端数が積もって行数が1つ増えてしまうので、**累計**で比べる。
+  const lineCount = Math.max(1, Math.ceil(total / budgetPx));
+  const lines = [];
+  let cur = [];
+  let curPx = 0;
+  let doneP = 0; // 確定した行の合計幅
+  for (const c of chars) {
+    const w = advance(c.ch);
+    if (c.ch === " " && cur.length === 0) continue; // 行頭の空白は落とす
+    if (curPx > 0 && curPx + w > budgetPx) {
+      // 語の途中で予算を超えたら、直前の空白まで戻って折り直す。
+      // 空白が無い＝その語だけで1行に入りきらない場合（URL・長い識別子）は、
+      // **画面からはみ出さないことを優先して**折る（G-CAP-FIT-WRAP / -ROUTES は
+      // 「はみ出さない」を無条件で要求する。1語を伸ばし続ける選択肢は無い）。
+      // その場合も、区切り記号（/ - _ . ? & = :）の直後を優先して折り、
+      // 英字の途中でぶつ切りにするのは記号が1つも無いときだけにする。
+      let cut = -1;
+      for (let i = cur.length - 1; i > 0; i--)
+        if (cur[i].ch === " ") {
+          cut = i;
+          break;
+        }
+      if (cut < 0) {
+        for (let i = cur.length - 1; i > 0; i--)
+          if (BREAKABLE_MARKS.has(cur[i - 1].ch)) {
+            cut = i; // 記号の直後で折る（記号は前の行の末尾に残す）
+            break;
+          }
+        if (cut > 0) {
+          const rest = cur.slice(cut);
+          const head = cur.slice(0, cut);
+          lines.push(head);
+          doneP += widthOf(head);
+          cur = rest;
+          curPx = widthOf(rest);
+          cur.push(c);
+          curPx += w;
+          continue;
+        }
+      }
+      if (cut > 0) {
+        const rest = cur.slice(cut + 1);
+        const head = cur.slice(0, cut); // 行末の空白は落とす
+        lines.push(head);
+        doneP += widthOf(head);
+        cur = rest;
+        curPx = widthOf(rest);
+      } else {
+        lines.push(cur);
+        doneP += curPx;
+        cur = [];
+        curPx = 0;
+      }
+    } else if (
+      curPx > 0 &&
+      // 決めた行数より多く折らない（最後の行は残り全部。等分点の丸め誤差で
+      // 1行増えるのを防ぐ）
+      lines.length + 1 < lineCount &&
+      doneP + curPx + w > ((lines.length + 1) * total) / lineCount + EPS_PX &&
+      canBreakBefore(cur, c)
+    ) {
+      // 目安を超える手前で「折ってよい位置」に来たら、そこで折る（超えてから折ると
+      // 目安ぶんだけ最後の行が痩せる）。
+      // 日本語はどこでも折れる。半角の語は空白でしか折らない（空白は区切りに使い切る）。
+      lines.push(cur);
+      doneP += curPx;
+      cur = [];
+      curPx = 0;
+      if (c.ch === " ") continue;
+    }
+    cur.push(c);
+    curPx += w;
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+
+/** 語と語の間に空白が要るか（半角どうしなら要る。日本語は要らない）。 */
+function needsSpace(prevText, nextText) {
+  if (!prevText || !nextText) return false;
+  const a = prevText[prevText.length - 1];
+  const b = nextText[0];
+  if (a === " " || b === " ") return false;
+  return charDisplayWidth(a) === 1 && charDisplayWidth(b) === 1;
+}
+
 /**
  * 文字列を、1行の幅の予算(px)を超えないよう分割する（超えないならそのまま1要素の配列）。
  * グラフィム単位ではなくコードポイント単位（サロゲートペア対応）で切る。
@@ -168,27 +331,41 @@ function textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) {
 function splitByDisplayWidth(text, budgetPx, scaledFontSize, wideRatio, narrowRatio) {
   if (!Number.isFinite(budgetPx)) return [text];
   if (textWidthPx(text, scaledFontSize, wideRatio, narrowRatio) <= budgetPx) return [text];
-  const pieces = [];
-  let cur = "";
-  let curPx = 0;
-  for (const ch of Array.from(text)) {
-    const w = charAdvancePx(ch, scaledFontSize, wideRatio, narrowRatio);
-    if (curPx > 0 && curPx + w > budgetPx) {
-      pieces.push(cur);
-      cur = ch;
-      curPx = w;
-    } else {
-      cur += ch;
-      curPx += w;
+  const advance = (ch) => charAdvancePx(ch, scaledFontSize, wideRatio, narrowRatio);
+  const chars = Array.from(text).map((ch) => ({ ch, wordIndex: 0 }));
+  const out = wrapChars(chars, budgetPx, advance).map((ln) => ln.map((c) => c.ch).join(""));
+  return out.length ? out : [text];
+}
+
+/**
+ * 字幕1枚ぶんの語を、語の境目に関係なく「幅」で折り返し、行ごとの run 配列を返す。
+ * run は「同じ語から来た連続する文字」の塊で、ハイライト色の判定に元の語 index を保つ。
+ */
+function wrapRuns(ws, budgetPx, fs, st) {
+  const advance = (ch) => charAdvancePx(ch, fs, st.wideRatio, st.narrowRatio);
+  const chars = [];
+  ws.forEach((w, wordIndex) => {
+    // 半角の語どうしは、間に空白を入れて「語の区切りが読める」ようにする
+    // （2026-08-16。groupCaptions* が語を "" で連結していたため 'Helloeveryone' になっていた）。
+    if (needsSpace(chars.length ? chars[chars.length - 1].ch : "", w.w))
+      chars.push({ ch: " ", wordIndex });
+    for (const ch of Array.from(w.w)) chars.push({ ch, wordIndex });
+  });
+  const lines = wrapChars(chars, budgetPx, advance).map((ln) => {
+    const runs = [];
+    for (const c of ln) {
+      const last = runs[runs.length - 1];
+      if (last && last.wordIndex === c.wordIndex) last.text += c.ch;
+      else runs.push({ text: c.ch, wordIndex: c.wordIndex });
     }
-  }
-  if (cur) pieces.push(cur);
-  return pieces.length ? pieces : [text];
+    return runs;
+  });
+  return lines.length ? lines : [[]];
 }
 
 /** スタイルに応じた ASS ヘッダ（[Script Info]+[V4+ Styles]+[Events] 見出し）を作る
  *  @param {number} captionMarginV Caption スタイルの MarginV（px・スケール適用済み） */
-function buildHeader(W, H, font, st, align, scale, captionMarginV) {
+function buildHeader(W, H, font, st, align, scale, captionMarginV, scaledFontSize, scaledOutline) {
   // AUD-P2-22: Caption/Hook の絶対px値（フォントサイズ・縁取り・影・余白）を canvas に応じて
   // 比例縮小する。scale=1（canvasが基準どおり）のときは全て元の値のまま＝従来どおりの見た目。
   const captionMarginLR = scaleToken(60, scale);
@@ -213,7 +390,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${font},${scaleToken(st.fontSize, scale)},${st.base},${outlineColor},&H00000000,1,1,${scaleToken(st.outline, scale)},${scaleToken(st.shadow, scale)},${align},${captionMarginLR},${captionMarginLR},${captionMarginV},1
+Style: Caption,${font},${scaledFontSize},${st.base},${outlineColor},&H00000000,1,1,${scaledOutline},${st.shadow > 0 ? scaleToken(st.shadow, scale) : 0},${align},${captionMarginLR},${captionMarginLR},${captionMarginV},1
 Style: Hook,${font},${hookFontSize},&H0000FFFF,&H00111111,&H00000000,1,1,${hookOutline},${hookShadow},8,${hookMarginLR},${hookMarginLR},${hookMarginV},1
 
 [Events]
@@ -295,38 +472,33 @@ function applyInnerOutline(events, st, scale) {
 
 /** karaoke: 行を出しつつ、現在の単語だけ highlight 色で 1 語ずつ移動表示 */
 function karaokeEvents(relWords, st, maxChars, budgetPx, fs, fits) {
-  const lines = groupCaptionsWords(relWords, maxChars, fits);
+  const measure = (t) => textWidthPx(t, fs, st.wideRatio, st.narrowRatio);
+  const lines = groupCaptionsWords(relWords, maxChars, fits, measure, budgetPx);
   const ev = [];
   for (const line of lines) {
     const ws = line.words;
-    // 各単語を maxCols で断片化する（収まる単語は1断片のまま）。断片は元の単語indexを保持し、
-    // ハイライト色は「その断片の元になった単語」が現在の単語(i)かどうかで決める。
-    const runs = [];
-    ws.forEach((w, wi) => {
-      for (const piece of splitByDisplayWidth(w.w, budgetPx, fs, st.wideRatio, st.narrowRatio))
-        runs.push({ text: piece, wordIndex: wi });
-    });
+    // 字幕1枚ぶんの文字を、語の境目に関係なく「幅」で折り返す（wrapRuns）。
+    // 【2026-08-16 の直し】旧実装は語ごとに splitByDisplayWidth で断片化してから積んでいたため、
+    // 改行できる位置が語の切れ目に限られ、11文字の語では 9+2 のように短い行が生まれた
+    // （22文字の字幕が 9/2/9/2 の4行になり、上限3行も破っていた）。文字単位で積めば 9/9/4 になる。
     for (let i = 0; i < ws.length; i++) {
       const start = ws[i].start;
       const end = i < ws.length - 1 ? ws[i + 1].start : line.end; // 次語まで連続表示（点滅防止）
       if (end <= start) continue;
-      let text = "";
-      let curPx = 0;
-      for (const run of runs) {
-        const px = textWidthPx(run.text, fs, st.wideRatio, st.narrowRatio);
-        if (curPx > 0 && Number.isFinite(budgetPx) && curPx + px > budgetPx) {
-          text += "\\N";
-          curPx = 0;
-        }
-        const escaped = escAss(run.text);
-        // highlight が base と同じなら色の切り替えタグを一切書かない（G-CAP-FIT-COLOR。
-        // 話に合わせて色を変えないスタイルでは、途中で色が変わる余地そのものを残さない）。
-        text +=
-          run.wordIndex === i && st.highlight && st.highlight !== st.base
-            ? `{\\c${st.highlight}&}${escaped}{\\c${st.base}&}`
-            : escaped;
-        curPx += px;
-      }
+      const text = wrapRuns(ws, budgetPx, fs, st)
+        .map((runs) =>
+          runs
+            .map((run) => {
+              const escaped = escAss(run.text);
+              // highlight が base と同じなら色の切り替えタグを一切書かない（G-CAP-FIT-COLOR。
+              // 話に合わせて色を変えないスタイルでは、途中で色が変わる余地そのものを残さない）。
+              return run.wordIndex === i && st.highlight && st.highlight !== st.base
+                ? `{\\c${st.highlight}&}${escaped}{\\c${st.base}&}`
+                : escaped;
+            })
+            .join(""),
+        )
+        .join("\\N");
       ev.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Caption,,0,0,0,,${text}`);
     }
   }
@@ -351,7 +523,8 @@ function popEvents(relWords, duration, budgetPx, fs, st) {
 
 /** line: 行単位でまとめて表示（現状互換） */
 function lineEvents(relWords, maxChars, budgetPx, fs, st, fits) {
-  const captions = groupCaptions(relWords, maxChars, fits);
+  const measure = (t) => textWidthPx(t, fs, st.wideRatio, st.narrowRatio);
+  const captions = groupCaptions(relWords, maxChars, fits, measure, budgetPx);
   return captions.map((c) => {
     const text = splitByDisplayWidth(c.text, budgetPx, fs, st.wideRatio, st.narrowRatio)
       .map(escAss)
@@ -371,8 +544,18 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   const W = opts.width ?? 1080;
   const H = opts.height ?? 1920;
   const styleRef = opts.style ?? DEFAULT_SUBTITLE_STYLE;
-  const st =
-    typeof styleRef === "object" ? styleRef : getStyle(styleRef) || getStyle(DEFAULT_SUBTITLE_STYLE);
+  // スタイルを「キー名の文字列」で渡された場合も、必ず resolveCaptionStyle() を通す。
+  //
+  // 【2026-08-16 の欠陥と直し方】旧実装はここで getStyle() を呼び、素のプリセット
+  // （fontSize 84 / outline 14 / shadow 8。書体ごとの実測比 wideRatio・emRatio・
+  // outlineRatio を持たない）をそのまま使っていた。resolveCaptionStyle() が付ける
+  // これらの比が無いと、下の scaledFontSize / scaledOutline が「従来どおり」の枝へ落ちるため、
+  // G-CAP-FIT で直した字の大きさ・折り返し・縁取り・影が**まるごと元に戻る**。
+  // 実際、caption-* フラグを1つも付けない CLI 実行（pipeline.mjs の
+  // `style: resolvedCaptionStyle ?? subStyle`）と、画面の「字幕を直して焼き直す」
+  // （recaption-stage.mjs、state に subStyle が無いので undefined）が、この枝を通っていた。
+  // 直したのに直っていない経路が2つ残っていたので、入口を1つに寄せる。
+  const st = typeof styleRef === "object" ? styleRef : resolveCaptionStyle(styleRef, {});
   // resolveCaptionStyle() 由来のスタイルは st.fontFamily を持つ（書体選択・G-EDIT-CAPTION-STYLE）。
   // 持たない場合(旧来のプリセットそのまま・テスト等)は opts.fontMain / DEFAULT_FONT にフォールバック。
   const fontMain = st.fontFamily ?? opts.fontMain ?? DEFAULT_FONT;
@@ -383,7 +566,21 @@ export function buildAss(relWords, hook, duration, opts = {}) {
 
   // AUD-P2-22: canvasに応じてstyleの絶対px値を比例縮小し、実際に収まる見た目カラム数を求める。
   const scale = computeSubtitleScale(W, H);
-  const scaledFontSize = scaleToken(st.fontSize, scale);
+  // 文字の大きさは「画面の高さに対する割合」で決める（2026-08-16 / G-CAP-FIT-SIZE）。
+  // Fontsize は「文字そのもの」ではなく「上下の余白を含めた高さ」に効き、その比は書体ごとに
+  // 0.598〜1.000 と違う。固定の Fontsize を使うと書体を変えた瞬間に字の大きさが変わり、
+  // 実際、直す前は Fontsize:84 でも漢字の高さが画面の 2.8% しかなかった。
+  // 狙いの実 em（画面の高さの 5.2%）から Fontsize を逆算する。emRatio を持たないスタイル
+  // （古い呼び出し）は従来どおり fontSize をそのまま使う。
+  const scaledFontSize =
+    st.emRatio && st.wideRatio
+      ? Math.max(1, Math.round((H * st.emRatio) / st.wideRatio))
+      : scaleToken(st.fontSize, scale);
+  // 縁取りも実 em に対する比で決める（Fontsize 基準だと書体で太さが変わる）。
+  const scaledOutline =
+    st.emRatio && st.outlineRatio
+      ? Math.max(1, Math.round(scaledFontSize * st.outlineRatio))
+      : scaleToken(st.outline, scale);
   const captionMarginLR = scaleToken(60, scale);
   const budgetPx = lineBudgetPx(W, captionMarginLR);
 
@@ -402,7 +599,7 @@ export function buildAss(relWords, hook, duration, opts = {}) {
       ? Math.max(0, Math.round(H * st.marginVRatio))
       : scaleToken(st.marginV, scale);
 
-  const header = buildHeader(W, H, fontMain, st, align, scale, captionMarginV);
+  const header = buildHeader(W, H, fontMain, st, align, scale, captionMarginV, scaledFontSize, scaledOutline);
   let events = [];
   events = events.concat(
     buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, align, captionMarginV),
@@ -417,7 +614,16 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   // 幅の見積りだけ直しても、行を作る段が 14文字/18文字 で切っていては画面の横幅を使い切れない
   // （basis-reviewer 2巡目の指摘。全角なら 14文字=84%だが、半角中心の字幕は 14文字=38%しか
   //  使わない）。opts.maxChars が明示されたときだけ従来どおり文字数で切る（既存検査の互換）。
-  const fitsLine = opts.maxChars != null ? null : (text) => textWidthPx(text, scaledFontSize, st.wideRatio, st.narrowRatio) <= budgetPx;
+  // 1枚の字幕には「1行ぶん」ではなく「最大3行ぶん」の言葉を入れる。そのうえで
+  // splitByDisplayWidth が1行の幅で折り返すので、結果として3行の塊になる。
+  // 幅の合計で見ると、行末の余りぶんだけ実際の行数が増えて4行になることがある。
+  // 実際に折り返してみて、行数が上限以内かで判定する。
+  const fitsLine =
+    opts.maxChars != null
+      ? null
+      : (text) =>
+          splitByDisplayWidth(text, budgetPx, scaledFontSize, st.wideRatio, st.narrowRatio).length <=
+          CAPTION_MAX_LINES;
   if (st.mode === "karaoke")
     events = events.concat(karaokeEvents(relWords, st, maxChars, budgetPx, scaledFontSize, fitsLine));
   else if (st.mode === "pop")

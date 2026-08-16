@@ -29,7 +29,7 @@ import {
 } from "./helpers/ui-settings-e2e-harness.mjs";
 import { pixelAt } from "./helpers/caption-style-render.mjs";
 import { computeCanvas } from "../src/render-vertical.mjs";
-import { computeSubtitleScale, scaleToken, hexToAss } from "../src/subtitle-styles.mjs";
+import { computeSubtitleScale, scaleToken, hexToAss, resolveCaptionStyle, fontSizeForHeight } from "../src/subtitle-styles.mjs";
 
 const PORT = 59242; // このテスト専用の固定ポート
 
@@ -62,10 +62,13 @@ function totalFileSize(jobId, candidates) {
  * expectedBandRect()と同じ式を、スケール(canvasが基準1080x1920より小さい場合の比例縮小・
  * subtitle-styles.mjsのcomputeSubtitleScale/scaleToken)込みに一般化したもの)。
  */
-function bandRectFor(canvasW, canvasH, marginV = 400, fontSize = 88) {
+function bandRectFor(canvasW, canvasH, style = resolveCaptionStyle("bold", {})) {
   const scale = computeSubtitleScale(canvasW, canvasH);
   const captionMarginLR = scaleToken(60, scale);
-  const scaledFontSize = scaleToken(fontSize, scale);
+  // 文字サイズは style の宣言値ではなく、製品が実際に Style 行へ書く値（2026-08-16 の
+  // G-CAP-FIT で、Fontsize は画面の高さに対する字の実寸から書体ごとに逆算する方式へ変わった）。
+  const scaledFontSize = fontSizeForHeight(canvasH, { wideRatio: style.wideRatio }, style.emRatio);
+  const marginV = style.marginV;
   const scaledMarginV = scaleToken(marginV, scale);
   const bandHeight = Math.round(scaledFontSize * 1.3);
   const x1 = captionMarginLR;
