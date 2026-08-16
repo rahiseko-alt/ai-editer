@@ -146,9 +146,15 @@
         <h2 class="group-label" id="h-trim">
           間を詰める
         </h2>
-        <div class="chips trim-toggle" data-group="trim" data-testid="setting-row" data-setting-key="trim" role="group" aria-label="間を詰めるあり・なし">
-          <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">なし</button>
-          <button class="chip trim-chip" data-val="on" aria-pressed="false">あり</button>
+        <p class="group-note">黙っている時間</p>
+        <div class="chips trim-toggle" data-group="trimSilence" data-testid="setting-row" data-setting-key="trimSilence" role="group" aria-label="黙っている時間を詰める・詰めない">
+          <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">そのまま</button>
+          <button class="chip trim-chip" data-val="on" aria-pressed="false">詰める</button>
+        </div>
+        <p class="group-note">「えーと」などの言い淀み</p>
+        <div class="chips trim-toggle" data-group="trimFiller" data-testid="setting-row" data-setting-key="trimFiller" role="group" aria-label="言い淀みを消す・残す">
+          <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">残す</button>
+          <button class="chip trim-chip" data-val="on" aria-pressed="false">消す</button>
         </div>
         <p class="group-note" id="trim-desc">黙っている時間と「えーと」はそのまま残ります。</p>
       </section>

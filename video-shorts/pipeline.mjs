@@ -26,6 +26,7 @@ import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export
 import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
 import { checkBundledFont } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
+import { loadTrimJudge, trimJudgeStage } from "./src/trim-judge.mjs";
 import {
   getStyle, listStyles, listFonts, DEFAULT_SUBTITLE_STYLE, resolveCaptionStyle, DEFAULT_FONT_KEY,
 } from "./src/subtitle-styles.mjs";
@@ -152,6 +153,23 @@ async function cmdCaptionFix(workDir) {
   log(`  次: node pipeline.mjs select ${workDir}`);
 }
 
+/**
+ * 「間を詰める」で、どこを詰めてよいかを AI に判断させる工程（G-EDIT-TRIM2-AI-*）。
+ * 結果は trim-judge.json へ書き、render 段が読む。失敗したら例外のまま止まる。
+ */
+async function cmdTrimJudge(workDir) {
+  if (!workDir) die("workDir を指定してください: node pipeline.mjs trimjudge <workDir>");
+  stageStart(workDir, "trimjudge");
+  const r = await trimJudgeStage({
+    workDir,
+    runModel: createDefaultRunModel(workDir),
+    onLog: (m) => log(m),
+  });
+  stageEnd(workDir, "trimjudge");
+  log(`[OK] 詰めてよい所を判断しました: ${r.total} 語のうち 言い淀み${r.fillers}件 / 詰める間${r.cutGaps}件`);
+  if (r.dropped.length) log(`  採用しなかった判断 ${r.dropped.length} 件（${r.dropped[0]} ほか）`);
+}
+
 async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
   const state = loadState(workDir);
   const mode = isValidMode(modeOverride) ? modeOverride : (state.mode || DEFAULT_MODE);
@@ -237,7 +255,8 @@ async function cmdSelect(workDir, useApi, modeOverride, targetMinutes) {
  */
 export async function renderSegment({
   input, seg, words, srcFps, srcFpsRational = null, srcSampleRate = null,
-  srcW, srcH, orientation, trim, subtitle, output, label = "", onLog = log,
+  srcW, srcH, orientation, trim, trimSilence, trimFiller, judge = null,
+  subtitle, output, label = "", onLog = log,
   exportPreset = DEFAULT_EXPORT, exportOverrides = {}, fit = "pad",
 }) {
   const segStart = snapStart(seg.start, srcFps);
@@ -251,7 +270,13 @@ export async function renderSegment({
     // breath が戻した間（素材時間）をクリップ相対へ直して渡し、trim に削らせない。
     const protect = (seg.protect || [])
       .map((r) => ({ start: r.start - segStart, end: r.end - segStart }));
-    const plan = planTrim(relWordsAll, { duration: seg.duration, fps: srcFps, protect });
+    // 2つのつまみ（G-EDIT-TRIM2）。呼び元が渡さない場合は trim と同じ＝両方あり
+    // （CLI から renderSegment を直接使う既存の検査との後方互換）。
+    const cutSilence = trimSilence === undefined ? true : trimSilence === true;
+    const cutFillers = trimFiller === undefined ? true : trimFiller === true;
+    const plan = planTrim(relWordsAll, {
+      duration: seg.duration, fps: srcFps, protect, cutSilence, cutFillers, judge,
+    });
     keep = plan.keep;
     assWords = remapWords(relWordsAll, plan.keep);
     clipDuration = plan.keptSeconds;
@@ -301,7 +326,7 @@ async function cmdRender(workDir, opts = {}) {
     flagNoSub = false, subStyle = DEFAULT_SUBTITLE_STYLE, modeOverride, minSec, durationMin,
     exportPreset = DEFAULT_EXPORT, exportOverrides = {},
     captionFont, captionFill, captionOutlineColor, captionInner, captionBand, captionPos,
-    breath,
+    breath, trimSilence, trimFiller,
   } = opts;
   // つなぎ目に戻す「息継ぎの間」の上限（秒）。off/0 で従来どおり（間を作らない）。
   const breathOpt = parseBreathOption(breath);
@@ -311,6 +336,23 @@ async function cmdRender(workDir, opts = {}) {
     die(`未知の書き出しプリセット: ${exportPreset}\n  利用可能: ${avail}`);
   }
   const state = loadState(workDir);
+  // 「間を詰める」の2つのつまみ（G-EDIT-TRIM2）。CLI で明示されたらそちらを優先する。
+  if (trimSilence === "on" || trimSilence === "none") state.trimSilence = trimSilence;
+  if (trimFiller === "on" || trimFiller === "none") state.trimFiller = trimFiller;
+  if (state.trimSilence === "on" || state.trimFiller === "on") state.trim = "on";
+  // 詰める設定なら、AI の判断結果が要る（G-EDIT-TRIM2-FAILSTOP）。取れないまま
+  // 一覧と閾値へ退避すると、直そうとしている欠陥をそのまま出力に出したうえで、
+  // それを利用者に知らせないことになる。ここで止めて理由を出す。
+  let trimJudge = null;
+  if (state.trim === "on") {
+    const tp = path.join(workDir, "transcript.json");
+    const tWords = fs.existsSync(tp) ? (readJson(tp).words || []) : [];
+    trimJudge = loadTrimJudge(workDir, tWords);
+    if (!trimJudge) {
+      die("「間を詰める」を選びましたが、どこを詰めてよいかのAIの判断が取れていません。" +
+          "\n  先に判断の工程を実行してください: node pipeline.mjs trimjudge " + workDir);
+    }
+  }
   // 字幕有無は init のヒアリング結果（state.sub）が既定。--no-sub フラグは明示上書き。
   const noSub = flagNoSub || state.sub === "none";
   const mode = isValidMode(modeOverride) ? modeOverride : (state.mode || DEFAULT_MODE);
@@ -496,6 +538,11 @@ async function cmdRender(workDir, opts = {}) {
         words: transcript.words || [],
         srcFps, srcFpsRational, srcSampleRate, srcW, srcH, orientation,
         trim: state.trim === "on",
+        // 2026-08-16（B案）: 1つだったつまみを2つへ割った。state に新しい値が無い
+        // （古いジョブ・CLI の --trim だけ）ときは、従来どおり両方ありとして扱う。
+        trimSilence: state.trimSilence ? state.trimSilence === "on" : state.trim === "on",
+        trimFiller: state.trimFiller ? state.trimFiller === "on" : state.trim === "on",
+        judge: trimJudge,
         subtitle: noSub ? null : {
           path: path.join(workDir, `clip-${i + 1}.ass`),
           style: resolvedCaptionStyle ?? subStyle, width: canvas.w, height: canvas.h,
@@ -630,6 +677,7 @@ async function main() {
       return cmdInit(arg, modeArg, flagValue(rest, "--sub", undefined),
         flagValue(rest, "--orient", undefined));
     case "captionfix": return cmdCaptionFix(arg);
+    case "trimjudge": return cmdTrimJudge(arg);
     case "select": return cmdSelect(arg, useApi, modeArg, targetMinutes);
     case "render":
       return cmdRender(arg, {
@@ -657,6 +705,9 @@ async function main() {
         captionPos: flagValue(rest, "--caption-pos", undefined),
         // G-EDIT-BREATH: つなぎ目に戻す息継ぎの間の上限（秒）。off で従来どおり。
         breath: flagValue(rest, "--breath", undefined),
+        // G-EDIT-TRIM2: 「間を詰める」の2つのつまみ。省略時は state（＝init/画面）に従う。
+        trimSilence: flagValue(rest, "--trim-silence", undefined),
+        trimFiller: flagValue(rest, "--trim-filler", undefined),
       });
     case "status": return cmdStatus(arg);
     case "styles":
@@ -685,6 +736,8 @@ async function main() {
       log("             [--caption-font <kaku|maru|mincho|hand|marker>]（字幕の書体。省略時は既定）");
       log("             [--caption-fill <#RRGGBB>]（文字色。省略時はスタイルの既定色）");
       log("             [--caption-pos <0-90>]（字幕の縦位置。画面の高さに対する％。0=一番下）");
+      log("             [--trim-silence <on|none>]（無音を詰めるか）");
+      log("             [--trim-filler <on|none>]（言い淀みを消すか）");
       log("             [--caption-outline-color <#RRGGBB>]（外側縁取り色。省略時は黒）");
       log("             [--caption-inner <#RRGGBB|off>]（内側の二重縁取り。省略時はoff）");
       log("             [--caption-band <#RRGGBB(AA)|off>]（背景帯。省略時はoff）");

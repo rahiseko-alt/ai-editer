@@ -4,7 +4,10 @@
 // サイズ選択→.video-area の px のみを変更（contain 計算）。枠は一切変更しない。
 
 const state = {
-  file: null, sub: "none", mosaic: "none", trim: "none", breath: "",
+  file: null, sub: "none", mosaic: "none", breath: "",
+  // 「間を詰める」は2つのつまみ（G-EDIT-TRIM2・マスター指示のB案）。
+  // 黙っている時間と言い淀みは目的が違う（尺 と 見苦しさ）ので別々に選べる。
+  trimSilence: "none", trimFiller: "none",
   cut: "topic", cutMin: 3,
   size: "9:16", device: "phone",
   // 字幕スタイル一式・尺の指示・書き出しプリセット(G-EDIT-UI-SETTINGS-WIRING-CLIENT)。
@@ -78,7 +81,7 @@ document.querySelectorAll(".chips, .size-chips").forEach((group) => {
     state[g] = btn.dataset.val;
     if (g === "sub") { updateSubDesc(); updateCaptionStyleVisibility(); }
     if (g === "mosaic") { updateMosaicDesc(); updateMosaicStepRow(); }
-    if (g === "trim") updateTrimDesc();
+    if (g === "trimSilence" || g === "trimFiller") updateTrimDesc();
     if (g === "breath") updateBreathDesc();
     if (g === "cut") { showCut(); updateDurationVisibility(); updateBreathVisibility(); }
     if (g === "size") updateVideoArea(btn);
@@ -304,9 +307,23 @@ function updateMosaicStepRow() {
 function updateTrimDesc() {
   const el = $("trim-desc");
   if (!el) return;
-  el.textContent = state.trim === "on"
-    ? "黙っている時間と「えーと」「あのー」を詰めます。話した中身はそのまま残ります。"
-    : "黙っている時間と「えーと」はそのまま残ります。";
+  // 2026-08-16（B案）: 2つのつまみになったので、組み合わせごとに何が起きるかを言い直す。
+  // 余韻は「発言の後にだけ0.3秒」なので、詰めたつなぎ目はどれも0.3秒の間になる。
+  const sil = state.trimSilence === "on";
+  const fil = state.trimFiller === "on";
+  if (sil && fil) {
+    el.textContent =
+      "黙っている時間を詰め、「えーと」を消します。話の途中の間（相手を待つ沈黙など）は残し、" +
+      "詰めたつなぎ目には言い終わりの余韻を0.3秒だけ残します。";
+  } else if (sil) {
+    el.textContent =
+      "黙っている時間だけを詰めます。「えーと」はそのまま残ります。話の途中の間は残し、" +
+      "詰めたつなぎ目には言い終わりの余韻を0.3秒だけ残します。";
+  } else if (fil) {
+    el.textContent = "「えーと」だけを消します。間の長さは1秒も変わりません。";
+  } else {
+    el.textContent = "黙っている時間と「えーと」はそのまま残ります。";
+  }
 }
 
 // つなぎ目の間（G-EDIT-BREATH-SERVER）。「間」という言葉だけでは何が起きるか分からないので、

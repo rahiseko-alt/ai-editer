@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { runClaudeSelect } from "./claude-select.mjs";
 import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
+import { trimJudgeStage } from "../src/trim-judge.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
 import { checkBundledFont } from "../src/font-check.mjs";
@@ -852,6 +853,10 @@ export function buildRenderArgs(pipelinePath, workDir, opts) {
   // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH-SERVER）。渡し忘れると、画面から選んでも
   // 常に既定 0.7 秒固定になり off にもできない（trim/mosaic と同じ結線の取りこぼし）。
   if (opts.breath) renderArgs.push("--breath", String(opts.breath));
+  // 「間を詰める」の2つのつまみ（G-EDIT-TRIM2）。渡し忘れると、画面で片方だけ選んでも
+  // 両方効く／両方効かないという、選べるのに効かない状態になる。
+  if (opts.trimSilence) renderArgs.push("--trim-silence", String(opts.trimSilence));
+  if (opts.trimFiller) renderArgs.push("--trim-filler", String(opts.trimFiller));
   if (opts.subStyle) renderArgs.push("--sub-style", String(opts.subStyle));
   if (opts.captionFont) renderArgs.push("--caption-font", String(opts.captionFont));
   if (opts.captionFill) renderArgs.push("--caption-fill", String(opts.captionFill));
@@ -912,6 +917,8 @@ async function runJob(jobId, inputAbsPath, opts) {
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
     // （顔モザイクで同じ取りこぼしをしたので、結線を smoke.mjs で押さえる）。
     trim: opts.trim === "on" ? "on" : "none",
+    trimSilence: opts.trimSilence === "on" ? "on" : "none",
+    trimFiller: opts.trimFiller === "on" ? "on" : "none",
   });
 
   const job = jobs.get(jobId);
@@ -961,6 +968,24 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   updateState(workDir, { stage: "captionfixed" });
   broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
+
+  // 「間を詰める」を選んでいるときだけ、どこを詰めるかを AI に判断させる（G-EDIT-TRIM2-AI-*）。
+  // 固定の単語一覧と長さの閾値だけでは「あの資料」の指示語まで消え、相手を待つ沈黙も消える。
+  // 失敗したら例外のままジョブを失敗させる（黙って一覧と閾値へ退避すると、直そうとしている
+  // 欠陥をそのまま出力に出したうえで、それを利用者に知らせないことになる＝FAILSTOP）。
+  // どちらも「なし」のときは呼ばない（判断が要らない設定まで AI に依存させない）。
+  if (opts.trimSilence === "on" || opts.trimFiller === "on") {
+    broadcast(jobId, { stage: "c", status: "active", label: "AIが詰めてよい所を選んでいます" });
+    const judged = await trimJudgeStage({
+      workDir,
+      runModel: createDefaultRunModel(workDir),
+      onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
+    });
+    broadcast(jobId, {
+      stage: "c", status: "active",
+      log: `[trim-judge] ${judged.total} 語のうち 言い淀み${judged.fillers}件 / 詰める間${judged.cutGaps}件`,
+    });
+  }
   broadcast(jobId, { stage: "c", status: "done" });
 
   // ── Stage s: 区間選定（llm-request 生成 → claude 呼び出し） ──────

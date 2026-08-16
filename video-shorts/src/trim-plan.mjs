@@ -26,6 +26,18 @@ export const FILLERS = [
   "なんか",
 ];
 
+/**
+ * 詰めた継ぎ目に残す「言い終わりの余韻」（秒）。
+ *
+ * マスター指示（2026-08-16）「発言の後にだけ、余韻を0.3秒存在させる」。**前には付けない。**
+ * この規則により、詰めたあとの継ぎ目はどれも必ずちょうど 0.3 秒の間になる
+ * （元から 0.3 秒以下の間は、詰める余地が無いのでそのまま残る）。
+ *
+ * 直前に「残る発言」が無いとき（動画の冒頭など）は余韻を付けず、その区間は全部詰める。
+ * 余韻は「発言の後」に置くものなので、置く相手が居なければ置きようがない。
+ */
+export const AFTER_SPEECH_MARGIN_SEC = 0.3;
+
 /** 継ぎ目に掛けるフェードの長さ（秒）。短すぎると跳ねが残り、長すぎると語頭が痩せる。 */
 export const SEAM_FADE_SEC = 0.005;
 
@@ -61,6 +73,11 @@ export function isFiller(text) {
  * @param {number} [opts.minSilence] これ以上の無音を詰める（秒）
  * @param {boolean} [opts.cutSilence] 無音を詰めるか（既定 true）
  * @param {boolean} [opts.cutFillers] 言い淀みを詰めるか（既定 true）
+ * @param {object} [opts.judge] AI の判断結果（G-EDIT-TRIM2）。渡すと、どれを消すかの決定権は
+ *   こちらへ移り、固定の単語一覧(FILLERS)と長さの閾値(minSilence)は**候補を拾うためだけ**に
+ *   使われる。渡さないときは従来どおり一覧と閾値だけで決める（CLI の後方互換）。
+ *   - judge.isFiller(index, word) => boolean  その語を言い淀みとして消すか
+ *   - judge.cutSilence(start, end) => boolean  その無音を詰めてよいか（false＝会話の途中）
  * @returns {{keep: {start:number,end:number}[], cuts: {start:number,end:number,reason:string}[],
  *            keptSeconds: number, cutSeconds: number}}
  */
@@ -72,6 +89,12 @@ export function planTrim(words, opts = {}) {
   const protect = (Array.isArray(opts.protect) ? opts.protect : [])
     .filter((r) => r && Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start);
   const isProtected = (r) => protect.some((p) => r.start < p.end - 1e-9 && r.end > p.start + 1e-9);
+
+  const judge = opts.judge && typeof opts.judge === "object" ? opts.judge : null;
+  const judgeIsFiller =
+    judge && typeof judge.isFiller === "function" ? judge.isFiller : null;
+  const judgeCutSilence =
+    judge && typeof judge.cutSilence === "function" ? judge.cutSilence : null;
 
   const list = (words || [])
     .filter((w) => w && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
@@ -94,30 +117,56 @@ export function planTrim(words, opts = {}) {
   // 残す時間の合計が素材の長さと合わなくなる（実際にそう書いて3件落ちた）。
   const regions = [];
   let cursor = 0;
+  let idx = 0;
   for (const w of list) {
     if (w.start > cursor + 1e-9) regions.push({ start: cursor, end: w.start, kind: "silence" });
     const s = Math.max(cursor, w.start);
-    if (w.end > s) regions.push({ start: s, end: w.end, kind: isFiller(w.w) ? "filler" : "word" });
+    if (w.end > s) {
+      // 言い淀みかどうかの決定権は judge にある。judge が無いときだけ一覧で決める
+      // （2026-08-16 以前の挙動。一覧は「あの」「その」を単体で含むため、判定を任せると
+      //  「あの資料」の指示語まで消える。これがマスター指摘の実害(a)）。
+      const filler = judgeIsFiller ? judgeIsFiller(idx, w.w) === true : isFiller(w.w);
+      regions.push({ start: s, end: w.end, kind: filler ? "filler" : "word" });
+    }
     cursor = Math.max(cursor, w.end);
+    idx += 1;
   }
   if (duration > cursor + 1e-9) regions.push({ start: cursor, end: duration, kind: "tail" });
 
   const keep = [];
   const cuts = [];
+  // 直前の区間を残したかどうか。「発言の後にだけ余韻を置く」ので、直前が残る発言のときだけ
+  // 0.3秒を残す。冒頭のように直前が無い／直前も消した場合は余韻を置かない。
+  let prevKept = false;
   for (const r of regions) {
-    if (r.kind === "word") { keep.push(r); continue; }
-    if (r.kind === "tail") { keep.push(r); continue; }   // 末尾の余韻は残す
+    if (r.kind === "word") { keep.push(r); prevKept = true; continue; }
+    // 末尾の無音は言い終わりの余韻として常に全部残す（ぶつ切りに聞こえるのを防ぐ既存の作法）。
+    if (r.kind === "tail") { keep.push(r); prevKept = true; continue; }
     if (r.kind === "filler") {
-      if (cutFillers) cuts.push({ ...r, reason: "filler" });
-      else keep.push(r);
+      if (cutFillers) { cuts.push({ ...r, reason: "filler" }); prevKept = false; }
+      else { keep.push(r); prevKept = true; }
       continue;
     }
-    // 無音。短い間は詰めない（不自然に詰まらないように）。
-    // 息継ぎのために意図して戻した間（protect）は、長さに関わらず詰めない。ここを詰めると
+    // 無音を詰めるか。judge があればその判断が決定権を持ち、無ければ長さの閾値で決める。
+    // 息継ぎのために意図して戻した間（protect）は、判断に関わらず詰めない。ここを詰めると
     // breath が戻した間を trim が削り取り、機能が丸ごと無効化される（G-EDIT-BREATH-TRIM）。
-    if (cutSilence && r.end - r.start >= minSilence && !isProtected(r)) {
-      cuts.push({ ...r, reason: "silence" });
-    } else keep.push(r);
+    const wantCut = judgeCutSilence
+      ? judgeCutSilence(r.start, r.end) === true
+      : r.end - r.start >= minSilence;
+    if (cutSilence && wantCut && !isProtected(r)) {
+      // 直前が残る発言なら、その後ろ 0.3秒だけ余韻として残してから詰める。
+      const margin = prevKept ? AFTER_SPEECH_MARGIN_SEC : 0;
+      const cutFrom = r.start + margin;
+      if (cutFrom >= r.end - 1e-9) {
+        // 余韻のぶんで区間を使い切る＝詰める余地が無い。そのまま残す。
+        keep.push(r);
+        prevKept = true;
+      } else {
+        if (margin > 0) keep.push({ start: r.start, end: cutFrom, kind: "margin" });
+        cuts.push({ start: cutFrom, end: r.end, reason: "silence" });
+        prevKept = false;
+      }
+    } else { keep.push(r); prevKept = true; }
   }
 
   const merged = toFrameSpans(mergeSpans(keep), opts.fps);

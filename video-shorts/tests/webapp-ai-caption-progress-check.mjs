@@ -117,6 +117,9 @@ const OK_CLAUDE = {
   kind: "route",
   rules: [
     { needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) },
+    // 2026-08-16: 「間を詰める」の判断工程が増えた。この検査は詰める設定を使わないので
+    // 実際には来ないが、来たときに黙って失敗しないよう答えを用意しておく。
+    { needle: "話し言葉を編集する人", answer: JSON.stringify({ fillers: [], cutGaps: [] }) },
     {
       needle: "区間に切り分ける編集者",
       answer: JSON.stringify({

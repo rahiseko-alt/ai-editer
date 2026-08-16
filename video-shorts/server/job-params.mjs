@@ -35,7 +35,20 @@ export function parseJobParams(searchParams) {
   const mosaic = searchParams.get("mosaic") === "on" ? "on" : "none";
   // 無音・言い淀みの詰め。既定は none＝これまでどおり詰めない。
   // 既定で詰めると、今まで通りに使っている人の成果物が黙って短くなる。
-  const trim = searchParams.get("trim") === "on" ? "on" : "none";
+  // 2026-08-16 マスター指示（B案）で、1つだったつまみを2つへ割った。
+  //   trimSilence … 無音を詰める / trimFiller … 言い淀みを消す
+  // 旧 trim=on は「両方あり」として受け続ける（CLI・既存の検査・古い画面との後方互換）。
+  // ここを落とすと、旧いクエリが未知の値として "none" へ丸まり、詰め処理が一切走らないまま
+  // 「間が残っている」系の検査が緑になる（偽の緑）。
+  const legacyTrimOn = searchParams.get("trim") === "on";
+  const hasNew = searchParams.has("trimSilence") || searchParams.has("trimFiller");
+  const onOr = (key) =>
+    hasNew ? (searchParams.get(key) === "on" ? "on" : "none") : legacyTrimOn ? "on" : "none";
+  const trimSilence = onOr("trimSilence");
+  const trimFiller = onOr("trimFiller");
+  // 既存の呼び出し元（pipeline-runner の resolveJobSettings 等）が見る総合フラグ。
+  // どちらか一方でも「あり」なら詰め工程を走らせる。
+  const trim = trimSilence === "on" || trimFiller === "on" ? "on" : "none";
   // つなぎ目に戻す息継ぎの間（G-EDIT-BREATH）。既定は空＝pipeline.mjs 側の既定(0.7秒)に従う。
   // 受け付けるのは "off" と 0〜5 秒の数値だけ。それ以外（負値・5超・文字列）は既定へ戻す。
   // ここで弾かずに渡すと pipeline.mjs が fail-fast して、利用者にはジョブ失敗としか見えない。
@@ -102,6 +115,8 @@ export function parseJobParams(searchParams) {
     cutMin,
     mosaic,
     trim,
+    trimSilence,
+    trimFiller,
     breath,
     name,
     subStyle,

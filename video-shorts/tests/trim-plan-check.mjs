@@ -119,7 +119,18 @@ t("C: 似ているが別の語は切らない", () => {
 // 4.217 = 11.053 − 無音3.500 − 言い淀み3.336（0.813+0.787+0.813+0.923）。
 // ＝残る4語の長さの合計（1.258+1.057+1.130+0.772）と一致する。素材のコマ数/秒を渡していないので
 // コマ境界への丸めは掛からない。丸めを含んだ出荷経路の値は tests/trim-duration-check.mjs が実物で測る。
-const EXPECTED = 4.217;
+//
+// 【2026-08-16 マスター指示「発言の後にだけ、余韻を0.3秒存在させる」による変更】
+// 詰める無音の直前に「残る発言」があるときだけ、その終端から 0.3秒 を残すようになった。
+// この素材の長い無音は7つあるが、余韻が付くのは「直前が残る語」である無音だけなので、
+// 設定によって本数が変わる。
+//   ・両方あり: 言い淀み4つが消えるため、直前が残る語である無音は 3つ → +0.3×3 = +0.9秒
+//   ・無音だけ: 言い淀みが残る（＝発言として扱う）ため、7つすべてに余韻が付く → +0.3×7 = +2.1秒
+//   ・言い淀みだけ: 無音を1つも詰めないので余韻は増えない（変更なし）
+const AFTER_SPEECH_MARGIN = 0.3;
+const MARGIN_COUNT_BOTH = 3;
+const MARGIN_COUNT_SILENCE_ONLY = 7;
+const EXPECTED = 4.217 + AFTER_SPEECH_MARGIN * MARGIN_COUNT_BOTH; // 5.117
 const FILLER_TOTAL = 3.336;
 t(`A: 通常設定での残り時間が ${EXPECTED} 秒になる（丸め前）`, () => {
   const plan = planTrim(words, { duration: DURATION });
@@ -146,10 +157,35 @@ t(`対照A: 言い淀みだけを切ると ${(DURATION - FILLER_TOTAL).toFixed(3
     `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - FILLER_TOTAL).toFixed(3)} ±0.01）`);
 });
 
-t(`対照A: 無音だけを切ると ${(DURATION - 3.5).toFixed(3)} 秒（言い淀み${FILLER_TOTAL}秒は残る）`, () => {
+const SILENCE_ONLY_EXPECTED = DURATION - 3.5 + AFTER_SPEECH_MARGIN * MARGIN_COUNT_SILENCE_ONLY; // 9.653
+t(`対照A: 無音だけを切ると ${SILENCE_ONLY_EXPECTED.toFixed(3)} 秒（言い淀み${FILLER_TOTAL}秒は残る）`, () => {
   const plan = planTrim(words, { duration: DURATION, cutFillers: false });
-  assert.ok(Math.abs(plan.keptSeconds - (DURATION - 3.5)) <= 0.01,
-    `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - 3.5).toFixed(3)} ±0.01）`);
+  assert.ok(Math.abs(plan.keptSeconds - SILENCE_ONLY_EXPECTED) <= 0.01,
+    `残り=${plan.keptSeconds} 秒（期待 ${SILENCE_ONLY_EXPECTED.toFixed(3)} ±0.01）`);
+});
+
+// ── 余韻そのものを直接見る（2026-08-16 追加）──────────────────
+t("A: 詰めたつなぎ目に、直前の発言の後の 0.3秒 がちょうど残る（前には付かない）", () => {
+  const plan = planTrim(words, { duration: DURATION });
+  const keep = plan.keep;
+  let checked = 0;
+  for (let i = 0; i + 1 < keep.length; i += 1) {
+    const cutStart = keep[i].end;
+    const cutEnd = keep[i + 1].start;
+    if (cutEnd - cutStart <= 1e-9) continue;
+    // 切り取りの直前に残っている区間の終端が、詰められた無音の開始＋0.3秒であること。
+    // 素材の語の終端そのものではなく、そこから 0.3秒 後ろにずれているのが余韻の証拠。
+    const wordEnd = words.find((w) => Math.abs(w.end + AFTER_SPEECH_MARGIN - cutStart) < 0.011);
+    if (wordEnd) checked += 1;
+  }
+  assert.strictEqual(checked, MARGIN_COUNT_BOTH,
+    `余韻が付いたつなぎ目が ${checked} 箇所（期待 ${MARGIN_COUNT_BOTH}）`);
+});
+
+t("対照A: 余韻を付けない旧実装の値（4.217秒）では、いまの合格条件に一致しない", () => {
+  const plan = planTrim(words, { duration: DURATION });
+  assert.ok(Math.abs(plan.keptSeconds - 4.217) > 0.01,
+    "余韻が1秒も足されていない（旧実装のまま）");
 });
 
 t("対照A: 何も切らない設定なら全長のまま（＝単に削る実装ではない）", () => {

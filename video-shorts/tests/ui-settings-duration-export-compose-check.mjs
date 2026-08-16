@@ -138,7 +138,11 @@ function buildLongFixture(totalSec) {
   };
   const claude = {
     kind: "route",
-    rules: [{ needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) }],
+    // 2026-08-16: 「間を詰める」の判断工程(src/trim-judge.mjs)が増えたので両方へ答える。
+    rules: [
+      { needle: "文字起こしを校正する人", answer: JSON.stringify({ fixes: [] }) },
+      { needle: "話し言葉を編集する人", answer: JSON.stringify({ fillers: [], cutGaps: [] }) },
+    ],
     fallback: JSON.stringify({ segments: [{ keepText: text, hook: "H1" }] }),
   };
   return { transcript, claude };

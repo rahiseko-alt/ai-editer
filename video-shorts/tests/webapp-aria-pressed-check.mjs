@@ -47,7 +47,7 @@ async function t(name, fn) {
   await page.goto(filePath);
   await page.waitForTimeout(300);
 
-  // 対象: サイズ・字幕・顔モザイク・間を詰める・カット方法の5グループで確認する
+  // 対象: サイズ・字幕・顔モザイク・黙っている時間・言い淀み・カット方法の6グループで確認する
   // (index.html の各 .chips/.size-chips グループを網羅する。app.js 側は
   //  ".chips, .size-chips" に対して共通ハンドラを1つ付けているだけなので、
   //  1グループだけの検査では他グループの断線(例: 個別にdata-group分岐が壊れる)を検出できない)
@@ -55,7 +55,10 @@ async function t(name, fn) {
     { name: "サイズ", selector: '.size-chip', values: ["9:16", "16:9"] },
     { name: "字幕", selector: '.sub-chip', values: ["none", "on"] },
     { name: "顔モザイク", selector: '.mosaic-chip', values: ["none", "on"] },
-    { name: "間を詰める", selector: '.trim-chip', values: ["none", "on"] },
+    // 2026-08-16（B案）: 「間を詰める」は2グループへ割れた（黙っている時間／言い淀み）。
+    // .trim-chip だけだと4つ拾って1グループとして扱ってしまうので、data-group で絞る。
+    { name: "黙っている時間", selector: '[data-group="trimSilence"] .trim-chip', values: ["none", "on"] },
+    { name: "言い淀み", selector: '[data-group="trimFiller"] .trim-chip', values: ["none", "on"] },
     { name: "カット方法", selector: '[data-group="cut"] .chip', values: ["topic", "minutes"] },
   ];
 
