@@ -236,7 +236,13 @@ try {
   // ── (4) 生成された .ass の中身を確認 ─────────────────────────
   const assPath = path.join(WORK_DIR, "recaption-1.ass");
   report("焼き直し: .assファイルが生成されている", fs.existsSync(assPath));
-  const ass = fs.readFileSync(assPath, "utf-8");
+  const assRaw = fs.readFileSync(assPath, "utf-8");
+  // 日本語には語の切れ目が無いので、折り返し(\N)は語の途中にも入る
+  // （2026-08-16 / G-CAP-FIT。実測「アルファデル\Nタゼータオメガ」）。ここで見たいのは
+  // 「誰の直しが焼かれたか」であって「改行位置」ではないので、ASSタグと強制改行を
+  // 取り除いてから探す。取り除くほうが「残っていないこと」の判定は厳しくなる
+  // （「ガン\Nマ」を見逃さなくなる）ので、緩める向きの変更ではない。
+  const ass = assRaw.replace(/\{[^}]*\}/g, "").replace(/\\N/g, "");
 
   report("対照0: 誰も触らない語(アルファ)がそのまま入っている", ass.includes("アルファ"));
   report("対照3: 誰も触らない語(オメガ)がそのまま入っている", ass.includes("オメガ"));

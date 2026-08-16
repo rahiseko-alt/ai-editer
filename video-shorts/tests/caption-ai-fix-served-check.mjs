@@ -295,7 +295,12 @@ async function runScenario(label, fixCount, { expectFixApplied }) {
     // renderSegment へ渡す subtitle.path そのもので、renderClip の ass= フィルタに直接渡る）。
     const assPath = path.join(workDir, "clip-1.ass");
     report(`${label}: 焼き込みに使うclip-1.assが残っている`, fs.existsSync(assPath));
-    const assText = fs.existsSync(assPath) ? fs.readFileSync(assPath, "utf-8") : "";
+    // 日本語には語の切れ目が無いので、折り返し(\N)は語の途中にも入る（2026-08-16 / G-CAP-FIT）。
+    // ここで見たいのは「どの語が焼かれたか」であって改行位置ではないので、ASSタグと強制改行を
+    // 取り除いてから探す（取り除くほうが「残っていないこと」の判定は厳しくなる）。
+    const assText = (fs.existsSync(assPath) ? fs.readFileSync(assPath, "utf-8") : "")
+      .replace(/\{[^}]*\}/g, "")
+      .replace(/\\N/g, "");
     if (expectFixApplied) {
       report(`${label}: .assに「${FIX_AFTER}」が入っている`, assText.includes(FIX_AFTER), assText.slice(0, 500));
       report(`${label}: .assの該当箇所に「${FIX_BEFORE}」が残っていない`, !assText.includes(FIX_BEFORE), assText.slice(0, 500));
