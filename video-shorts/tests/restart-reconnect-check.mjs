@@ -30,7 +30,7 @@ function startServer() {
       env: { ...process.env, PORT: String(PORT) },
     });
     let buf = "";
-    const timer = setTimeout(() => reject(new Error("server起動タイムアウト")), 5000);
+    const timer = setTimeout(() => reject(new Error("server起動タイムアウト")), 30000);
     child.stderr.on("data", (chunk) => {
       buf += chunk.toString();
       const m = buf.match(/startup token[^:]*:\s*([0-9a-f]+)/);
