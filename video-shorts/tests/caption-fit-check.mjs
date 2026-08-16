@@ -695,6 +695,106 @@ t("NOSHADOW 対照: 影を8px付けると左右差が15%を超える", () => {
   assert.ok(r.asym > SHADOW_ASYM_MAX, `影を付けても左右差が出ない: ${(r.asym * 100).toFixed(1)}%`);
 });
 
+/* ══════ ⑧ 黒が文字に対して多すぎない ══════ */
+// NOSHADOW（左右差）だけだと、黒を全周に均等に増やす実装を見逃す（basis-reviewer 指摘。
+// 実測: 縁取りを 0.09→0.20 にすると黒画素が +79% なのに左右差は 0.0% のまま）。
+// 「文字に対して黒がどれだけあるか」を総量で見る葉を別に置く。
+const INK_BLACK_MAX = 1.5; // 黒画素 ÷ 白画素 の上限。実測: 出荷値 1.10 / 縁取り2倍 1.97
+
+/** 緑の背景に焼いたとき、白い文字に対する黒（縁取り＋影）の画素の比。 */
+function blackPerWhite(style) {
+  const ass = buildAss(wordsOf("今日は動画編集の話", 4), "", 4, { width: W, height: H, style });
+  const buf = readPixelsRgb(bake(ass, { bg: "0x00ff00" }));
+  let white = 0,
+    black = 0;
+  for (let i = 0; i < buf.length; i += 3) {
+    if (buf[i] > 200 && buf[i + 1] > 200 && buf[i + 2] > 200) white++;
+    else if (buf[i] < 60 && buf[i + 1] < 60 && buf[i + 2] < 60) black++;
+  }
+  assert.ok(white > 0, "白い文字が見つからない");
+  return { white, black, ratio: black / white };
+}
+
+t("INKBALANCE: 文字のまわりの黒が、文字そのものに対して多すぎない", () => {
+  const r = blackPerWhite(PRODUCT_STYLE);
+  console.log(`  [実測] 白 ${r.white} / 黒 ${r.black} → 黒は文字の ${r.ratio.toFixed(2)} 倍`);
+  assert.ok(
+    r.ratio <= INK_BLACK_MAX,
+    `黒が多すぎる: ${r.ratio.toFixed(2)} 倍（上限 ${INK_BLACK_MAX} 倍）`,
+  );
+});
+
+t("INKBALANCE 対照: 縁取りを全周に倍増すると上限を超える（NOSHADOW では見逃す形）", () => {
+  const fat = { ...resolveCaptionStyle(PRODUCT_STYLE, {}), outlineRatio: 0.2 };
+  const r = blackPerWhite(fat);
+  console.log(`  [実測] 縁取り2倍: 黒は文字の ${r.ratio.toFixed(2)} 倍`);
+  assert.ok(r.ratio > INK_BLACK_MAX, `縁取りを倍にしても上限を超えない: ${r.ratio.toFixed(2)}`);
+});
+
+/* ══════ ⑨ 見せ方や画面の向きを変えても、はみ出さず読める大きさ ══════ */
+// basis-reviewer 指摘: ここまでの実測はすべて既定の karaoke・縦型だけだった。
+// 実際には pop / bold / 背景帯ON / 内側縁取りON / 横向き の経路がある。
+// 各経路について「画面からはみ出さない」「字が読める大きさ」の2つを、焼いた画素で見る。
+
+/** 任意の canvas で焼いて、墨の位置と漢字の高さを測る。 */
+function routeMeasure(style, cw, ch, text = "今日は動画編集の話をこれから始めます") {
+  const words = wordsOf(text, 4);
+  const ass = buildAss(words, "", 4, { width: cw, height: ch, style });
+  fs.writeFileSync(assPath, ass, "utf-8");
+  const png = path.join(tmp, "route.png");
+  const r = spawnSync(
+    "ffmpeg",
+    ["-y", "-v", "error", "-f", "lavfi", "-i", `color=size=${cw}x${ch}:color=black:d=4`,
+      "-vf", `ass=filename=${assPath}:fontsdir=${FONTS_DIR}`, "-ss", "1", "-frames:v", "1", png],
+    { encoding: "utf-8" },
+  );
+  if (r.status !== 0) throw new Error("ffmpeg 失敗: " + r.stderr);
+  const b = bboxOf(png, 24);
+  assert.ok(b, "墨が見つからない");
+  const margin = Math.max(1, Math.round(60 * Math.min(cw / 1080, ch / 1920)));
+  return { b, margin, cw, ch };
+}
+
+const ROUTES = [
+  ["1語ずつポップ", "pop", 1080, 1920],
+  ["太字ライン", "bold", 1080, 1920],
+  ["背景帯あり", resolveCaptionStyle(PRODUCT_STYLE, { box: { enabled: true, colorHex: "#102040" } }), 1080, 1920],
+  ["内側縁取りあり", resolveCaptionStyle(PRODUCT_STYLE, { innerOutline: { enabled: true, colorHex: "#ffff00" } }), 1080, 1920],
+  ["横向き(1920x1080)", PRODUCT_STYLE, 1920, 1080],
+];
+
+for (const [label, style, cw, ch] of ROUTES) {
+  t(`ROUTES: 「${label}」でも字幕が画面からはみ出さない`, () => {
+    const { b, margin } = routeMeasure(style, cw, ch);
+    console.log(`  [実測] ${label}: x ${b.x1}〜${b.x2} / y ${b.y1}〜${b.y2}（安全域 ${margin}〜${cw - margin}）`);
+    assert.ok(b.x1 >= margin, `左へはみ出している: x1=${b.x1}`);
+    assert.ok(b.x2 <= cw - margin, `右へはみ出している: x2=${b.x2}`);
+    assert.ok(b.y1 >= 0 && b.y2 <= ch, `上下へはみ出している: y ${b.y1}〜${b.y2}`);
+  });
+}
+
+t("ROUTES 対照: 折り返しを止めると、どの経路でも右へはみ出す", () => {
+  const broken = { ...resolveCaptionStyle(PRODUCT_STYLE, {}), wideRatio: 0, narrowRatio: 0 };
+  const over = ROUTES.filter(([, , cw, ch]) => {
+    const { b } = routeMeasure(broken, cw, ch, "あ".repeat(60));
+    return b.x2 > cw - 60;
+  });
+  console.log(`  [実測] 折り返しを止めるとはみ出す経路: ${over.length} / ${ROUTES.length}`);
+  assert.strictEqual(over.length, ROUTES.length, "折り返しを止めてもはみ出さない経路がある");
+});
+
+t("ROUTES: 横向き(1920x1080)でも、字が読める大きさで描かれている", () => {
+  // 縦型と同じ「画面の高さに対する割合」で見る（高さ基準なので canvas が変わっても同じ範囲）。
+  const ps = productStyle(PRODUCT_STYLE);
+  const land = Math.max(1, Math.round((1080 * st.emRatio) / st.wideRatio));
+  const ratio = (bboxOf(bake(plainAss("国", ps.family, land)), 24).y2 - bboxOf(bake(plainAss("国", ps.family, land)), 24).y1) / 1080;
+  console.log(`  [実測] 横向き: 指定値 ${land} → 漢字の高さ ${(ratio * 100).toFixed(1)}%`);
+  assert.ok(
+    ratio >= EM_RATIO_MIN && ratio <= EM_RATIO_MAX,
+    `${(ratio * 100).toFixed(1)}% は範囲外（${EM_RATIO_MIN * 100}〜${EM_RATIO_MAX * 100}%）`,
+  );
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n合計: PASS=${pass} FAIL=${fail}`);
 process.exit(fail === 0 ? 0 : 1);
