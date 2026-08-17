@@ -56,21 +56,28 @@
 .script-lead { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
 /* 合計の長さは1行に収まらないことがあるので、.summary の省略表示だけ解除する */
 .script-meta li span { white-space: normal; overflow: visible; text-overflow: clip; }
-/* 区間は本数が読めないので、ここだけがスクロールする（カード自体は伸びない） */
+/* 台本は長さが読めないので、ここだけがスクロールする（カード自体は伸びない） */
 .script-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 10px 0; }
-.script-seg {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 10px; margin-bottom: 8px;
+/* 送信中は本文をいじれなくする（承認したあとに中身が変わらないように） */
+.script-list.is-busy { pointer-events: none; opacity: .6; }
+/* 台本は区間ごとに分けず、ひと続きの文章として1枚に出す
+   （マスター指示 2026-08-17：カードに分けるな・任意の部分を消せるようにしろ）*/
+.script-flow {
+  padding: 12px 14px;
   border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface-1); cursor: pointer;
+  background: var(--surface-1);
+  font-size: 14px; line-height: 2; color: var(--ink);
+  overflow-wrap: anywhere;
 }
-/* 除外した区間は「消す」のではなく薄くして残す（何を外したか後から見直せるように）*/
-.script-seg.is-off { background: var(--surface-2); opacity: .55; }
-.script-seg input { flex-shrink: 0; width: 16px; height: 16px; margin: 3px 0 0; cursor: pointer; }
-.script-seg-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.script-seg-hook { font-size: 14px; color: var(--ink); }
-.script-seg-len { font-size: 13px; color: var(--muted); }
-.script-seg-text { font-size: 13px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 語＝実際に音が切れる単位。ここを選んで消す。 */
+.script-w { cursor: pointer; border-radius: 3px; }
+.script-w:hover { background: var(--surface-2); }
+/* 消した所は消滅させず、取り消し線＋薄い表示で残す（何を消したか見えること） */
+.script-w.is-cut { text-decoration: line-through; color: var(--muted); opacity: .5; }
+.script-w.is-cut:hover { opacity: .75; }
+/* 逆照合できず語に割れなかった区間。書き出しには必ず入るので本文と同じ濃さで出し、
+   選べないことは「選択の色が乗らない」ことで示す（薄くすると消したように見えてしまう）。 */
+.script-raw { color: var(--ink); cursor: default; user-select: none; -webkit-user-select: none; }
 .script-status { margin: 0; min-height: 1.3em; font-size: 13px; color: var(--muted); }
 .script-status.err { color: #c33; }
 .script-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-shrink: 0; }
