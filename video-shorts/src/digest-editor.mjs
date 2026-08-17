@@ -39,6 +39,9 @@ const DURATION_TOL = Number(process.env.DIGEST_DURATION_TOL ?? 0.1);
  *  尺のために2回まで重ねるのは、目安のために質と時間を払いすぎている。1回試みて
  *  近づかないなら、外れたまま確定する（内容を刻んで秒数に合わせるより良い）。 */
 const DURATION_MAX_FIX = Number(process.env.DIGEST_DURATION_MAX_FIX ?? 1);
+/** 尺の是正を試みる境目。目安から「倍・半分」より外れたときだけ直しにいく。
+ *  これより内側は、147秒かけて直すほどの価値が無い（尺は目安・マスター決定 2026-08-17）。 */
+const DURATION_FIX_GATE = Number(process.env.DIGEST_DURATION_FIX_GATE ?? 2);
 
 /** --model 指定が原因の失敗だけを見分ける絞り込み（ここを緩めると真因が隠れる）。
  *  旧 /model|unknown|invalid/i は "invalid JSON" 等の一般 stderr にも誤マッチし、
@@ -673,9 +676,18 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
   if (targetSeconds) {
     actualSeconds = measure(segments);
     const inRange = (sec) => Math.abs(sec - targetSeconds) <= targetSeconds * DURATION_TOL;
-    onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s`);
-    // 旧実装は if 1回きりで、是正後もまだ外れていればそのまま確定していた。範囲へ入るまで繰り返す。
-    for (let f = 1; f <= DURATION_MAX_FIX && !inRange(actualSeconds); f++) {
+    // 【2026-08-17 実測で見つけた無駄】マスター決定「尺は目安」を合格条件からは外したのに、
+    // ここの是正ループは「狙いの範囲に入るまで」のままだった。そのため内容が合格していても
+    // 毎回1回ぶん（実測147秒）呼び出され、しかも返ってきたものは「端の伸縮だけの修正は
+    // 採らない」（虎の巻 §5-3）でほぼ必ず捨てられていた。約147秒かけて捨てる、が既定の動作だった。
+    //
+    // 尺が目安である以上、少し外れているだけなら直す価値が無い。是正を試みるのは
+    // 「目安として見ても明らかにおかしい」ときだけにする。境目は倍・半分（DURATION_FIX_GATE）。
+    // 1分の指定に対して30秒未満か2分超、のような外れ方だけが対象になる。
+    const wayOff = (sec) => sec > targetSeconds * DURATION_FIX_GATE || sec < targetSeconds / DURATION_FIX_GATE;
+    onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s` +
+      (inRange(actualSeconds) ? "（狙いの範囲内）" : wayOff(actualSeconds) ? "（大きく外れているので直しを試みる）" : "（目安なのでこのまま確定）"));
+    for (let f = 1; f <= DURATION_MAX_FIX && wayOff(actualSeconds); f++) {
       const fixPrompt = durationFixPrompt(transcriptText, segments,
         { targetSeconds, targetMinutes, actualSeconds },
         { rejectedEdgeOnly: edgeOnlyRejected > 0 });
