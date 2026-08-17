@@ -749,19 +749,48 @@ function handleGetScript(req, res, jobId) {
   // 「まだ確定していない」印であって、実際に0秒から始まる区間という意味ではない）。
   const byText = new Map();
   let transcriptWords = [];
+  // 全文を出せない理由。空文字＝出せている。黙って空の全文を返さないための控え
+  // （画面はこの理由をそのまま出し、「AIが1語も選ばなかった」と誤解させない）。
+  let transcriptReason = "";
   try {
     const transcript = readTranscript(id);
-    if (transcript) {
-      transcriptWords = Array.isArray(transcript.words) ? transcript.words : [];
+    if (!transcript) {
+      transcriptReason = "文字起こしがまだありません";
+    } else {
+      transcriptWords = (Array.isArray(transcript.words) ? transcript.words : [])
+        .filter((w) => w && typeof w.w === "string" && w.w !== ""
+          && Number.isFinite(Number(w.start)) && Number.isFinite(Number(w.end)));
+      if (transcriptWords.length === 0) transcriptReason = "文字起こしに語がありません";
       // digest（分数で切る）は台本の並び順そのものが編集意図なので順序を保つ。
       const mode = readJobState(id)?.mode;
       for (const r of resolveSegments(segs, transcript, { preserveOrder: mode === "digest" })) {
         if (!byText.has(r.keepText)) byText.set(r.keepText, r);
       }
     }
-  } catch (_) {
+  } catch (e) {
     // 逆マッチングは提示の付加情報。ここで落ちても台本自体は返す。
+    transcriptWords = [];
+    transcriptReason = `文字起こしを読めませんでした: ${e.message}`;
   }
+
+  // 文字起こしの全語に「AIが使うと決めた区間の添字」を付ける（どこにも入っていなければ null）。
+  // 画面はこれをそのまま最初から最後まで並べ、seg があれば白・null なら濃いグレーで出す
+  // ＝それが台本（マスター指示 2026-08-17）。区間が重なっていたら添字の小さい方に付ける。
+  // 判定は segments[].words と同じ（区間の start/end にすっぽり収まる語）。
+  const resolvedByIndex = segs.map((s) => byText.get(s.keepText) || null);
+  const fullWords = transcriptWords.map((w) => {
+    const start = Number(w.start), end = Number(w.end);
+    let seg = null;
+    for (let i = 0; i < resolvedByIndex.length; i++) {
+      const r = resolvedByIndex[i];
+      if (r && start >= r.start - 1e-9 && end <= r.end + 1e-9) { seg = i; break; }
+    }
+    return { w: w.w, start, end, seg };
+  });
+  // 全文のどこにも居場所が無かった区間（逆照合できなかった／語が1つも入らなかった）。
+  // 黙って落とすと画面に出ていない文が書き出しに混ざるので、添字を渡して画面に必ず出させる。
+  const placed = new Set(fullWords.map((w) => w.seg));
+  const unresolved = segs.map((_, i) => i).filter((i) => !placed.has(i));
 
   const rawMeta = raw && !Array.isArray(raw) && typeof raw === "object" ? (raw.meta || {}) : {};
   return jsonRes(res, 200, {
@@ -791,6 +820,15 @@ function handleGetScript(req, res, jobId) {
         index: i,
       };
     }),
+    // 文字起こしの全文（使う所も使わない所も、最初から最後まで）。segments とは別に足した
+    // ので、既存の読み手（segments/meta しか見ない側）は今までどおり動く。
+    transcript: {
+      available: fullWords.length > 0,
+      // available:false のときだけ理由が入る。画面はこれを出す（空の全文を黙って見せない）。
+      reason: fullWords.length > 0 ? "" : (transcriptReason || "文字起こしを読めませんでした"),
+      words: fullWords,
+      unresolved,
+    },
     meta: {
       // 台本を書いた側(src/digest-editor.mjs)が meta へ足した情報（何を主題と理解したか等）は
       // そのまま通す。約束した3つのキーは、下で必ず埋める（欠けたり別の意味になったりしない）。

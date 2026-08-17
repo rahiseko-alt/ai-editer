@@ -39,8 +39,10 @@
   opacity: 0; transition: opacity .25s; pointer-events: none;
 }
 .script-overlay.show { opacity: 1; pointer-events: auto; }
+/* 文字起こしの全文をここに並べる（マスター指示 2026-08-17：サイドバーじゃなくてほぼ全画面
+   としてデカく映せ）。数千語が並ぶので、読める広さを画面いっぱいまで取る。 */
 .script-card {
-  width: min(680px, 92vw); max-height: 86vh;
+  width: 96vw; max-width: 96vw; height: 94vh; max-height: 94vh;
   display: flex; flex-direction: column; box-sizing: border-box;
   background: rgba(255,255,255,.97);
   backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
@@ -63,16 +65,21 @@
 /* 台本は区間ごとに分けず、ひと続きの文章として1枚に出す
    （マスター指示 2026-08-17：カードに分けるな・任意の部分を消せるようにしろ）*/
 .script-flow {
-  padding: 12px 14px;
+  min-height: 100%; box-sizing: border-box;
+  padding: 14px 18px;
   border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface-1);
-  font-size: 14px; line-height: 2; color: var(--ink);
+  font-size: 15px; line-height: 2.1; color: var(--ink);
   overflow-wrap: anywhere;
 }
-/* 語＝実際に音が切れる単位。ここを選んで消す。 */
+/* 語＝実際に音が切れる単位。ここを選んで消す。AIが使うと決めた所＝本文と同じ濃さ（白い方）。 */
 .script-w { cursor: pointer; border-radius: 3px; }
 .script-w:hover { background: var(--surface-2); }
-/* 消した所は消滅させず、取り消し線＋薄い表示で残す（何を消したか見えること） */
+/* AIが使わないと決めた所。読める濃さのグレーで全文の中に残す（消えていないことが分かる）。
+   ここを押して使う側へ戻す操作は無いので、押せる見た目にしない。 */
+.script-off { color: var(--muted); cursor: default; }
+/* 消した所は消滅させず、取り消し線＋薄い表示で残す（何を消したか見えること）。
+   AIが使わない所（取り消し線なし）と見分けが付くので、押せば戻せることが分かる。 */
 .script-w.is-cut { text-decoration: line-through; color: var(--muted); opacity: .5; }
 .script-w.is-cut:hover { opacity: .75; }
 /* 逆照合できず語に割れなかった区間。書き出しには必ず入るので本文と同じ濃さで出し、
