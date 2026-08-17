@@ -17,7 +17,7 @@
 // キーレス既定: プロンプトを llm-request.md に書き出し、オーケストレーター(Claude Code)が
 // llm-response.json を書く。API版は callAnthropic() を使う（ANTHROPIC_API_KEY 必要）。
 
-import { DEFAULT_MODE, getMode, requirePromptMode } from "./select-modes.mjs";
+import { DEFAULT_MODE, requirePromptMode } from "./select-modes.mjs";
 import { wrapUntrustedText } from "./claude-safety.mjs";
 
 const SYSTEM_RULES_BASE = `あなたは長編動画を区間に切り分ける編集者です。

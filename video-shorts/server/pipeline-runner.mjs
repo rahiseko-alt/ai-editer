@@ -104,6 +104,10 @@ const recaptioningJobs = new Set();
  */
 const jobControls = new Map();
 
+/** jobId → { resolve, reject }（承認待ちで止まっているジョブだけが載る）。
+ *  resetControl() が jobControls と一緒に片付けるので、宣言もここへ並べておく。 */
+const approvalWaiters = new Map();
+
 /** jobIdの制御レコードを取得(無ければ作る)。 */
 function getControl(jobId) {
   let c = jobControls.get(jobId);
@@ -749,9 +753,6 @@ export function approvalRequired(envValue = process.env.VS_REQUIRE_APPROVAL) {
   return !["off", "0", "false"].includes(String(envValue ?? "").trim().toLowerCase());
 }
 const APPROVAL_REQUIRED = approvalRequired();
-
-/** jobId → { resolve, reject }（承認待ちで止まっているジョブだけが載る） */
-const approvalWaiters = new Map();
 
 /** 指定ジョブが今まさに承認待ちで止まっているか（HTTP 側の 409 判定に使う）。 */
 export function isAwaitingApproval(jobId) {
