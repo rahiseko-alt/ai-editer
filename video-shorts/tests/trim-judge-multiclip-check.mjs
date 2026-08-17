@@ -33,7 +33,6 @@
 //
 // 実行: node tests/trim-judge-multiclip-check.mjs   (全PASSで exit 0)
 
-import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
