@@ -727,11 +727,17 @@ function run() {
   }
   params.set("name", state.file.name);
   // 切り方の3択（画面）→ サーバの既存パラメータ（マスター指示 2026-08-17）。
-  //   ダイジェスト  cut=minutes （サーバ側で mode=digest）＋ 長さ
-  //   本数に分ける  cut=topic ＋ clips=<本数>
-  //   分数指定      cut=topic ＋ durationMin=<分>
-  // どれも空欄なら何も足さない＝サーバ側の既定（AIにおまかせ）に従う。
-  params.set("cut", state.cut === "minutes" ? "minutes" : "topic");
+  //   ダイジェスト  cut=minutes （サーバ側で mode=digest）＝1本にまとめる。長さはおまかせ可
+  //   本数に分ける  cut=topic ＋ clips=<本数>              ＝指定した本数へ分ける
+  //   分数指定      cut=minutes ＋ 長さ                    ＝1本にまとめて、その長さにする
+  //
+  // 【2026-08-17 マスター指摘「かってに3本に分けて生成するのはなんだ？」】
+  // 分数指定を cut=topic（話題ごとに複数本・1本あたり◯分）へ繋いでいたため、
+  // 1本の長さを指定したつもりが勝手に複数本へ分かれていた。分数指定は
+  // 「1本を◯分にする」の意味なので、ダイジェストと同じ経路（1本にまとめる）へ繋ぐ。
+  // 複数本に分かれるのは「本数に分ける」を選んだときだけにする。
+  const oneVideo = state.cut === "minutes" || state.cut === "topic";
+  params.set("cut", oneVideo ? "minutes" : "topic");
   if (state.cut === "minutes") {
     if (state.cutMin !== "") {
       params.set("durationMin", String(state.cutMin));
@@ -743,7 +749,9 @@ function run() {
   } else if (state.cut === "clips") {
     if (state.clips !== "") params.set("clips", String(state.clips));
   } else if (state.durationMin !== "") {
+    // 分数指定。1本にまとめたうえで、その1本をこの長さにする。
     params.set("durationMin", String(state.durationMin));
+    params.set("cutMin", String(state.durationMin));
   }
   fetch(`/api/jobs?${params}`, withTokenHeader({ method: "POST", body: state.file }))
     .then((res) => {
@@ -853,9 +861,16 @@ $("editing-error-close").addEventListener("click", hideEditing);
 
 // ── 台本の提示と承認（マスター指示：…→ユーザーに提示→ユーザー承認を経て編集作業の開始）──
 // SSE が {stage:"s", status:"await-approval"} を送ってきた時点でサーバーは待ち状態に入る。
-// ここで台本(GET /api/jobs/:id/script)を見せ、採用する区間を選ばせ、
+// ここで台本(GET /api/jobs/:id/script)を1本の文章として見せ、いらない所を消させ、
 // POST /api/jobs/:id/approve を投げるまで書き出しは始まらない。
-// scriptCtx: { jobId, jobToken, es, segments, meta, picked:Set<番号>, busy }
+//
+// 区間ごとのカードに分けない（マスター指示 2026-08-17・2回目の指摘）。台本は全区間の語を
+// つないだ「ひと続きの文章」として出し、その中の任意の場所を、好きなだけ選んで消せるようにする。
+// 実際に音が切れるのは語の切れ目なので、選択は語（tokens の1要素）へ落とす。
+//
+// scriptCtx: { jobId, jobToken, es, segments, meta, tokens, dropped:Set<tokenの番号>, busy }
+//   tokens[i] = {kind:"word", seg, w, start, end}   … 逆照合できた区間の語（消せる）
+//             | {kind:"text", seg, text}            … 逆照合できなかった区間（消せないが必ず出す）
 let scriptCtx = null;
 
 /** 区間の長さ（秒）。start/end が壊れていても負にはしない。 */
@@ -870,11 +885,12 @@ function scriptStatus(text, isError) {
   el.classList.toggle("err", !!isError);
 }
 
-/** 送信中は二重に押せないようにする（承認を2回投げない）。 */
+/** 送信中は二重に押せないようにする（承認を2回投げない）。本文の消去操作も止める。 */
 function setScriptBusy(busy) {
-  $("script-approve").disabled = busy;
   $("script-reject").disabled = busy;
-  $("script-list").querySelectorAll("input[type=checkbox]").forEach((el) => { el.disabled = busy; });
+  $("script-list").classList.toggle("is-busy", busy);
+  if (scriptCtx) renderScriptMeta();          // 「書き出す」の可否はここで決まる（残りが0なら押させない）
+  else $("script-approve").disabled = true;
 }
 
 // Escape で誤って中止させない（中止＝ジョブを捨てるので取り返しがつかない）。
@@ -884,7 +900,7 @@ const scriptModal = attachModal($("script-overlay"), () => {
 });
 
 function openScriptReview(jobId, jobToken, es) {
-  scriptCtx = { jobId, jobToken, es, segments: [], meta: {}, picked: new Set(), busy: false };
+  scriptCtx = { jobId, jobToken, es, segments: [], meta: {}, tokens: [], dropped: new Set(), busy: false };
   // 承認待ちの間は編集中カードをしまう。暗幕＋動く帯が出たままだと「もう書き出している」と
   // 見えてしまい、まだ始まっていないという事実が伝わらないため。
   hideEditing();
@@ -906,9 +922,10 @@ function openScriptReview(jobId, jobToken, es) {
       if (!scriptCtx || scriptCtx.jobId !== jobId) return;  // 途中で閉じられていたら捨てる
       scriptCtx.segments = Array.isArray(data.segments) ? data.segments : [];
       scriptCtx.meta = data.meta || {};
-      // 既定は「提示どおり全部採用」。除外はユーザーが明示的に外したものだけ。
-      scriptCtx.segments.forEach((_, i) => scriptCtx.picked.add(i));
-      renderScriptSegments();
+      // 既定は「提示どおり全部使う」。消えるのはユーザーが明示的に消した所だけ。
+      scriptCtx.tokens = buildScriptTokens(scriptCtx.segments);
+      scriptCtx.dropped.clear();
+      renderScriptFlow();
     })
     .catch((e) => {
       if (!scriptCtx || scriptCtx.jobId !== jobId) return;
@@ -917,34 +934,91 @@ function openScriptReview(jobId, jobToken, es) {
     });
 }
 
-function renderScriptSegments() {
+/**
+ * 台本を「ひと続きの文章」にほどく。全区間の words を時刻順のまま1本に連結する。
+ * words が空の区間（逆照合に失敗＝サーバーが words:[] を返した）は語に割れないので、
+ * keepText をそのまま本文へ流し込み、範囲選択の対象外にする。黙って落とすと、画面に
+ * 出ていない文が書き出しに混ざることになるので、必ず出す。
+ */
+function buildScriptTokens(segs) {
+  const tokens = [];
+  (segs || []).forEach((s, si) => {
+    const words = Array.isArray(s?.words) ? s.words : [];
+    if (words.length === 0) {
+      const text = String(s?.keepText || "");
+      if (text) tokens.push({ kind: "text", seg: si, text });
+      return;
+    }
+    words.forEach((w) => {
+      const text = String(w?.w ?? "");
+      if (!text) return;
+      tokens.push({ kind: "word", seg: si, w: text, start: Number(w.start) || 0, end: Number(w.end) || 0 });
+    });
+  });
+  return tokens;
+}
+
+/**
+ * 残った語を、消された所で切り分けて区間の列へ組み直す。
+ * 例: 語が [A B C D E] で C を消したら [AB] と [DE] の2区間。
+ * keepText は残った語の w をそのまま連結した文字列にする（本文の逐語連続抜き出しという
+ * 前提が保たれ、後段の逆照合で秒数が確定できる。ここを崩すと動画が作れなくなる）。
+ * hook は元になった区間のものを引き継ぐ（分割されたら両方に同じものが付く）。
+ * 秒数は語の実測（先頭語の start 〜 末尾語の end）。推定はしない。
+ */
+function buildKeptRuns() {
+  if (!scriptCtx) return [];
+  const segs = scriptCtx.segments;
+  const out = [];
+  let run = null;
+  const flush = () => {
+    if (run && run.words.length) {
+      const first = run.words[0], last = run.words[run.words.length - 1];
+      const len = last.end - first.start;
+      out.push({
+        keepText: run.words.map((w) => w.w).join(""),
+        hook: run.hook,
+        seconds: Number.isFinite(len) && len > 0 ? len : 0,
+      });
+    }
+    run = null;
+  };
+  scriptCtx.tokens.forEach((t, i) => {
+    const hook = String(segs[t.seg]?.hook || "");
+    if (t.kind === "text") {
+      // 語に割れなかった区間はそのまま1区間として通す（消せないので必ず残る）。
+      flush();
+      out.push({ keepText: t.text, hook, seconds: segSeconds(segs[t.seg]) });
+      return;
+    }
+    if (scriptCtx.dropped.has(i)) { flush(); return; }
+    if (!run || run.seg !== t.seg) { flush(); run = { seg: t.seg, hook, words: [] }; }
+    run.words.push(t);
+  });
+  flush();
+  return out;
+}
+
+function renderScriptFlow() {
   const list = $("script-list");
   if (!scriptCtx) return;
-  const segs = scriptCtx.segments;
-  list.innerHTML = segs.length
-    ? segs.map((s, i) => {
-        const on = scriptCtx.picked.has(i);
-        return `<label class="script-seg${on ? "" : " is-off"}" data-testid="script-segment" data-i="${i}">` +
-          `<input type="checkbox" data-i="${i}"${on ? " checked" : ""} aria-label="この場面を採用する" />` +
-          `<span class="script-seg-body">` +
-            `<b class="script-seg-hook">${esc(s.hook || "（見出しなし）")}</b>` +
-            `<span class="script-seg-len" data-testid="script-segment-len">${fmtDuration(segSeconds(s))}</span>` +
-            `<span class="script-seg-text">${esc(s.keepText || "")}</span>` +
-          `</span></label>`;
-      }).join("")
+  const toks = scriptCtx.tokens;
+  list.innerHTML = toks.length
+    ? `<div class="script-flow" data-testid="script-flow">` +
+      toks.map((t, i) => (t.kind === "word"
+        ? `<span class="script-w${scriptCtx.dropped.has(i) ? " is-cut" : ""}" data-testid="script-word" data-i="${i}">${esc(t.w)}</span>`
+        : `<span class="script-raw">${esc(t.text)}</span>`)).join("") +
+      `</div>`
     : `<p class="placeholder">使える場面が見つかりませんでした。「やめる」で戻り、設定を変えてやり直してください。</p>`;
   renderScriptMeta();
 }
 
-/** 採用中の本数・合計の長さ・目標との差を出し直す（チェックのたびに呼ぶ）。 */
+/** 合計の長さ・目標との差を出し直す（消す／戻すたびに呼ぶ）。 */
 function renderScriptMeta() {
   if (!scriptCtx) return;
-  const segs = scriptCtx.segments;
-  const total = segs.reduce((a, s, i) => (scriptCtx.picked.has(i) ? a + segSeconds(s) : a), 0);
-  const rows = [
-    ["使う場面", `${segs.length}件のうち ${scriptCtx.picked.size}件`],
-    ["合計の長さ", fmtDuration(total)],
-  ];
+  const runs = buildKeptRuns();
+  const total = runs.reduce((a, r) => a + r.seconds, 0);
+  const rows = [["合計の長さ", fmtDuration(total)]];
   const target = Number(scriptCtx.meta?.targetSeconds);
   if (Number.isFinite(target) && target > 0) {
     const diff = Math.round(total - target);
@@ -952,17 +1026,67 @@ function renderScriptMeta() {
     rows.push(["目標の長さ", `${fmtDuration(target)}（いまの選択は ${rel}）`]);
   }
   $("script-meta").innerHTML = rows.map(([k, v]) => `<li><b>${esc(k)}</b><span>${esc(v)}</span></li>`).join("");
-  // 1件も選んでいなければ書き出すものが無いので押させない
-  $("script-approve").disabled = scriptCtx.picked.size === 0;
+  // 何も残っていなければ書き出すものが無いので押させない
+  $("script-approve").disabled = scriptCtx.busy || runs.length === 0;
 }
 
-$("script-list").addEventListener("change", (ev) => {
-  const cb = ev.target.closest("input[type=checkbox][data-i]");
-  if (!cb || !scriptCtx || scriptCtx.busy) return;
-  const i = Number(cb.dataset.i);
-  if (cb.checked) scriptCtx.picked.add(i); else scriptCtx.picked.delete(i);
-  cb.closest(".script-seg")?.classList.toggle("is-off", !cb.checked);
-  renderScriptMeta();   // 合計の長さをその場で更新（作り直すとチェック操作の途中で描画が飛ぶ）
+// ── 本文から任意の場所を消す ───────────────────────────────────
+// ドラッグで範囲を選ぶ → 離した時点で、その範囲に掛かった語が消える。
+// 消した語は消滅させず、取り消し線＋薄い表示で残す。もう一度クリック（タップ）で戻る。
+// 語を1つだけ消す／戻すのはクリック（タップ）だけでできる＝ドラッグが難しい環境の代替。
+
+/** 選択範囲 range が要素 el の中身と「長さのある重なり」を持つか。 */
+function rangeCoversNode(range, el) {
+  const own = document.createRange();
+  own.selectNodeContents(el);
+  const clip = range.cloneRange();
+  try {
+    // 端がちょうど接しているだけ（重なりの長さ0）を拾わないよう、実際に切り取って測る。
+    if (clip.compareBoundaryPoints(Range.START_TO_START, own) < 0) clip.setStart(own.startContainer, own.startOffset);
+    if (clip.compareBoundaryPoints(Range.END_TO_END, own) > 0) clip.setEnd(own.endContainer, own.endOffset);
+  } catch (_) {
+    return false;
+  }
+  return clip.toString().length > 0;
+}
+
+/** いま選ばれている範囲に掛かった語を消す。消したら true。 */
+function applyScriptSelectionCut() {
+  if (!scriptCtx || scriptCtx.busy) return false;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+  const list = $("script-list");
+  const range = sel.getRangeAt(0);
+  const anchor = range.commonAncestorContainer;
+  const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentNode;
+  if (!anchorEl || !list.contains(anchorEl)) return false;   // 本文の外での選択は触らない
+  const hit = [];
+  list.querySelectorAll(".script-w").forEach((el) => { if (rangeCoversNode(range, el)) hit.push(el); });
+  if (hit.length === 0) return false;
+  hit.forEach((el) => { scriptCtx.dropped.add(Number(el.dataset.i)); el.classList.add("is-cut"); });
+  sel.removeAllRanges();   // 選択の青地を残さない（消えた事実だけが見えるように）
+  renderScriptMeta();
+  return true;
+}
+
+// ドラッグの終わりは本文の外で起きうるので document で受ける。
+// 直後に飛んでくる click（同じ操作の続き）で余計な語まで消さないよう、時刻で抑える。
+let scriptCutAt = 0;
+document.addEventListener("mouseup", () => { if (applyScriptSelectionCut()) scriptCutAt = Date.now(); });
+// 触った指を離した時点ではまだ選択が確定していない環境があるので、1周待ってから読む。
+document.addEventListener("touchend", () => {
+  setTimeout(() => { if (applyScriptSelectionCut()) scriptCutAt = Date.now(); }, 0);
+});
+
+$("script-list").addEventListener("click", (ev) => {
+  if (!scriptCtx || scriptCtx.busy) return;
+  if (Date.now() - scriptCutAt < 400) return;   // 直前のドラッグの続き＝二重に効かせない
+  const el = ev.target.closest(".script-w");
+  if (!el) return;
+  const i = Number(el.dataset.i);
+  if (scriptCtx.dropped.has(i)) { scriptCtx.dropped.delete(i); el.classList.remove("is-cut"); }
+  else { scriptCtx.dropped.add(i); el.classList.add("is-cut"); }
+  renderScriptMeta();   // 合計の長さをその場で更新（作り直すと操作の途中で描画が飛ぶ）
 });
 
 /** 承認窓を閉じる（表示を消す処理はここ1箇所に寄せる）。 */
@@ -981,15 +1105,19 @@ function postApproval(approved) {
   // 送信中にジョブが落ちる(showError → closeScriptReview)ことがあるので、
   // 応答が返った時点で「まだ同じ承認待ちが生きているか」を必ず確かめる。
   const ctx = scriptCtx;
-  const { jobId, jobToken, segments, picked } = ctx;
+  const { jobId, jobToken } = ctx;
+  // 消した所で分割した「残り」を作る。押した後に本文をいじられても送る中身が変わらないよう、
+  // busy を立てる前に確定させる。
+  const runs = approved ? buildKeptRuns() : [];
+  if (approved && runs.length === 0) return;   // 残りが無い＝書き出すものが無い
   scriptCtx.busy = true;
   setScriptBusy(true);
   scriptStatus(approved ? "書き出しの準備をしています…" : "中止しています…");
   const body = approved
-    // 全部採用のままなら segments は省略できる（省略時＝提示どおり）。
-    ? (picked.size === segments.length
+    // 1つも消していないなら segments は省略できる（省略時＝提示どおり）。
+    ? (ctx.dropped.size === 0
         ? { approved: true }
-        : { approved: true, segments: segments.filter((_, i) => picked.has(i)) })
+        : { approved: true, segments: runs.map((r) => ({ keepText: r.keepText, hook: r.hook })) })
     : { approved: false };
   fetch(withTokenQuery(`/api/jobs/${jobId}/approve`, jobToken),
     withTokenHeader({

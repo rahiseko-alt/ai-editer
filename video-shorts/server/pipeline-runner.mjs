@@ -783,8 +783,14 @@ function rejectApprovalWaiter(jobId, err) {
  */
 export function normalizeApprovedSegments(list) {
   if (!Array.isArray(list)) return [];
+  // 【2026-08-17】下限を「4文字以上」から「空でないこと」へ緩める。
+  // 台本の確認画面が、ユーザーが消した所で区間を割って送るようになったため、
+  // 「今日は」のような短い断片が正規の区間として出てくる（例: 3文字）。
+  // 4文字未満を落とす旧条件のままだと、**ユーザーが残すと決めた所が無言で消える**。
+  // ここはユーザーの明示の選択を受け取る場所なので、機械の都合で黙って捨ててよい所ではない。
+  // 空文字だけは弾く（区間として成立しないうえ、逆照合の対象にもならない）。
   return list
-    .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+    .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length > 0)
     .map((s) => ({
       keepText: s.keepText.trim(),
       hook: typeof s.hook === "string" ? s.hook.trim() : "",
