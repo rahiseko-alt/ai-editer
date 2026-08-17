@@ -423,7 +423,10 @@ async function cmdRender(workDir, opts = {}) {
     const MIN_SEC = target ? target.floorSec : resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
     const MAX_GAP_RAW = Number(process.env.TOPIC_MERGE_GAP_MAX ?? 3);
     const MAX_GAP = Number.isFinite(MAX_GAP_RAW) && MAX_GAP_RAW > 0 ? MAX_GAP_RAW : 3; // R-8: 不正値は既定(3秒)にフォールバック
-    resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP);
+    // words を渡すと「そのギャップに発話が入っているか」を実際に見て判定する。渡さないと
+    // 判断材料が無いので安全側（狭いギャップしか跨がない）に倒れる。ここは製品の経路なので
+    // 実測で判定させる。AIが選ばなかった発話を、尺を埋めるために黙って復活させないため。
+    resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP, transcript.words || []);
     resolved = snapToSilence(resolved, transcript.words || [], {});
     log(`[INFO] 区間リファイン後: ${resolved.length} 区間（結合＋無音スナップ）`);
 

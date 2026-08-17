@@ -3,6 +3,12 @@
 //  2) 斬り方が悪い（文の途中で切れる）→ snapToSilence で start/end を無音境界へ寄せる。
 // digest（台本再構成）は意図的な分割・並べ替えのため mergeShortSegments は掛けない。
 // ESM・Node標準のみ・元配列非破壊。
+//
+// 2026-08-17: docs/編集についての虎の巻.md §8-E/F/G の指摘を再現したうえで直した。
+//  E: snapToSilence は「最大ギャップ」ではなく「今の発話のかたまりの外側」へ広げるだけにした。
+//  F: capSegmentDuration は等分点の近傍から「文末＞読点／間」の順で切れ目を探すようにした。
+//  G: mergeShortSegments は発話が入っているギャップを跨がないようにした。
+//  D（音の実測）は、この純関数からは ffmpeg を回せないため未対応。snapToSilence の説明を参照。
 
 /** mergeShortSegments に渡す「1区間の最小尺」の既定値（秒）。 */
 export const DEFAULT_MIN_SEC = 180;
@@ -148,15 +154,18 @@ export function capSegmentDuration(segments, maxSec, words = []) {
       } else {
         // 切れ目を探してよい範囲。ここを外れると「この本が上限超え」「残りが上限に収まらない」の
         // どちらかが起きるので、意味の切れ目より上限の約束を優先する（探索窓ではなく硬い制約）。
+        // 上限ちょうどに割り切れる区間（余裕ゼロ）では範囲が潰れる＝等分点しか選べない。
         const remaining = n - i - 1;
-        const hardMin = Math.max(cursor + 1e-3, seg.end - remaining * maxSec);
-        const hardMax = Math.min(seg.end - 1e-3, cursor + maxSec);
-        // 等分点からどれだけ動いてよいか。動かしすぎると1本だけ極端に短くなるので 1/4 で頭打ち。
-        const searchWindow = Math.min(chunkLen * 0.25, Math.max(0, hardMax - hardMin));
-        const picked = hardMin < hardMax
-          ? (chooseSplitEnd(idealEnd, words, hardMin, hardMax, searchWindow, minGap)
-            ?? nearestWordEnd(idealEnd, words, hardMin, hardMax))
-          : null;
+        const win = chunkLen * 0.25; // 動かしすぎると1本だけ極端に短くなるので 1/4 で頭打ち
+        const lo = Math.max(cursor, idealEnd - win, seg.end - remaining * maxSec);
+        const hi = Math.min(seg.end, idealEnd + win, cursor + maxSec);
+        const picked =
+          // 1) 上限を守れる範囲に「意味の切れ目」があればそこで割る
+          (lo < hi ? chooseSplitEnd(idealEnd, words, lo, hi, win, minGap) : null)
+          // 2) 無ければ上限を守れる範囲の最寄り語境界（＝従来と同じ選び方だが上限を超えない）
+          ?? nearestWordEnd(idealEnd, words, cursor, Math.min(seg.end, cursor + maxSec))
+          // 3) それも無ければ従来どおり残り全体から最寄り語境界（上限を超えることがある）
+          ?? nearestWordEnd(idealEnd, words, cursor, seg.end);
         if (picked !== null && picked !== undefined) {
           end = picked;
         } else if (!hasWords) {
@@ -204,6 +213,10 @@ function truncateByWidth(text, maxWidth) {
  * 呼び出しでは判断材料が無いので、**発話が入りうる長さのギャップは跨がない**（1秒）。
  * 文と文の間の自然な間は実素材で 0.4〜0.9 秒（src/breath-handles.mjs の実測）なので、
  * 1秒以下は「間だけ」とみなしてよく、それを超えるものは発話が入っている前提で扱う。
+ *
+ * 【要フォロー】pipeline.mjs は現在 words を渡していない（3引数で呼んでいる）ため、この推定が
+ * 効く。`mergeShortSegments(resolved, MIN_SEC, MAX_GAP, transcript.words || [])` へ替えれば、
+ * 「ギャップに発話があるか」を実際に見て判定するので、間だけの長いギャップは従来どおり跨げる。
  */
 export const SAFE_BRIDGE_GAP_SEC = 1.0;
 

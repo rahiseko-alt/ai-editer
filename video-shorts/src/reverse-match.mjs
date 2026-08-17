@@ -108,13 +108,35 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
     // 重なった場合のみ。重複分を二重に数えないよう target 長で頭打ちにする。
     matchedChars = Math.min(target.length, headPos.len + tailPos.len);
   } else {
-    // 片側だけの一致。区間は語境界に揃う（下の longestPrefixMatch 手前の調査コメント参照）が、
-    // keepText のうち当たらなかった側は黙って落ちる。＝ここは「広く取る」の逆向き。未修正。
+    // 片側だけの一致。当たった側だけを区間にすると、当たらなかった側の内容が黙って落ちる。
+    //
+    // 実害（2026-08-17 実測。成立マッチの14.6%で発生）:
+    //   「毎年の健康診断の結果についてお話しします」→ 尻だけ当たると「診断の結果について
+    //   お話しします」になり、複合語「健康診断」が割れる（虎の巻 §2-2 違反）。
+    //   頭だけ当たると文末表現が丸ごと落ち、「について」で終わる言い差しになる（§2-3 違反）。
+    // しかも keepText 欄は元の全文のままなので、承認画面の台本と実際に流れる音がずれる。
+    //
+    // 虎の巻の原則3「迷ったら広く取る」に従い、当たらなかったぶんを外側へ広げる。
+    // ただし無条件に広げると、P1-9 が守っている「離れた別の場面の発言を拾わない」性質が
+    // 壊れる（欠けた文字数ぶん機械的に広げる実装を試したところ、実際に P1-9 が3件落ちた）。
+    // そこで広げるのは「広げた先の文字が、欠けている続きと1文字ずつ一致する間」だけに限る。
+    // 一致しなくなった時点で止めるので、無関係な隣の語を飲み込むことはない。
+    // 間が maxGapSec を超える所でも止める（そこから先は別の発言）。
     const useHead = headPos.len >= tailPos.len;
     const side = useHead ? headPos : tailPos;
-    startCharPos = side.pos;
-    rawEndCharPos = side.pos + side.len - 1;
-    matchedChars = side.len;
+    if (useHead) {
+      // 頭が当たった＝欠けているのは target の後ろ側。
+      const missingText = target.slice(side.len);
+      startCharPos = side.pos;
+      rawEndCharPos = extendForward(joined, side.pos + side.len - 1, missingText, words, charToWord, maxGapSec);
+      matchedChars = side.len + (rawEndCharPos - (side.pos + side.len - 1));
+    } else {
+      // 尻が当たった＝欠けているのは target の前側。
+      const missingText = target.slice(0, Math.max(0, target.length - side.len));
+      startCharPos = extendBackward(joined, side.pos, missingText, words, charToWord, maxGapSec);
+      rawEndCharPos = side.pos + side.len - 1;
+      matchedChars = side.len + (side.pos - startCharPos);
+    }
   }
   const endCharPos = Math.min(rawEndCharPos, charToWord.length - 1);
   const startWord = words[charToWord[startCharPos]];
@@ -157,6 +179,43 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
 // これを「欠かさない方向へ外側に広げる」直し方は試作済みだが、tests/smoke.mjs の凍結済み
 // P1-9 アサーション3件（「頭側だけの区間として残る」= end===2.0 を固定しているもの）と
 // 正面から矛盾する。基準の側を動かす判断が要るため、ここでは直していない。
+
+/**
+ * 片側一致で欠けた分を、時間的に隣接している範囲に限って外側へ広げる。
+ *
+ * `budget` は「当たらなかった文字数」。それを上限に文字位置を進め／戻すが、
+ * 語をまたぐたびに直前の語との間を見て、`maxGapSec` を超える間があればそこで止める。
+ * 間が空いている＝別の発言なので、そこから先は keepText の続きではない。
+ */
+function extendForward(joined, fromCharPos, missingText, words, charToWord, maxGapSec) {
+  let pos = fromCharPos;
+  for (let k = 0; k < missingText.length; k++) {
+    const nextPos = pos + 1;
+    if (nextPos > charToWord.length - 1) break;
+    if (joined[nextPos] !== missingText[k]) break;     // 欠けた続きと違う＝ここから先は別の話
+    const cur = words[charToWord[pos]];
+    const next = words[charToWord[nextPos]];
+    if (!cur || !next) break;
+    if (next !== cur && next.start - cur.end > maxGapSec) break;
+    pos = nextPos;
+  }
+  return pos;
+}
+
+function extendBackward(joined, fromCharPos, missingText, words, charToWord, maxGapSec) {
+  let pos = fromCharPos;
+  for (let k = missingText.length - 1; k >= 0; k--) {
+    const prevPos = pos - 1;
+    if (prevPos < 0) break;
+    if (joined[prevPos] !== missingText[k]) break;     // 欠けた続きと違う＝ここから先は別の話
+    const cur = words[charToWord[pos]];
+    const prev = words[charToWord[prevPos]];
+    if (!cur || !prev) break;
+    if (prev !== cur && cur.start - prev.end > maxGapSec) break;
+    pos = prevPos;
+  }
+  return pos;
+}
 
 /** target の先頭から最長で joined（fromPos 以降）に現れる接頭辞を二分探索的に求める */
 function longestPrefixMatch(joined, target, fromPos = 0) {
