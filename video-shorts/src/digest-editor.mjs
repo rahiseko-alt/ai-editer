@@ -27,8 +27,11 @@ const PASS_SCORE = Number(process.env.DIGEST_PASS_SCORE ?? 80);
  *  72秒で重なっていた＝同じ台本が1分指定でも1分半指定でも合格しえた（マスター指摘の一因）。
  *  帯が重ならないよう ±10% へ狭める（60s→54〜66s / 90s→81〜99s）。 */
 const DURATION_TOL = Number(process.env.DIGEST_DURATION_TOL ?? 0.1);
-/** 尺是正の最大試行回数。旧実装は if 1回きりで、外れたままでも確定していた。 */
-const DURATION_MAX_FIX = Number(process.env.DIGEST_DURATION_MAX_FIX ?? 2);
+/** 尺是正の最大試行回数。
+ *  【2026-08-17 マスター決定「尺は目安」で 2 → 1】1回あたり実測147秒かかる呼び出しを
+ *  尺のために2回まで重ねるのは、目安のために質と時間を払いすぎている。1回試みて
+ *  近づかないなら、外れたまま確定する（内容を刻んで秒数に合わせるより良い）。 */
+const DURATION_MAX_FIX = Number(process.env.DIGEST_DURATION_MAX_FIX ?? 1);
 
 /** --model 指定が原因の失敗だけを見分ける絞り込み（ここを緩めると真因が隠れる）。
  *  旧 /model|unknown|invalid/i は "invalid JSON" 等の一般 stderr にも誤マッチし、
@@ -398,10 +401,11 @@ function reviewPrompt(transcriptText, script, dur = null, understanding = null) 
     `密度(冗長・繰り返し・雑談が無く濃いか)/山場(明確な盛り上がりがあるか)/締め(余韻ある終わり方か)。\n` +
     `各観点は「なぜその点か」を減点根拠つきで判断すること。\n\n` +
     (durBlock
-      ? `${durBlock}尺は点数とは別の「満たすか満たさないか」の条件です。実測が許容範囲に入っているかを` +
-        `fitsDuration で答えること。外れているなら、直した台本で許容範囲へ入れること` +
-        `（尺は点数と引き換えにできません）。また、上の【この尺の方針】に照らして構成そのものが` +
-        `合っているか（短い尺なのに話題を詰め込んでいないか、長い尺なのに起伏が無いか）も見ること。\n\n`
+      ? `${durBlock}尺は**目安**です。実測が狙いに入っているかを fitsDuration で答えること。` +
+        `外れているなら近づける努力はしてよいが、**意味が通らなくなるくらいなら尺を外してよい**` +
+        `（会話の内容の都合で切れない所はある。無理に切って意味不明にした台本に価値は無い）。` +
+        `また、上の【この尺の方針】に照らして構成そのものが合っているか` +
+        `（短い尺なのに話題を詰め込んでいないか、長い尺なのに起伏が無いか）も見ること。\n\n`
       : "") +
     (undBlock ? `${undBlock}\n` : "") +
     `${VERBATIM}\n\n` +
@@ -414,7 +418,8 @@ function reviewPrompt(transcriptText, script, dur = null, understanding = null) 
     `"issues":["問題点"],` +
     `"script":[{"keepText":"...","hook":"...","reason":"..."}]}\n` +
     `pass は ${PASS_SCORE}点以上かつ致命的問題が無い` +
-    (durBlock ? `、かつ fitsDuration が true の` : "") +
+    // 尺は合格条件にしない（マスター決定：尺は目安。内容が優先）。
+    "" +
     `場合のみ true。\n` +
     `**pass が true のときは script を空配列にしてよい**（直す必要が無いため）。` +
     `pass が false のときは、最も低い観点を最優先で引き上げた台本を script に入れること。` +
@@ -606,7 +611,9 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
       ` (${(critique.issues || []).length}件指摘)`);
     // best は「尺を満たしているもの」を優先する。尺を外した高得点で確定すると、
     // 指定尺を変えても同じ台本が選ばれ続ける。
-    const better = fits === (best.fits ?? false) ? score > best.score : (fits && !best.fits);
+    // どれを採るかも点数で決める。旧実装は「尺を満たすもの」を点数より優先していたので、
+    // 意味が壊れていても尺が合っている台本が勝った。尺は目安なので、内容の点数で選ぶ。
+    const better = score > best.score;
     // 採用する台本と一緒に、その台本を採点したときの観点別スコア・最弱観点も持ち回る
     // （meta へ残して、承認画面が「何が弱いまま確定したのか」を出せるようにするため）。
     if (best.score < 0 || better) {
@@ -614,7 +621,13 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
         scores: normalizeScores(critique.scores),
         weakest: typeof critique.weakest === "string" ? critique.weakest.trim() : "" };
     }
-    if (fits && (critique.pass || score >= PASS_SCORE)) { iterations = i; break; }
+    // 【2026-08-17 マスター決定「質優先。尺は目安だ。会話の内容で切れない事はある。
+    //   無理に切って意味不明にしても価値無し。」】
+    // 尺を合格条件から外す。旧実装は fits を and 条件にしていたため、点数が満点でも
+    // 尺が許容から外れていれば絶対に抜けられず、毎回 MAX_ITER 周まで回っていた
+    // （1周あたり実測147秒）。尺のために内容を刻む圧力が掛かるうえ、遅い。
+    // 内容が良ければ合格とし、尺は狙いとしてプロンプトで伝えるに留める。
+    if (critique.pass || score >= PASS_SCORE) { iterations = i; break; }
     if (i === MAX_ITER) { iterations = i; break; }
     // 直した台本は、いま受け取った同じ応答の中に入っている（追加の呼び出しはしない）。
     const revised = critique.script;
@@ -637,8 +650,13 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
   if (segments.length === 0) throw new Error("採用可能な台本区間が0件です");
 
-  // 尺目標がある場合、実測秒数（reverse-match）が目標から大きく外れていたら1回だけ縮小/拡張指示を出す。
-  // 文字数目安だけでは実発話速度のブレを吸収できないため、実測フィードバックで是正する。
+  // 尺目標がある場合、実測が狙いから大きく外れていたら是正を試みる。
+  //
+  // 【2026-08-17 マスター決定】「質優先。尺は目安だ。会話の内容で切れない事はある。
+  // 無理に切って意味不明にしても価値無し。」
+  // ここは「合うまで回す」場所ではない。試みて、意味を保ったまま近づけられたなら採る。
+  // 近づけられないなら**尺が外れたまま確定してよい**。外れたことは meta とログに残すので、
+  // 承認画面から見て「なぜこの秒数なのか」は説明できる。
   let actualSeconds = null;
   // 「端の伸縮だけ」として破棄した是正の回数。黙って捨てると、尺が合わないまま確定した理由が
   // ログにも meta にも残らず、承認画面から見て「なぜこの秒数なのか」が説明できなくなる。
