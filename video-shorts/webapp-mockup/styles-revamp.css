@@ -381,12 +381,17 @@ html::before, html::after, body::before, body::after { content: none; background
 .adv-group.hidden { display: none; }
 
 /* 切り方の入力欄（長さ・本数）。数字欄は .cut-note input のCSSを共有する。
-   ラベルと数字欄が行の途中で分かれても読めるよう、行の折返しだけ許す。 */
+   空欄のときの案内（おまかせ）が切れずに読める幅を確保する。 */
 .cut-note { display: block; }
 .cut-note label, .duration-note label { white-space: nowrap; }
-.cut-note input[type=number], .duration-note input[type=number] { margin: 0 2px; }
+.cut-note input[type=number], .duration-note input[type=number] {
+  width: 76px;            /* 「おまかせ」の4文字が切れない幅 */
+  margin: 0 2px;
+}
+.cut-note input[type=number]::placeholder,
+.duration-note input[type=number]::placeholder { color: var(--muted); }
 
 /* 狭い画面でも数字欄がはみ出さないようにする（この画面は横幅の狭い環境でも出る）。 */
 @media (max-width: 480px) {
-  .cut-note input[type=number], .duration-note input[type=number] { width: 64px; }
+  .cut-note input[type=number], .duration-note input[type=number] { width: 72px; }
 }
