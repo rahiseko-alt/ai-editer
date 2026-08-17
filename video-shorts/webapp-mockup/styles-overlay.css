@@ -28,6 +28,53 @@
 .confirm-ask { margin: 14px 0 18px; font-weight: 700; font-size: clamp(14px, 0.9vw, 16px); color: var(--ink); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
+/* ===== 台本の確認と承認（画面中央モーダル）=====
+   #confirm-overlay（設定の最終確認）とは別物。色・角丸・影は既存トークンのみを使い、
+   独自の配色は持ち込まない。編集中カード(z-index:70)より前面に出す必要があるので 80。 */
+.script-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(43,43,43,.32);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+.script-overlay.show { opacity: 1; pointer-events: auto; }
+.script-card {
+  width: min(680px, 92vw); max-height: 86vh;
+  display: flex; flex-direction: column; box-sizing: border-box;
+  background: rgba(255,255,255,.97);
+  backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--shadow-panel);
+  padding: clamp(18px, 2.6vw, 26px);
+  transform: translateY(12px) scale(.98);
+  transition: transform .25s cubic-bezier(.22,1,.36,1);
+}
+.script-overlay.show .script-card { transform: translateY(0) scale(1); }
+.script-title { margin: 0 0 6px; font-size: 17px; }
+.script-lead { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+/* 合計の長さは1行に収まらないことがあるので、.summary の省略表示だけ解除する */
+.script-meta li span { white-space: normal; overflow: visible; text-overflow: clip; }
+/* 区間は本数が読めないので、ここだけがスクロールする（カード自体は伸びない） */
+.script-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 10px 0; }
+.script-seg {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-1); cursor: pointer;
+}
+/* 除外した区間は「消す」のではなく薄くして残す（何を外したか後から見直せるように）*/
+.script-seg.is-off { background: var(--surface-2); opacity: .55; }
+.script-seg input { flex-shrink: 0; width: 16px; height: 16px; margin: 3px 0 0; cursor: pointer; }
+.script-seg-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.script-seg-hook { font-size: 14px; color: var(--ink); }
+.script-seg-len { font-size: 13px; color: var(--muted); }
+.script-seg-text { font-size: 13px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.script-status { margin: 0; min-height: 1.3em; font-size: 13px; color: var(--muted); }
+.script-status.err { color: #c33; }
+.script-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-shrink: 0; }
+
 /* 作成履歴（2本目以降に出るジョブ選択チップ）*/
 .job-list {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;

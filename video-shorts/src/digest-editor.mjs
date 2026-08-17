@@ -23,6 +23,12 @@ const TIMEOUT_MS = Number(process.env.DIGEST_TIMEOUT_MS ?? 300_000);
 const MODEL = process.env.DIGEST_MODEL ?? "claude-opus-4-8";
 const MAX_ITER = Number(process.env.DIGEST_MAX_ITER ?? 3);
 const PASS_SCORE = Number(process.env.DIGEST_PASS_SCORE ?? 80);
+/** 目標尺の許容幅。旧実装は ±20% で、目標60秒(48〜72s)と目標90秒(72〜108s)の許容が
+ *  72秒で重なっていた＝同じ台本が1分指定でも1分半指定でも合格しえた（マスター指摘の一因）。
+ *  帯が重ならないよう ±10% へ狭める（60s→54〜66s / 90s→81〜99s）。 */
+const DURATION_TOL = Number(process.env.DIGEST_DURATION_TOL ?? 0.1);
+/** 尺是正の最大試行回数。旧実装は if 1回きりで、外れたままでも確定していた。 */
+const DURATION_MAX_FIX = Number(process.env.DIGEST_DURATION_MAX_FIX ?? 2);
 
 /** --model 指定が原因の失敗だけを見分ける絞り込み（ここを緩めると真因が隠れる）。
  *  旧 /model|unknown|invalid/i は "invalid JSON" 等の一般 stderr にも誤マッチし、
@@ -93,11 +99,110 @@ const VERBATIM = `【厳守】keepText は文字起こし本文に実在する�
   `語順を変える・言い換える・要約する・創作するのは禁止（後段が本文へ逆照合して秒数を確定するため）。` +
   `順序（segmentsの並び）だけは自由に入れ替えてよい。`;
 
-export function draftPrompt(transcriptText, targetInfo) {
+/**
+ * 目標尺の帯ごとに「何を残し何を捨てるか」の方針そのものを変える。
+ *
+ * なぜ必要か（マスター指摘 2026-08-17「ダイジェストで1分とダイジェストで1分半なら
+ * 当然大きく変わるはずなのにほぼ変わらない。考えていない証拠だ。」）:
+ * 旧実装が尺について伝えていたのは「合計◯◯文字」という数値1つだけだった。
+ * 数値だけを差し替えても、AIにとって「1分なら何を捨てるか」「1分半なら何を足せるか」は
+ * 決まらないため、同じ素材からはほぼ同じ台本が出る。尺は文字数の上限ではなく
+ * 「どういう構成にするか」の指示である、という形へ直す。
+ */
+export function durationStrategy(targetSeconds) {
+  if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) return null;
+  if (targetSeconds <= 45) {
+    return `【この尺の方針】主張を1つだけ、最も強い言い方で見せ切る長さ。話題は1つに絞り、` +
+      `前置き・導入・補足・具体例は原則すべて捨てる。最も引きの強い一文から始め、結論で終える。` +
+      `区間数の目安は1〜2。迷ったら「削る」を選ぶ。`;
+  }
+  if (targetSeconds <= 90) {
+    return `【この尺の方針】主張1つ＋それを裏づける具体例1つが入る長さ。主題は1つに保ったうえで、` +
+      `主張だけでは弱いので裏づけを1つ足す。関連の薄い話題は入れない。区間数の目安は2〜4。` +
+      `45秒以下の構成に「具体例を1つ足す」のではなく、具体例が入る前提で主張の選び方から見直すこと。`;
+  }
+  if (targetSeconds <= 180) {
+    return `【この尺の方針】展開を作れる長さ。掴み→具体例2つ以上→山場→締め、の起伏を組む。` +
+      `主題は1つに保ちつつ、途中で角度を変えて飽きさせない。区間数の目安は4〜7。` +
+      `短い尺の構成を引き伸ばすのではなく、起伏のある構成として組み直すこと。`;
+  }
+  return `【この尺の方針】複数の話題を束ねて1本にできる長さ。主題を2〜3の小テーマへ分け、` +
+    `テーマの切り替わりが分かる順序に並べる。各テーマに山場を1つ置き、最後に全体を締める。` +
+    `区間数の目安は7以上。`;
+}
+
+/** 尺の条件をプロンプトへ書き下す共通部品（draft / critic / revise / 尺是正で同じ言い方を使う）。 */
+function durationBlock(dur) {
+  if (!dur || !Number.isFinite(dur.targetSeconds) || dur.targetSeconds <= 0) return "";
+  const lo = Math.round(dur.targetSeconds * (1 - DURATION_TOL));
+  const hi = Math.round(dur.targetSeconds * (1 + DURATION_TOL));
+  const actual = Number.isFinite(dur.actualSeconds)
+    ? `現在の台本を本文へ逆照合した実測は ${Math.round(dur.actualSeconds)}秒。`
+    : "";
+  return `# 尺の条件\n目標 ${Math.round(dur.targetSeconds)}秒（約${dur.targetMinutes}分）。` +
+    `許容範囲は ${lo}〜${hi}秒（目標の±${Math.round(DURATION_TOL * 100)}%）。${actual}\n` +
+    `${durationStrategy(dur.targetSeconds)}\n`;
+}
+
+/**
+ * 「台本の内容を理解する」段階のプロンプト。
+ *
+ * マスター指示の流れ（AGENTS.md「マスター指示：編集フロー（逐語・要約禁止）」節が正）に
+ * 「台本の内容を理解する。」という独立した段階がある。旧実装はこの段階を持たず、
+ * draftPrompt の中で「全体を理解し…台本を作ってください」と一息に指示していたため、
+ * 理解の結果がどこにも残らず、後段（選定・尺の是正）が何も参照できなかった。
+ *
+ * ここでは理解そのものを成果物として出させる。台本を作る前に一度だけ走らせ、
+ * 結果を understanding.json として残し、draft へ渡す。
+ */
+export function understandPrompt(transcriptText) {
+  return `あなたは一流の動画編集者です。次の長編の文字起こし全文を読み、**まだ台本は作らずに**、` +
+    `内容の理解だけを出力してください。ここで作るのは、この後どの部分を使うかを決めるための下地です。\n\n` +
+    `次を押さえること:\n` +
+    `- 主題: この動画は結局なんの話か（1文）\n` +
+    `- 小テーマ: 主題を構成する話題の塊。出てくる順に、それぞれ「何の話か」と「面白さの強さ(1-5)」\n` +
+    `- 山場: 最も引きが強い箇所と、その理由\n` +
+    `- 捨ててよい所: 挨拶・定型・機材確認・本編でない雑談・同じことの繰り返し\n` +
+    `- 話者の癖: 結論が先か後か、言い切るか濁すか（どこで切ると意味が壊れるかの判断に使う）\n\n` +
+    `# 文字起こし本文\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
+    `# 出力（JSONのみ・前後に説明文を書かない）\n` +
+    `{"subject":"主題1文",` +
+    `"themes":[{"name":"小テーマ名","what":"何の話か","strength":1-5}],` +
+    `"peak":{"what":"山場","why":"なぜ引きが強いか"},` +
+    `"discard":["捨ててよい所"],` +
+    `"speakerStyle":"話者の癖"}`;
+}
+
+/** 理解の結果を、後段のプロンプトへ差し込める形の文字列にする。
+ *  purpose="draft"  … 台本づくり（この理解に沿って選ばせる）
+ *  purpose="critic" … 批評（この理解に照らして、選ばれた区間が主題から外れていないかを見させる）
+ *  理解が無い／形が違うときは空文字を返すので、呼び出し側は従来どおりの文面になる。 */
+function understandingBlock(u, purpose = "draft") {
+  if (!u || typeof u !== "object") return "";
+  const themes = Array.isArray(u.themes)
+    ? u.themes.map((t) => `- ${t?.name ?? ""}（面白さ${t?.strength ?? "?"}/5）: ${t?.what ?? ""}`).join("\n")
+    : "";
+  const discard = Array.isArray(u.discard) ? u.discard.join(" / ") : "";
+  return `# この動画の理解（先に全文を読んで整理したもの）\n` +
+    (u.subject ? `主題: ${u.subject}\n` : "") +
+    (themes ? `小テーマ:\n${themes}\n` : "") +
+    (u.peak?.what ? `山場: ${u.peak.what}（${u.peak.why ?? ""}）\n` : "") +
+    (discard ? `捨ててよい所: ${discard}\n` : "") +
+    (u.speakerStyle ? `話者の癖: ${u.speakerStyle}\n` : "") +
+    (purpose === "critic"
+      ? `\nこの理解は、台本を作る前に文字起こし全文を読んで整理したものです。採点にあたっては、` +
+        `選ばれた区間がこの主題から外れていないか / 山場を拾えているか / 「捨ててよい所」が混じっていないかを` +
+        `必ず照合し、外れているものがあれば issues に「理解との食い違い」として具体的に挙げること` +
+        `（食い違いは主に「流れ」「密度」「山場」の減点根拠として扱う）。\n`
+      : `\nこの理解に沿って選ぶこと。理解と食い違う選び方をするなら、その理由を reason に書くこと。\n`);
+}
+
+export function draftPrompt(transcriptText, targetInfo, understanding = null) {
   return `あなたは一流の動画編集者です。次の長編の文字起こし全体を理解し、視聴者が最後まで飽きない` +
     `「ダイジェスト（面白い所だけ）」の台本を作ってください。冒頭の挨拶・締めの定型・冗長な繰り返し・` +
     `本編でない雑談は捨てる。掴み→展開→山場→締めの流れになるよう、必要なら時系列を入れ替える。\n\n` +
     (targetInfo ? `${targetInfo}\n\n` : "") +
+    understandingBlock(understanding) +
     `${VERBATIM}\n\n# 文字起こし本文\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ・前後に説明文を書かない）\n` +
     `{"script":[{"keepText":"本文の逐語連続抜き出し","hook":"20字以内の見出し","reason":"採用理由一言"}]}`;
@@ -107,39 +212,91 @@ function scriptToText(script) {
   return script.map((s, i) => `#${i + 1} [${s.hook || ""}] ${s.keepText}`).join("\n\n");
 }
 
-function criticPrompt(script) {
+/** 批評プロンプト。dur を渡すと「尺に合っているか」を合否条件として一緒に判定させる。
+ *  旧実装は尺を引数に持たず、採点観点にも尺が無かったため、反復するほど目標尺と無関係な
+ *  「採点関数の最高点」へ収束し、1分指定と1分半指定が同じ台本になっていた。
+ *
+ *  understanding（理解の段階の出力）を渡すと、批評は「面白いか」だけでなく
+ *  「理解した主題から外れていないか」も見る。これが無いと、批評は台本テキストだけを見るため、
+ *  主題と関係の薄い"単体で映える区間"を高く採点し、反復するほど主題から離れていく。
+ *  引数は任意で、渡さなければ従来どおりの文面になる（既存の呼び方を壊さない）。 */
+function criticPrompt(script, dur = null, understanding = null) {
+  const durBlock = durationBlock(dur);
+  const undBlock = understandingBlock(understanding, "critic");
   return `あなたは辛口の編集レビュアーです。次のダイジェスト台本（この順序で連結して1本の動画にする）を` +
     `観点別に配点で評価してください。各観点20点満点・合計100点で採点します。\n` +
     `観点の定義: 掴み(最初3秒で視聴者を引き込むか)/流れ(展開が自然で飽きないか)/` +
     `密度(冗長・繰り返し・雑談が無く濃いか)/山場(明確な盛り上がりがあるか)/締め(余韻ある終わり方か)。\n` +
     `各観点は「なぜその点か」を減点根拠つきで判断し、満点でない観点は必ず fixes に改善指示を書くこと。\n\n` +
+    (durBlock
+      ? `${durBlock}尺は点数とは別の「満たすか満たさないか」の条件です。実測が許容範囲に入っているかを` +
+        `fitsDuration で答え、外れているなら durationFix に「どの区間をどうするか」を具体的に書くこと。` +
+        `また、上の【この尺の方針】に照らして構成そのものが合っているか（短い尺なのに話題を詰め込んでいないか、` +
+        `長い尺なのに起伏が無いか）も見て、合っていなければ issues に挙げること。\n\n`
+      : "") +
+    (undBlock ? `${undBlock}\n` : "") +
     `# 台本（連結順）\n${scriptToText(script)}\n\n` +
     `# 出力（JSONのみ）\n` +
     `{"scores":{"掴み":0-20,"流れ":0-20,"密度":0-20,"山場":0-20,"締め":0-20},` +
     `"score":合計(0-100の整数),"pass":true/false,"weakest":"最も低い観点名",` +
+    (durBlock ? `"fitsDuration":true/false,"durationFix":"尺を合わせる具体指示(合っていれば空文字)",` : "") +
     `"issues":["問題点"],"fixes":["観点名: その観点を何点上げるための具体的改善指示"]}\n` +
     `fixes は必ず先頭に観点名を付ける。score は scores の合計と一致させる。` +
-    `pass は ${PASS_SCORE}点以上かつ致命的問題が無い場合のみ true。`;
+    `pass は ${PASS_SCORE}点以上かつ致命的問題が無い` +
+    (durBlock ? `、かつ fitsDuration が true の` : "") +
+    `場合のみ true。`;
 }
 
-export function revisePrompt(transcriptText, script, critique) {
+/** 批評の観点別スコアを、そのまま meta へ残せる素直な形（観点名→数値）に整える。
+ *  合計 score だけを残すと「掴みが弱かったのか締めが弱かったのか」が後段に一切伝わらない。
+ *  モデルは観点名や型を崩して返すことがあるので、数値として読める観点だけを拾う
+ *  （拾えるものが1つも無ければ null＝「観点別スコアは取れなかった」を明示する）。 */
+function normalizeScores(scores) {
+  if (!scores || typeof scores !== "object" || Array.isArray(scores)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(scores)) {
+    const n = Number(v);
+    if (k && Number.isFinite(n)) out[k] = n;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+export function revisePrompt(transcriptText, script, critique, dur = null) {
   const cur = Number(critique.score) || 0;
   const perScores = critique.scores ? JSON.stringify(critique.scores, null, 0) : "(観点別スコアなし)";
   const weakest = critique.weakest || "";
+  const durBlock = durationBlock(dur);
+  const durFix = (critique.durationFix || "").trim();
   return `次のダイジェスト台本を、レビュー指摘に従って改善してください（順序入替・差し替え・削除・追加可）。\n` +
     `現在の総合点は ${cur}点、目標は ${PASS_SCORE}点以上です。観点別スコア: ${perScores}。\n` +
     (weakest ? `特に最も低い観点「${weakest}」を最優先で引き上げてください。\n` : "") +
     `点数を上げるのが目的です。満点でない観点を狙って直し、既に高い観点は壊さないこと。\n\n` +
+    (durBlock
+      ? `${durBlock}${critique.fitsDuration === false
+          ? `尺が許容範囲を外れています。点数の改善と同時に尺も許容範囲へ入れること` +
+            `（尺は満たすか満たさないかの条件で、点数と引き換えにできません）。` +
+            (durFix ? `\nレビュアーの尺に関する指示: ${durFix}` : "") + `\n`
+          : `尺は許容範囲に入っています。直した結果この範囲から外れないようにすること。\n`}\n`
+      : "") +
     `${VERBATIM}\n\n# レビュー指摘（観点別の改善指示）\n${JSON.stringify(critique.fixes || critique.issues || [], null, 0)}\n\n` +
     `# 現在の台本\n${scriptToText(script)}\n\n# 参照可能な全文字起こし\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
 }
 
-/** 尺是正プロンプト（実測秒数が目標から外れた時の1回だけの縮小/拡張指示）。 */
+/** 尺是正プロンプト（実測秒数が目標から外れた時の縮小/拡張指示）。
+ *  旧実装は「今の台本を削れ/伸ばせ」としか言わず、元の台本を保ったまま端を調整するだけだった。
+ *  尺の帯が変われば構成そのものが変わるべきなので、方針（durationStrategy）を必ず添える。 */
 export function durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds }) {
-  const dir = actualSeconds > targetSeconds ? "短く削れ" : "本編から追加して伸ばせ";
+  const over = actualSeconds > targetSeconds;
+  const dir = over ? "短く削れ" : "本編から追加して伸ばせ";
+  const lo = Math.round(targetSeconds * (1 - DURATION_TOL));
+  const hi = Math.round(targetSeconds * (1 + DURATION_TOL));
   return `次のダイジェスト台本は実測${Math.round(actualSeconds)}秒、目標は${targetSeconds}秒` +
-    `（約${targetMinutes}分）です。目標の±20%に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n\n` +
+    `（約${targetMinutes}分）です。${lo}〜${hi}秒に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n` +
+    `${durationStrategy(targetSeconds)}\n` +
+    `${over
+      ? `削るときは「端を少しずつ詰める」のではなく、上の方針に照らして"この尺に要らない区間"を丸ごと落とすこと。`
+      : `伸ばすときは「今ある区間を長くする」のではなく、上の方針に照らして"この尺だから入れられる区間"を本文から新たに選ぶこと。`}\n\n` +
     `${VERBATIM}\n\n# 現在の台本\n${scriptToText(segments.map((s) => ({ ...s, reason: "" })))}\n\n` +
     `# 参照可能な全文字起こし\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
@@ -159,21 +316,55 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
 
   // 尺目標（任意）: 実測の話速（文字数/秒）から文字数の目安に換算してドラフト指示に含める。
   // LLM に秒数を直接出させず、掴みやすい「文字数」の目安に変換して伝える（落とし穴#1の考え方を踏襲）。
+  // あわせて durationStrategy() で「この尺なら何を残し何を捨てるか」の方針も渡す。数値だけを
+  // 差し替えても構成が変わらないため（マスター指摘 2026-08-17）。
   const targetSeconds = Number.isFinite(targetMinutes) && targetMinutes > 0 ? targetMinutes * 60 : null;
   let targetInfo = null;
   if (targetSeconds) {
     const charsPerSec = transcriptText.length / Math.max(1, tr.duration || transcriptText.length / 5);
     const charBudget = Math.round(targetSeconds * charsPerSec);
     targetInfo = `【尺の目安】合計の keepText 文字数が約${charBudget}文字（この話者の話速換算で約${targetMinutes}分相当）に収まるよう選定せよ。` +
-      `本当に面白い部分だけに絞り込み、目安を大きく超えないこと。`;
+      `本当に面白い部分だけに絞り込み、目安を大きく超えないこと。\n` +
+      `${durationStrategy(targetSeconds)}`;
   }
 
+  // 実測（本文への逆照合）で秒数を出す。批評ループの中でも使うのでここで定義する。
+  // 旧実装はループを抜けたあとにしか測っておらず、批評・修正は尺を一度も見ないまま回っていた。
+  const measure = (segs) => {
+    const usable = segs
+      .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+      .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
+    if (usable.length === 0) return 0;
+    try {
+      const resolved = resolveSegments(usable, tr, { preserveOrder: true });
+      return resolved.reduce((a, s) => a + (s.end - s.start), 0);
+    } catch { return 0; }
+  };
+  const durOf = (segs) => (targetSeconds
+    ? { targetSeconds, targetMinutes, actualSeconds: measure(segs) }
+    : null);
+
   const cwd = createIsolatedCwd(path.basename(workDir));
+
+  // 「台本の内容を理解する」段階。台本を作る前に一度だけ走らせ、結果を成果物として残す。
+  // ここが失敗しても台本づくりは続行する（理解は選定の質を上げるための下地であって、必須の入力ではない）。
+  onLog(`[digest] 内容を理解中（model=${MODEL}）`);
+  let understanding = null;
+  try {
+    understanding = parseJson(await callClaude(understandPrompt(transcriptText), onLog, true, cwd));
+    fs.writeFileSync(path.join(workDir, "understanding.json"),
+      JSON.stringify(understanding, null, 2), "utf-8");
+    const themeCount = Array.isArray(understanding?.themes) ? understanding.themes.length : 0;
+    onLog(`[digest] 理解: 主題「${(understanding?.subject ?? "").slice(0, 40)}」/ 小テーマ${themeCount}件`);
+  } catch (e) {
+    onLog(`[digest] 内容理解に失敗（理解なしで台本づくりへ進む）: ${e.message}`);
+    understanding = null;
+  }
 
   onLog(`[digest] 台本ドラフト作成中（model=${MODEL}）`);
   // draft は必須。長い逐語 keepText で LLM の JSON が崩れることがあるため明示メッセージで失敗させる。
   let draftResp;
-  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText, targetInfo), onLog, true, cwd)); }
+  try { draftResp = parseJson(await callClaude(draftPrompt(transcriptText, targetInfo, understanding), onLog, true, cwd)); }
   catch (e) { throw new Error(`ドラフト応答の JSON 解析に失敗: ${e.message}`); }
   let script = (draftResp.script) || [];
   if (script.length === 0) throw new Error("ドラフト台本が空です");
@@ -184,58 +375,94 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     // critic/revise の応答 JSON は逐語テキスト混入で崩れうる。崩れても best を返して完走させる
     // （旧実装は parseJson が throw して digest 全体が例外死し、せっかくの best を捨てていた）。
     let critique;
-    try { critique = parseJson(await callClaude(criticPrompt(script), onLog, true, cwd)); }
+    // 批評へ「目標尺と現在の実測秒数」を渡す。これが無いと、反復するほど尺と無関係な
+    // 「採点関数の最高点」へ収束し、1分指定と1分半指定が同じ台本になる。
+    const durNow = durOf(script);
+    // 批評にも理解を渡す（理解に照らして主題から外れていないかを見させる）。理解が取れなかった
+    // ときは null のまま渡り、従来どおり台本テキストだけを見る批評になる。
+    try { critique = parseJson(await callClaude(criticPrompt(script, durNow, understanding), onLog, true, cwd)); }
     catch (e) { onLog(`[digest] 検証 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
     const score = Number(critique.score) || 0;
-    onLog(`[digest] 検証 ${i}回目: score=${score} pass=${!!critique.pass} (${(critique.issues || []).length}件指摘)`);
-    if (score > best.score) best = { script, score, iter: i };
-    if (critique.pass || score >= PASS_SCORE) { iterations = i; break; }
+    // 尺は点数と引き換えにできない条件として扱う。実測が許容範囲外なら、点数が高くても合格にしない。
+    const fits = !durNow || (Math.abs(durNow.actualSeconds - targetSeconds) <= targetSeconds * DURATION_TOL);
+    if (durNow) critique.fitsDuration = fits;
+    onLog(`[digest] 検証 ${i}回目: score=${score} pass=${!!critique.pass}` +
+      (durNow ? ` 実測${durNow.actualSeconds.toFixed(0)}s/目標${targetSeconds}s 尺${fits ? "OK" : "NG"}` : "") +
+      ` (${(critique.issues || []).length}件指摘)`);
+    // best は「尺を満たしているもの」を優先する。尺を外した高得点で確定すると、
+    // 指定尺を変えても同じ台本が選ばれ続ける。
+    const better = fits === (best.fits ?? false) ? score > best.score : (fits && !best.fits);
+    // 採用する台本と一緒に、その台本を採点したときの観点別スコア・最弱観点も持ち回る
+    // （meta へ残して、承認画面が「何が弱いまま確定したのか」を出せるようにするため）。
+    if (best.score < 0 || better) {
+      best = { script, score, iter: i, fits,
+        scores: normalizeScores(critique.scores),
+        weakest: typeof critique.weakest === "string" ? critique.weakest.trim() : "" };
+    }
+    if (fits && (critique.pass || score >= PASS_SCORE)) { iterations = i; break; }
     if (i === MAX_ITER) { iterations = i; break; }
     onLog(`[digest] 修正 ${i}回目`);
     let revised;
-    try { revised = parseJson(await callClaude(revisePrompt(transcriptText, script, critique), onLog, true, cwd)).script; }
+    try { revised = parseJson(await callClaude(revisePrompt(transcriptText, script, critique, durNow), onLog, true, cwd)).script; }
     catch (e) { onLog(`[digest] 修正 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
     if (Array.isArray(revised) && revised.length) { script = revised; iterations = i + 1; }
     else break;
   }
 
   const chosen = best.score >= 0 ? best.script : script;
+  // reason（なぜこの区間を採ったか）は捨てない。ユーザーへ台本を提示して承認を取る画面で、
+  // 「なぜこれが選ばれたか」が見えないと判断できないため（旧実装はここで落としていた）。
   let segments = chosen
     .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
-    .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
+    .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
   if (segments.length === 0) throw new Error("採用可能な台本区間が0件です");
 
   // 尺目標がある場合、実測秒数（reverse-match）が目標から大きく外れていたら1回だけ縮小/拡張指示を出す。
   // 文字数目安だけでは実発話速度のブレを吸収できないため、実測フィードバックで是正する。
   let actualSeconds = null;
   if (targetSeconds) {
-    const measure = (segs) => {
-      const resolved = resolveSegments(segs, tr, { preserveOrder: true });
-      return resolved.reduce((a, s) => a + (s.end - s.start), 0);
-    };
     actualSeconds = measure(segments);
+    const inRange = (sec) => Math.abs(sec - targetSeconds) <= targetSeconds * DURATION_TOL;
     onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s`);
-    if (actualSeconds < targetSeconds * 0.8 || actualSeconds > targetSeconds * 1.2) {
+    // 旧実装は if 1回きりで、是正後もまだ外れていればそのまま確定していた。範囲へ入るまで繰り返す。
+    for (let f = 1; f <= DURATION_MAX_FIX && !inRange(actualSeconds); f++) {
       const fixPrompt = durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds });
       try {
         const fixResp = parseJson(await callClaude(fixPrompt, onLog, true, cwd));
         const fixed = (fixResp.script || [])
           .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
-          .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim() }));
-        if (fixed.length > 0) {
-          const fixedSeconds = measure(fixed);
-          onLog(`[digest] 尺是正後: 実測${fixedSeconds.toFixed(0)}s`);
-          segments = fixed;
-          actualSeconds = fixedSeconds;
+          .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
+        if (fixed.length === 0) break;
+        const fixedSeconds = measure(fixed);
+        onLog(`[digest] 尺是正 ${f}回目: 実測${fixedSeconds.toFixed(0)}s`);
+        // 目標から遠ざかる是正は採らない（是正のたびに悪化して確定するのを防ぐ）。
+        if (Math.abs(fixedSeconds - targetSeconds) >= Math.abs(actualSeconds - targetSeconds)) {
+          onLog(`[digest] 尺是正 ${f}回目は目標へ近づかなかったため採用しない`);
+          break;
         }
+        segments = fixed;
+        actualSeconds = fixedSeconds;
       } catch (e) {
         onLog(`[digest] 尺是正の応答処理に失敗（元の台本のまま確定）: ${e.message}`);
+        break;
       }
+    }
+    if (!inRange(actualSeconds)) {
+      onLog(`[digest] 尺は許容範囲(${Math.round(targetSeconds * (1 - DURATION_TOL))}〜${Math.round(targetSeconds * (1 + DURATION_TOL))}s)に入らないまま確定: 実測${actualSeconds.toFixed(0)}s`);
     }
   }
 
+  // understanding（理解の結果）・scores（観点別スコア）・durationTolerance を meta に残す。
+  // ユーザーへ台本を提示する画面が「何を主題だと判断してこの区間を選んだのか」「どの観点が弱いまま
+  // 確定したのか」を出せるようにするため（合計点だけでは、何が弱かったかが分からない）。
   const meta = { iterations, score: best.score, count: segments.length,
-    targetSeconds, actualSeconds };
+    scores: best.scores ?? null, weakest: best.weakest || null,
+    targetSeconds, actualSeconds,
+    durationTolerance: targetSeconds ? DURATION_TOL : null,
+    fitsDuration: targetSeconds
+      ? Math.abs(actualSeconds - targetSeconds) <= targetSeconds * DURATION_TOL
+      : null,
+    understanding };
   fs.writeFileSync(path.join(workDir, "llm-response.json"),
     JSON.stringify({ segments, meta }, null, 2), "utf-8");
   onLog(`[digest] 完成台本: ${segments.length}区間 / score=${best.score} / ${iterations}反復`);

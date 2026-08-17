@@ -117,6 +117,10 @@ function getControl(jobId) {
 /** ジョブの制御レコードを破棄する。ジョブの(再)開始時・終端到達時に呼ぶ。 */
 function resetControl(jobId) {
   jobControls.delete(jobId);
+  // 承認待ちの記録も一緒に片付ける（終端に達した/作り直したジョブの待ちが残っていると、
+  // 次の実行で「もう誰も待っていない承認」を受け付けてしまう）。ここは取りこぼしの保険で、
+  // 正規の経路（承認・キャンセル）は submitApproval / cancelJob 側で先に消える。
+  approvalWaiters.delete(jobId);
 }
 
 /**
@@ -180,6 +184,12 @@ export function cancelJob(jobId) {
   c.cancelRequested = true;
   c.terminalReason = "cancelled";
   if (c.child) killChildTree(c.child);
+  // 承認待ち(stage s で止まっている)の最中のキャンセルは、子プロセスが1つも無いので
+  // killChildTree では起こせない。待っている Promise を失敗させて runJob を進め、
+  // 通常のキャンセル終端（stage="cancelled"）へ合流させる（でなければ永久に固まる）。
+  const err = new Error("ユーザーによりキャンセルされました");
+  err.code = "cancelled";
+  rejectApprovalWaiter(jobId, err);
   return { ok: true };
 }
 
@@ -708,6 +718,135 @@ export function runGated(fn) {
   });
 }
 
+// ── 承認ゲート（選定 s の直後・レンダ r の前で止める） ────────────────
+// マスター指示の編集フロー（AGENTS.md「マスター指示：編集フロー」）は
+//   文字起こし → 台本 → AIが読む/直す → 使う区間を文字単位で決める → **ユーザーに提示**
+//   → **ユーザー承認** → 編集作業の開始
+// で、承認より前にレンダリング(r)へ入ってはいけない。旧実装は t→c→s→r→m を一度も
+// 止めずに走り切っていたので、ここで s の直後に「待つ」を挟む。
+//
+// 【待ち方】ポーリング・スリープは使わない。承認待ちの Promise を jobId ごとに保持し、
+// POST /api/jobs/:id/approve が来たら resolve する（承認が来た瞬間に続きが動く）。
+// キャンセル(cancelJob)は同じ Promise を reject するので、承認待ちのまま固まらない。
+// サーバーが再起動した場合は、この Map もジョブ自体もプロセスごと消えるため固まりようがない
+// （再接続は state.json が終端でないので P1-6 の "interrupted" になる＝subscribeJob 参照）。
+
+/**
+ * 承認ゲートを有効にするか（VS_REQUIRE_APPROVAL）。
+ *
+ * 【既定は「有効」】マスター指示の編集フロー（AGENTS.md「マスター指示：編集フロー」）は
+ * 「…→ユーザーに提示→ユーザー承認を経て編集作業の開始」であり、**承認は例外処理ではなく
+ * 通常の動作**である。したがって何も指定せずに起動したとき（マスターが普通に UI を立ち上げた
+ * とき）は承認ゲートが働き、レンダリングの前に台本の確認画面が出るのが正しい状態。
+ *
+ * 【無効化する側が例外】承認を送る主体（画面の前の人間）がいない無人実行に限り、
+ * `VS_REQUIRE_APPROVAL=off`（`0` / `false` も可）を**明示して**ゲートを外す。
+ * off を明示しない限り（未設定・空文字・その他の値）ゲートは常に有効。
+ * @param {string|undefined} envValue
+ * @returns {boolean} off/0/false（大文字小文字は問わない）を明示したときだけ false
+ */
+export function approvalRequired(envValue = process.env.VS_REQUIRE_APPROVAL) {
+  return !["off", "0", "false"].includes(String(envValue ?? "").trim().toLowerCase());
+}
+const APPROVAL_REQUIRED = approvalRequired();
+
+/** jobId → { resolve, reject }（承認待ちで止まっているジョブだけが載る） */
+const approvalWaiters = new Map();
+
+/** 指定ジョブが今まさに承認待ちで止まっているか（HTTP 側の 409 判定に使う）。 */
+export function isAwaitingApproval(jobId) {
+  return approvalWaiters.has(jobId);
+}
+
+/** 承認が来るまで待つ Promise を作って登録する（resolve 値は {segments:配列|null}）。 */
+function waitForApproval(jobId) {
+  return new Promise((resolve, reject) => {
+    approvalWaiters.set(jobId, { resolve, reject });
+  });
+}
+
+/** 承認待ちの Promise を失敗させて起こす（キャンセル用）。待っていなければ false。 */
+function rejectApprovalWaiter(jobId, err) {
+  const waiter = approvalWaiters.get(jobId);
+  if (!waiter) return false;
+  approvalWaiters.delete(jobId);
+  waiter.reject(err);
+  return true;
+}
+
+/**
+ * 画面から届いた台本（区間の配列）を、レンダリングが読める形へ揃える。
+ * 判定は src/select-segments.mjs parseResponse と同じ防御（keepText が4文字以上の文字列）に
+ * 合わせる。ここで緩めると、逆マッチングできない区間を後段へ流して render を落とすだけになる。
+ * hook は無ければ空文字（見出しは必須ではない）。
+ */
+export function normalizeApprovedSegments(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+    .map((s) => ({
+      keepText: s.keepText.trim(),
+      hook: typeof s.hook === "string" ? s.hook.trim() : "",
+    }));
+}
+
+/**
+ * 承認（または却下）を受け取る。POST /api/jobs/:id/approve のサーバ側実体。
+ * @param {string} jobId
+ * @param {{approved?: boolean, segments?: Array}} body
+ * @returns {{ok: true, count: number|null} | {ok: false, reason: string}}
+ */
+export function submitApproval(jobId, body = {}) {
+  const waiter = approvalWaiters.get(jobId);
+  if (!waiter) return { ok: false, reason: "このジョブは承認待ちではありません" };
+  if (body.approved === false) {
+    // 却下＝ジョブの中止。既存のキャンセルと同じ扱いにする（cancelJob が承認待ちの
+    // Promise も起こすので、ここで別の止め方を発明しない＝終端の作り方を二重化しない）。
+    return cancelJob(jobId);
+  }
+  // badRequest:true は「送られてきた本文が悪い」＝呼び出し側(HTTP)が400で返す印。
+  // 印が無い失敗は「ジョブの状態が承認できる状態ではない」＝409。
+  if (body.approved !== true) {
+    return { ok: false, badRequest: true, reason: "approved は true か false で送ってください" };
+  }
+  let segments = null;
+  if (body.segments !== undefined) {
+    if (!Array.isArray(body.segments)) {
+      return { ok: false, badRequest: true, reason: "segments は配列で送ってください" };
+    }
+    segments = normalizeApprovedSegments(body.segments);
+    if (segments.length === 0) {
+      // 全部落ちた（keepText が無い/短すぎる）まま先へ進めると、逆マッチング0件で
+      // render が落ちるだけなので、承認を受け取る手前で断る。
+      return {
+        ok: false, badRequest: true,
+        reason: "採用できる区間がありません（keepText は4文字以上必要です）",
+      };
+    }
+  }
+  approvalWaiters.delete(jobId);
+  waiter.resolve({ segments });
+  return { ok: true, count: segments ? segments.length : null };
+}
+
+/**
+ * 承認された台本を llm-response.json へ書き戻す（レンダリングはこのファイルを読む）。
+ * meta（尺の目標・実測など）は台本の由来を示す記録なので、区間の差し替えでは捨てずに残し、
+ * 件数だけ実際の採用数へ合わせる。書き込みは他の state/JSON と同じく原子的に行う
+ * （書いている途中で落ちて壊れると、そのジョブはもう二度とレンダリングできない）。
+ */
+function writeApprovedScript(workDir, segments) {
+  const p = path.join(workDir, "llm-response.json");
+  let current = null;
+  try {
+    current = JSON.parse(fs.readFileSync(p, "utf-8"));
+  } catch (_) {
+    current = null; // 読めない/無い場合は承認された台本だけで作り直す
+  }
+  const meta = current && !Array.isArray(current) && typeof current === "object" ? current.meta : null;
+  writeJsonAtomically(p, meta ? { segments, meta: { ...meta, count: segments.length } } : { segments });
+}
+
 /**
  * ジョブ実行開始（非同期・kick して即返す）
  *
@@ -933,7 +1072,18 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // ── Stage t: 文字起こし ──────────────────────────────────────
   job.stage = "t";
-  broadcast(jobId, { stage: "t", status: "active", label: "話し言葉を文字にしています" });
+  // 2026-08-17: 「どこで文字起こししたか(groq=クラウド / local=この端末)」をこのジョブの
+  // イベントに載せる。種別は GET /api/env でも取れるが、あれはページ読み込み時の1回きりなので、
+  // 画面を開いたまま後から .env に鍵を置く正規の運用だと、画面の表示だけ古いまま実態と食い違う。
+  // そのジョブが実際に使った側を、そのジョブのイベントで配る。
+  // なお この行は status 付き・event 名なしなので broadcast() が job.lastEvent に憶える
+  // ＝後から購読した相手/再接続にも自動でリプレイされる(この性質に依存している)。
+  broadcast(jobId, {
+    stage: "t",
+    status: "active",
+    label: "話し言葉を文字にしています",
+    backend: groqKeyAvailable() ? "groq" : "local",
+  });
 
   const transcriptPath = path.join(workDir, "transcript.json");
   await spawnAndLog(
@@ -1035,6 +1185,29 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   updateState(workDir, { stage: "selected", selectIncomplete });
   broadcast(jobId, { stage: "s", status: "done", incomplete: selectIncomplete });
+
+  // ── 承認ゲート: 台本を提示し、ユーザーの承認を待つ ──────────────
+  // ここを通過するまでレンダリング(r)へ入らない。台本の中身は
+  // GET /api/jobs/:id/approve ではなく GET /api/jobs/:id/script が返す（このプロセスは
+  // llm-response.json を書き終えている＝画面はそれを読んで提示できる状態）。
+  if (APPROVAL_REQUIRED) {
+    throwIfCancelled(jobId);
+    updateState(workDir, { stage: "awaiting-approval" });
+    // status 付き・event 名なし＝ broadcast() が job.lastEvent に憶えるので、承認前に画面を
+    // 閉じて開き直しても（再接続で）また承認待ちとして復元される。
+    broadcast(jobId, { stage: "s", status: "await-approval" });
+
+    const approval = await waitForApproval(jobId); // 承認が来るまで、ここで止まる
+    throwIfCancelled(jobId);
+    if (approval.segments) {
+      // ユーザーが台本から区間を削った（並べ替えた）結果を採用してから続きへ進む。
+      writeApprovedScript(workDir, approval.segments);
+    }
+    updateState(workDir, { stage: "approved" });
+    // 直近スナップショットを「承認待ち」から進めておく（これを送らないと、承認後に
+    // 再接続した画面が lastEvent の await-approval を受け取って、また承認待ちに見える）。
+    broadcast(jobId, { stage: "s", status: "done", incomplete: selectIncomplete });
+  }
 
   // ── Stage r: レンダリング ────────────────────────────────────
   job.stage = "r";
