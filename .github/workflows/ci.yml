@@ -111,11 +111,6 @@ jobs:
           python -m pip install "$spec"
 
       - name: Test
-        # 台本の承認ゲートは既定で有効（マスター指示の編集フロー＝承認を経て編集を始める）。
-        # CI は無人実行で承認を送る相手がいないため、承認待ちで永久に止まる。無効化は
-        # 「無人実行のみ」と定義した例外そのものなので、ここだけ明示的に off にする。
-        env:
-          VS_REQUIRE_APPROVAL: "off"
         run: pnpm -r test
 
       - name: Build

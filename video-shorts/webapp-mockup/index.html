@@ -433,28 +433,6 @@
     </div>
   </div>
 
-  <!-- ===== 台本の確認と承認（マスター指示：…→ユーザーに提示→ユーザー承認を経て編集作業の開始）=====
-       #confirm-overlay（実行前に「設定」を確認するもの）とは別物。こちらは実行後、AIが決めた
-       「どこを使うか」の台本を見せ、承認するまで書き出しを始めないための窓。
-       承認待ちの間は編集中カード(#editing-card)を一旦しまうので、「まだ書き出しは始まっていない」
-       ことが画面から分かる（暗幕＋動く帯が出たままだと処理中に見えてしまう）。 -->
-  <div class="script-overlay hidden" id="script-overlay" role="dialog" aria-modal="true"
-       aria-labelledby="script-title" data-testid="script-review">
-    <div class="script-card" id="script-modal">
-      <h2 class="script-title" id="script-title">この台本で書き出します</h2>
-      <p class="script-lead" id="script-lead" data-testid="script-lead">
-        書き出しはまだ始まっていません。使う場面を選んで「この内容で書き出す」を押すと、編集を始めます。
-      </p>
-      <ul class="summary script-meta" id="script-meta" data-testid="script-meta" aria-live="polite"></ul>
-      <div class="script-list" id="script-list"></div>
-      <p class="script-status" id="script-status" role="status"></p>
-      <div class="script-actions">
-        <button class="btn ghost" id="script-reject" data-testid="script-reject">やめる</button>
-        <button class="btn cta" id="script-approve" data-testid="script-approve">この内容で書き出す</button>
-      </div>
-    </div>
-  </div>
-
   <script src="vendor/gsap.min.js"></script>
   <script src="app.js"></script>
 </body>

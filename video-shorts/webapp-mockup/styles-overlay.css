@@ -27,75 +27,6 @@
 .confirm-title { margin: 0 0 12px; font-size: 17px; }
 .confirm-ask { margin: 14px 0 18px; font-weight: 700; font-size: clamp(14px, 0.9vw, 16px); color: var(--ink); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
-
-/* ===== 台本の確認と承認（画面中央モーダル）=====
-   #confirm-overlay（設定の最終確認）とは別物。色・角丸・影は既存トークンのみを使い、
-   独自の配色は持ち込まない。編集中カード(z-index:70)より前面に出す必要があるので 80。 */
-.script-overlay {
-  position: fixed; inset: 0; z-index: 80;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(43,43,43,.32);
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-  opacity: 0; transition: opacity .25s; pointer-events: none;
-}
-.script-overlay.show { opacity: 1; pointer-events: auto; }
-/* 文字起こしの全文をここに並べる（マスター指示 2026-08-17：サイドバーじゃなくてほぼ全画面
-   としてデカく映せ）。数千語が並ぶので、読める広さを画面いっぱいまで取る。 */
-.script-card {
-  width: 96vw; max-width: 96vw; height: 94vh; max-height: 94vh;
-  display: flex; flex-direction: column; box-sizing: border-box;
-  background: rgba(255,255,255,.97);
-  backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--glass-radius);
-  box-shadow: var(--shadow-panel);
-  padding: clamp(18px, 2.6vw, 26px);
-  transform: translateY(12px) scale(.98);
-  transition: transform .25s cubic-bezier(.22,1,.36,1);
-}
-.script-overlay.show .script-card { transform: translateY(0) scale(1); }
-.script-title { margin: 0 0 6px; font-size: 17px; }
-.script-lead { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
-/* 合計の長さは1行に収まらないことがあるので、.summary の省略表示だけ解除する */
-.script-meta li span { white-space: normal; overflow: visible; text-overflow: clip; }
-/* 台本は長さが読めないので、ここだけがスクロールする（カード自体は伸びない） */
-.script-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 10px 0; }
-/* 送信中は本文をいじれなくする（承認したあとに中身が変わらないように） */
-.script-list.is-busy { pointer-events: none; opacity: .6; }
-/* 台本は区間ごとに分けず、ひと続きの文章として1枚に出す
-   （マスター指示 2026-08-17：カードに分けるな・任意の部分を消せるようにしろ）*/
-.script-flow {
-  min-height: 100%; box-sizing: border-box;
-  padding: 14px 18px;
-  border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface-1);
-  font-size: 15px; line-height: 2.1; color: var(--ink);
-  overflow-wrap: anywhere;
-}
-/* 語＝実際に音が切れる単位。すべての語が押せる（落とす／拾う）。
-   使う語＝本文と同じ濃さ（白い方）。使わない語＝濃いグレー（.is-off）。この2状態が基本。 */
-.script-w { cursor: pointer; border-radius: 3px; }
-.script-w:hover { background: var(--surface-2); }
-/* いま使わない所。読める濃さのグレーで全文の中に残す（消えていないことが分かる）。 */
-.script-w.is-off { color: var(--muted); }
-/* AIが使うと決めていたのに落とした所は、取り消し線＋薄い表示にする（何を落としたか見えること）。
-   AIが元から使わない所（取り消し線なし）と見分けが付くので、押せば戻せることが分かる。 */
-.script-w.is-ai.is-off { text-decoration: line-through; opacity: .5; }
-.script-w.is-ai.is-off:hover { opacity: .75; }
-/* AIは選ばなかったが自分で拾った所。使う＝白のままで、点線の下線だけを足して
-   「ここは自分で足した」と見た目で分かるようにする（文言は足さない）。 */
-.script-w:not(.is-ai):not(.is-off) {
-  text-decoration: underline dotted;
-  text-decoration-color: var(--accent);
-  text-underline-offset: 3px;
-}
-/* 逆照合できず語に割れなかった区間。書き出しには必ず入るので本文と同じ濃さで出し、
-   選べないことは「選択の色が乗らない」ことで示す（薄くすると消したように見えてしまう）。 */
-.script-raw { color: var(--ink); cursor: default; user-select: none; -webkit-user-select: none; }
-.script-status { margin: 0; min-height: 1.3em; font-size: 13px; color: var(--muted); }
-.script-status.err { color: #c33; }
-.script-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-shrink: 0; }
-
 /* 作成履歴（2本目以降に出るジョブ選択チップ）*/
 .job-list {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
@@ -111,7 +42,6 @@
 }
 .job-chip:hover { background: rgba(0,0,0,.05); color: var(--ink); transform: translateY(-1px); }
 .job-chip.is-on { background: var(--chip-on-bg); color: var(--chip-on-text); border: 2px solid var(--chip-on-border); font-weight: 800; }
-
 /* AUD-S-04: まとめて1本(digest)の再生・ダウンロード導線 */
 .job-digest {
   display: flex; flex-direction: column; gap: 8px;
@@ -122,7 +52,6 @@
 .job-digest b { font-size: 14px; }
 .job-digest video { width: 100%; max-height: 220px; border-radius: 8px; background: #000; display: block; }
 .job-digest-actions { display: flex; align-items: center; gap: 10px; }
-
 /* タブ行 */
 .tabs { display: flex; gap: 7px; margin-bottom: 10px; flex-wrap: wrap; flex-shrink: 0; }
 .tab {
@@ -136,10 +65,8 @@
 /* 選択: sage tint背景+tone枠+太字（ベタ塗りなし・styles.css の chip.is-on と整合）*/
 .tab.is-on { background: var(--chip-on-bg); color: var(--chip-on-text); border: 2px solid var(--chip-on-border); font-weight: 800; }
 .tab:not(.is-on):hover { background: rgba(0,0,0,.05); color: var(--ink); border-color: rgba(0,0,0,.40); }
-
 .tab-body { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
 .placeholder { color: var(--muted); font-size: 14px; margin: 6px 0; }
-
 /* クリップ行（採用候補・ゴミ素材共通） */
 .clip-row {
   display: flex; align-items: center; gap: 10px;
@@ -166,7 +93,6 @@
   transition: background .12s, color .12s, border-color .12s; white-space: nowrap;
 }
 .clip-btn:hover { background: var(--ink); color: var(--surface-1); border-color: var(--ink); }
-
 /* ===== オーバーレイ本体（左からスライドイン） ===== */
 .result-overlay {
   position: fixed; inset: 0; z-index: 50;
@@ -177,7 +103,6 @@
   opacity: 0; transition: opacity .3s; pointer-events: none;
 }
 .result-overlay.show { opacity: 1; pointer-events: auto; }
-
 .result-panel {
   width: min(520px, 88vw); height: 100%;
   padding: 20px clamp(14px, 3%, 24px);
@@ -192,7 +117,6 @@
   box-sizing: border-box; display: flex; flex-direction: column;
 }
 .result-overlay.show .result-panel { transform: translateX(0); }
-
 .result-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 14px; flex-shrink: 0;
@@ -207,7 +131,6 @@
 }
 .result-close:hover { background: rgba(0,0,0,.08); }
 .result-head-actions { display: flex; align-items: center; gap: 8px; }
-
 /* ── 字幕の手直し（G-EDIT-CAPTION） ───────────────────────── */
 .caption-editor { padding: 4px 0 8px; }
 .caption-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
