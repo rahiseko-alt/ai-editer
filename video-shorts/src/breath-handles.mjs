@@ -99,6 +99,13 @@ export function detectSilences(input, opts = {}) {
   const minSec = Number.isFinite(opts.minSec) && opts.minSec > 0 ? opts.minSec : SILENCE_MIN_SEC;
   const args = [
     "-hide_banner", "-nostats",
+    // 音しか見ないので映像は復号しない。測るもの（無音区間）は変わらないまま速くなる。
+    // 実測（2026-08-17・3分/1280x720 の合成素材）: 映像も復号すると 5.34 秒、-vn だと 1.00 秒。
+    // 無音の検出数はどちらも 36 箇所で一致。topic 経路でも毎回走らせるようにしたため、
+    // 素材全体を1回舐める費用をここで下げておく。
+    // 音声トラックが無い素材では ffmpeg が「出力にストリームが無い」で 0 以外を返すが、
+    // その場合は下の close ハンドラが空配列を返す＝従来（無音0件）と同じ扱いになる。
+    "-vn",
     "-i", input,
     "-af", `silencedetect=noise=${noiseDb}dB:d=${minSec}`,
     "-f", "null", "-",
@@ -305,6 +312,130 @@ export function planBreathParts(segments, silences, opts = {}) {
     });
   }
   return { parts, joins };
+}
+
+/**
+ * topic 経路の「のりしろ（余韻パディング）」を、実測した無音の内側へ収める。
+ *
+ * 【なぜ要るか（虎の巻 §3-1／§3-2／§8-D／§8-L）】
+ * topic 経路の切り点は Whisper の単語タイムスタンプだけで決まっていて、音を一度も見ていない。
+ * そこへ前0.5秒・後0.8秒の固定ののりしろを足していたので、のりしろが無音を突き抜けて
+ * 隣の発話（＝AI が捨てた発話）へ届く。2026-08-17 の実測（合成素材・製品経路 renderSegment）:
+ *   - 区間の end が 8.25 秒になり、捨てた発話[8.10,10.80]へ 0.15 秒食い込んだ。
+ *     出力の末尾50ms の発話帯ピークが -22.5dB（＝発話の途中で切れている）、
+ *     捨てた発話の帯域が -1.9dB で混入していた。
+ *   - 次の区間の start が 10.72 秒になり、同じ捨てた発話の中から始まった（先頭50ms が -21.2dB）。
+ * のりしろを 0 にしても直らない。単語境界は音響境界と 100〜400ms ずれる（§3-2）ので、
+ * 語の end ちょうど（7.45秒）で切ると、まだ鳴っている音（〜7.60秒）を削る
+ * （同日の実測: 末尾50ms が -9.8dB、先頭50ms が -6.9dB＝語頭のアタックも削れている）。
+ *
+ * 【やること】各区間の端を、その端に接している **実測無音の内側**へ収める。
+ *  - 前へ／後ろへ伸ばす向きは従来と同じ（のりしろを付ける）。
+ *  - 伸ばす先は無音区間の内側（両端から SILENCE_MARGIN_SEC 以上）に限る。
+ *    ＝隣の発話の立ち上がり／自分の語尾の余韻を削らない。
+ *  - 無音が短くてのりしろが収まらないときは、無音の中に収まるところまでで止める。
+ *  - 単語境界による上限（隣の語へ届かない）も重ねる。無音の検出しきい値が甘くても、
+ *    捨てた発話が戻ってこないことを独立に保証する（planBreathParts と同じ二重の縛り）。
+ *  - 語の頭・語の尻は絶対に削らない（start は元の start より後ろへ行かない／end は前へ戻らない）。
+ *    ＝台本（keepText）と音が食い違わない。
+ *
+ * 【無音が1件も取れなかったとき】従来どおりの固定ののりしろを付けて返す（measured=0）。
+ * 測れなかったことを理由に出力を変えると、ffmpeg が無い環境で挙動が別物になる。
+ *
+ * @param {{start:number,end:number}[]} segments 区間（start 昇順・topic 経路）
+ * @param {{start:number,end:number}[]} silences detectSilences の実測結果
+ * @param {{padHeadSec?:number,padTailSec?:number,words?:{start:number,end:number}[],
+ *          srcDuration?:number,fps?:number|null}} [opts]
+ * @returns {{segments:Array, stats:{measured:number,insideSilence:number,edges:number,
+ *            clampedIntoSilence:number,noSilenceAtEdge:number}}}
+ */
+export function planTopicHandles(segments, silences, opts = {}) {
+  const segs = Array.isArray(segments) ? segments : [];
+  const padHead = Number.isFinite(opts.padHeadSec) && opts.padHeadSec >= 0 ? opts.padHeadSec : 0;
+  const padTail = Number.isFinite(opts.padTailSec) && opts.padTailSec >= 0 ? opts.padTailSec : 0;
+  const sil = Array.isArray(silences) ? silences.slice().sort((a, b) => a.start - b.start) : [];
+  const words = Array.isArray(opts.words) ? opts.words : [];
+  const srcDur = Number.isFinite(opts.srcDuration) && opts.srcDuration > 0 ? opts.srcDuration : Infinity;
+  const fps = Number.isFinite(opts.fps) && opts.fps > 0 ? opts.fps : null;
+  // renderSegment は切り出しの開始を最寄りのコマの境目へ四捨五入する（絵と音の原点を揃えるため）。
+  // 動く量は最大で半コマぶんなので、そのぶんだけ無音の端から余分に内側へ入れておく。
+  // これをしないと、コマへ揃えた結果だけで無音の外へ出てしまうことがある（30fps で 16.7ms）。
+  const frameSlack = fps ? 0.5 / fps : 0;
+  const margin = SILENCE_MARGIN_SEC + frameSlack;
+  const stats = {
+    measured: sil.length, edges: segs.length * 2, insideSilence: 0,
+    clampedIntoSilence: 0, noSilenceAtEdge: 0,
+  };
+
+  const out = segs.map((seg) => {
+    const innerStart = seg.start; // 残す最初の語の頭（ここより後ろへは動かさない）
+    const innerEnd = seg.end;     // 残す最後の語の尻（ここより前へは戻さない）
+    const plainStart = Math.max(0, innerStart - padHead);
+    const plainEnd = Math.min(srcDur, innerEnd + padTail);
+    if (sil.length === 0) {
+      return { ...seg, start: plainStart, end: plainEnd,
+        duration: Math.round((plainEnd - plainStart) * 1000) / 1000 };
+    }
+
+    // 単語境界による縛り（無音の検出設定に関わらず、隣の語の音へ届かない）。
+    let prevWordEnd = 0;
+    let nextWordStart = srcDur;
+    for (const w of words) {
+      if (w.end <= innerStart + 1e-9 && w.end > prevWordEnd) prevWordEnd = w.end;
+      if (w.start >= innerEnd - 1e-9 && w.start < nextWordStart) nextWordStart = w.start;
+    }
+
+    // ── 開始側 ──
+    const rs = regionLeftOf(sil, innerStart);
+    let newStart;
+    if (rs) {
+      const lo = Math.max(0, prevWordEnd, rs.start + margin);
+      const hi = Math.min(innerStart, rs.end - margin);
+      newStart = hi >= lo ? Math.min(Math.max(plainStart, lo), hi) : Math.min(lo, innerStart);
+      if (newStart < plainStart - 1e-9 || newStart > plainStart + 1e-9) stats.clampedIntoSilence++;
+      if (newStart >= rs.start + SILENCE_MARGIN_SEC && newStart <= rs.end - SILENCE_MARGIN_SEC) {
+        stats.insideSilence++;
+      }
+    } else {
+      // この端に接する無音が無い＝発話が途切れずに続いている（§3-1: 本来ここでは切れない）。
+      // 区間の選び直しはここでは出来ないので、せめて隣の語の音へ届かない範囲でだけ のりしろを付ける。
+      stats.noSilenceAtEdge++;
+      newStart = Math.min(innerStart, Math.max(plainStart, prevWordEnd, 0));
+    }
+
+    // ── 終了側 ──
+    const re = regionRightOf(sil, innerEnd);
+    let newEnd;
+    if (re) {
+      const lo = Math.max(innerEnd, re.start + margin);
+      const hi = Math.min(srcDur, nextWordStart, re.end - margin);
+      newEnd = hi >= lo ? Math.max(Math.min(plainEnd, hi), lo) : Math.max(innerEnd, hi);
+      if (newEnd < plainEnd - 1e-9 || newEnd > plainEnd + 1e-9) stats.clampedIntoSilence++;
+      if (newEnd >= re.start + SILENCE_MARGIN_SEC && newEnd <= re.end - SILENCE_MARGIN_SEC) {
+        stats.insideSilence++;
+      }
+    } else {
+      stats.noSilenceAtEdge++;
+      newEnd = Math.max(innerEnd, Math.min(plainEnd, nextWordStart, srcDur));
+    }
+
+    if (!(newEnd > newStart)) return { ...seg }; // 万一潰れたら据え置き（安全側）
+    // 戻した間は「意図して残した間」なので、後段の trim（無音・言い淀みを詰める）に
+    // 削らせない。planBreathParts の protect と同じ形で持たせる（renderSegment が読む）。
+    const protect = [
+      { start: newStart, end: innerStart },
+      { start: innerEnd, end: newEnd },
+    ].filter((r) => r.end > r.start + 1e-9);
+    return {
+      ...seg,
+      start: newStart,
+      end: newEnd,
+      duration: Math.round((newEnd - newStart) * 1000) / 1000,
+      protect: protect.length > 0 ? protect : undefined,
+    };
+  });
+
+  return { segments: out, stats };
 }
 
 /**
