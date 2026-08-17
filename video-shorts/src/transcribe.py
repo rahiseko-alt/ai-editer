@@ -188,6 +188,11 @@ def write_timing(output_path, stage_name, start_dt, end_dt):
     read-modify-write で追記する。スキーマは timing.mjs 側が正:
     {stages: {<name>: {start: ISO, end: ISO, sec: number}}}
     書込み失敗は WARN のみで本処理の成功(exit 0)を維持する（サイレントフェイル方針: 計測は補助）。
+
+    2026-08-17: 書き込みは「同じディレクトリの一時ファイルへ書く→os.replace」の原子的な作法に
+    する（timing.mjs / state.json と同じ）。timing.json は server・pipeline.mjs・このスクリプトが
+    read-modify-write で書き足していく共有ファイルなので、途中で落ちて壊れると、それまでの
+    全工程の記録がまとめて読めなくなる。
     """
     timing_path = os.path.join(os.path.dirname(os.path.abspath(output_path)), "timing.json")
     try:
@@ -206,8 +211,12 @@ def write_timing(output_path, stage_name, start_dt, end_dt):
             "end": end_dt.isoformat().replace("+00:00", "Z"),
             "sec": sec,
         }
-        with open(timing_path, "w", encoding="utf-8") as f:
+        tmp_path = f"{timing_path}.tmp-{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(timing, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, timing_path)
     except Exception as e:
         sys.stderr.write(f"[WARN] timing.json 書込み失敗（計測スキップ）: {type(e).__name__}: {e}\n")
 
@@ -242,6 +251,13 @@ def main(argv):
         return 2
     start_dt = datetime.now(timezone.utc)
     backend = resolve_backend(args.backend)
+    # 【この2行の文言は server/pipeline-runner.mjs が読む契約】
+    #   "[INFO] backend=<groq|local>"        … 実際に使うバックエンド
+    #   "[WARN] Groq 失敗→local フォールバック" … 途中で local へ落ちた事実
+    # サーバーはこの stderr から「実際に使った側」を判定し、画面の Turbo バッジへ流す
+    # （鍵の有無からの先読みで出すと、Groq が落ちた回にも Turbo が出たままになり、
+    #   表示と実態が食い違う）。文言を変えるときは pipeline-runner.mjs の
+    #   parseBackendFromLog() を同時に直すこと。
     sys.stderr.write(f"[INFO] backend={backend}\n")
     try:
         result = run_backend(backend, args)
