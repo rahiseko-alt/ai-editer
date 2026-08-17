@@ -881,10 +881,6 @@ function renderScriptSegments() {
             `<b class="script-seg-hook">${esc(s.hook || "（見出しなし）")}</b>` +
             `<span class="script-seg-len" data-testid="script-segment-len">${fmtDuration(segSeconds(s))}</span>` +
             `<span class="script-seg-text">${esc(s.keepText || "")}</span>` +
-            // なぜこの場面が選ばれたか。これが見えないと、採用するかどうかを判断できない。
-            (s.reason
-              ? `<span class="script-seg-reason" data-testid="script-segment-reason">選んだ理由: ${esc(s.reason)}</span>`
-              : "") +
           `</span></label>`;
       }).join("")
     : `<p class="placeholder">使える場面が見つかりませんでした。「やめる」で戻り、設定を変えてやり直してください。</p>`;

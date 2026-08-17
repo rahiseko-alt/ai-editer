@@ -768,9 +768,9 @@ function handleGetScript(req, res, jobId) {
       return {
         keepText: s.keepText,
         hook: s.hook || "",
-        // なぜこの区間を採ったかの理由。承認画面で「なぜこれが選ばれたか」が見えないと
-        // ユーザーは判断できないため、台本を書いた側が残した reason をそのまま通す。
-        reason: s.reason || "",
+        // 採用理由（reason）はここでは返さない。台本を書いた側の内部の記録であって、
+        // ユーザーに見せるものではない（マスター指示 2026-08-17）。llm-response.json には
+        // 残るので、後から「なぜこれを選んだのか」を辿ることはできる。
         start: r ? r.start : 0,
         end: r ? r.end : 0,
         index: i,
