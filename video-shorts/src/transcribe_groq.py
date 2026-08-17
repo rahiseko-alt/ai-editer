@@ -48,8 +48,14 @@ def load_key(explicit=None):
     env_val = (os.environ.get("GROQ_API_KEY") or "").strip()
     if env_val:
         return env_val
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/ の親 = video-shorts/
-    env_path = os.path.join(here, ".env")
+    # VS_ENV_FILE があれば既定の video-shorts/.env の代わりにそれを読む（テストが実運用の
+    # .env を汚さずに検証するための差し替え口。src/env-file.mjs の envFilePath() と同じ規約）。
+    override = os.environ.get("VS_ENV_FILE")
+    if override:
+        env_path = os.path.abspath(override)
+    else:
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/ の親 = video-shorts/
+        env_path = os.path.join(here, ".env")
     if os.path.isfile(env_path):
         with open(env_path, "r", encoding="utf-8-sig") as f:
             for line in f:

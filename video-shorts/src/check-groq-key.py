@@ -19,7 +19,10 @@ def load_key():
     env_val = (os.environ.get("GROQ_API_KEY") or "").strip()
     if env_val:
         return env_val
-    env = os.path.join(HERE, ".env")
+    # VS_ENV_FILE があれば既定の video-shorts/.env の代わりにそれを読む（transcribe_groq.py /
+    # src/env-file.mjs の envFilePath() と同じ規約）。
+    override = os.environ.get("VS_ENV_FILE")
+    env = os.path.abspath(override) if override else os.path.join(HERE, ".env")
     if os.path.isfile(env):
         for line in open(env, encoding="utf-8-sig"):
             line = line.strip()

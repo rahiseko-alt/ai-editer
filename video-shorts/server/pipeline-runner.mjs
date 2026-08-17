@@ -14,6 +14,7 @@ import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.
 import { trimJudgeStage } from "../src/trim-judge.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
+import { readEnvFileValue } from "../src/env-file.mjs";
 import { checkBundledFont } from "../src/font-check.mjs";
 import { DEFAULT_FONT_KEY } from "../src/subtitle-styles.mjs";
 
@@ -423,10 +424,29 @@ export function buildChildEnv(extraKeys = []) {
   return env;
 }
 
-/** P1-14-B/C: 子の出力・エラーメッセージから伏字にすべき秘密情報の実値一覧。 */
+/**
+ * P1-14-B/C: 子の出力・エラーメッセージから伏字にすべき秘密情報の実値一覧。
+ *
+ * 【2026-08-17 の是正（SEC-ENV-REDACT）】旧実装は process.env しか見ていなかった。
+ * groqKeyAvailable() は「鍵が .env にしかない」運用（サーバ起動後に .env を置く）を
+ * 正規の運用として前提しているのに、ここは env に無い鍵を伏字化できていなかった＝
+ * その運用のとき、失敗時の SSE・state.json へ生の鍵が出ていた。
+ *
+ * env と .env の両方を並べる（env を優先して片方だけ返す形にはしない）。env に古い鍵・
+ * .env に現用鍵がある状態で、片方だけ伏字化から漏れることを防ぐため。ANTHROPIC_API_KEY も
+ * 対象に含める（redactSecrets() は4文字未満の値を無視するので、空値混入による誤爆は無い）。
+ * 呼び出しごとに .env を読み直す（キャッシュしない）＝サーバ起動後に鍵を置く運用でも
+ * 次のジョブから守られる。
+ */
 function secretsToRedact() {
-  return [process.env.GROQ_API_KEY, process.env.ANTHROPIC_API_KEY].filter(Boolean);
+  return [
+    process.env.GROQ_API_KEY,
+    readEnvFileValue("GROQ_API_KEY"),
+    process.env.ANTHROPIC_API_KEY,
+    readEnvFileValue("ANTHROPIC_API_KEY"),
+  ].filter(Boolean);
 }
+export { secretsToRedact };
 
 /**
  * ステージ単位のタイムアウト(ms)。既定30分。VS_STAGE_TIMEOUT_SECONDSで秒単位で上書きできる
@@ -574,22 +594,10 @@ function spawnAndLog(cmd, args, opts, onLine) {
 // 2026-08-16: 画面(GET /api/env)へ「文字起こしがどこで行われるか」を出すためにも使う。
 // 鍵そのものは返さない＝有無(真偽)だけを外へ出す。
 export function groqKeyAvailable() {
-  if (process.env.GROQ_API_KEY) return true;
-  try {
-    const envPath = path.join(ROOT, ".env");
-    if (!fs.existsSync(envPath)) return false;
-    return fs
-      .readFileSync(envPath, "utf-8")
-      .split(/\r?\n/)
-      .some((ln) => {
-        const s = ln.trim();
-        if (!s.startsWith("GROQ_API_KEY=")) return false;
-        const v = s.slice("GROQ_API_KEY=".length).trim().replace(/^["']|["']$/g, "");
-        return v.length > 0;
-      });
-  } catch (_) {
-    return false;
-  }
+  // .env の読み取りは src/env-file.mjs（readEnvFileValue）に統合済み。ここは
+  // env → .env の優先順位を適用するだけ（Python 側 transcribe_groq.py / check-groq-key.py の
+  // load_key() と同じ優先順位を保つこと。docstring 参照）。
+  return Boolean(process.env.GROQ_API_KEY) || readEnvFileValue("GROQ_API_KEY") !== null;
 }
 
 const localQueue = []; // local バックエンド時の FIFO（要素は () => Promise）
