@@ -748,9 +748,11 @@ function handleGetScript(req, res, jobId) {
   // 文字起こしがまだ無い/読めない・照合できなかった区間は 0 のままにする（0 は
   // 「まだ確定していない」印であって、実際に0秒から始まる区間という意味ではない）。
   const byText = new Map();
+  let transcriptWords = [];
   try {
     const transcript = readTranscript(id);
     if (transcript) {
+      transcriptWords = Array.isArray(transcript.words) ? transcript.words : [];
       // digest（分数で切る）は台本の並び順そのものが編集意図なので順序を保つ。
       const mode = readJobState(id)?.mode;
       for (const r of resolveSegments(segs, transcript, { preserveOrder: mode === "digest" })) {
@@ -773,6 +775,19 @@ function handleGetScript(req, res, jobId) {
         // 残るので、後から「なぜこれを選んだのか」を辿ることはできる。
         start: r ? r.start : 0,
         end: r ? r.end : 0,
+        // この区間に実際に入っている語。画面はこれを1語ずつ置いて、ユーザーが好きな範囲を
+        // 好きなだけ選んで消せるようにする（マスター指示 2026-08-17：ブロック単位でしか
+        // 消せないのは編集になっていない）。
+        //
+        // なぜ keepText の文字ではなく語を配るのか：実際に切れるのは語の切れ目である
+        // （文字の途中を指定しても、音は語の頭・尻へ寄る＝src/reverse-match.mjs）。
+        // 文字単位で選ばせると「見た目の選択」と「実際に切れる位置」がズレて嘘になるので、
+        // 最初から語を単位にして、見たままが切れる状態にする。
+        words: r
+          ? transcriptWords
+              .filter((w) => w && w.start >= r.start - 1e-9 && w.end <= r.end + 1e-9)
+              .map((w) => ({ w: w.w, start: w.start, end: w.end }))
+          : [],
         index: i,
       };
     }),
