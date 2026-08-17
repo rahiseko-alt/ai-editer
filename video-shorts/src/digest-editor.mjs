@@ -15,7 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { resolveSegments } from "./reverse-match.mjs";
+import { resolveSegments, normalize } from "./reverse-match.mjs";
 import { createIsolatedCwd, wrapUntrustedText } from "./claude-safety.mjs";
 import { runClaudeJson } from "./claude-run.mjs";
 
@@ -169,26 +169,119 @@ function pickUsableSegments(list, onLog = () => {}, where = "") {
  * 決まらないため、同じ素材からはほぼ同じ台本が出る。尺は文字数の上限ではなく
  * 「どういう構成にするか」の指示である、という形へ直す。
  */
-export function durationStrategy(targetSeconds) {
+/** 尺の帯（虎の巻 §5-3 の表）。lo/hi は帯の秒数範囲、countLo/countHi はその帯の「区間数の目安」。
+ *  帯だけで方針を決めると、同じ帯に入る目標（例: 60秒と90秒はどちらも「〜90秒」の帯）で
+ *  文面が1文字も変わらない。帯の中のどこに居るかで本数を決めるため、目安を範囲で持つ。 */
+const DURATION_BANDS = [
+  { lo: 0, hi: 45, countLo: 1, countHi: 2,
+    prose: `主張を1つだけ、最も強い言い方で見せ切る長さ。話題は1つに絞り、` +
+      `前置き・導入・補足・具体例は原則すべて捨てる。最も引きの強い一文から始め、結論で終える。迷ったら「削る」を選ぶ。` },
+  { lo: 45, hi: 90, countLo: 2, countHi: 4,
+    prose: `主張1つ＋それを裏づける具体例1つが入る長さ。主題は1つに保ったうえで、` +
+      `主張だけでは弱いので裏づけを1つ足す。関連の薄い話題は入れない。` +
+      `45秒以下の構成に「具体例を1つ足す」のではなく、具体例が入る前提で主張の選び方から見直すこと。` },
+  { lo: 90, hi: 180, countLo: 4, countHi: 7,
+    prose: `展開を作れる長さ。掴み→具体例2つ以上→山場→締め、の起伏を組む。` +
+      `主題は1つに保ちつつ、途中で角度を変えて飽きさせない。` +
+      `短い尺の構成を引き伸ばすのではなく、起伏のある構成として組み直すこと。` },
+];
+const LONG_BAND_PROSE = `複数の話題を束ねて1本にできる長さ。主題を2〜3の小テーマへ分け、` +
+  `テーマの切り替わりが分かる順序に並べる。各テーマに山場を1つ置き、最後に全体を締める。`;
+
+/** 区間が何本入るかで「何を入れられて何を入れられないか」が決まる。本数ごとの役割の割り当て。
+ *  尺そのものではなく本数で分けるのは、本数が「1本ぶんの枠を何に使うか」の単位だから。 */
+function rolesForCount(n) {
+  if (n <= 1) {
+    return `1本で言い切る。前置きも具体例も入る枠が無いので、単体で意味が閉じている最も強い一言だけを選ぶ。`;
+  }
+  if (n === 2) {
+    return `主張1本＋落とし所1本。具体例の枠が無いので、前提の説明が要る主張は最初から選ばない。`;
+  }
+  if (n === 3) {
+    return `掴みを兼ねた主張1本＋裏づけ1本＋締め1本。背景を説明する枠が無いので、` +
+      `説明抜きでそのまま通じる主張だけを選ぶ。裏づけは一言で効くものを1本だけ。`;
+  }
+  if (n === 4) {
+    return `掴み1本＋主張1本＋具体例1本＋締め1本。具体例に丸ごと1本使える前提なので、` +
+      `3本では説明しきれず捨てるしかなかった「説明の要る主張」をここで初めて選んでよい。` +
+      `3本の構成に具体例を1本足すのではなく、その主張が選べる前提で主張から選び直す。`;
+  }
+  if (n <= 7) {
+    return `掴み1本→具体例2本以上→山場1本→締め1本。途中に角度を変える区間を1本入れて飽きさせない。` +
+      `1本の主張を長く語るのではなく、別の場面・別の言い方の区間を並べて起伏を作る。`;
+  }
+  return `小テーマ2〜3に分け、テーマごとに山場を1本置く。最後に全体を締める1本を置く。` +
+    `テーマの切り替わりが区間の並びで分かるようにする。`;
+}
+
+/**
+ * 目標尺から「この尺ならどう組むか」の骨格（区間数・1区間あたりの長さ・役割の割り当て）を出す。
+ *
+ * なぜ帯だけでは足りないか（マスター指摘 2026-08-17 / 虎の巻 §5-3）:
+ * 虎の巻の表は4段の帯だが、§5-3 が名指しで「同じ素材から60秒と90秒を作って内容がほぼ同じに
+ * なったら考えていない証拠」と言っている当の60秒と90秒は、どちらも「〜90秒」の同じ帯に入る。
+ * 帯を段関数としてそのまま当てると、60秒と90秒の方針文が1文字も変わらない（実測で確認）。
+ * 帯の文言は虎の巻が正なので保ったまま、帯の中の位置から本数を決め、本数から役割を割り当てる。
+ */
+export function durationPlan(targetSeconds) {
   if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) return null;
-  if (targetSeconds <= 45) {
-    return `【この尺の方針】主張を1つだけ、最も強い言い方で見せ切る長さ。話題は1つに絞り、` +
-      `前置き・導入・補足・具体例は原則すべて捨てる。最も引きの強い一文から始め、結論で終える。` +
-      `区間数の目安は1〜2。迷ったら「削る」を選ぶ。`;
+  const band = DURATION_BANDS.find((b) => targetSeconds <= b.hi);
+  const count = band
+    ? Math.max(1, Math.round(
+        band.countLo + ((targetSeconds - band.lo) / (band.hi - band.lo)) * (band.countHi - band.countLo)))
+    : Math.max(7, Math.round(7 + (targetSeconds - 180) / 60));
+  return {
+    count,
+    avgSec: Math.max(1, Math.round(targetSeconds / count)),
+    prose: band ? band.prose : LONG_BAND_PROSE,
+    roles: rolesForCount(count),
+  };
+}
+
+/**
+ * 目標尺の帯ごとに「何を残し何を捨てるか」の方針そのものを変える。
+ *
+ * なぜ必要か（マスター指摘 2026-08-17「ダイジェストで1分とダイジェストで1分半なら
+ * 当然大きく変わるはずなのにほぼ変わらない。考えていない証拠だ。」）:
+ * 旧実装が尺について伝えていたのは「合計◯◯文字」という数値1つだけだった。
+ * 数値だけを差し替えても、AIにとって「1分なら何を捨てるか」「1分半なら何を足せるか」は
+ * 決まらないため、同じ素材からはほぼ同じ台本が出る。尺は文字数の上限ではなく
+ * 「どういう構成にするか」の指示である、という形へ直す。
+ */
+export function durationStrategy(targetSeconds) {
+  const plan = durationPlan(targetSeconds);
+  if (!plan) return null;
+  return `【この尺の方針】${plan.prose}\n` +
+    `【この尺の骨格】区間は約${plan.count}本、1区間あたり平均${plan.avgSec}秒。${plan.roles}\n` +
+    `【尺が変われば構成が変わる】この骨格は目標尺ごとに違う。別の尺で作った台本の端を伸縮させて` +
+    `秒数だけ合わせるのは禁止。尺が変わったら、選ぶ区間の「集合」そのものを選び直すこと（虎の巻 §5-3）。`;
+}
+
+/**
+ * 2つの台本が「同じ区間の端を動かしただけ」の関係かを見る（虎の巻 §5-3 / §8-M）。
+ *
+ * §5-3 は「尺を変えたら、選ぶ区間の『集合』が変わらなければならない。端を伸縮させるだけの
+ * 調整は禁止」と決めている。旧実装は尺是正の採否を「目標秒数へ近づいたか」だけで見ており、
+ * 端を1秒ずつ削っただけの修正でも近づけば採用されていた＝§5-3 の検査がどこにも無かった。
+ *
+ * 判定は正規化（記号・空白を落とす）した keepText の包含関係で行う。ある区間が旧区間の
+ * 部分文字列（端を削った）か、旧区間を含む文字列（端を伸ばした）なら「同じ区間の端を動かしただけ」。
+ * 本数が変わっている／どの旧区間の伸縮でも説明できない区間が1つでもあれば、集合は変わっている。
+ *
+ * @returns {boolean} true＝端の伸縮だけ（＝構成が変わっていない）
+ */
+export function isEdgeOnlyChange(before, after) {
+  const A = (before || []).map((s) => normalize(s?.keepText)).filter(Boolean);
+  const B = (after || []).map((s) => normalize(s?.keepText)).filter(Boolean);
+  if (A.length === 0 || B.length === 0) return false; // 比べられない＝止めない
+  if (A.length !== B.length) return false;            // 本数が変わっていれば集合が変わっている
+  const used = new Array(A.length).fill(false);
+  for (const b of B) {
+    const i = A.findIndex((a, k) => !used[k] && (a.includes(b) || b.includes(a)));
+    if (i === -1) return false; // どの旧区間の端の伸縮でも説明できない＝新しく選ばれている
+    used[i] = true;
   }
-  if (targetSeconds <= 90) {
-    return `【この尺の方針】主張1つ＋それを裏づける具体例1つが入る長さ。主題は1つに保ったうえで、` +
-      `主張だけでは弱いので裏づけを1つ足す。関連の薄い話題は入れない。区間数の目安は2〜4。` +
-      `45秒以下の構成に「具体例を1つ足す」のではなく、具体例が入る前提で主張の選び方から見直すこと。`;
-  }
-  if (targetSeconds <= 180) {
-    return `【この尺の方針】展開を作れる長さ。掴み→具体例2つ以上→山場→締め、の起伏を組む。` +
-      `主題は1つに保ちつつ、途中で角度を変えて飽きさせない。区間数の目安は4〜7。` +
-      `短い尺の構成を引き伸ばすのではなく、起伏のある構成として組み直すこと。`;
-  }
-  return `【この尺の方針】複数の話題を束ねて1本にできる長さ。主題を2〜3の小テーマへ分け、` +
-    `テーマの切り替わりが分かる順序に並べる。各テーマに山場を1つ置き、最後に全体を締める。` +
-    `区間数の目安は7以上。`;
+  return true;
 }
 
 /** 尺の条件をプロンプトへ書き下す共通部品（draft / critic / revise / 尺是正で同じ言い方を使う）。 */
@@ -351,18 +444,53 @@ export function revisePrompt(transcriptText, script, critique, dur = null) {
 
 /** 尺是正プロンプト（実測秒数が目標から外れた時の縮小/拡張指示）。
  *  旧実装は「今の台本を削れ/伸ばせ」としか言わず、元の台本を保ったまま端を調整するだけだった。
- *  尺の帯が変われば構成そのものが変わるべきなので、方針（durationStrategy）を必ず添える。 */
-export function durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds }) {
+ *  尺の帯が変われば構成そのものが変わるべきなので、方針（durationStrategy）を必ず添える。
+ *
+ *  さらに「端の伸縮だけの是正は機械的に破棄する」ことを先に宣言する（虎の巻 §5-3 / §8-M）。
+ *  条件を後から人が採点するのではなく、依頼文の時点で受入条件として渡す＝呼び出し側の
+ *  isEdgeOnlyChange() と同じことを言っておかないと、破棄されるだけで理由が伝わらない。
+ *
+ *  @param {object} [opts] 4番目は任意。既存の3引数呼び出し（tests/smoke.mjs）を壊さない。
+ *  @param {boolean} [opts.rejectedEdgeOnly] 直前の是正が「端の伸縮だけ」で破棄されたか。 */
+export function durationFixPrompt(
+  transcriptText,
+  segments,
+  { targetSeconds, targetMinutes, actualSeconds },
+  opts = {},
+) {
   const over = actualSeconds > targetSeconds;
   const dir = over ? "短く削れ" : "本編から追加して伸ばせ";
   const lo = Math.round(targetSeconds * (1 - DURATION_TOL));
   const hi = Math.round(targetSeconds * (1 + DURATION_TOL));
+  const plan = durationPlan(targetSeconds);
+  const now = segments.length;
+  const diff = plan ? plan.count - now : 0;
+  // 本数の差を「何本入れ替える/落とす/選び直す」という具体の作業量に翻訳する。
+  // 骨格の本数と今の本数が同じでも、集合が変わっていなければ受け付けない旨を明記する。
+  const countInstruction = plan
+    ? (diff > 0
+        ? `いまは${now}本だが、この尺の骨格は約${plan.count}本。少なくとも${diff}本は、本文の別の場所から新しく選ぶこと。`
+        : diff < 0
+          ? `いまは${now}本だが、この尺の骨格は約${plan.count}本。少なくとも${-diff}本は区間ごと丸ごと落とすこと。`
+          : `本数は約${plan.count}本のままでよいが、本数が同じでも中身の集合は変える。少なくとも1本は、` +
+            `いまの区間を丸ごと捨てて本文の別の場所から選び直すこと。`)
+    : "";
   return `次のダイジェスト台本は実測${Math.round(actualSeconds)}秒、目標は${targetSeconds}秒` +
     `（約${targetMinutes}分）です。${lo}〜${hi}秒に収まるよう台本を${dir}（順序入替・差し替え・削除・追加可）。\n` +
+    `これは「今の台本の端を伸縮させて秒数を合わせる」作業ではありません。` +
+    `この尺の骨格に合わせて、どの区間を使うかという集合そのものを組み直す作業です。\n` +
     `${durationStrategy(targetSeconds)}\n` +
     `${over
-      ? `削るときは「端を少しずつ詰める」のではなく、上の方針に照らして"この尺に要らない区間"を丸ごと落とすこと。`
-      : `伸ばすときは「今ある区間を長くする」のではなく、上の方針に照らして"この尺だから入れられる区間"を本文から新たに選ぶこと。`}\n\n` +
+      ? `削るときは「端を少しずつ詰める」のではなく、上の骨格に照らして"この尺に要らない区間"を丸ごと落とすこと。`
+      : `伸ばすときは「今ある区間を長くする」のではなく、上の骨格に照らして"この尺だから入れられる区間"を本文から新たに選ぶこと。`}\n` +
+    (countInstruction ? `${countInstruction}\n` : "") +
+    `【受入条件】新しい台本は、下の「現在の台本」と区間の集合が変わっていること。` +
+    `同じ区間の端を伸ばした／縮めただけのものは、機械が自動で検出して破棄します` +
+    `（区間ごとの入れ替え・削除・新規選定のいずれかが必ず要る）。\n` +
+    (opts.rejectedEdgeOnly
+      ? `【前回の是正は破棄しました】前回返ってきた台本は、現在の台本と同じ区間の端を動かしただけで、` +
+        `区間の集合が変わっていませんでした。今度は必ず、区間を丸ごと落とす／本文の別の場所から丸ごと選ぶ形で組み直してください。\n`
+      : "") + `\n` +
     `${VERBATIM}\n\n# 現在の台本\n${scriptToText(segments.map((s) => ({ ...s, reason: "" })))}\n\n` +
     `# 参照可能な全文字起こし\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ）\n{"script":[{"keepText":"...","hook":"...","reason":"..."}]}`;
@@ -490,18 +618,32 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
   // 尺目標がある場合、実測秒数（reverse-match）が目標から大きく外れていたら1回だけ縮小/拡張指示を出す。
   // 文字数目安だけでは実発話速度のブレを吸収できないため、実測フィードバックで是正する。
   let actualSeconds = null;
+  // 「端の伸縮だけ」として破棄した是正の回数。黙って捨てると、尺が合わないまま確定した理由が
+  // ログにも meta にも残らず、承認画面から見て「なぜこの秒数なのか」が説明できなくなる。
+  let edgeOnlyRejected = 0;
   if (targetSeconds) {
     actualSeconds = measure(segments);
     const inRange = (sec) => Math.abs(sec - targetSeconds) <= targetSeconds * DURATION_TOL;
     onLog(`[digest] 尺チェック: 実測${actualSeconds.toFixed(0)}s / 目標${targetSeconds}s`);
     // 旧実装は if 1回きりで、是正後もまだ外れていればそのまま確定していた。範囲へ入るまで繰り返す。
     for (let f = 1; f <= DURATION_MAX_FIX && !inRange(actualSeconds); f++) {
-      const fixPrompt = durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds });
+      const fixPrompt = durationFixPrompt(transcriptText, segments,
+        { targetSeconds, targetMinutes, actualSeconds },
+        { rejectedEdgeOnly: edgeOnlyRejected > 0 });
       try {
         const fixResp = parseJson(await callClaude(fixPrompt, onLog, true, cwd));
         const fixed = pickUsableSegments(fixResp.script || [], onLog, "尺是正")
           .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
         if (fixed.length === 0) break;
+        // 秒数より先に構成を見る。虎の巻 §5-3「尺を変えたら、選ぶ区間の『集合』が変わらなければ
+        // ならない。端を伸縮させるだけの調整は禁止」＝秒数と引き換えにできない条件なので、
+        // 目標へ近づいていても端の伸縮だけの是正は採らない（採ると A10 そのものになる）。
+        // 破棄したことは次の依頼文へ伝える（黙って捨てると同じものが返ってくる）。
+        if (isEdgeOnlyChange(segments, fixed)) {
+          edgeOnlyRejected++;
+          onLog(`[digest] 尺是正 ${f}回目は区間の集合が変わらず端の伸縮だけ（虎の巻 §5-3）→採用しない`);
+          continue;
+        }
         const fixedSeconds = measure(fixed);
         onLog(`[digest] 尺是正 ${f}回目: 実測${fixedSeconds.toFixed(0)}s`);
         // 目標から遠ざかる是正は採らない（是正のたびに悪化して確定するのを防ぐ）。
@@ -528,6 +670,8 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     scores: best.scores ?? null, weakest: best.weakest || null,
     targetSeconds, actualSeconds,
     durationTolerance: targetSeconds ? DURATION_TOL : null,
+    // 構成を変えずに端だけ伸縮させた是正を何回破棄したか（虎の巻 §5-3）。
+    edgeOnlyFixesRejected: targetSeconds ? edgeOnlyRejected : null,
     fitsDuration: targetSeconds
       ? Math.abs(actualSeconds - targetSeconds) <= targetSeconds * DURATION_TOL
       : null,

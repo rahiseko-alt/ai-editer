@@ -38,7 +38,9 @@ import { stageStart, stageEnd, stageSetSec, readTiming, summaryLine } from "./sr
 import { makeUniqueJobId } from "./src/job-id.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "./src/ai-caption-fix.mjs";
 import { writeJsonAtomically } from "./src/atomic-json.mjs";
-import { detectSilences, planBreathParts, parseBreathOption, DEFAULT_MAX_PAUSE_SEC } from "./src/breath-handles.mjs";
+import {
+  detectSilences, planBreathParts, planTopicHandles, parseBreathOption, DEFAULT_MAX_PAUSE_SEC,
+} from "./src/breath-handles.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WORK_ROOT = path.join(ROOT, "work");
@@ -423,7 +425,14 @@ async function cmdRender(workDir, opts = {}) {
     const MIN_SEC = target ? target.floorSec : resolveMinSec(minSec, process.env.TOPIC_MIN_SEC);
     const MAX_GAP_RAW = Number(process.env.TOPIC_MERGE_GAP_MAX ?? 3);
     const MAX_GAP = Number.isFinite(MAX_GAP_RAW) && MAX_GAP_RAW > 0 ? MAX_GAP_RAW : 3; // R-8: 不正値は既定(3秒)にフォールバック
-    resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP);
+    // words を渡すと「そのギャップに発話が入っているか」を実際に見て判定する。渡さないと
+    // 判断材料が無いので安全側（狭いギャップしか跨がない）に倒れる。ここは製品の経路なので
+    // 実測で判定させる。AIが選ばなかった発話を、尺を埋めるために黙って復活させないため。
+    resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP, transcript.words || []);
+    // snapToSilence が見ているのは transcript の語の時刻だけで、音は見ていない
+    // （純関数なので素材のパスも await も持てない＝src/snap-boundaries.mjs の注のとおり）。
+    // 音の実測（ffmpeg silencedetect）による切り口の追い込みは、素材のコマ数/秒が分かった後の
+    // 「切り口・つなぎ目を実測した無音の内側へ収める」で掛ける（虎の巻 §8-D の回答）。
     resolved = snapToSilence(resolved, transcript.words || [], {});
     log(`[INFO] 区間リファイン後: ${resolved.length} 区間（結合＋無音スナップ）`);
 
@@ -443,21 +452,10 @@ async function cmdRender(workDir, opts = {}) {
       log(`[INFO] 上限(${ceilSec.toFixed(1)}秒)超えの区間を分割: ${beforeCap} → ${resolved.length} 区間`);
     }
 
-    // 余韻パディング: 語境界ピッタリだと発話が即始まり/即切れて「ぶち切れ」感が出る。
-    // 開始を少し前へ・終了を少し後ろへ伸ばし前後に間を作る（素材端でクランプ）。env で調整可。
-    const PAD_HEAD_RAW = Number(process.env.CLIP_PAD_HEAD ?? 0.5);
-    const PAD_TAIL_RAW = Number(process.env.CLIP_PAD_TAIL ?? 0.8);
-    const PAD_HEAD = Number.isFinite(PAD_HEAD_RAW) ? Math.max(0, PAD_HEAD_RAW) : 0.5; // 不正値は既定にフォールバック（NaN伝播防止）
-    const PAD_TAIL = Number.isFinite(PAD_TAIL_RAW) ? Math.max(0, PAD_TAIL_RAW) : 0.8;
-    const srcDur = transcript.duration || Infinity;
-    if (PAD_HEAD > 0 || PAD_TAIL > 0) {
-      for (const s of resolved) {
-        s.start = Math.max(0, s.start - PAD_HEAD);
-        s.end = Math.min(srcDur, s.end + PAD_TAIL);
-        s.duration = Math.round((s.end - s.start) * 1000) / 1000;
-      }
-      log(`[INFO] 余韻パディング適用: 前 ${PAD_HEAD}s / 後 ${PAD_TAIL}s`);
-    }
+    // 余韻パディング（＝のりしろ）は、素材のコマ数/秒が分かってから下の
+    // 「切り口を実測した無音の内側へ収める」ところで一緒に付ける。語境界ちょうどで切ると
+    // 語頭のアタック／語尾の余韻を削る（虎の巻 §3-2）ので付けること自体は変わらないが、
+    // 固定量だけ伸ばすと無音を突き抜けて隣の発話へ届くため、実測した無音で頭打ちにする。
   }
 
   const outDir = path.join(OUT_ROOT, state.id);
@@ -494,15 +492,47 @@ async function cmdRender(workDir, opts = {}) {
   if (state.trim === "on" && !srcFps) {
     log("[WARN] 素材のコマ数/秒を取得できませんでした。詰めた継ぎ目で絵と音が最大1コマずれることがあります");
   }
-  // === つなぎ目に「息継ぎの間」を戻す（G-EDIT-BREATH） ===
-  // 逆マッチングの区間は単語境界ちょうどなので、素材に元々あった文間の無音が全部捨てられ、
-  // 連結すると発話が終わった瞬間に次が始まる「詰まった」音になる（マスター指摘 2026-08-14）。
-  // 素材の無音区間を実測し、その内側でだけ前後へ伸ばして環境音ごと間を戻す。伸ばす先を
-  // 実測無音の内側に限るので「カットしたはずの発話が戻る」ことは起きない。
-  // digest（連結して1本にする経路）だけが対象。topic は区間ごとに別ファイルへ出すので
-  // つなぎ目が無く、既に余韻パディングを持っている。
+  // === 切り口・つなぎ目を「実測した無音の内側」へ収める（G-EDIT-BREATH / 虎の巻 §3-1・§8-D・§8-L） ===
+  // 逆マッチングの区間は単語境界ちょうどで、単語境界は音響的な無音境界と 100〜400ms ずれる
+  // （§3-2）。素材の無音を ffmpeg で1回だけ実測し、topic は切り口（のりしろ）を、
+  // digest はつなぎ目に戻す間を、その内側に収める。
+  //
+  // 【毎回走らせてよいのか（費用の実測 2026-08-17）】3分/1280x720 の素材で 1.00 秒
+  //（detectSilences は映像を復号しない）。同じジョブで先に走る文字起こし（数分）や
+  // レンダリング（区間ごとに再エンコード）に比べれば無視できる。2回測る必要も無いので、
+  // topic/digest のどちらの経路でも使えるようここで1回だけ測る。
+  const needSilences = resolved.length > 0 && (mode !== "digest" || breathOpt.sec !== null);
+  const silences = needSilences
+    ? await detectSilences(state.input, { duration: transcript.duration })
+    : [];
+
+  if (mode !== "digest" && resolved.length > 0) {
+    // のりしろの量（従来の余韻パディングと同じ既定・env で調整可）。
+    const PAD_HEAD_RAW = Number(process.env.CLIP_PAD_HEAD ?? 0.5);
+    const PAD_TAIL_RAW = Number(process.env.CLIP_PAD_TAIL ?? 0.8);
+    const PAD_HEAD = Number.isFinite(PAD_HEAD_RAW) ? Math.max(0, PAD_HEAD_RAW) : 0.5; // 不正値は既定へ（NaN伝播防止）
+    const PAD_TAIL = Number.isFinite(PAD_TAIL_RAW) ? Math.max(0, PAD_TAIL_RAW) : 0.8;
+    const handles = planTopicHandles(resolved, silences, {
+      padHeadSec: PAD_HEAD, padTailSec: PAD_TAIL, fps: srcFps,
+      srcDuration: transcript.duration, words: transcript.words || [],
+    });
+    resolved = handles.segments;
+    if (silences.length === 0) {
+      log(`[INFO] 余韻パディング適用: 前 ${PAD_HEAD}s / 後 ${PAD_TAIL}s`
+        + "（素材に無音区間が見つからないため従来どおり固定量）");
+    } else {
+      const s = handles.stats;
+      log(`[INFO] 切り口を実測無音の内側へ: 無音 ${s.measured}箇所を実測 /`
+        + ` のりしろ 前${PAD_HEAD}s・後${PAD_TAIL}s のうち ${s.clampedIntoSilence}箇所を無音の内側へ収め直した`
+        + `（端 ${s.edges} 個中 ${s.insideSilence} 個が無音の内側 / 接する無音が無い端 ${s.noSilenceAtEdge} 個）`);
+    }
+  }
+
+  // digest（連結して1本にする経路）は、つなぎ目に「息継ぎの間」を戻す。素材に元々あった
+  // 文間の無音が全部捨てられると、連結時に発話が終わった瞬間に次が始まる「詰まった」音になる
+  //（マスター指摘 2026-08-14）。伸ばす先を実測無音の内側に限るので、
+  // 「カットしたはずの発話が戻る」ことは起きない。
   if (mode === "digest" && breathOpt.sec !== null && resolved.length > 0) {
-    const silences = await detectSilences(state.input, { duration: transcript.duration });
     if (silences.length === 0) {
       log("[INFO] 息継ぎの間: 素材に無音区間が見つからないため従来どおり（間を作らない）");
     } else {

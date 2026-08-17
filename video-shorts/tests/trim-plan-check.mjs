@@ -49,6 +49,20 @@ const DURATION = segs[segs.length - 1].end;   // 11.053
 // 文字起こしが返す形（words[]）へ写す。区間表は設計値なので、これが正。
 const words = segs.map((s) => ({ w: s.text, start: s.start, end: s.end }));
 
+// 【2026-08-17 虎の巻 §4-1 による変更】言い淀みの判断は AI（judge）がする。
+// 「あの／その／まあ／なんか」は指示語・副詞にもなるため、judge が無いときは固定の
+// 一覧で機械的に消さなくなった（docs/編集についての虎の巻.md §4-1・§8-H）。
+// この素材の index6 は「なんか」で、judge を渡さないと残る。
+//
+// 期待値を「なんか が残った状態」へ緩めるのではなく、**AI が素材の言い淀み4区間を
+// すべて言い淀みと判断した状態**を渡す。この検査が見ている「詰め方と切り方」は
+// そのままで、凍結した秒数も変わらない。
+// cutSilence は渡さない（judge の cutSilence は長さの閾値より優先されるため、
+// 渡すと「しきい値未満の無音は詰めない」が測れなくなる）。
+const FILLER_INDEXES = new Set(segs.map((s, i) => (s.kind === "filler" ? i : -1)).filter((i) => i >= 0));
+const JUDGE = { isFiller: (index) => FILLER_INDEXES.has(index) };
+
+
 t("素材: 区間表の中身が凍結どおり（8区間・フィラー4件・最終区間の終わり11.053秒）", () => {
   assert.strictEqual(segs.length, 8);
   assert.strictEqual(segs.filter((s) => s.kind === "filler").length, 4);
@@ -79,7 +93,7 @@ t("素材: 言い淀みの最長(なんか)が語の最短(はい)より長い"
 
 t("対照: 0.9秒未満を機械的に切るだけの偽実装は、この素材ではもう製品planTrimと一致しない"
   + "（旧素材ではkeep集合が文字列レベルで完全一致していた＝この偽実装を通していた）", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   const naiveKeep = words.filter((w) => (w.end - w.start) >= 0.9)
     .map((w) => ({ start: w.start, end: w.end }));
   assert.notDeepStrictEqual(
@@ -133,7 +147,7 @@ const MARGIN_COUNT_SILENCE_ONLY = 7;
 const EXPECTED = 4.217 + AFTER_SPEECH_MARGIN * MARGIN_COUNT_BOTH; // 5.117
 const FILLER_TOTAL = 3.336;
 t(`A: 通常設定での残り時間が ${EXPECTED} 秒になる（丸め前）`, () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   assert.ok(Math.abs(plan.keptSeconds - EXPECTED) <= 0.01,
     `残り=${plan.keptSeconds} 秒（期待 ${EXPECTED} ±0.01）`);
 });
@@ -142,7 +156,7 @@ t("A: 末尾の余韻は詰めない（凍結素材には末尾の無音が無�
   // 凍結素材は最終区間の終わりでちょうど終わっている（末尾の無音は存在しない）。
   // 「末尾の余韻を残す」は planTrim の性質なので、素材の長さだけを仮に 0.5秒 伸ばして測る。
   const withTail = DURATION + 0.5;
-  const plan = planTrim(words, { duration: withTail });
+  const plan = planTrim(words, { judge: JUDGE, duration: withTail });
   const last = plan.keep[plan.keep.length - 1];
   assert.ok(Math.abs(last.end - withTail) < 1e-6, `末尾が ${last.end} で素材の終わり(${withTail})と違う`);
   assert.ok(Math.abs(plan.keptSeconds - (EXPECTED + 0.5)) <= 0.01,
@@ -152,21 +166,21 @@ t("A: 末尾の余韻は詰めない（凍結素材には末尾の無音が無�
 // ── 対照: 無音カットと言い淀みカットの寄与を分けて測る ────────
 // 「両者の短縮量の差が無音カットの寄与」を、決め方の側で確かめる。
 t(`対照A: 言い淀みだけを切ると ${(DURATION - FILLER_TOTAL).toFixed(3)} 秒（無音3.500秒は残る）`, () => {
-  const plan = planTrim(words, { duration: DURATION, cutSilence: false });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION, cutSilence: false });
   assert.ok(Math.abs(plan.keptSeconds - (DURATION - FILLER_TOTAL)) <= 0.01,
     `残り=${plan.keptSeconds} 秒（期待 ${(DURATION - FILLER_TOTAL).toFixed(3)} ±0.01）`);
 });
 
 const SILENCE_ONLY_EXPECTED = DURATION - 3.5 + AFTER_SPEECH_MARGIN * MARGIN_COUNT_SILENCE_ONLY; // 9.653
 t(`対照A: 無音だけを切ると ${SILENCE_ONLY_EXPECTED.toFixed(3)} 秒（言い淀み${FILLER_TOTAL}秒は残る）`, () => {
-  const plan = planTrim(words, { duration: DURATION, cutFillers: false });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION, cutFillers: false });
   assert.ok(Math.abs(plan.keptSeconds - SILENCE_ONLY_EXPECTED) <= 0.01,
     `残り=${plan.keptSeconds} 秒（期待 ${SILENCE_ONLY_EXPECTED.toFixed(3)} ±0.01）`);
 });
 
 // ── 余韻そのものを直接見る（2026-08-16 追加）──────────────────
 t("A: 詰めたつなぎ目に、直前の発言の後の 0.3秒 がちょうど残る（前には付かない）", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   const keep = plan.keep;
   let checked = 0;
   for (let i = 0; i + 1 < keep.length; i += 1) {
@@ -183,20 +197,20 @@ t("A: 詰めたつなぎ目に、直前の発言の後の 0.3秒 がちょうど
 });
 
 t("対照A: 余韻を付けない旧実装の値（4.217秒）では、いまの合格条件に一致しない", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   assert.ok(Math.abs(plan.keptSeconds - 4.217) > 0.01,
     "余韻が1秒も足されていない（旧実装のまま）");
 });
 
 t("対照A: 何も切らない設定なら全長のまま（＝単に削る実装ではない）", () => {
-  const plan = planTrim(words, { duration: DURATION, cutSilence: false, cutFillers: false });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION, cutSilence: false, cutFillers: false });
   assert.ok(Math.abs(plan.keptSeconds - DURATION) <= 0.001,
     `残り=${plan.keptSeconds} 秒（期待 ${DURATION}）`);
 });
 
 // ── C: 残す区間に、語がすべて含まれていること ────────────────
 t("C: 言い淀みでない4語が、すべて残す区間に丸ごと入っている", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   for (const s of segs.filter((x) => x.kind === "word")) {
     const covered = plan.keep.some((k) => k.start <= s.start + 1e-6 && k.end >= s.end - 1e-6);
     assert.ok(covered, `語が残っていない: ${s.text}（${s.start}〜${s.end}）`);
@@ -204,7 +218,7 @@ t("C: 言い淀みでない4語が、すべて残す区間に丸ごと入って�
 });
 
 t("B: 言い淀み4区間は、残す区間のどこにも入っていない", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   for (const s of segs.filter((x) => x.kind === "filler")) {
     const overlapped = plan.keep.some((k) => k.end > s.start + 1e-6 && k.start < s.end - 1e-6);
     assert.ok(!overlapped, `言い淀みが残っている: ${s.text}（${s.start}〜${s.end}）`);
@@ -213,7 +227,7 @@ t("B: 言い淀み4区間は、残す区間のどこにも入っていない", (
 
 // ── 切る区間の整合 ──────────────────────────────────────────
 t("残す区間と切る区間が重ならず、合わせて全長になる", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   for (const k of plan.keep) {
     for (const c of plan.cuts) {
       assert.ok(!(k.end > c.start + 1e-6 && k.start < c.end - 1e-6),
@@ -225,7 +239,7 @@ t("残す区間と切る区間が重ならず、合わせて全長になる", ()
 });
 
 t("残す区間は時刻の順に並び、重なりが無い", () => {
-  const plan = planTrim(words, { duration: DURATION });
+  const plan = planTrim(words, { judge: JUDGE, duration: DURATION });
   for (let i = 1; i < plan.keep.length; i++) {
     assert.ok(plan.keep[i].start >= plan.keep[i - 1].end - 1e-6,
       `順序か重なりがおかしい: ${JSON.stringify(plan.keep.slice(i - 1, i + 1))}`);

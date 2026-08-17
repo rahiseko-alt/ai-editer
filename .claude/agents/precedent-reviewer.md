@@ -1,7 +1,7 @@
 ---
 name: precedent-reviewer
 description: 基準凍結の門の「過去との照合役」。計画・criteria/verify を凍結する直前に、docs/failures.md の全エントリと突き合わせ、この計画が過去に実際に踏んだ失敗と同じ構造を持っていないかを反証する。一般論の指摘は禁止し、該当エントリの日付・行番号を必ず添える。基準そのものの質を見る basis-reviewer とは別役（両者は並列で呼ぶ）。
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: inherit
 ---
 

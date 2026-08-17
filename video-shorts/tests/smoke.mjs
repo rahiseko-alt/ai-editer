@@ -203,10 +203,26 @@ t("mergeShortSegments: maxGapSec(R-8)を狭めると隣接結合されない", (
     { start: 0, end: 5, duration: 5, hook: "a", keepText: "a" },
     { start: 9, end: 14, duration: 5, hook: "b", keepText: "b" }, // gap=4s
   ];
-  const wide = mergeShortSegments(segs, 180, 5); // gap5 <= maxGap5 → 結合
-  const narrow = mergeShortSegments(segs, 180, 3); // gap4 > maxGap3 → 結合しない
+  // 第4引数(words)を渡すと「そのギャップに発話が入っているか」を実測して判定する。
+  // ギャップ(5〜9秒)の外にだけ語がある＝そこは本当に無言、という素材を渡す。
+  // 空配列は「発話が無い」ではなく「情報が無い」を意味するので、ここでは使わない。
+  const silentGap = [
+    { w: "あ", start: 0, end: 5 },
+    { w: "い", start: 9, end: 14 },
+  ];
+  const wide = mergeShortSegments(segs, 180, 5, silentGap); // gap4 <= maxGap5 → 結合
+  const narrow = mergeShortSegments(segs, 180, 3, silentGap); // gap4 > maxGap3 → 結合しない
   assert.strictEqual(wide.length, 1, "gap内なら1区間に結合されるべき");
   assert.strictEqual(narrow.length, 2, "gap超過なら結合されず2区間のままであるべき");
+
+  // words を渡さないと、ギャップに発話があるか判断できない。AIが選ばなかった発話を
+  // 黙って復活させるより、結合しない方を選ぶ（安全側）。
+  const unknown = mergeShortSegments(segs, 180, 5);
+  assert.strictEqual(unknown.length, 2, "判断材料が無いときは結合しないべき");
+
+  // ギャップに発話が入っているなら、maxGap 内でも跨がない（捨てた発言の復活を防ぐ）。
+  const withSpeech = mergeShortSegments(segs, 180, 5, [{ w: "えーっと", start: 6.5, end: 7.5 }]);
+  assert.strictEqual(withSpeech.length, 2, "ギャップに発話があるなら結合しないべき");
 });
 
 t("mergeShortSegments: maxGapSec未指定時は既定3秒", () => {

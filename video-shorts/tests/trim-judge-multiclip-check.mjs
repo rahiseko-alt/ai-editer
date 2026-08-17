@@ -155,7 +155,7 @@ report(
 );
 
 report(
-  "G-TRIM2-CLIP-WIRED相当: 2本目のクリップの残り時間が10.5秒になる（現行のバグでは13.2秒）",
+  "G-TRIM2-CLIP-WIRED相当: 2本目のクリップの残り時間が10.9秒になる（現行のバグでは13.2秒）",
   Math.abs(planC2.keptSeconds - FIXTURE.expected.clip2KeptSeconds) <= TOL,
   `実測=${planC2.keptSeconds} 期待=${FIXTURE.expected.clip2KeptSeconds}`,
 );
@@ -177,7 +177,7 @@ report(
 );
 
 report(
-  "G-TRIM2-CLIP-SILENCE-CUT: 2本目のクリップの「詰めてよい間」(3.3-6.3)が余韻0.3秒まで詰まる",
+  "G-TRIM2-CLIP-SILENCE-CUT: 2本目のクリップの「詰めてよい間」(3.3-6.3)が余韻0.7秒まで詰まる（3.0秒の間なので clamp(0.75,0.3,0.7)）",
   Math.abs(
     overlap(planC2.keep, 3.3, 6.3) - FIXTURE.expected.clip2Windows.silenceCutResidual,
   ) <= TOL,
@@ -223,7 +223,7 @@ report(
 );
 
 report(
-  "対照: 旧実装は2本目のクリップで13.2秒になる（本来の10.5秒より2.7秒多く残る＝壊れている）",
+  "対照: 旧実装は2本目のクリップで13.2秒になる（本来の10.9秒より2.3秒多く残る＝壊れている）",
   Math.abs(oldC2.keptSeconds - FIXTURE.brokenExpected.clip2KeptSeconds) <= TOL,
   `実測=${oldC2.keptSeconds} 期待(壊れた値)=${FIXTURE.brokenExpected.clip2KeptSeconds}`,
 );

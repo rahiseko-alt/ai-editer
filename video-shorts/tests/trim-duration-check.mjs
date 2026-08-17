@@ -360,8 +360,29 @@ try {
     assert.strictEqual(sizeTAS.fps, FPS, `素材TA-S=${sizeTAS.fps}`);
   });
 
+  // 【2026-08-17 虎の巻 §4-1 による変更】言い淀みの判断は AI（judge）がする。
+  // 「あの／その／まあ／なんか」は指示語・副詞にもなるため、judge が無いときは
+  // 固定の一覧で機械的に消さなくなった（docs/編集についての虎の巻.md §4-1・§8-H）。
+  // この素材の index6 は「なんか」で、judge を渡さないと残るため、この検査が
+  // 見ようとしている「言い淀みだけを取り除いた出力」が作れない。
+  //
+  // 期待値を「なんか が残った状態」へ緩めるのではなく、**AI が4つの言い淀みを
+  // すべて言い淀みと判断した状態**を渡す。この検査の狙い（詰め方と切り方が凍結
+  // どおりであること）はそのまま保たれ、凍結したコマ番号も変わらない
+  // （語間の無音は 0.5秒 なので、余韻は §8-I の変更後も 0.3秒 のまま）。
+  const FIXTURE_FILLERS = new Set(
+    segs.map((s, i) => (s.kind === "filler" ? i : -1)).filter((i) => i >= 0),
+  );
+  // cutSilence は渡さない。judge の cutSilence は長さの閾値より優先されるので、
+  // 渡すと TA-S の 0.10秒 の間隙まで詰めてしまい、この検査が見ている
+  // 「しきい値未満の無音は詰めない」が測れなくなる。判断させるのは言い淀みだけ。
+  const FIXTURE_JUDGE = { isFiller: (index) => FIXTURE_FILLERS.has(index) };
+
   async function runProduct(input, size, words, duration, out, opts = {}) {
-    const plan = planTrim(words, { duration, fps: opts.noFps ? undefined : size.fps, ...opts.planOpts });
+    const plan = planTrim(words, {
+      duration, fps: opts.noFps ? undefined : size.fps,
+      judge: FIXTURE_JUDGE, ...opts.planOpts,
+    });
     const start = snapStart(0, size.fps);
     await renderClip({
       input, start, end: duration, output: out, orientation: "portrait",

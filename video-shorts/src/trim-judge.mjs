@@ -29,6 +29,22 @@ export const TRIM_JUDGE_FILE = "trim-judge.json";
 export const CHUNK_WORDS = 120;
 
 /**
+ * かたまりの前後に「参考」として見せる語の数（答えてよい範囲には入れない）。
+ *
+ * 【なぜ要るか】2026-08-17 実測。かたまりは重なり無しに切っていたため、たとえば
+ * 「…ですね／あの｜資料／を…」のように「あの」がかたまりの末尾へ来ると、次の語「資料」が
+ * 見えないまま「言い淀みか指示語か」を答えさせることになっていた。虎の巻 §4-1 が要求する
+ * 「前後の文脈で役割を判定する」が、材料の側で成立していない。
+ *
+ * 前後8語だけ重ねる。増やすほど依頼文が膨らみ（120語に対して約13%増）、
+ * かたまりを分けた意味＝精度が落ちるので、役割の判定に効く最小限にとどめる。
+ */
+export const CONTEXT_WORDS = 8;
+
+/** 依頼文の語の一覧に「間」を書き添える下限（秒）。これ未満は文の区切りの手がかりにならない。 */
+const PAUSE_MARK_MIN_SEC = 0.1;
+
+/**
  * 詰める候補になる無音の下限（秒）。
  * 余韻の規則（発言の後に0.3秒残す）により、0.3秒以下の間は詰めても1秒も減らない。
  * 減らないものを AI へ聞くのは時間の無駄なので、候補から外す。
@@ -51,14 +67,37 @@ function wrapUntrustedText(label, text, nonce) {
 /**
  * 語と間の一覧から、AI へ渡す依頼文を作る。
  *
- * @param {{w:string,start:number,end:number}[]} words このかたまりの語
+ * 【語の一覧の作り】話し言葉の書き起こしには句読点が無い。添字と語だけを並べると
+ * 「語の羅列」になり、どこが文の切れ目かが読めないので、虎の巻 §4-1 が求める
+ * 「前後の文脈で役割を判定する」ができない。そこで2つだけ手がかりを足す。
+ *   ・語の後ろに「間」があればその秒数を書き添える（＝息継ぎ・文の切れ目の代わり）。
+ *   ・かたまりの前後の語を「参考」として見せる（添字を付けないので、答えには使えない）。
+ * どちらも1行あたり数文字の追加で、依頼文は膨らませない。
+ *
+ * @param {{w:string,start:number,end:number}[]} words このかたまりの語（答えてよい範囲）
  * @param {number} offset このかたまりの先頭が、全体で何番目の語か
  * @param {{index:number,sec:number}[]} gaps このかたまりの中の間（index の語の**後ろ**の間）
  * @param {string} nonce 乱数タグ
+ * @param {{before?:object[], after?:object[]}} [context] 前後に見せるだけの語（答えさせない）
  * @returns {string}
  */
-export function buildTrimPrompt(words, offset, gaps, nonce) {
-  const lines = words.map((w, i) => `${offset + i}\t${w.w}`).join("\n");
+export function buildTrimPrompt(words, offset, gaps, nonce, context = {}) {
+  const before = Array.isArray(context.before) ? context.before : [];
+  const after = Array.isArray(context.after) ? context.after : [];
+  // 参考の語は添字を付けない（＝モデルが答えに使える添字が存在しない）。
+  const rows = [
+    ...before.map((w) => ({ w, idx: null })),
+    ...words.map((w, i) => ({ w, idx: offset + i })),
+    ...after.map((w) => ({ w, idx: null })),
+  ];
+  const lines = rows
+    .map((r, i) => {
+      const next = rows[i + 1];
+      const sec = next ? next.w.start - r.w.end : 0;
+      const pause = Number.isFinite(sec) && sec >= PAUSE_MARK_MIN_SEC ? `\t間${sec.toFixed(1)}秒` : "";
+      return `${r.idx === null ? "参考" : r.idx}\t${r.w.w}${pause}`;
+    })
+    .join("\n");
   const gapLines = gaps.map((g) => `${g.index}\t${g.sec.toFixed(2)}`).join("\n");
 
   return `あなたは日本語の話し言葉を編集する人です。次の2つを、前後の文脈から判断してください。
@@ -78,7 +117,10 @@ export function buildTrimPrompt(words, offset, gaps, nonce) {
   やり取りが進んでいない時間。
 - 迷ったら詰めない。
 
-# 語（1 行に 1 語で「添字<タブ>語」。添字は全体での語の番号）
+# 語
+書き起こしなので句読点はありません。1 行に 1 語で「添字<タブ>語」、
+その語の後ろに間があるときだけ「<タブ>間○.○秒」が付きます。**この間が文の切れ目の手がかり**です。
+添字が「参考」の行は、前後のつながりを見せるためだけの語です。**答えに使ってはいけません**。
 ${wrapUntrustedText("TRANSCRIPT", lines, nonce)}
 
 # 間（1 行に「直前の語の添字<タブ>その後ろの無音の長さ(秒)」）
@@ -254,11 +296,21 @@ export async function trimJudgeStage({ workDir, runModel, chunkWords = CHUNK_WOR
 
   for (let i = 0; i < words.length; i += size) {
     const chunk = words.slice(i, i + size);
-    // この かたまり の中で完結する間だけを見せる（かたまりをまたぐ間は次の回で見せない。
-    // 見せていない間の添字を返されても採用しない仕組みなので、取りこぼしは安全側に倒れる）。
-    const gaps = collectGapCandidates(chunk).map((g) => ({ index: g.index + i, sec: g.sec }));
+    // かたまりの**末尾の語の後ろ**にある間も候補に含める（次の語が在るときだけ）。
+    // 2026-08-17 まではこのかたまりの中で完結する間しか見せていなかったため、
+    // かたまりの境界に当たった間はどの回でも候補に出ず、永久に詰まらなかった（実測で確認）。
+    // 間の長さが「かたまり境界かどうか」という利用者に無関係な理由でばらつく＝虎の巻 原則5 違反。
+    // 次の語まで含めて候補を数え、直前の語の添字（＝かたまりの中）で答えさせる。
+    // 添字はかたまりの中に収まるので、次の回で同じ間が二重に出ることは無い。
+    const gaps = collectGapCandidates(words.slice(i, i + size + 1))
+      .map((g) => ({ index: g.index + i, sec: g.sec }));
+    // 役割の判定（言い淀みか指示語か）に効くよう、前後の語を「参考」として重ねて見せる。
+    const context = {
+      before: words.slice(Math.max(0, i - CONTEXT_WORDS), i),
+      after: words.slice(i + size, i + size + CONTEXT_WORDS),
+    };
     const nonce = nonceOf();
-    const prompt = buildTrimPrompt(chunk, i, gaps, nonce);
+    const prompt = buildTrimPrompt(chunk, i, gaps, nonce, context);
     const answer = await runModel(prompt);
     const r = parseTrimResponse(answer, { offset: i, length: chunk.length }, gaps.map((g) => g.index));
     allFillers.push(...r.fillers);
