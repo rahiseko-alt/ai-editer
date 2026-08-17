@@ -274,8 +274,12 @@ export async function renderSegment({
     // （CLI から renderSegment を直接使う既存の検査との後方互換）。
     const cutSilence = trimSilence === undefined ? true : trimSilence === true;
     const cutFillers = trimFiller === undefined ? true : trimFiller === true;
+    // AI の判断は「素材全体」の添字と絶対時刻で持っている。planTrim は「クリップ相対」で
+    // 動くので、クリップの開始位置を教えて時間軸を橋渡ししたものを渡す（2026-08-16。
+    // これが無いと、先頭以外のクリップで指示語が誤カットされ、詰めてよい間も詰まらない）。
+    const clipJudge = judge && typeof judge.forClip === "function" ? judge.forClip(segStart) : judge;
     const plan = planTrim(relWordsAll, {
-      duration: seg.duration, fps: srcFps, protect, cutSilence, cutFillers, judge,
+      duration: seg.duration, fps: srcFps, protect, cutSilence, cutFillers, judge: clipJudge,
     });
     keep = plan.keep;
     assWords = remapWords(relWordsAll, plan.keep);

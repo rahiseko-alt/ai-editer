@@ -76,7 +76,8 @@ export function isFiller(text) {
  * @param {object} [opts.judge] AI の判断結果（G-EDIT-TRIM2）。渡すと、どれを消すかの決定権は
  *   こちらへ移り、固定の単語一覧(FILLERS)と長さの閾値(minSilence)は**候補を拾うためだけ**に
  *   使われる。渡さないときは従来どおり一覧と閾値だけで決める（CLI の後方互換）。
- *   - judge.isFiller(index, word) => boolean  その語を言い淀みとして消すか
+ *   - judge.isFiller(index, word, relWord) => boolean  その語を言い淀みとして消すか
+ *     （relWord はクリップ相対の語そのもの。judge 側が素材の絶対時刻へ直すのに使う）
  *   - judge.cutSilence(start, end) => boolean  その無音を詰めてよいか（false＝会話の途中）
  * @returns {{keep: {start:number,end:number}[], cuts: {start:number,end:number,reason:string}[],
  *            keptSeconds: number, cutSeconds: number}}
@@ -125,7 +126,11 @@ export function planTrim(words, opts = {}) {
       // 言い淀みかどうかの決定権は judge にある。judge が無いときだけ一覧で決める
       // （2026-08-16 以前の挙動。一覧は「あの」「その」を単体で含むため、判定を任せると
       //  「あの資料」の指示語まで消える。これがマスター指摘の実害(a)）。
-      const filler = judgeIsFiller ? judgeIsFiller(idx, w.w) === true : isFiller(w.w);
+      // 第3引数に語そのもの（クリップ相対の start/end を持つ）を渡す。judge 側は
+      // クリップの開始位置を知っているので、これで素材の絶対時刻へ直して引き当てられる
+      // （2026-08-16。添字だけを渡していたため、2本目以降のクリップで別の語の判定が
+      //  使われ、指示語が誤カットされていた）。
+      const filler = judgeIsFiller ? judgeIsFiller(idx, w.w, w) === true : isFiller(w.w);
       regions.push({ start: s, end: w.end, kind: filler ? "filler" : "word" });
     }
     cursor = Math.max(cursor, w.end);

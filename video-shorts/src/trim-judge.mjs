@@ -176,7 +176,7 @@ export function collectGapCandidates(words) {
  * ファイルが無い／読めないときは null（呼び元が「判断が取れなかった」として扱う）。
  * @param {string} workDir
  * @param {{w:string,start:number,end:number}[]} words クリップ相対ではなく素材全体の語
- * @returns {{isFiller:Function, cutSilence:Function}|null}
+ * @returns {{isFiller:Function, cutSilence:Function, forClip:Function}|null}
  */
 export function loadTrimJudge(workDir, words) {
   const p = path.join(workDir, TRIM_JUDGE_FILE);
@@ -193,15 +193,78 @@ export function loadTrimJudge(workDir, words) {
   // 添字ではなく時刻で持つのは、planTrim がクリップ相対の語しか見ないため
   // （区間を切り出したあとは添字が全体のものとずれる）。
   const cutEnds = new Set(
-    data.cutGaps.map((i) => (words[i] ? Number(words[i].end.toFixed(3)) : null)).filter((v) => v !== null),
+    data.cutGaps.map((i) => (words[i] ? t3(words[i].end) : null)).filter((v) => v !== null),
   );
+  // 素材の絶対時刻から、素材全体の語の添字を引く表。0.001秒に丸めた開始時刻を鍵にする。
+  const idxByStart = new Map();
+  words.forEach((w, i) => {
+    if (w && Number.isFinite(w.start)) idxByStart.set(t3(w.start), i);
+  });
+
+  /**
+   * クリップの開始位置(秒)を教えて、そのクリップ用の判断を作る。
+   *
+   * 【なぜ要るか（2026-08-16）】判断は「素材全体」の添字と絶対時刻で持っているが、
+   * planTrim は「クリップ相対」の添字と時刻で動く。この2つの時間軸を橋渡ししないと、
+   * 素材の先頭以外から始まるクリップで判断がまるごとずれる。実測した壊れ方は2つ:
+   *   ① 言い淀み: クリップ相対の添字で素材全体の語を引くため、素材で最初に出た同じ字面の
+   *      判定が使われる。先頭の「あの」が言い淀みなら、後半の「あの資料を」まで消える。
+   *   ② 間: cutGaps は素材の絶対時刻で持つのに、planTrim はクリップ相対の時刻で聞くため、
+   *      先頭以外のクリップでは常に「詰めない」が返る＝「間を詰める」が丸ごと効かない。
+   * 変換をこの1箇所に閉じ込める。呼ぶ側が毎回オフセットを足す形にすると、
+   * 足し忘れた経路だけが黙って壊れる（同じ取りこぼしが今回2回起きている）。
+   *
+   * @param {number} offsetSec クリップの開始位置（素材の絶対秒）
+   */
+  function forClip(offsetSec = 0) {
+    const off = Number.isFinite(offsetSec) ? offsetSec : 0;
+    /** クリップ相対の語 → 素材全体の添字（見つからなければ null）。 */
+    const absIndexOf = (relWord) => {
+      if (!relWord || !Number.isFinite(relWord.start)) return null;
+      const hit = idxByStart.get(t3(relWord.start + off));
+      if (hit !== undefined) return hit;
+      // 丸めの都合で1つずれることがあるので、近いものを探す（0.005秒まで）。
+      const abs = relWord.start + off;
+      let best = null;
+      let bestDiff = 0.005;
+      words.forEach((w, i) => {
+        const diff = Math.abs(w.start - abs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = i;
+        }
+      });
+      return best;
+    };
+    return {
+      // 第3引数（クリップ相対の語そのもの）があれば時刻で引き当てる。
+      // 無い呼び方（古い検査など）は従来どおり字面と添字で引く。
+      isFiller: (index, word, relWord) => {
+        if (relWord) {
+          const i = absIndexOf(relWord);
+          // 引き当てられなければ「消さない」を選ぶ。判断が取れない語を勝手に消すと、
+          // 話した言葉が黙って減る（消しすぎより残しすぎのほうが害が小さい）。
+          return i === null ? false : fillerSet.has(i);
+        }
+        return fillerSet.has(indexOfWord(words, word, index));
+      },
+      cutSilence: (start) => cutEnds.has(t3(start + off)),
+      _offsetSec: off,
+    };
+  }
+
   return {
-    // planTrim はクリップ相対の添字を渡してくるので、語そのもので引き当てる。
-    isFiller: (index, word) => fillerSet.has(indexOfWord(words, word, index)),
-    cutSilence: (start) => cutEnds.has(Number(start.toFixed(3))),
+    // 素材の先頭から始まるクリップ（offset=0）用。先頭以外のクリップでは forClip() を使う。
+    ...forClip(0),
+    forClip,
     _absoluteFillers: fillerSet,
     _cutEnds: cutEnds,
   };
+}
+
+/** 秒を 0.001 単位へ丸める（時刻を鍵に使うため、両側で同じ丸め方をする）。 */
+function t3(sec) {
+  return Number(Number(sec).toFixed(3));
 }
 
 /** クリップ相対の語を、素材全体の添字へ引き当てる（同じ語が複数あっても順番で当てる）。 */
