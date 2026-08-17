@@ -170,7 +170,6 @@ function runClaudeJsonOnce({
   timeoutMs = DEFAULT_CLAUDE_TIMEOUT_MS,
   onLog = () => {},
   extraArgs = [],
-  noDefaultModel = false,
 }) {
   // 打ち切り時間は必ず要る。null や 0 を渡されて「いつまでも待つ」状態になると、
   // 応答が返らないモデルで工程が永久に止まり、画面は動いているように見えたまま終わらない。
@@ -185,13 +184,8 @@ function runClaudeJsonOnce({
   }
   // 呼び出し側が --model を指定していなければ、既定モデル（Opus 5）を足す。
   // 指定していればそちらを尊重する（重複指定にしない）。
-  //
-  // noDefaultModel は「モデルを一切指定せず CLI の既定に任せる」ための逃げ道。
-  // 既定モデル名がその環境で使えないときの退避（src/digest-editor.mjs の callClaude）に要る。
-  // これが無いと、退避したはずの再試行にも同じモデル名が付いて同じ理由で落ち、
-  // 「モデル名が使えない環境では台本が作れない」状態になる。
   const hasModel = extraArgs.some((a) => a === "--model");
-  const modelArgs = noDefaultModel || hasModel ? [] : ["--model", DEFAULT_CLAUDE_MODEL];
+  const modelArgs = hasModel ? [] : ["--model", DEFAULT_CLAUDE_MODEL];
   return new Promise((resolve, reject) => {
     const child = spawn(
       "claude",

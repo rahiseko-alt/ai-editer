@@ -141,11 +141,8 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, candPath,
     throw new Error(`前回の顔モザイク確定処理の復旧に失敗しました: ${e.message}`);
   }
 
-  // 対象（各クリップ＋あればダイジェスト）を一覧にする
+  // 対象（各クリップ）を一覧にする
   const targets = (candidates.candidates || []).map((c) => ({ kind: "clip", entry: c }));
-  if (candidates.digest && candidates.digest.file) {
-    targets.push({ kind: "digest", entry: candidates.digest });
-  }
 
   // ── 第1段: 全部作る（まだ何も確定させない） ──────────────
   const made = [];
@@ -197,14 +194,7 @@ export async function applyMosaicStage({ outDir, stashDir, candidates, candPath,
   // 次回 applyMosaicStage()（＝recoverMosaicJournal()）が「退避は済んでいるか」を見て
   // 安全に先へ進める・candidates.json を仕上げられるようにする。
   const next = { ...candidates, mosaic: true };
-  const byKind = { clip: [], digest: null };
-  for (const m of made) {
-    const updated = { ...m.entry, file: m.outName, path: m.dst };
-    if (m.kind === "digest") byKind.digest = updated;
-    else byKind.clip.push(updated);
-  }
-  next.candidates = byKind.clip;
-  if (byKind.digest) next.digest = byKind.digest;
+  next.candidates = made.map((m) => ({ ...m.entry, file: m.outName, path: m.dst }));
 
   fs.mkdirSync(stashDir, { recursive: true });
   const journalPath = path.join(stashDir, JOURNAL_NAME);
