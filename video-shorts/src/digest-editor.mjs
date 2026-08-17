@@ -183,12 +183,18 @@ function understandingBlock(u, purpose = "draft") {
     ? u.themes.map((t) => `- ${t?.name ?? ""}（面白さ${t?.strength ?? "?"}/5）: ${t?.what ?? ""}`).join("\n")
     : "";
   const discard = Array.isArray(u.discard) ? u.discard.join(" / ") : "";
-  return `# この動画の理解（先に全文を読んで整理したもの）\n` +
+  // 理解の本文は、非信頼な文字起こしを読んだ LLM の出力＝文字起こしの内容が混ざりうる。
+  // つまり本文に仕込まれた指示が「理解」を経由して洗浄され、素のまま後段プロンプトへ入りうる。
+  // よって理解も文字起こし本文と同じ作法で非信頼データとして包む（指示文は包みの外に置く）。
+  const facts =
     (u.subject ? `主題: ${u.subject}\n` : "") +
     (themes ? `小テーマ:\n${themes}\n` : "") +
     (u.peak?.what ? `山場: ${u.peak.what}（${u.peak.why ?? ""}）\n` : "") +
     (discard ? `捨ててよい所: ${discard}\n` : "") +
-    (u.speakerStyle ? `話者の癖: ${u.speakerStyle}\n` : "") +
+    (u.speakerStyle ? `話者の癖: ${u.speakerStyle}\n` : "");
+  if (!facts) return "";
+  return `# この動画の理解（先に全文を読んで整理したもの）\n` +
+    `${wrapUntrustedText("understanding", facts.trimEnd())}\n` +
     (purpose === "critic"
       ? `\nこの理解は、台本を作る前に文字起こし全文を読んで整理したものです。採点にあたっては、` +
         `選ばれた区間がこの主題から外れていないか / 山場を拾えているか / 「捨ててよい所」が混じっていないかを` +
@@ -352,6 +358,10 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
   let understanding = null;
   try {
     understanding = parseJson(await callClaude(understandPrompt(transcriptText), onLog, true, cwd));
+    // 配列や素の値が返ってきた場合は「理解できなかった」として扱う（後段へ形の違うものを流さない）。
+    if (!understanding || typeof understanding !== "object" || Array.isArray(understanding)) {
+      throw new Error("理解の応答が期待した形（オブジェクト）ではありません");
+    }
     fs.writeFileSync(path.join(workDir, "understanding.json"),
       JSON.stringify(understanding, null, 2), "utf-8");
     const themeCount = Array.isArray(understanding?.themes) ? understanding.themes.length : 0;
