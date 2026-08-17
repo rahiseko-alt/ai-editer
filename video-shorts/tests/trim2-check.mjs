@@ -24,7 +24,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { chromiumLaunchOptions } from "./helpers/launch-chromium.mjs";
-import { planTrim, isFiller, AFTER_SPEECH_MARGIN_SEC } from "../src/trim-plan.mjs";
+import { planTrim, isFiller, AFTER_SPEECH_MARGIN_SEC, afterSpeechMargin } from "../src/trim-plan.mjs";
+// 【2026-08-17 虎の巻 §3-4・§8-I】詰めたあとに残す余韻は一律 0.3 秒ではなく、元の間に
+// 応じた clamp(元の間×0.25, 0.3, 0.7) になった。0.5 秒の息継ぎも 10 秒の空白も同じ 0.3 秒に
+// 潰れており、話者のリズムを機械的にならしていたため。期待値は afterSpeechMargin() で
+// 素材の間から計算する（定数を書き写すと、また実装と食い違う）。
 import { parseJobParams } from "../server/job-params.mjs";
 import { buildRenderArgs } from "../server/pipeline-runner.mjs";
 
@@ -106,18 +110,20 @@ function startServer() {
 
 (async () => {
   /* ══════ SPLIT-SILENCE ══════ */
-  await t("SPLIT-SILENCE: 無音だけを詰めると 18.2秒になり、「えーと」は残る", () => {
+  await t("SPLIT-SILENCE: 無音だけを詰めると 18.6秒になり、「えーと」は残る", () => {
+    // 18.2 → 18.6：15.0秒の発言の後の間が 3.0秒 なので、残す余韻が 0.3 → clamp(0.75,0.3,0.7)=0.7 に
+    // なったぶん（+0.4秒）。他の間（0.5/0.7/1.8/1.5秒）は 1.2秒以下か、余韻が付かない位置なので不変。
     const r = run(true, false);
-    assert.ok(Math.abs(r.keptSeconds - 18.2) <= TOL, `残り=${r.keptSeconds}（期待 18.2 ±${TOL}）`);
+    assert.ok(Math.abs(r.keptSeconds - 18.6) <= TOL, `残り=${r.keptSeconds}（期待 18.6 ±${TOL}）`);
     assert.ok(
       Math.abs(overlap(r.keep, 0.0, 1.2) - 1.2) <= TOL,
       "言い淀み「えーと」が消えている（言い淀みを消さない設定なのに巻き込まれた）",
     );
   });
 
-  await t("SPLIT-SILENCE 対照: 言い淀みも消す設定にすると 16.7秒になり「えーと」が消える", () => {
+  await t("SPLIT-SILENCE 対照: 言い淀みも消す設定にすると 17.1秒になり「えーと」が消える", () => {
     const r = run(true, true);
-    assert.ok(Math.abs(r.keptSeconds - 16.7) <= TOL, `残り=${r.keptSeconds}（期待 16.7）`);
+    assert.ok(Math.abs(r.keptSeconds - 17.1) <= TOL, `残り=${r.keptSeconds}（期待 17.1）`); // 16.7+0.4（同上）
     assert.ok(overlap(r.keep, 0.0, 1.2) <= TOL, "「えーと」が残っている（2つのつまみが独立していない）");
   });
 
@@ -143,16 +149,19 @@ function startServer() {
   /* ══════ TAIL（発言の後にだけ0.3秒）══════ */
   await t("TAIL: 詰めたつなぎ目に、直前の発言の後の 0.3秒 がちょうど残る", () => {
     const r = run(true, true);
-    // 4.2秒に終わる発言・15.0秒に終わる発言の直後
-    for (const end of [4.2, 15.0]) {
-      const kept = overlap(r.keep, end, end + AFTER_SPEECH_MARGIN_SEC);
+    // 4.2秒に終わる発言（次の語まで 0.7秒）・15.0秒に終わる発言（次の語まで 3.0秒）の直後。
+    // 残る余韻は元の間の長さで変わるので、定数ではなく afterSpeechMargin() で期待値を出す
+    // （定数を書き写すと実装と食い違ったまま緑になる）。
+    for (const [end, gap] of [[4.2, 0.7], [15.0, 3.0]]) {
+      const want = afterSpeechMargin(gap);
+      const kept = overlap(r.keep, end, end + want);
       assert.ok(
-        Math.abs(kept - AFTER_SPEECH_MARGIN_SEC) <= TOL,
-        `${end}秒 の発言の後の余韻が ${kept}秒（期待 ${AFTER_SPEECH_MARGIN_SEC}）`,
+        Math.abs(kept - want) <= TOL,
+        `${end}秒 の発言の後の余韻が ${kept}秒（期待 ${want}＝元の間 ${gap}秒 から算出）`,
       );
       // その先は詰まっていること（余韻だけ残して切る＝際限なく残さない）
       assert.ok(
-        overlap(r.keep, end + AFTER_SPEECH_MARGIN_SEC + 0.05, end + AFTER_SPEECH_MARGIN_SEC + 0.15) <= TOL,
+        overlap(r.keep, end + want + 0.05, end + want + 0.15) <= TOL,
         `${end}秒 の余韻の先が詰まっていない`,
       );
     }
@@ -188,7 +197,7 @@ function startServer() {
     // judge はそのまま、余韻の規則だけ無い状態＝旧実装の値（0.3×3＝0.9秒ぶん短い）
     const r = run(true, true);
     assert.ok(
-      Math.abs(r.keptSeconds - (16.7 - AFTER_SPEECH_MARGIN_SEC * 3)) > TOL,
+      Math.abs(r.keptSeconds - (17.1 - AFTER_SPEECH_MARGIN_SEC * 3)) > TOL,
       "余韻が1秒も足されていない（旧実装のまま）",
     );
   });
@@ -215,11 +224,20 @@ function startServer() {
     assert.ok(overlap(r.keep, 20.5, 21.0) <= TOL, "一覧に無い語を消せていない");
   });
 
-  await t("AI-FILLER 対照: 判断表を渡さないと、一覧どおりに「あの」が消える（現行の欠陥の再現）", () => {
+  // 【2026-08-17 虎の巻 §4-1・§8-H】この対照はもともと「判断表を渡さないと、一覧どおりに
+  // 『あの』が消える」＝当時の欠陥の再現だった。その欠陥自体を直したので、対照の意味を
+  // 作り直す。「あの」は指示語にもなるため、判断が無いときは消さない（安全側）。ただし
+  // 何も消さなくなったのでは詰める機能が死ぬので、他の役割を持ちようがない「えーと」は
+  // 判断が無くても従来どおり消えることを、同じ対照の中で確かめる。
+  await t("AI-FILLER 対照: 判断表が無いと、曖昧な「あの」は消さず、紛れの無い「えーと」は消える", () => {
     const r = planTrim(words, { duration: FIXTURE.durationSec, cutSilence: true, cutFillers: true });
     assert.ok(
-      overlap(r.keep, 4.9, 5.3) <= TOL,
-      "判断表なしでも「あの」が残った（この対照が成立していない）",
+      Math.abs(overlap(r.keep, 4.9, 5.3) - 0.4) <= TOL,
+      `判断表が無いのに曖昧な「あの」が消えた（残り ${overlap(r.keep, 4.9, 5.3)}秒／期待 0.4秒）`,
+    );
+    assert.ok(
+      overlap(r.keep, 0.0, 1.2) <= TOL,
+      "紛れの無い「えーと」まで残った（判断が無いときに何も消せなくなっている）",
     );
   });
 
@@ -233,9 +251,10 @@ function startServer() {
       );
     }
     const dead = overlap(r.keep, 15.0, 18.0);
+    const wantDead = afterSpeechMargin(3.0); // 元の間 3.0秒 → clamp(0.75, 0.3, 0.7) = 0.7
     assert.ok(
-      Math.abs(dead - AFTER_SPEECH_MARGIN_SEC) <= TOL,
-      `会話が途切れた無音の残りが ${dead}秒（期待 ${AFTER_SPEECH_MARGIN_SEC}）`,
+      Math.abs(dead - wantDead) <= TOL,
+      `会話が途切れた無音の残りが ${dead}秒（期待 ${wantDead}＝元の間 3.0秒 から算出）`,
     );
     // 長さの大小だけでは決まらないことの明示（1.8秒は残り、より長い3.0秒は詰まる）
     assert.ok(overlap(r.keep, 7.4, 9.2) > dead, "長さの閾値だけで決めている疑い");
