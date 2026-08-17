@@ -429,6 +429,10 @@ async function cmdRender(workDir, opts = {}) {
     // 判断材料が無いので安全側（狭いギャップしか跨がない）に倒れる。ここは製品の経路なので
     // 実測で判定させる。AIが選ばなかった発話を、尺を埋めるために黙って復活させないため。
     resolved = mergeShortSegments(resolved, MIN_SEC, MAX_GAP, transcript.words || []);
+    // snapToSilence が見ているのは transcript の語の時刻だけで、音は見ていない
+    // （純関数なので素材のパスも await も持てない＝src/snap-boundaries.mjs の注のとおり）。
+    // 音の実測（ffmpeg silencedetect）による切り口の追い込みは、素材のコマ数/秒が分かった後の
+    // 「切り口・つなぎ目を実測した無音の内側へ収める」で掛ける（虎の巻 §8-D の回答）。
     resolved = snapToSilence(resolved, transcript.words || [], {});
     log(`[INFO] 区間リファイン後: ${resolved.length} 区間（結合＋無音スナップ）`);
 

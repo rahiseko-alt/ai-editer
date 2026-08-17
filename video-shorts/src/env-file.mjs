@@ -36,6 +36,12 @@ export function readEnvFileValue(key) {
     const p = envFilePath();
     if (!fs.existsSync(p)) return null;
     const prefix = `${key}=`;
+    // 【BOM は対応済み・追加の処理は不要】外部レビュー（CodeRabbit・PR #133）から
+    // 「BOM 付き .env を読み損なう。Python 側は utf-8-sig で読むので鍵が伏字化されない」
+    // という指摘が出たが、2026-08-17 に実測したところ**再現しない**。
+    // 下の `line.trim()` が BOM を落とすため（ECMAScript は U+FEFF を空白に分類する）。
+    // 実測: BOM 付き .env から readEnvFileValue("GROQ_API_KEY") が "gsk_..." を返す。
+    // 直す前の実装を再現した対照でも同じく読めた。BOM 剥がしを足しても挙動は変わらない。
     for (const line of fs.readFileSync(p, "utf-8").split(/\r?\n/)) {
       const s = line.trim();
       if (!s.startsWith(prefix)) continue;
