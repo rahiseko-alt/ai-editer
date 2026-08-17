@@ -843,7 +843,11 @@ await t("E 対照: model と無関係の失敗では退避しない（絞り込�
       () => withFakeClaude(fake, () => runDigestEditor(digestWork(), (m) => logs.push(m))),
       /終了コード 1/,
     );
-    assert.strictEqual(fake.calls().length, 1, `model 無関係の失敗で退避している: ${JSON.stringify(err)}`);
+    // 退避したかどうかは「CLI 既定モデル（--model 無し）で呼び直した回数」で見る。
+    // 総回数では判別できない: 台本を作る前に「台本の内容を理解する」呼び出しが1回入るため
+    // （マスター指示の編集フロー）、退避していなくても回数は1で収まらない。
+    const fellBack = fake.calls().map(modelOf).filter((m) => m === null).length;
+    assert.strictEqual(fellBack, 0, `model 無関係の失敗で退避している: ${JSON.stringify(err)}`);
     assert.deepStrictEqual(logs.filter((l) => l.includes("再試行")), []);
   }
 });
