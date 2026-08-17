@@ -21,6 +21,13 @@
   <header class="topbar" role="banner" data-testid="app-header">
     <div class="brand">
       AI-Editer
+      <!-- Turbo バッジ：クラウド(Groq)で文字起こしをしている「その回・その最中」だけ出す。
+           先読み(/api/env の設定値)で出すと、実際はローカルで処理した回にも出てしまい、
+           表示と実態が食い違う（過去に同じ理由で「処理先の表示」がマスター指示で廃止された＝
+           docs/roadmap.html の G-UI-BACKEND-NOTE-TRUTH）。よって表示の根拠は
+           SSE の {stage:"t", status:"active", backend:"groq"} だけに限る。
+           .brand は display:flex; gap:8px なので、子を足すだけでロゴの右に8px空いて並ぶ。 -->
+      <span class="badge hidden" id="turbo-badge" data-testid="turbo-badge">Turbo</span>
     </div>
   </header>
 
@@ -394,6 +401,28 @@
       <div class="confirm-actions">
         <button class="btn ghost" id="confirm-back">戻る</button>
         <button class="btn cta" id="confirm-run">実行する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 台本の確認と承認（マスター指示：…→ユーザーに提示→ユーザー承認を経て編集作業の開始）=====
+       #confirm-overlay（実行前に「設定」を確認するもの）とは別物。こちらは実行後、AIが決めた
+       「どこを使うか」の台本を見せ、承認するまで書き出しを始めないための窓。
+       承認待ちの間は編集中カード(#editing-card)を一旦しまうので、「まだ書き出しは始まっていない」
+       ことが画面から分かる（暗幕＋動く帯が出たままだと処理中に見えてしまう）。 -->
+  <div class="script-overlay hidden" id="script-overlay" role="dialog" aria-modal="true"
+       aria-labelledby="script-title" data-testid="script-review">
+    <div class="script-card" id="script-modal">
+      <h2 class="script-title" id="script-title">この台本で書き出します</h2>
+      <p class="script-lead" id="script-lead" data-testid="script-lead">
+        書き出しはまだ始まっていません。使う場面を選んで「この内容で書き出す」を押すと、編集を始めます。
+      </p>
+      <ul class="summary script-meta" id="script-meta" data-testid="script-meta" aria-live="polite"></ul>
+      <div class="script-list" id="script-list"></div>
+      <p class="script-status" id="script-status" role="status"></p>
+      <div class="script-actions">
+        <button class="btn ghost" id="script-reject" data-testid="script-reject">やめる</button>
+        <button class="btn cta" id="script-approve" data-testid="script-approve">この内容で書き出す</button>
       </div>
     </div>
   </div>

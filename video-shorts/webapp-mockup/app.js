@@ -583,8 +583,20 @@ const EDITING_LABEL = {
   r: "縦長の動画に整えています",
   m: "顔にモザイクを掛けています",
 };
+// ---- Turbo バッジ（クラウド=Groq で文字起こししている最中だけ、ロゴの右に出す）----
+// 出す根拠は「今この回のサーバーが実際に Groq を使った」というSSEの事実だけに限る。
+// /api/env の設定値で先読みすると、実際にはローカルへ落ちた回にも出てしまい、表示と実態が
+// 食い違う（同じ理由で過去に「処理先の表示」がマスター指示で廃止された＝G-UI-BACKEND-NOTE-TRUTH）。
+function showTurbo() { $("turbo-badge").classList.remove("hidden"); }
+// 消す側は必ずこの1関数に寄せる。ジョブの終端は複数あり（done / job-error / interrupted /
+// 接続断 / 中止）、それぞれで消し忘れると「終わっているのにTurboが出たまま」になるため、
+// 終端が必ず通る hideEditing() と showEditingError() の2箇所から、ここを呼ぶ。
+function hideTurbo() { $("turbo-badge").classList.add("hidden"); }
+
 // 失敗時: 窓を閉じず、その場で「編集できませんでした＋理由」を明示
 function showEditingError(msg) {
+  hideTurbo();                 // 文字起こし中に落ちた場合もバッジを残さない
+  revealEditingCard();         // 台本の確認中(カードをしまっている最中)に落ちても理由が見えるように
   $("editing-error-msg").textContent = `編集できませんでした：${msg}`;
   $("editing-error").classList.remove("hidden");
   $("editing-card").classList.add("is-error");
@@ -626,12 +638,16 @@ $("cantedit-retry").addEventListener("click", () => {
 
 // 編集中は暗幕(#editing-scrim)とカード(#editing-card)を必ず一緒に出し入れする。
 // 片方だけ残ると「画面が暗いまま操作できない」か「カードだけ浮いて暗くならない」になる。
-function showEditing() {
+// hideEditing() は消えるアニメーションの後(300ms)に hidden を付ける。その待ち時間の途中で
+// もう一度出す（台本の承認→編集再開、承認待ち中の失敗表示）と、後から来たタイマーが
+// 出したばかりのカードを消してしまうので、タイマーを覚えておいて出すときに必ず止める。
+let editingHideTimer = null;
+
+/** カードと暗幕を「見える」状態にするだけ（中身のリセットはしない）。 */
+function revealEditingCard() {
+  if (editingHideTimer) { clearTimeout(editingHideTimer); editingHideTimer = null; }
   const c = $("editing-card");
   const s = $("editing-scrim");
-  c.classList.remove("is-error");
-  $("editing-error").classList.add("hidden");
-  $("editing-status").textContent = "動画を読み込んでいます";
   s.classList.remove("hidden");
   c.classList.remove("hidden");
   requestAnimationFrame(() => {
@@ -639,12 +655,22 @@ function showEditing() {
     c.classList.add("show");
   });
 }
+function showEditing() {
+  const c = $("editing-card");
+  c.classList.remove("is-error");
+  $("editing-error").classList.add("hidden");
+  $("editing-status").textContent = "動画を読み込んでいます";
+  revealEditingCard();
+}
 function hideEditing() {
+  hideTurbo();   // ジョブの終端は必ずここを通る（done / 話し声なし / 失敗窓を閉じた）
   const c = $("editing-card");
   const s = $("editing-scrim");
   c.classList.remove("show");
   s.classList.remove("show");
-  setTimeout(() => {
+  if (editingHideTimer) clearTimeout(editingHideTimer);
+  editingHideTimer = setTimeout(() => {
+    editingHideTimer = null;
     c.classList.add("hidden");
     s.classList.add("hidden");
   }, 300);
@@ -652,6 +678,7 @@ function hideEditing() {
 
 function run() {
   $("btn-run").disabled = true;
+  hideTurbo();                                      // 前回の残りをここでも必ず落とす
   $("btn-show-result").classList.add("hidden");     // 処理中は再表示導線を隠す
   showEditing();                                    // 編集中カード（ハサミ演出）を表示。進捗はカードに一本化
   // 進捗リセット
@@ -687,9 +714,18 @@ function run() {
           // 無ければ段階名からの既定文言(EDITING_LABEL)にフォールバックする。
           const text = label || EDITING_LABEL[stage];
           if (text) $("editing-status").textContent = text;
+          // 文字起こし(t)がクラウド(Groq)で走っている回だけ Turbo を出す。
+          // backend が付かない/local の回は出さない＝表示と実態を一致させる。
+          if (stage === "t" && d.backend === "groq") showTurbo();
         }
         if (status === "done") {
           setStage(stage, "done");
+          if (stage === "t") hideTurbo();   // 文字起こしが終わった時点で必ず消す
+        }
+        // 台本の承認待ち。ここで止め、ユーザーが承認するまで書き出しは始まらない。
+        if (status === "await-approval") {
+          setStage(stage, "active");
+          openScriptReview(jobId, jobToken, es);
         }
       };
 
@@ -751,15 +787,199 @@ function run() {
 }
 
 function showError(msg) {
+  closeScriptReview();             // 台本の確認中に落ちた場合、承認窓を出したまま残さない
   $("ai-text").textContent = `処理に失敗しました：${msg}`;
+  resetRunUi();
+  showEditingError(String(msg));   // 窓を閉じずに失敗を明示（沈黙で消えない）
+}
+// 実行前の状態（進捗リセット・「編集実行」を押せる）へ戻す
+function resetRunUi() {
   $("progress").classList.add("hidden");
   $("progress-note").classList.add("hidden");
   $("progress").querySelectorAll("li").forEach((li) => li.classList.remove("active", "done"));
   $("btn-run").disabled = false;
-  showEditingError(String(msg));   // 窓を閉じずに失敗を明示（沈黙で消えない）
 }
 // 失敗窓の「閉じる」
 $("editing-error-close").addEventListener("click", hideEditing);
+
+// ── 台本の提示と承認（マスター指示：…→ユーザーに提示→ユーザー承認を経て編集作業の開始）──
+// SSE が {stage:"s", status:"await-approval"} を送ってきた時点でサーバーは待ち状態に入る。
+// ここで台本(GET /api/jobs/:id/script)を見せ、採用する区間を選ばせ、
+// POST /api/jobs/:id/approve を投げるまで書き出しは始まらない。
+// scriptCtx: { jobId, jobToken, es, segments, meta, picked:Set<番号>, busy }
+let scriptCtx = null;
+
+/** 区間の長さ（秒）。start/end が壊れていても負にはしない。 */
+function segSeconds(s) {
+  const len = (Number(s?.end) || 0) - (Number(s?.start) || 0);
+  return Number.isFinite(len) && len > 0 ? len : 0;
+}
+
+function scriptStatus(text, isError) {
+  const el = $("script-status");
+  el.textContent = text || "";
+  el.classList.toggle("err", !!isError);
+}
+
+/** 送信中は二重に押せないようにする（承認を2回投げない）。 */
+function setScriptBusy(busy) {
+  $("script-approve").disabled = busy;
+  $("script-reject").disabled = busy;
+  $("script-list").querySelectorAll("input[type=checkbox]").forEach((el) => { el.disabled = busy; });
+}
+
+// Escape で誤って中止させない（中止＝ジョブを捨てるので取り返しがつかない）。
+// フォーカストラップだけ attachModal に任せ、閉じるのは「やめる」ボタンからだけにする。
+const scriptModal = attachModal($("script-overlay"), () => {
+  scriptStatus("中止するときは「やめる」を押してください。");
+});
+
+function openScriptReview(jobId, jobToken, es) {
+  scriptCtx = { jobId, jobToken, es, segments: [], meta: {}, picked: new Set(), busy: false };
+  // 承認待ちの間は編集中カードをしまう。暗幕＋動く帯が出たままだと「もう書き出している」と
+  // 見えてしまい、まだ始まっていないという事実が伝わらないため。
+  hideEditing();
+  $("script-list").innerHTML = `<p class="placeholder">台本を読み込んでいます…</p>`;
+  $("script-meta").innerHTML = "";
+  $("script-approve").disabled = true;
+  $("script-reject").disabled = false;
+  scriptStatus("");
+  const ov = $("script-overlay");
+  ov.classList.remove("hidden");
+  requestAnimationFrame(() => ov.classList.add("show"));
+  scriptModal.open($("script-reject")); // 初期フォーカスは「やめる」（承認は自分で選んで押させる）
+
+  fetch(withTokenQuery(`/api/jobs/${jobId}/script`, jobToken), withTokenHeader({}, jobToken))
+    .then((r) => (r.ok
+      ? r.json()
+      : r.json().then((j) => Promise.reject(new Error(j.error || j.message || `台本の読み込みに失敗しました（${r.status}）`)))))
+    .then((data) => {
+      if (!scriptCtx || scriptCtx.jobId !== jobId) return;  // 途中で閉じられていたら捨てる
+      scriptCtx.segments = Array.isArray(data.segments) ? data.segments : [];
+      scriptCtx.meta = data.meta || {};
+      // 既定は「提示どおり全部採用」。除外はユーザーが明示的に外したものだけ。
+      scriptCtx.segments.forEach((_, i) => scriptCtx.picked.add(i));
+      renderScriptSegments();
+    })
+    .catch((e) => {
+      if (!scriptCtx || scriptCtx.jobId !== jobId) return;
+      $("script-list").innerHTML = "";
+      scriptStatus(e.message, true);
+    });
+}
+
+function renderScriptSegments() {
+  const list = $("script-list");
+  if (!scriptCtx) return;
+  const segs = scriptCtx.segments;
+  list.innerHTML = segs.length
+    ? segs.map((s, i) => {
+        const on = scriptCtx.picked.has(i);
+        return `<label class="script-seg${on ? "" : " is-off"}" data-testid="script-segment" data-i="${i}">` +
+          `<input type="checkbox" data-i="${i}"${on ? " checked" : ""} aria-label="この場面を採用する" />` +
+          `<span class="script-seg-body">` +
+            `<b class="script-seg-hook">${esc(s.hook || "（見出しなし）")}</b>` +
+            `<span class="script-seg-len" data-testid="script-segment-len">${fmtDuration(segSeconds(s))}</span>` +
+            `<span class="script-seg-text">${esc(s.keepText || "")}</span>` +
+            // なぜこの場面が選ばれたか。これが見えないと、採用するかどうかを判断できない。
+            (s.reason
+              ? `<span class="script-seg-reason" data-testid="script-segment-reason">選んだ理由: ${esc(s.reason)}</span>`
+              : "") +
+          `</span></label>`;
+      }).join("")
+    : `<p class="placeholder">使える場面が見つかりませんでした。「やめる」で戻り、設定を変えてやり直してください。</p>`;
+  renderScriptMeta();
+}
+
+/** 採用中の本数・合計の長さ・目標との差を出し直す（チェックのたびに呼ぶ）。 */
+function renderScriptMeta() {
+  if (!scriptCtx) return;
+  const segs = scriptCtx.segments;
+  const total = segs.reduce((a, s, i) => (scriptCtx.picked.has(i) ? a + segSeconds(s) : a), 0);
+  const rows = [
+    ["使う場面", `${segs.length}件のうち ${scriptCtx.picked.size}件`],
+    ["合計の長さ", fmtDuration(total)],
+  ];
+  const target = Number(scriptCtx.meta?.targetSeconds);
+  if (Number.isFinite(target) && target > 0) {
+    const diff = Math.round(total - target);
+    const rel = diff === 0 ? "ちょうど" : diff > 0 ? `${fmtDuration(diff)} 長い` : `${fmtDuration(-diff)} 短い`;
+    rows.push(["目標の長さ", `${fmtDuration(target)}（いまの選択は ${rel}）`]);
+  }
+  $("script-meta").innerHTML = rows.map(([k, v]) => `<li><b>${esc(k)}</b><span>${esc(v)}</span></li>`).join("");
+  // 1件も選んでいなければ書き出すものが無いので押させない
+  $("script-approve").disabled = scriptCtx.picked.size === 0;
+}
+
+$("script-list").addEventListener("change", (ev) => {
+  const cb = ev.target.closest("input[type=checkbox][data-i]");
+  if (!cb || !scriptCtx || scriptCtx.busy) return;
+  const i = Number(cb.dataset.i);
+  if (cb.checked) scriptCtx.picked.add(i); else scriptCtx.picked.delete(i);
+  cb.closest(".script-seg")?.classList.toggle("is-off", !cb.checked);
+  renderScriptMeta();   // 合計の長さをその場で更新（作り直すとチェック操作の途中で描画が飛ぶ）
+});
+
+/** 承認窓を閉じる（表示を消す処理はここ1箇所に寄せる）。 */
+function closeScriptReview() {
+  if (!scriptCtx) return;
+  scriptCtx = null;
+  const ov = $("script-overlay");
+  ov.classList.remove("show");
+  setTimeout(() => ov.classList.add("hidden"), 250);
+  scriptModal.close();
+}
+
+/** approve API を1本にまとめる。approved:false は中止（サーバーはジョブを捨てる）。 */
+function postApproval(approved) {
+  if (!scriptCtx || scriptCtx.busy) return;
+  // 送信中にジョブが落ちる(showError → closeScriptReview)ことがあるので、
+  // 応答が返った時点で「まだ同じ承認待ちが生きているか」を必ず確かめる。
+  const ctx = scriptCtx;
+  const { jobId, jobToken, segments, picked } = ctx;
+  scriptCtx.busy = true;
+  setScriptBusy(true);
+  scriptStatus(approved ? "書き出しの準備をしています…" : "中止しています…");
+  const body = approved
+    // 全部採用のままなら segments は省略できる（省略時＝提示どおり）。
+    ? (picked.size === segments.length
+        ? { approved: true }
+        : { approved: true, segments: segments.filter((_, i) => picked.has(i)) })
+    : { approved: false };
+  fetch(withTokenQuery(`/api/jobs/${jobId}/approve`, jobToken),
+    withTokenHeader({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }, jobToken))
+    .then((r) => (r.ok
+      ? r.json().catch(() => ({}))
+      : r.json().then((j) => Promise.reject(new Error(j.error || j.message || `送信に失敗しました（${r.status}）`)))))
+    .then(() => {
+      if (scriptCtx !== ctx) return;   // 既に失敗表示へ切り替わっている＝ここで上書きしない
+      const es = ctx.es;
+      closeScriptReview();
+      if (approved) {
+        showEditing();   // ここから先が本当の書き出し
+        $("editing-status").textContent = "選んだ場面で動画を作っています";
+      } else {
+        // 中止: SSE を閉じ、実行前の画面へ戻す（サーバーからの続報は待たない）
+        es?.close();
+        hideEditing();
+        resetRunUi();
+        $("ai-text").textContent = "書き出しをやめました。設定を変えて、もう一度『編集実行』を押せます。";
+      }
+    })
+    .catch((e) => {
+      if (scriptCtx !== ctx) return;
+      scriptCtx.busy = false;
+      setScriptBusy(false);
+      scriptStatus(e.message, true);
+    });
+}
+
+$("script-approve").addEventListener("click", () => postApproval(true));
+$("script-reject").addEventListener("click", () => postApproval(false));
 
 // 作成履歴: 実行のたびに1ジョブを積む。閉じても消えない＝過去分も見返せる
 let jobs = [];

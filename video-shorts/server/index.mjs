@@ -23,7 +23,11 @@ import {
   runGated,
   cancelJob,
   groqKeyAvailable,
+  submitApproval,
+  isAwaitingApproval,
 } from "./pipeline-runner.mjs";
+import { parseResponse } from "../src/select-segments.mjs";
+import { resolveSegments } from "../src/reverse-match.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
   REFERENCE_CANVAS,
@@ -711,6 +715,100 @@ async function handlePostTerms(req, res, jobId) {
   return jsonRes(res, 200, { ok: true, ...result });
 }
 
+// ── 台本の提示と承認（マスター指示の編集フロー） ──────────────
+// 「使う部分を文字単位で決める → ユーザーに提示 → 承認を経て編集作業の開始」の、
+// 提示(GET /script)と承認(POST /approve)。認可は他のジョブ用APIと同じく
+// isAuthorizedForJob（ジョブごとのトークン）で、ここだけ緩めない。
+
+/** ジョブの state.json を読む。無ければ null。 */
+function readJobState(jobId) {
+  const p = path.join(WORK_ROOT, jobId, "state.json");
+  if (!fs.existsSync(p)) return null;
+  return JSON.parse(fs.readFileSync(p, "utf-8"));
+}
+
+// GET /api/jobs/:id/script — 承認待ちの台本（使う区間）を返す
+function handleGetScript(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  const respPath = path.join(WORK_ROOT, id, "llm-response.json");
+  // まだ選定(s)が終わっていない＝台本が無い。「空の台本」を200で返すと画面が
+  // 「0区間の台本が確定した」と誤って見せるので、無いことは404で伝える。
+  if (!fs.existsSync(respPath)) return jsonRes(res, 404, { error: "Not Found" });
+
+  let raw, segs;
+  try {
+    raw = JSON.parse(fs.readFileSync(respPath, "utf-8"));
+    segs = parseResponse(raw); // keepText を持つ区間だけ（防御的パース）
+  } catch (e) {
+    return jsonRes(res, 500, { error: `台本を読めませんでした: ${e.message}` });
+  }
+
+  // 秒数は文字起こしへの逆マッチングで確定する（台本自体は秒数を持たない＝落とし穴#1）。
+  // 文字起こしがまだ無い/読めない・照合できなかった区間は 0 のままにする（0 は
+  // 「まだ確定していない」印であって、実際に0秒から始まる区間という意味ではない）。
+  const byText = new Map();
+  try {
+    const transcript = readTranscript(id);
+    if (transcript) {
+      // digest（分数で切る）は台本の並び順そのものが編集意図なので順序を保つ。
+      const mode = readJobState(id)?.mode;
+      for (const r of resolveSegments(segs, transcript, { preserveOrder: mode === "digest" })) {
+        if (!byText.has(r.keepText)) byText.set(r.keepText, r);
+      }
+    }
+  } catch (_) {
+    // 逆マッチングは提示の付加情報。ここで落ちても台本自体は返す。
+  }
+
+  const rawMeta = raw && !Array.isArray(raw) && typeof raw === "object" ? (raw.meta || {}) : {};
+  return jsonRes(res, 200, {
+    segments: segs.map((s, i) => {
+      const r = byText.get(s.keepText);
+      return {
+        keepText: s.keepText,
+        hook: s.hook || "",
+        // なぜこの区間を採ったかの理由。承認画面で「なぜこれが選ばれたか」が見えないと
+        // ユーザーは判断できないため、台本を書いた側が残した reason をそのまま通す。
+        reason: s.reason || "",
+        start: r ? r.start : 0,
+        end: r ? r.end : 0,
+        index: i,
+      };
+    }),
+    meta: {
+      // 台本を書いた側(src/digest-editor.mjs)が meta へ足した情報（何を主題と理解したか等）は
+      // そのまま通す。約束した3つのキーは、下で必ず埋める（欠けたり別の意味になったりしない）。
+      ...rawMeta,
+      targetSeconds: Number.isFinite(rawMeta.targetSeconds) ? rawMeta.targetSeconds : null,
+      actualSeconds: Number.isFinite(rawMeta.actualSeconds) ? rawMeta.actualSeconds : null,
+      count: segs.length,
+    },
+  });
+}
+
+// POST /api/jobs/:id/approve — 台本を承認して編集作業（レンダリング）へ進める
+async function handleApprove(req, res, jobId) {
+  const id = safeId(jobId);
+  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
+  let body;
+  try {
+    body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return jsonRes(res, 413, { error: e.message });
+    return jsonRes(res, 400, { error: "本文が JSON ではありません" });
+  }
+  // 承認待ちでないジョブへの承認は409（まだ選定中／既に走り出した／終わっている）。
+  // 判定はメモリ上の承認待ち一覧が正で、submitApproval 側でも同じ確認をする
+  // （ここは分かりやすいエラーを返すためだけの先回り）。
+  if (!isAwaitingApproval(id)) {
+    return jsonRes(res, 409, { error: "このジョブは承認待ちではありません" });
+  }
+  const result = submitApproval(id, body);
+  if (!result.ok) return jsonRes(res, result.badRequest ? 400 : 409, { error: result.reason });
+  return jsonRes(res, 200, { ok: true, count: result.count ?? null });
+}
+
 // POST /api/jobs/:id/cancel — 実行中のジョブを手動でキャンセルする(AUD-P1-11a)
 function handleCancelJob(req, res, jobId) {
   const id = safeId(jobId);
@@ -850,6 +948,27 @@ async function handleRequest(req, res) {
       return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
     }
     return handlePostTerms(req, res, id);
+  }
+
+  // GET /api/jobs/:id/script（承認待ちの台本を提示する）
+  const scriptMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/script$/);
+  if (method === "GET" && scriptMatch) {
+    const id = decodeId(scriptMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    return handleGetScript(req, res, id);
+  }
+
+  // POST /api/jobs/:id/approve（台本を承認して編集作業へ進める／却下して中止する）
+  const approveMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/approve$/);
+  if (method === "POST" && approveMatch) {
+    const id = decodeId(approveMatch[1]);
+    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
+    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
+    if (!writeRateLimiter.allow(id)) {
+      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
+    }
+    return handleApprove(req, res, id);
   }
 
   // POST /api/jobs/:id/cancel（AUD-P1-11a: 実行中のジョブを手動でキャンセルする）
