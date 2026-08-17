@@ -64,6 +64,7 @@ function callClaude(prompt, onLog, useModel = true, cwd) {
     extraArgs: useModel ? ["--model", MODEL] : [],
     // 退避のときは共通口の既定モデルも付けない（付くと同じ理由で落ちる）。
     noDefaultModel: !useModel,
+    onLog,
   }).catch((e) => {
     // 終了コードが 0 でない失敗にだけ stderr/stdout が付く（打ち切り・spawn 失敗・JSON 崩れには付かない）。
     // ＝再試行するのは「--model 指定が原因で終了コードが非0になった」場合だけ、という従来の絞り込みのまま。
@@ -78,6 +79,8 @@ function callClaude(prompt, onLog, useModel = true, cwd) {
       onLog(`[digest] --model ${MODEL} 失敗→CLI既定モデルで再試行`);
       return callClaude(prompt, onLog, false, cwd);
     }
+    // サーバー混雑（529）の再試行は共通口 runClaudeJson 側で行う（誤字修正・区間選定でも
+    // 同じ失敗が起きうるため、1箇所に置いて全呼び出しへ効かせる）。ここでは投げるだけ。
     throw e;
   });
 }

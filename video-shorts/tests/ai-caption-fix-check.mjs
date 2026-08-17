@@ -633,7 +633,12 @@ await t("E: 共通口は ツール無効化 / env allowlist / 隔離cwd を必�
   const args = src.match(/spawn\(\s*["']claude["'][\s\S]*?\n\s*\);/);
   assert.ok(args, "spawn の呼び出しが読み取れない");
   assert.ok(/\bcwd,/.test(args[0]), "受け取った cwd を spawn へ渡していない");
-  assert.ok(/function runClaudeJson\(\{[^}]*\bcwd\b/.test(src), "cwd を引数で受け取っていない");
+  // 2026-08-17: runClaudeJson は 529(サーバー混雑)の再試行を挟む薄いラッパーになり、
+  // 実際に spawn する本体は runClaudeJsonOnce へ分離された（守りはそちらが持つ）。
+  // 外から見える口の名前は runClaudeJson のまま（呼び出し側は変更不要）なので、
+  // 「cwd を引数で受け取る関数」は名前を問わず探す。
+  assert.ok(/function \w+\(\{[^}]*\bcwd\b/.test(src), "cwd を引数で受け取っていない");
+  assert.ok(/export function runClaudeJson\(/.test(src), "runClaudeJson という名の公開口が無い");
 });
 
 /** 偽 claude を PATH の先頭に置いて fn を実行する。 */
