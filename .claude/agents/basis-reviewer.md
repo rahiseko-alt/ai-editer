@@ -1,6 +1,6 @@
 ---
 name: basis-reviewer
-description: 基準凍結の門の「第2の目」。criteria/verify（受入基準）や AGENTS.md の規律を凍結する瞬間に、その分解と合格ラインが atomic・十分・平易かを、作業した本人以外の立場で敵対的にレビューする。反証は非エンジニアが読める平易な1文で出す。done判定ではなく"基準そのものの質"を見る点で independent-verifier とは別役。
+description: 基準凍結の門の「第2の目」。criteria/verify（受入基準）や AGENTS.md の規律を凍結する瞬間に、その分解と合格ラインが atomic・十分・平易かを、作業した本人以外の立場で敵対的にレビューする。反証は非エンジニアが読める平易な1文で出す。done判定ではなく"基準そのものの質"を見る点で independent-verifier とは別役。docs/failures.md との過去照合は行わない（それは precedent-reviewer の役目。基準凍結時は両者を並列で呼ぶ）。
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
