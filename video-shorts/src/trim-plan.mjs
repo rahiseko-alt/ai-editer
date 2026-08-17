@@ -13,9 +13,14 @@
 // ・言い淀み以外の語。詰めた結果、必要な話まで消えてはいけない（葉C）。
 
 /**
- * 言い淀みとみなす語。
+ * 言い淀み**の候補**とみなす語（候補抽出専用。この一覧だけで消してよいという意味ではない）。
  * 音声認識の書き起こしは伸ばし棒や句読点が揺れるので、比べる前に形をそろえる。
- * ここに無い言い回しは切らない（迷ったら残す。必要な話を消すほうが害が大きい）。
+ * ここに無い言い回しは候補にしない（迷ったら残す。必要な話を消すほうが害が大きい）。
+ *
+ * 【この一覧で消してはいけない理由】docs/編集についての虎の巻.md §4-1。
+ * 同じ表記でも役割が違う——「あのー、そうですね」の「あの」は言い淀みだが、
+ * 「あの資料を見てください」の「あの」は指示語で、消すと何を指すか分からなくなる。
+ * どちらかは前後の文脈を見ないと決まらないので、決定権は judge（AI の文脈判断）にある。
  */
 export const FILLERS = [
   "えーと", "えっと", "えと", "ええと",
@@ -27,16 +32,75 @@ export const FILLERS = [
 ];
 
 /**
- * 詰めた継ぎ目に残す「言い終わりの余韻」（秒）。
+ * 上の候補のうち、**他の役割を持ちようがない表記**だけを集めたもの。
+ * judge（AI の文脈判断）が渡されない経路では、こちらだけを消す。
+ *
+ * 【なぜ分けるか】虎の巻 §4-1 は「固定の単語リストで消してはいけない」と言うが、
+ * judge を呼べない経路（AI を動かせない環境・CLI 直叩き）で1語も消えなくなると使い物に
+ * ならない。そこで「文脈を見なくても役割が1つに決まる表記」だけを残し、役割が2つ以上ある
+ * 表記（虎の巻 §4-1 の表に載っている「あの」「その」「まあ」「なんか」と、その伸ばし形の
+ * 「まー」）は judge が無い限り消さない＝安全側（消しすぎない側）へ倒す。
+ * 「えと」も外してある（「絵と写真」のように助詞「と」が付いた語と同じ表記になりうる）。
+ *
+ * 【長音を落としてはいけない】判定は normalizeFillerSurface()（伸ばし棒を残す形そろえ）で行う。
+ * 既存の normalizeWord() は「ー」を落とすので「あのー」と「あの」が同じ語になってしまい、
+ * ここで分けたい2つの役割がそもそも区別できない。
+ */
+export const UNAMBIGUOUS_FILLERS = [
+  "えーと", "えっと", "ええと",
+  "あのー", "あのう",
+  "そのー",
+  "うーん", "んー",
+];
+
+/**
+ * 詰めた継ぎ目に残す「言い終わりの余韻」の**下限**（秒）＝半呼吸。
  *
  * マスター指示（2026-08-16）「発言の後にだけ、余韻を0.3秒存在させる」。**前には付けない。**
- * この規則により、詰めたあとの継ぎ目はどれも必ずちょうど 0.3 秒の間になる
- * （元から 0.3 秒以下の間は、詰める余地が無いのでそのまま残る）。
- *
  * 直前に「残る発言」が無いとき（動画の冒頭など）は余韻を付けず、その区間は全部詰める。
  * 余韻は「発言の後」に置くものなので、置く相手が居なければ置きようがない。
  */
 export const AFTER_SPEECH_MARGIN_SEC = 0.3;
+
+/**
+ * 詰めた継ぎ目に残す余韻の**上限**（秒）＝一呼吸。
+ * src/breath-handles.mjs の DEFAULT_MAX_PAUSE_SEC と同じ値にそろえてある
+ * （digest 経路と topic 経路で、つなぎ目の間の作り方を食い違わせないため）。
+ */
+export const MAX_AFTER_SPEECH_MARGIN_SEC = 0.7;
+
+/** 元の間のうち、余韻として残す割合。 */
+export const PAUSE_KEEP_RATIO = 0.25;
+
+/**
+ * 元の間の長さから、詰めたあとに残す間を決める。
+ *
+ * 【なぜ一律 0.3 秒をやめたか】2026-08-17。以前はここが定数 0.3 秒だったため、
+ * 元が 0.5 秒の息継ぎも、3 秒の沈黙も、10 秒の空白も、詰めたあとは**全部ちょうど 0.3 秒**に
+ * なっていた（実測で確認）。docs/編集についての虎の巻.md の原則5「均一化しない」と §3-4
+ * 「繋ぎ目の間を全部同じ長さにしない／同じ話題の中は半呼吸・話題が変わる所は一呼吸」の
+ * 正面からの違反で、話者のリズムが機械的にならされる。
+ *
+ * 【どう決めるか】src/breath-handles.mjs（虎の巻に照らして最も整合的な既存実装）と同じ考え方。
+ *   ・元の間を手がかりにする。長い間ほど大きな区切り（話題の変わり目）である見込みが高い。
+ *   ・素材が元々持っていた間より長い間は作らない（「溜め」を捏造しない＝原則4）。
+ *   ・下限は半呼吸 0.3 秒（＝従来値）、上限は一呼吸 0.7 秒。
+ *
+ * 【既定の挙動が大きく変わらないようにしてある】比率 0.25 なので、元の間が 1.2 秒までは
+ * 従来どおりちょうど 0.3 秒になる。実素材の息継ぎ（0.4〜0.9 秒）はこの範囲に入るので、
+ * 変わるのは「1.2 秒より長い間」＝話題の変わり目や長い沈黙だけである。
+ *
+ * @param {number} gapSec 元の間の長さ（秒）
+ * @returns {number} 残す秒数
+ */
+export function afterSpeechMargin(gapSec) {
+  if (!Number.isFinite(gapSec) || gapSec <= 0) return AFTER_SPEECH_MARGIN_SEC;
+  const scaled = gapSec * PAUSE_KEEP_RATIO;
+  return Math.min(
+    MAX_AFTER_SPEECH_MARGIN_SEC,
+    Math.max(AFTER_SPEECH_MARGIN_SEC, scaled),
+  );
+}
 
 /** 継ぎ目に掛けるフェードの長さ（秒）。短すぎると跳ねが残り、長すぎると語頭が痩せる。 */
 export const SEAM_FADE_SEC = 0.005;
@@ -58,10 +122,33 @@ export function normalizeWord(text) {
 
 const FILLER_SET = new Set(FILLERS.map(normalizeWord).filter(Boolean));
 
-/** その語が言い淀みか。 */
+/**
+ * 語を比べるために形をそろえる（**伸ばし棒は残す**）。
+ * 「あのー」と「あの」は役割が違う（言い淀み／指示語）ので、この2つを混ぜてはいけない。
+ * 落とすのは句読点・空白・記号だけ。
+ */
+export function normalizeFillerSurface(text) {
+  if (typeof text !== "string") return "";
+  return text.trim().replace(/[、。，．,.!?！？\s　]/g, "");
+}
+
+const UNAMBIGUOUS_FILLER_SET = new Set(
+  UNAMBIGUOUS_FILLERS.map(normalizeFillerSurface).filter(Boolean),
+);
+
+/** その語が言い淀みの**候補**か（候補抽出専用。これだけで消してはいけない）。 */
 export function isFiller(text) {
   const n = normalizeWord(text);
   return n.length > 0 && FILLER_SET.has(n);
+}
+
+/**
+ * その語が「文脈を見なくても言い淀みだと決まる」表記か。
+ * judge（AI の文脈判断）が無いときの消してよい条件はこちら。
+ */
+export function isUnambiguousFiller(text) {
+  const n = normalizeFillerSurface(text);
+  return n.length > 0 && UNAMBIGUOUS_FILLER_SET.has(n);
 }
 
 /**
@@ -148,10 +235,13 @@ export function planTrim(words, opts = {}) {
     }
     const s = Math.max(cursor, w.start);
     if (w.end > s) {
-      // 言い淀みかどうかの決定権は judge にある。judge が無いときだけ一覧で決める
-      // （2026-08-16 以前の挙動。一覧は「あの」「その」を単体で含むため、判定を任せると
-      //  「あの資料」の指示語まで消える。これがマスター指摘の実害(a)）。
-      const filler = judgeIsFiller ? judgeIsFiller(absIndex, w.w) === true : isFiller(w.w);
+      // 言い淀みかどうかの決定権は judge にある。judge が無いときは、文脈を見なくても
+      // 役割が1つに決まる表記だけを消す（isUnambiguousFiller）。
+      // 2026-08-17 まではここが isFiller(w.w)＝固定一覧そのままだったため、judge を渡さない
+      // 経路では「あの資料を見てください」の「あの」が実測で 100% 消えていた（虎の巻 §4-1 違反）。
+      const filler = judgeIsFiller
+        ? judgeIsFiller(absIndex, w.w) === true
+        : isUnambiguousFiller(w.w);
       regions.push({ start: s, end: w.end, kind: filler ? "filler" : "word" });
     }
     cursor = Math.max(cursor, w.end);
@@ -181,8 +271,10 @@ export function planTrim(words, opts = {}) {
       ? judgeCutSilence(r.start, r.end, r.afterIndex) === true
       : r.end - r.start >= minSilence;
     if (cutSilence && wantCut && !isProtected(r)) {
-      // 直前が残る発言なら、その後ろ 0.3秒だけ余韻として残してから詰める。
-      const margin = prevKept ? AFTER_SPEECH_MARGIN_SEC : 0;
+      // 直前が残る発言なら、その後ろに余韻を残してから詰める。
+      // 残す長さは元の間の長さで変える（afterSpeechMargin。半呼吸0.3秒〜一呼吸0.7秒）。
+      // 全部同じ長さにすると、話者のリズムが機械的にならされる（虎の巻 原則5／§3-4）。
+      const margin = prevKept ? afterSpeechMargin(r.end - r.start) : 0;
       const cutFrom = r.start + margin;
       if (cutFrom >= r.end - 1e-9) {
         // 余韻のぶんで区間を使い切る＝詰める余地が無い。そのまま残す。

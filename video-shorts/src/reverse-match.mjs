@@ -108,6 +108,8 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
     // 重なった場合のみ。重複分を二重に数えないよう target 長で頭打ちにする。
     matchedChars = Math.min(target.length, headPos.len + tailPos.len);
   } else {
+    // 片側だけの一致。区間は語境界に揃う（下の longestPrefixMatch 手前の調査コメント参照）が、
+    // keepText のうち当たらなかった側は黙って落ちる。＝ここは「広く取る」の逆向き。未修正。
     const useHead = headPos.len >= tailPos.len;
     const side = useHead ? headPos : tailPos;
     startCharPos = side.pos;
@@ -129,6 +131,32 @@ export function matchOne(keepText, words, charIndex, minCharPos = 0, opts = {}) 
     endCharPos,
   };
 }
+
+// 【調査済み・2026-08-17】docs/編集についての虎の巻.md 8節A「部分一致が単語の途中から切り出す
+// （「画編集」を生む直接の実装）」は、**この実装では再現しない**。同じ調査を繰り返さないこと。
+//
+// 下の2関数は確かに target を1文字ずつ削って候補文字列を作るので、「画編集の話」のような
+// 語の途中から始まる候補が生成される。しかしそれは **探す鍵** にしか使われない。返す時刻は
+// matchOne が `words[charToWord[pos]].start` / `words[charToWord[endCharPos]].end` で決めており、
+// charToWord は文字位置を「その文字を含む語」へ写すため、pos が語の途中を指していても
+// start は必ずその語の先頭へ、end は必ずその語の末尾へ **外側に丸められる**。
+// ＝切り出す区間は常に語の境界に揃い、区間は候補文字列より狭くならない（原則3の向き）。
+//   実測: ランダム素材で成立したマッチ 126,234 件のうち、start/end が語境界に揃わなかったのは 0 件。
+//   実測: 8節Aが提案する直し方（「縮める単位を文字ではなく単語にする」）を実装して
+//        tests/fixtures/ai-caption-fix/transcript-miswritten.json に当てたが、
+//        一致位置・長さ・開始語すべて現状と同一だった（＝この提案は効かない）。
+//        理由は Whisper の words が形態素粒度（「健康」「診断」が別語）で、
+//        文字単位で削った候補の端も既に語境界に一致しているため。
+//
+// ただし **別の実害は残っている**（8節Aの説明とは原因も直し方も違うので、別件として扱うこと）:
+// 片側しか当たらなかったとき（下の else 分岐）、当たった側の範囲だけを区間にするので、
+// keepText の残り（文末表現や複合語の前半）が黙って落ちる。上記 fixture での実測:
+//   keepText「毎年の診断の結果についてお話しします」→ [1.0, 3.9] conf=0.833。
+//   実際に流れるのは「診断の結果についてお話しします」で、複合語「健康診断」が
+//   「健康」を落として割れる（§2-2 違反）。keepText 欄は元の全文のままなので台本と音もずれる。
+// これを「欠かさない方向へ外側に広げる」直し方は試作済みだが、tests/smoke.mjs の凍結済み
+// P1-9 アサーション3件（「頭側だけの区間として残る」= end===2.0 を固定しているもの）と
+// 正面から矛盾する。基準の側を動かす判断が要るため、ここでは直していない。
 
 /** target の先頭から最長で joined（fromPos 以降）に現れる接頭辞を二分探索的に求める */
 function longestPrefixMatch(joined, target, fromPos = 0) {
