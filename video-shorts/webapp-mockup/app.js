@@ -868,9 +868,14 @@ $("editing-error-close").addEventListener("click", hideEditing);
 // つないだ「ひと続きの文章」として出し、その中の任意の場所を、好きなだけ選んで消せるようにする。
 // 実際に音が切れるのは語の切れ目なので、選択は語（tokens の1要素）へ落とす。
 //
+// さらに 2026-08-17（3回目の指摘）：出すのは「AIが選んだ所」だけではなく **文字起こしの全文**。
+// AIが使うと決めた所を白、それ以外を濃いグレーで並べ、その1枚がそのまま台本になる。
+// 白を押せば濃いグレー側へ落ちる（＝台本の修正）。落としたものはもう一度押せば戻る。
+//
 // scriptCtx: { jobId, jobToken, es, segments, meta, tokens, dropped:Set<tokenの番号>, busy }
-//   tokens[i] = {kind:"word", seg, w, start, end}   … 逆照合できた区間の語（消せる）
-//             | {kind:"text", seg, text}            … 逆照合できなかった区間（消せないが必ず出す）
+//   tokens[i] = {kind:"word", seg:番号, w, start, end}  … AIが使う語（白・消せる）
+//             | {kind:"word", seg:null,  w, start, end}  … AIが使わない語（濃いグレー・触れない）
+//             | {kind:"text", seg, text}                 … 全文に居場所が無かった区間（消せないが必ず出す）
 let scriptCtx = null;
 
 /** 区間の長さ（秒）。start/end が壊れていても負にはしない。 */
@@ -923,9 +928,13 @@ function openScriptReview(jobId, jobToken, es) {
       scriptCtx.segments = Array.isArray(data.segments) ? data.segments : [];
       scriptCtx.meta = data.meta || {};
       // 既定は「提示どおり全部使う」。消えるのはユーザーが明示的に消した所だけ。
-      scriptCtx.tokens = buildScriptTokens(scriptCtx.segments);
+      scriptCtx.tokens = buildScriptTokens(scriptCtx.segments, data.transcript);
       scriptCtx.dropped.clear();
       renderScriptFlow();
+      // 全文を出せなかったときは、なぜ出せないのかをそのまま出す（黙って
+      // 「AIが選んだ所だけ」に戻ると、全文が無いことに気づけない）。
+      const tr = data.transcript;
+      if (tr && tr.available === false && tr.reason) scriptStatus(String(tr.reason));
     })
     .catch((e) => {
       if (!scriptCtx || scriptCtx.jobId !== jobId) return;
@@ -935,13 +944,36 @@ function openScriptReview(jobId, jobToken, es) {
 }
 
 /**
- * 台本を「ひと続きの文章」にほどく。全区間の words を時刻順のまま1本に連結する。
- * words が空の区間（逆照合に失敗＝サーバーが words:[] を返した）は語に割れないので、
- * keepText をそのまま本文へ流し込み、範囲選択の対象外にする。黙って落とすと、画面に
- * 出ていない文が書き出しに混ざることになるので、必ず出す。
+ * 台本を「ひと続きの文章」にほどく。
+ *
+ * 本筋（サーバーが transcript.available:true を返したとき）＝文字起こしの全語を、
+ * 最初から最後まで時刻順に1本へ並べる。各語が持つ seg（AIが使うと決めた区間の添字。
+ * 使わないなら null）はそのまま持ち回り、描画と書き出しの両方がそれを見る。
+ * 全文のどこにも居場所が無かった区間（transcript.unresolved）は語に割れないので、
+ * keepText をそのまま末尾へ流し込む。黙って落とすと画面に出ていない文が書き出しに
+ * 混ざることになるので、必ず出す。
+ *
+ * 退避（全文が読めない＝available:false）＝これまでどおり、AIが選んだ区間の words だけを
+ * つなぐ。全文が出ないだけで、台本の確認・修正・書き出しは今までどおりできる。
  */
-function buildScriptTokens(segs) {
+function buildScriptTokens(segs, transcript) {
   const tokens = [];
+  const full = transcript && transcript.available && Array.isArray(transcript.words)
+    ? transcript.words : null;
+  if (full) {
+    full.forEach((w) => {
+      const text = String(w?.w ?? "");
+      if (!text) return;
+      const seg = Number.isInteger(w?.seg) && w.seg >= 0 && w.seg < (segs || []).length ? w.seg : null;
+      tokens.push({ kind: "word", seg, w: text, start: Number(w.start) || 0, end: Number(w.end) || 0 });
+    });
+    const unresolved = Array.isArray(transcript.unresolved) ? transcript.unresolved : [];
+    unresolved.forEach((si) => {
+      const text = String(segs?.[si]?.keepText || "");
+      if (text) tokens.push({ kind: "text", seg: si, text });
+    });
+    return tokens;
+  }
   (segs || []).forEach((s, si) => {
     const words = Array.isArray(s?.words) ? s.words : [];
     if (words.length === 0) {
@@ -965,6 +997,10 @@ function buildScriptTokens(segs) {
  * 前提が保たれ、後段の逆照合で秒数が確定できる。ここを崩すと動画が作れなくなる）。
  * hook は元になった区間のものを引き継ぐ（分割されたら両方に同じものが付く）。
  * 秒数は語の実測（先頭語の start 〜 末尾語の end）。推定はしない。
+ *
+ * 本文は文字起こしの時系列で並んでいるが、送る区間の並びは「AIが決めた区間の順」へ戻す。
+ * まとめて1本(digest)では台本の並び順そのものが編集意図なので、画面の並び（時系列）を
+ * そのまま送ると意図した順番が壊れる。同じ区間の中の順序は時系列のまま。
  */
 function buildKeptRuns() {
   if (!scriptCtx) return [];
@@ -976,6 +1012,7 @@ function buildKeptRuns() {
       const first = run.words[0], last = run.words[run.words.length - 1];
       const len = last.end - first.start;
       out.push({
+        seg: run.seg,
         keepText: run.words.map((w) => w.w).join(""),
         hook: run.hook,
         seconds: Number.isFinite(len) && len > 0 ? len : 0,
@@ -988,28 +1025,49 @@ function buildKeptRuns() {
     if (t.kind === "text") {
       // 語に割れなかった区間はそのまま1区間として通す（消せないので必ず残る）。
       flush();
-      out.push({ keepText: t.text, hook, seconds: segSeconds(segs[t.seg]) });
+      out.push({ seg: t.seg, keepText: t.text, hook, seconds: segSeconds(segs[t.seg]) });
       return;
     }
-    if (scriptCtx.dropped.has(i)) { flush(); return; }
+    // AIが使わないと決めた語（seg が無い）とユーザーが消した語は、どちらもここで区間を切る。
+    if (t.seg === null || scriptCtx.dropped.has(i)) { flush(); return; }
     if (!run || run.seg !== t.seg) { flush(); run = { seg: t.seg, hook, words: [] }; }
     run.words.push(t);
   });
   flush();
-  return out;
+  // 区間の順序を「AIが決めた順」へ戻す（同じ区間の中は時系列のまま＝安定並べ替え）。
+  return out
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (a.r.seg - b.r.seg) || (a.i - b.i))
+    .map((x) => x.r);
 }
 
+// 全文は数千語になる。1語=1要素は避けられない（1語ずつ押して落とすため）ので、
+// 文字列を1本組み立てて innerHTML へ1回だけ渡す（要素を1つずつ append すると、
+// その回数だけレイアウトが走って固まる）。押した／戻したときは作り直さず、
+// その語のクラスだけ付け外しする（下の click ハンドラ）。
 function renderScriptFlow() {
   const list = $("script-list");
   if (!scriptCtx) return;
   const toks = scriptCtx.tokens;
-  list.innerHTML = toks.length
-    ? `<div class="script-flow" data-testid="script-flow">` +
-      toks.map((t, i) => (t.kind === "word"
-        ? `<span class="script-w${scriptCtx.dropped.has(i) ? " is-cut" : ""}" data-testid="script-word" data-i="${i}">${esc(t.w)}</span>`
-        : `<span class="script-raw">${esc(t.text)}</span>`)).join("") +
-      `</div>`
-    : `<p class="placeholder">使える場面が見つかりませんでした。「やめる」で戻り、設定を変えてやり直してください。</p>`;
+  if (!toks.length) {
+    list.innerHTML = `<p class="placeholder">使える場面が見つかりませんでした。「やめる」で戻り、設定を変えてやり直してください。</p>`;
+    renderScriptMeta();
+    return;
+  }
+  const buf = [`<div class="script-flow" data-testid="script-flow">`];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.kind !== "word") { buf.push(`<span class="script-raw">${esc(t.text)}</span>`); continue; }
+    if (t.seg === null) {
+      // AIが使わないと決めた所。消さずに濃いグレーで残す（全文が読めること）。
+      // 押しても何も起きない（使う側へ戻す操作はマスターの指示に無い）。
+      buf.push(`<span class="script-off" data-testid="script-word-off">${esc(t.w)}</span>`);
+      continue;
+    }
+    buf.push(`<span class="script-w${scriptCtx.dropped.has(i) ? " is-cut" : ""}" data-testid="script-word" data-i="${i}">${esc(t.w)}</span>`);
+  }
+  buf.push(`</div>`);
+  list.innerHTML = buf.join("");
   renderScriptMeta();
 }
 
@@ -1061,7 +1119,12 @@ function applyScriptSelectionCut() {
   const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentNode;
   if (!anchorEl || !list.contains(anchorEl)) return false;   // 本文の外での選択は触らない
   const hit = [];
-  list.querySelectorAll(".script-w").forEach((el) => { if (rangeCoversNode(range, el)) hit.push(el); });
+  // 全文は数千語ある。1語ずつ Range を作って測ると重いので、まず native の
+  // intersectsNode（速い）で範囲に掛かっていない語を落としてから、残りだけを厳密に測る。
+  list.querySelectorAll(".script-w").forEach((el) => {
+    if (range.intersectsNode && !range.intersectsNode(el)) return;
+    if (rangeCoversNode(range, el)) hit.push(el);
+  });
   if (hit.length === 0) return false;
   hit.forEach((el) => { scriptCtx.dropped.add(Number(el.dataset.i)); el.classList.add("is-cut"); });
   sel.removeAllRanges();   // 選択の青地を残さない（消えた事実だけが見えるように）
