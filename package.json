@@ -6,13 +6,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node video-shorts/server/index.mjs",
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r test",
-    "audit": "pnpm audit --audit-level moderate",
-    "verify:roadmap": "node scripts/verify-roadmap-evidence.mjs"
+    "audit": "pnpm audit --audit-level moderate"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

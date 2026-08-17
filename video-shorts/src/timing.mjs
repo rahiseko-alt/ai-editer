@@ -128,10 +128,6 @@ const STAGE_ORDER = [
   "init",          // 作業ディレクトリと state.json の作成（CLI経路）
   "transcribe",    // 文字起こし
   "captionfix",    // AIが文字起こしの誤字を直す
-  "trimjudge",     // AIが詰めてよい所（言い淀み・間）を判断する
-  "select",        // 区間選定の下準備（llm-request.md 生成 / digest は編集エージェント本体）
-  "orchestrate",   // AIによる区間選定そのもの
-  "approval-wait", // 人間の承認待ち（AI・動画処理の遅さとは別物なので必ず分ける）
   "render",        // 切り出し・字幕焼き込み
   "mosaic",        // 顔モザイク
 ];
@@ -142,10 +138,6 @@ const STAGE_LABELS = {
   init: "init",
   transcribe: "transcribe",
   captionfix: "誤字修正",
-  trimjudge: "詰める所の判断",
-  select: "select",
-  orchestrate: "区間選定",
-  "approval-wait": "承認待ち",
   render: "render",
   mosaic: "モザイク",
 };
@@ -154,15 +146,13 @@ const STAGE_LABELS = {
  * 記録が無くても「—」を出す工程。どの経路でも必ず通るのに timing.json に載っていない
  * ＝計測が抜けている、という事実を隠さないため（黙って行から消すと抜けに気付けない）。
  */
-const ALWAYS_SHOWN = ["transcribe", "select", "render"];
+const ALWAYS_SHOWN = ["transcribe", "render"];
 
 /**
  * [TIME] サマリ行を組み立てる。未計測工程は — 表示。
  * 合計は **timing.json に載っている工程すべて** の和＝ジョブ全体の所要時間。
  *
  * 【前提】各工程は重ならないこと（入れ子の工程を別名で二重に記録すると合計が水増しされる）。
- * 例: 画面経路の区間選定は select（下準備）と orchestrate（AI呼び出し）に分けて記録し、
- * 片方がもう片方を含まないようにしている。
  */
 export function summaryLine(timing) {
   const stages = (timing && timing.stages) || {};

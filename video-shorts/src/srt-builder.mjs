@@ -19,16 +19,8 @@ import { DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken, resolveCaptio
 // 「どのフォント名を使うか」だけを持ち、「実在するか」の判定は持たない）。
 export const DEFAULT_FONT = "IPAGothic";
 
-/**
- * 区間 [start,end] に重なる words の、元配列での添字一覧。
- *
- * 【なぜ要るか】wordsInRange() は区間先頭を 0 とした相対時刻へ変換するため、返した語だけを
- * 見ても「元の words 配列で何番目だったか」が分からない。trim-judge.mjs の判定表は絶対添字で
- * 語を指すので、クリップ（区間）ごとに「絶対添字の一覧」を別途持ち回る必要がある
- * （G-TRIM2-CLIP。2026-08-17。旧実装は語の**表記**で引き当てていたため、同じ表記の語が
- * 素材の別の場所にもあると誤って引き当てていた）。
- */
-export function indexesInRange(words, start, end) {
+/** 区間 [start,end] に重なる words の、元配列での添字一覧。 */
+function indexesInRange(words, start, end) {
   const out = [];
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
