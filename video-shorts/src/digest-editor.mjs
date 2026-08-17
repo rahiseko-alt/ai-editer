@@ -17,10 +17,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveSegments, normalize } from "./reverse-match.mjs";
 import { createIsolatedCwd, wrapUntrustedText } from "./claude-safety.mjs";
-import { runClaudeJson } from "./claude-run.mjs";
+import { runClaudeJson, DEFAULT_CLAUDE_MODEL } from "./claude-run.mjs";
 
 const TIMEOUT_MS = Number(process.env.DIGEST_TIMEOUT_MS ?? 300_000);
-const MODEL = process.env.DIGEST_MODEL ?? "claude-opus-4-8";
+// モデルは src/claude-run.mjs の DEFAULT_CLAUDE_MODEL に統一する（マスター指示 2026-08-17
+// 「全部Opus5で統一しろ」）。以前はここだけが独自のモデルを pin し、誤字修正・話題ごとの
+// 選定・言い淀みの判断は何も指定していなかったため、CLI の既定（実測 claude-sonnet-5）で
+// 動いていた＝工程ごとにモデルが違った。
+// ここで明示的に持つのは、この工程だけが「その pin が原因で落ちたら CLI 既定へ1度だけ
+// 退避する」仕組みを持っているため（下の callClaude）。モデル名が使えない環境でも
+// 台本作成だけは止まらないようにする保険で、共通口へ移すと失われる。
+const MODEL = process.env.DIGEST_MODEL ?? DEFAULT_CLAUDE_MODEL;
 const MAX_ITER = Number(process.env.DIGEST_MAX_ITER ?? 3);
 const PASS_SCORE = Number(process.env.DIGEST_PASS_SCORE ?? 80);
 /** 目標尺の許容幅。旧実装は ±20% で、目標60秒(48〜72s)と目標90秒(72〜108s)の許容が
@@ -52,6 +59,8 @@ function callClaude(prompt, onLog, useModel = true, cwd) {
     cwd,
     timeoutMs: TIMEOUT_MS,
     extraArgs: useModel ? ["--model", MODEL] : [],
+    // 退避のときは共通口の既定モデルも付けない（付くと同じ理由で落ちる）。
+    noDefaultModel: !useModel,
   }).catch((e) => {
     // 終了コードが 0 でない失敗にだけ stderr/stdout が付く（打ち切り・spawn 失敗・JSON 崩れには付かない）。
     // ＝再試行するのは「--model 指定が原因で終了コードが非0になった」場合だけ、という従来の絞り込みのまま。

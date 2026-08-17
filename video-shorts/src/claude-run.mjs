@@ -20,6 +20,20 @@ import { buildSafeEnv, NO_TOOLS_ARGS } from "./claude-safety.mjs";
 /** 1 回の claude -p 呼び出しに許す時間の既定（server/claude-select.mjs の従来値と同じ）。 */
 export const DEFAULT_CLAUDE_TIMEOUT_MS = 300_000;
 
+/**
+ * この製品が使うモデル。全工程をここで統一する（マスター指示 2026-08-17「全部Opus5で統一しろ」）。
+ *
+ * 【なぜ1箇所で持つか】これまでは、台本を作るダイジェストだけが自分で `--model` を指定し、
+ * 誤字修正・話題ごとの選定・言い淀みの判断は**何も指定していなかった**。指定が無いと
+ * claude CLI の既定モデルが使われるので、工程ごとに別のモデルが動いていた
+ * （実測 2026-08-17: CLI 既定は claude-sonnet-5）。どの工程がどのモデルで動いたのかが
+ * 呼び出し側を1つずつ読まないと分からない状態で、質が揃わない原因になる。
+ *
+ * ここで既定を持てば、呼び出し側が何もしなくても全工程が同じモデルになる。
+ * 個別に変えたい場合だけ、呼び出し側が extraArgs で `--model` を渡せば上書きできる。
+ */
+export const DEFAULT_CLAUDE_MODEL = process.env.VS_CLAUDE_MODEL ?? "claude-opus-5";
+
 /** 打ち切り(SIGTERM)のあと、まだ生きている子を強制終了(SIGKILL)するまでの猶予。 */
 export const SIGKILL_GRACE_MS = 5_000;
 
@@ -125,6 +139,7 @@ export function runClaudeJson({
   timeoutMs = DEFAULT_CLAUDE_TIMEOUT_MS,
   onLog = () => {},
   extraArgs = [],
+  noDefaultModel = false,
 }) {
   // 打ち切り時間は必ず要る。null や 0 を渡されて「いつまでも待つ」状態になると、
   // 応答が返らないモデルで工程が永久に止まり、画面は動いているように見えたまま終わらない。
@@ -137,10 +152,19 @@ export function runClaudeJson({
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new Error(`claude -p の作業場所(cwd)が不正です: ${cwd}`);
   }
+  // 呼び出し側が --model を指定していなければ、既定モデル（Opus 5）を足す。
+  // 指定していればそちらを尊重する（重複指定にしない）。
+  //
+  // noDefaultModel は「モデルを一切指定せず CLI の既定に任せる」ための逃げ道。
+  // 既定モデル名がその環境で使えないときの退避（src/digest-editor.mjs の callClaude）に要る。
+  // これが無いと、退避したはずの再試行にも同じモデル名が付いて同じ理由で落ち、
+  // 「モデル名が使えない環境では台本が作れない」状態になる。
+  const hasModel = extraArgs.some((a) => a === "--model");
+  const modelArgs = noDefaultModel || hasModel ? [] : ["--model", DEFAULT_CLAUDE_MODEL];
   return new Promise((resolve, reject) => {
     const child = spawn(
       "claude",
-      ["-p", "--strict-mcp-config", "--output-format", "json", ...NO_TOOLS_ARGS, ...extraArgs],
+      ["-p", "--strict-mcp-config", "--output-format", "json", ...modelArgs, ...NO_TOOLS_ARGS, ...extraArgs],
       {
         windowsHide: true,
         env: buildSafeEnv(),
