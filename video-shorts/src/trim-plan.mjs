@@ -76,8 +76,12 @@ export function isFiller(text) {
  * @param {object} [opts.judge] AI の判断結果（G-EDIT-TRIM2）。渡すと、どれを消すかの決定権は
  *   こちらへ移り、固定の単語一覧(FILLERS)と長さの閾値(minSilence)は**候補を拾うためだけ**に
  *   使われる。渡さないときは従来どおり一覧と閾値だけで決める（CLI の後方互換）。
- *   - judge.isFiller(index, word) => boolean  その語を言い淀みとして消すか
- *   - judge.cutSilence(start, end) => boolean  その無音を詰めてよいか（false＝会話の途中）
+ *   - judge.isFiller(absIndex, word) => boolean  その語を言い淀みとして消すか。absIndex は
+ *     語の `_absIndex` プロパティ（無ければ words 内の位置）。trim-judge.mjs の judgeFor() が
+ *     返すオブジェクトは、この absIndex をそのまま判定表の添字として使う（G-TRIM2-CLIP）。
+ *   - judge.cutSilence(start, end, afterIndex) => boolean  その無音を詰めてよいか
+ *     （false＝会話の途中）。afterIndex はその無音の**直前の語**の absIndex（先頭の無音で
+ *     直前の語が無ければ -1）。
  * @returns {{keep: {start:number,end:number}[], cuts: {start:number,end:number,reason:string}[],
  *            keptSeconds: number, cutSeconds: number}}
  */
@@ -95,6 +99,18 @@ export function planTrim(words, opts = {}) {
     judge && typeof judge.isFiller === "function" ? judge.isFiller : null;
   const judgeCutSilence =
     judge && typeof judge.cutSilence === "function" ? judge.cutSilence : null;
+  // G-TRIM2-CLIP-ONEDOOR: judge らしきものが渡されたのに isFiller も cutSilence も
+  // 持たないなら、配線ミス（例: loadTrimJudge() の生データをそのまま渡した）とみなして
+  // 例外にする。黙って固定16語・長さの閾値へ退避すると、直そうとしている欠陥をそのまま
+  // 出力に出したうえで、それを利用者に知らせないことになる（trim-judge.mjs の
+  // trimJudgeStage と同じ方針。G-EDIT-TRIM2-FAILSTOP）。judge を渡さない（null/undefined）
+  // ことは正当な後方互換の選択なので、これは弾かない。
+  if (judge && !judgeIsFiller && !judgeCutSilence) {
+    throw new Error(
+      "planTrim: opts.judge が渡されましたが isFiller/cutSilence を持ちません（配線ミスの疑い）。" +
+        "固定の一覧・閾値へ黙って退避しません。judge を使わない場合は opts.judge を省略してください。",
+    );
+  }
 
   const list = (words || [])
     .filter((w) => w && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
@@ -118,18 +134,29 @@ export function planTrim(words, opts = {}) {
   const regions = [];
   let cursor = 0;
   let idx = 0;
+  // 直前に処理した語の絶対添字（無ければ -1＝まだ語が無い＝先頭の無音）。
+  // 無音区間に「直前の語の絶対添字」を持たせておき、judge.cutSilence へ渡す
+  // （G-TRIM2-CLIP。クリップの切り出し方に関わらず、judge は絶対添字だけを見ればよい）。
+  let prevAbsIndex = -1;
   for (const w of list) {
-    if (w.start > cursor + 1e-9) regions.push({ start: cursor, end: w.start, kind: "silence" });
+    // w._absIndex は呼び出し側（pipeline.mjs）が「素材全体で何番目の語か」を付けたもの。
+    // 付いていなければ list 内の位置をそのまま使う（単一クリップ＝素材全体の呼び出しでは
+    // 位置と絶対添字が一致するため、従来どおりの挙動になる。trim2-check.mjs 等の後方互換）。
+    const absIndex = Number.isInteger(w._absIndex) ? w._absIndex : idx;
+    if (w.start > cursor + 1e-9) {
+      regions.push({ start: cursor, end: w.start, kind: "silence", afterIndex: prevAbsIndex });
+    }
     const s = Math.max(cursor, w.start);
     if (w.end > s) {
       // 言い淀みかどうかの決定権は judge にある。judge が無いときだけ一覧で決める
       // （2026-08-16 以前の挙動。一覧は「あの」「その」を単体で含むため、判定を任せると
       //  「あの資料」の指示語まで消える。これがマスター指摘の実害(a)）。
-      const filler = judgeIsFiller ? judgeIsFiller(idx, w.w) === true : isFiller(w.w);
+      const filler = judgeIsFiller ? judgeIsFiller(absIndex, w.w) === true : isFiller(w.w);
       regions.push({ start: s, end: w.end, kind: filler ? "filler" : "word" });
     }
     cursor = Math.max(cursor, w.end);
     idx += 1;
+    prevAbsIndex = absIndex;
   }
   if (duration > cursor + 1e-9) regions.push({ start: cursor, end: duration, kind: "tail" });
 
@@ -151,7 +178,7 @@ export function planTrim(words, opts = {}) {
     // 息継ぎのために意図して戻した間（protect）は、判断に関わらず詰めない。ここを詰めると
     // breath が戻した間を trim が削り取り、機能が丸ごと無効化される（G-EDIT-BREATH-TRIM）。
     const wantCut = judgeCutSilence
-      ? judgeCutSilence(r.start, r.end) === true
+      ? judgeCutSilence(r.start, r.end, r.afterIndex) === true
       : r.end - r.start >= minSilence;
     if (cutSilence && wantCut && !isProtected(r)) {
       // 直前が残る発言なら、その後ろ 0.3秒だけ余韻として残してから詰める。

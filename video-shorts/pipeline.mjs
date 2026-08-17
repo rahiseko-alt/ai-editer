@@ -23,10 +23,10 @@ import {
   mergeShortSegments, snapToSilence, resolveMinSec, resolveTargetDuration, capSegmentDuration,
 } from "./src/snap-boundaries.mjs";
 import { DEFAULT_EXPORT, getExportPreset, listExportPresets } from "./src/export-presets.mjs";
-import { wordsInRange, buildAss } from "./src/srt-builder.mjs";
+import { wordsInRange, indexesInRange, buildAss } from "./src/srt-builder.mjs";
 import { checkBundledFont } from "./src/font-check.mjs";
 import { planTrim, remapWords, snapStart } from "./src/trim-plan.mjs";
-import { loadTrimJudge, trimJudgeStage } from "./src/trim-judge.mjs";
+import { loadTrimJudge, judgeFor, trimJudgeStage } from "./src/trim-judge.mjs";
 import {
   getStyle, listStyles, listFonts, DEFAULT_SUBTITLE_STYLE, resolveCaptionStyle, DEFAULT_FONT_KEY,
 } from "./src/subtitle-styles.mjs";
@@ -274,7 +274,12 @@ export async function renderSegment({
     // （CLI から renderSegment を直接使う既存の検査との後方互換）。
     const cutSilence = trimSilence === undefined ? true : trimSilence === true;
     const cutFillers = trimFiller === undefined ? true : trimFiller === true;
-    const plan = planTrim(relWordsAll, {
+    // G-TRIM2-CLIP: judge（AIの判断表）は絶対添字で語を指すので、このクリップの語1つずつに
+    // 「素材全体で何番目か」を _absIndex として持たせてから planTrim へ渡す。captions 用の
+    // assWords（relWordsAll）には _absIndex を持ち込まない（無害だが不要な内部フィールド）。
+    const absIndexes = indexesInRange(words || [], segStart, seg.end);
+    const wordsForPlan = relWordsAll.map((w, i) => ({ ...w, _absIndex: absIndexes[i] }));
+    const plan = planTrim(wordsForPlan, {
       duration: seg.duration, fps: srcFps, protect, cutSilence, cutFillers, judge,
     });
     keep = plan.keep;
@@ -345,13 +350,12 @@ async function cmdRender(workDir, opts = {}) {
   // それを利用者に知らせないことになる。ここで止めて理由を出す。
   let trimJudge = null;
   if (state.trim === "on") {
-    const tp = path.join(workDir, "transcript.json");
-    const tWords = fs.existsSync(tp) ? (readJson(tp).words || []) : [];
-    trimJudge = loadTrimJudge(workDir, tWords);
-    if (!trimJudge) {
+    const trimJudgeData = loadTrimJudge(workDir);
+    if (!trimJudgeData) {
       die("「間を詰める」を選びましたが、どこを詰めてよいかのAIの判断が取れていません。" +
           "\n  先に判断の工程を実行してください: node pipeline.mjs trimjudge " + workDir);
     }
+    trimJudge = judgeFor(trimJudgeData);
   }
   // 字幕有無は init のヒアリング結果（state.sub）が既定。--no-sub フラグは明示上書き。
   const noSub = flagNoSub || state.sub === "none";
