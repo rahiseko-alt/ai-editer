@@ -13,6 +13,7 @@ import { applyMosaicStage } from "../src/apply-mosaic-stage.mjs";
 import { aiCaptionFixStage, createDefaultRunModel } from "../src/ai-caption-fix.mjs";
 import { trimJudgeStage } from "../src/trim-judge.mjs";
 import { writeJsonAtomically } from "../src/atomic-json.mjs";
+import { stageStart, stageEnd, stageSetSpan, readTiming, summaryLine } from "../src/timing.mjs";
 import { redactSecrets, createStreamingRedactor } from "./security.mjs";
 import { readEnvFileValue } from "../src/env-file.mjs";
 import { checkBundledFont } from "../src/font-check.mjs";
@@ -614,6 +615,31 @@ export function groqKeyAvailable() {
   return Boolean(process.env.GROQ_API_KEY) || readEnvFileValue("GROQ_API_KEY") !== null;
 }
 
+/**
+ * 文字起こし(transcribe.py)の stderr 1行から「実際に使ったバックエンド」を読み取る。
+ * 該当しない行なら null（＝直前の判定を変えない）。
+ *
+ * 【なぜ鍵の有無ではなく stderr を読むのか】鍵があることと Groq を使えたことは別物である。
+ * 鍵の有無からの先読みで "groq" を送ると、Groq が失敗してローカルへ落ちた回にも画面は
+ * Turbo（クラウドで処理中の印）を出したままになり、**表示と実態が食い違う**。
+ * これは過去に「処理先の表示」がマスター指示で廃止された理由そのもの
+ * （docs/roadmap.html の G-UI-BACKEND-NOTE-TRUTH）。実際に動いた側だけを画面へ流す。
+ *
+ * 読み取る文言は src/transcribe.py の main() が出す2行（あちらにも同じ契約を明記してある）:
+ *   "[INFO] backend=groq" / "[INFO] backend=local"
+ *   "[WARN] Groq 失敗→local フォールバック: ..."
+ * @param {string} line
+ * @returns {"groq"|"local"|null}
+ */
+export function parseBackendFromLog(line) {
+  if (typeof line !== "string") return null;
+  const decided = line.match(/\[INFO\]\s*backend=(groq|local)\b/);
+  if (decided) return decided[1];
+  // フォールバック＝ここから先はローカル。Groq のままだと嘘になるので必ず訂正する。
+  if (/\[WARN\]\s*Groq\s*失敗\s*→\s*local\s*フォールバック/.test(line)) return "local";
+  return null;
+}
+
 const localQueue = []; // local バックエンド時の FIFO（要素は () => Promise）
 let localRunning = false;
 
@@ -872,6 +898,29 @@ function writeApprovedScript(workDir, segments) {
 }
 
 /**
+ * アップロード（端末→サーバーへの動画の送信）に掛かった時間を timing.json へ残す。
+ *
+ * 送信そのものは HTTP 層（server/index.mjs）で起き、この関数が呼ばれる時点では既に
+ * 終わっている。開始時刻を後から知る手段は、受け取ったファイル自身の作成時刻しかないので、
+ * 「作成時刻（＝本文の1バイト目を書いた瞬間）〜最終更新時刻（＝書き終えた瞬間）」で確定する。
+ *
+ * 【この計測の限界（正直に書く）】作成時刻(birthtime)を持たないファイルシステムでは、Node が
+ * birthtime に ctime を代入することがある。その場合この値は 0 秒に潰れる＝「速かった」のか
+ * 「取れなかった」のか区別が付かない。逆向き（実際より長く出る）ことは無いので、
+ * 0 秒が出たときは「アップロードは遅さの原因ではない」と断定せず、他の工程を見ること。
+ */
+function recordUploadTiming(workDir, inputAbsPath) {
+  try {
+    const st = fs.statSync(inputAbsPath);
+    stageSetSpan(workDir, "upload", st.birthtimeMs, st.mtimeMs);
+  } catch (e) {
+    // 計測は補助。入力が消えている等でここが失敗しても本処理は止めない
+    // （本当に入力が無ければ、この直後の文字起こしが本来の理由で失敗する）。
+    process.stderr.write(`[WARN] アップロード時間の記録に失敗（計測スキップ）: ${e.message}\n`);
+  }
+}
+
+/**
  * ジョブ実行開始（非同期・kick して即返す）
  *
  * @param {string} jobId
@@ -912,6 +961,11 @@ export function startJob(jobId, inputAbsPath, opts) {
   }
   // 非同期で実行（エラーは exec 内で処理し reject させない＝キュー drain を止めない）
   const workDir = path.join(WORK_ROOT, jobId);
+  // 工程計測の起点。ここまで（アップロード）と、ここから実行開始まで（順番待ち）を残す。
+  // 画面経路は「送信」と「順番待ち」がジョブ全体の所要時間に含まれるのに、これまで
+  // 一切計測されておらず、遅さの切り分けから丸ごと外れていた。
+  recordUploadTiming(workDir, inputAbsPath);
+  stageStart(workDir, "queue-wait");
   const exec = () =>
     runJob(jobId, inputAbsPath, opts).then(
       () => {
@@ -996,6 +1050,10 @@ export function resolveJobSettings(opts) {
   return { mode, orient, targetMinutes };
 }
 
+/** 文字起こし中の進捗ラベル。backend の訂正イベントでも同じ文言を使い回す（画面の文言が
+ *  訂正のたびに揺れないようにするため）。画面側 EDITING_LABEL.t と同じ文言に揃えてある。 */
+const TRANSCRIBE_LABEL = "話し言葉を文字にしています";
+
 /** レンダリングstageの進捗ラベルをorientに応じて出し分ける（縦長/横長） */
 export function renderLabel(orient) {
   return orient === "landscape" ? "横長の動画に整えています" : "縦長の動画に整えています";
@@ -1050,6 +1108,9 @@ async function runJob(jobId, inputAbsPath, opts) {
   const workDir = path.join(WORK_ROOT, jobId);
   const noSub = opts.sub === "none";
   const { mode, orient, targetMinutes } = resolveJobSettings(opts);
+
+  // 順番待ち（受理〜実行開始）はここで終わり。以降が実際の処理時間になる。
+  stageEnd(workDir, "queue-wait");
 
   // 字幕ありの場合、文字起こし（数分〜数十分かかる）を始める前に、使うフォントが
   // 実際にこの環境にあるかを確認する(pipeline.mjs cmdInit と同じ判定・M3)。
@@ -1106,20 +1167,22 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   // ── Stage t: 文字起こし ──────────────────────────────────────
   job.stage = "t";
-  // 2026-08-17: 「どこで文字起こししたか(groq=クラウド / local=この端末)」をこのジョブの
-  // イベントに載せる。種別は GET /api/env でも取れるが、あれはページ読み込み時の1回きりなので、
-  // 画面を開いたまま後から .env に鍵を置く正規の運用だと、画面の表示だけ古いまま実態と食い違う。
-  // そのジョブが実際に使った側を、そのジョブのイベントで配る。
-  // なお この行は status 付き・event 名なしなので broadcast() が job.lastEvent に憶える
-  // ＝後から購読した相手/再接続にも自動でリプレイされる(この性質に依存している)。
-  broadcast(jobId, {
-    stage: "t",
-    status: "active",
-    label: "話し言葉を文字にしています",
-    backend: groqKeyAvailable() ? "groq" : "local",
-  });
+  // 2026-08-17: 「どこで文字起こししたか(groq=クラウド / local=この端末)」は、**実際に動いた側**
+  // だけを流す。旧実装はここで groqKeyAvailable()（鍵の有無）から先読みした backend を送って
+  // いたが、それは「Groq を使えるはず」でしかなく、Groq が失敗してローカルへ落ちた回にも
+  // 画面は Turbo を出し続けた＝表示と実態が食い違う（過去に処理先の表示が廃止された理由
+  // そのもの＝G-UI-BACKEND-NOTE-TRUTH）。判定は transcribe.py の stderr から取る（下記）。
+  broadcast(jobId, { stage: "t", status: "active", label: TRANSCRIBE_LABEL });
 
   const transcriptPath = path.join(workDir, "transcript.json");
+  // transcribe.py 自身も同じ工程名で timing.json を書く（あちらの write_timing）。ここで
+  // 挟んでおくのは、python が書く前に落ちた場合でも「いつ始めたか」を残すため。両方が書いた
+  // 場合は python の start と、こちらの end（子プロセスの終了時刻）で確定する＝記録は1つのまま。
+  stageStart(workDir, "transcribe");
+  // 実際に使ったバックエンド。transcribe.py が出す "[INFO] backend=..." を見るまでは未確定
+  // なので、それまでは backend を一切名乗らない（画面は backend==="groq" のときだけ Turbo を
+  // 出すので、名乗らない＝出ない＝実態と食い違わない）。
+  let usedBackend = null;
   await spawnAndLog(
     "python",
     [TRANSCRIBE_PY, inputAbsPath, transcriptPath],
@@ -1127,10 +1190,30 @@ async function runJob(jobId, inputAbsPath, opts) {
     // ここでだけ明示的にallowlistへ加える(select/renderの子には渡さない)。
     // AUD-P1-11a/11b: jobIdを渡し、キャンセル/タイムアウトの対象にする。
     { envExtra: ["GROQ_API_KEY"], jobId },
-    (ln) => broadcast(jobId, { stage: "t", status: "active", log: ln })
+    (ln) => {
+      const detected = parseBackendFromLog(ln);
+      if (detected && detected !== usedBackend) {
+        if (usedBackend === "groq") {
+          // 訂正：Groq で始まったが途中でローカルへ落ちた。画面が Turbo を消す口は
+          // 「stage t の status:done」しか無い（画面は編集禁止）ので、いったんそれを送って
+          // バッジを落とし、直後に active へ戻して進行中の見た目を保つ。
+          // 嘘の Turbo を出したままにするより、この一往復のほうが実態に合う。
+          broadcast(jobId, { stage: "t", status: "done" });
+        }
+        usedBackend = detected;
+        broadcast(jobId, { stage: "t", status: "active", label: TRANSCRIBE_LABEL, backend: usedBackend });
+      }
+      // 以降のログ行にも判明済みの backend を載せる。broadcast() が憶える直近スナップショット
+      // (job.lastEvent) は最後に流れた status 付きイベントなので、載せておかないと再接続時に
+      // 「実際に使った側」が失われる。
+      broadcast(jobId, usedBackend
+        ? { stage: "t", status: "active", log: ln, backend: usedBackend }
+        : { stage: "t", status: "active", log: ln });
+    }
   );
+  stageEnd(workDir, "transcribe");
 
-  updateState(workDir, { stage: "transcribed", transcript: transcriptPath });
+  updateState(workDir, { stage: "transcribed", transcript: transcriptPath, backend: usedBackend });
 
   // 話し声が無い動画（音楽・歓声のみ等）は文字起こしが 0 件になる。
   // ここで素人に分かる言葉で止める（select/claude を走らせず無駄なコストも避ける）。
@@ -1152,11 +1235,13 @@ async function runJob(jobId, inputAbsPath, opts) {
   job.stage = "c";
   broadcast(jobId, { stage: "c", status: "active", label: "AIが字幕の間違いを直しています" });
 
+  stageStart(workDir, "captionfix");
   const fixed = await aiCaptionFixStage({
     workDir,
     runModel: createDefaultRunModel(workDir),
     onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
   });
+  stageEnd(workDir, "captionfix");
 
   updateState(workDir, { stage: "captionfixed" });
   broadcast(jobId, { stage: "c", status: "active", log: `[ai-caption-fix] ${fixed.total} 語のうち ${fixed.fixed} 語を直しました` });
@@ -1168,11 +1253,13 @@ async function runJob(jobId, inputAbsPath, opts) {
   // どちらも「なし」のときは呼ばない（判断が要らない設定まで AI に依存させない）。
   if (opts.trimSilence === "on" || opts.trimFiller === "on") {
     broadcast(jobId, { stage: "c", status: "active", label: "AIが詰めてよい所を選んでいます" });
+    stageStart(workDir, "trimjudge");
     const judged = await trimJudgeStage({
       workDir,
       runModel: createDefaultRunModel(workDir),
       onLog: (msg) => broadcast(jobId, { stage: "c", status: "active", log: msg }),
     });
+    stageEnd(workDir, "trimjudge");
     broadcast(jobId, {
       stage: "c", status: "active",
       log: `[trim-judge] ${judged.total} 語のうち 言い淀み${judged.fillers}件 / 詰める間${judged.cutGaps}件`,
@@ -1190,12 +1277,18 @@ async function runJob(jobId, inputAbsPath, opts) {
   if (mode === "digest" && targetMinutes !== undefined) {
     selectArgs.push("--target-min", String(targetMinutes));
   }
+  // 計測は select（下準備）と orchestrate（AI が実際に選ぶ）に分ける。片方でまとめると
+  // 「AI が遅いのか、その前後が遅いのか」を切り分けられないうえ、pipeline.mjs render が
+  // llm-request.md→llm-response.json の mtime 差から orchestrate を書き足すので、
+  // まとめた select の中に orchestrate が入れ子で二重計上され、合計が水増しされる。
+  stageStart(workDir, "select");
   await spawnAndLog(
     "node",
     selectArgs,
     { jobId },
     (ln) => broadcast(jobId, { stage: "s", status: "active", log: ln })
   );
+  stageEnd(workDir, "select");
 
   // topic(話題で切る): pipeline.mjs select は llm-request.md を書くだけなので、
   // claude -p 呼び出し(チャンク並列)は別途ここで行い llm-response.json を書く。
@@ -1204,9 +1297,13 @@ async function runJob(jobId, inputAbsPath, opts) {
   let selectIncomplete = false;
   if (mode !== "digest") {
     throwIfCancelled(jobId);
+    // 「AI が区間を選んでいる時間」そのもの。CLI 経路で pipeline.mjs render が mtime 差から
+    // 書き足すのと同じ工程名にして、記録の形を経路ごとに増やさない。
+    stageStart(workDir, "orchestrate");
     const result = await runClaudeSelect(workDir, (msg) => {
       broadcast(jobId, { stage: "s", status: "active", log: msg });
     });
+    stageEnd(workDir, "orchestrate");
     selectIncomplete = result.incomplete;
     if (selectIncomplete) {
       broadcast(jobId, {
@@ -1231,7 +1328,12 @@ async function runJob(jobId, inputAbsPath, opts) {
     // 閉じて開き直しても（再接続で）また承認待ちとして復元される。
     broadcast(jobId, { stage: "s", status: "await-approval" });
 
+    // 承認待ちは「人がこちらを待たせている時間」であって、AI や動画処理の遅さではない。
+    // 必ず別の工程名で分けて記録する（混ぜると、待たせただけの回まで処理が遅かったように
+    // 見え、「遅い」の切り分けが不可能になる）。
+    stageStart(workDir, "approval-wait");
     const approval = await waitForApproval(jobId); // 承認が来るまで、ここで止まる
+    stageEnd(workDir, "approval-wait");
     throwIfCancelled(jobId);
     if (approval.segments) {
       // ユーザーが台本から区間を削った（並べ替えた）結果を採用してから続きへ進む。
@@ -1249,12 +1351,16 @@ async function runJob(jobId, inputAbsPath, opts) {
 
   const renderArgs = buildRenderArgs(PIPELINE_MJS, workDir, opts);
 
+  // 子(pipeline.mjs render)も同じ工程名で start/end を書く。ここで挟むのは、子が
+  // 書き終える前に落ちた場合でも「いつ始めたか」が残るようにするため（記録の形は同じ）。
+  stageStart(workDir, "render");
   await spawnAndLog(
     "node",
     renderArgs,
     { jobId },
     (ln) => broadcast(jobId, { stage: "r", status: "active", log: ln })
   );
+  stageEnd(workDir, "render");
 
   updateState(workDir, { stage: "rendered" });
   broadcast(jobId, { stage: "r", status: "done" });
@@ -1274,6 +1380,7 @@ async function runJob(jobId, inputAbsPath, opts) {
     // AUD-P1-06: candidates.json の書き換えは applyMosaicStage() が原子的（temp+rename）に
     // 行う。ここで改めて fs.writeFileSync すると、その書き込み自体が非原子的なtruncate書きに
     // 戻ってしまい、書いている途中で落ちたときに壊れて読めなくなる。
+    stageStart(workDir, "mosaic");
     await applyMosaicStage({
       outDir,
       stashDir: path.join(workDir, "pre-mosaic"),
@@ -1281,6 +1388,7 @@ async function runJob(jobId, inputAbsPath, opts) {
       candPath,
       onLog: (ln) => broadcast(jobId, { stage: "m", status: "active", log: ln }),
     });
+    stageEnd(workDir, "mosaic");
 
     updateState(workDir, { stage: "mosaicked", mosaic: "on" });
     broadcast(jobId, { stage: "m", status: "done" });
@@ -1293,6 +1401,9 @@ async function runJob(jobId, inputAbsPath, opts) {
   // 再接続すると、jobs Mapが空(=このプロセスは一度も起動していない)なので、
   // state.jsonを読んで「本当はdoneだった」と判定できることが要る(subscribeJob参照)。
   updateState(workDir, { stage: "done", selectIncomplete });
+  // 工程ごとの所要時間を1行にまとめてサーバーのログへ出す（CLI 経路 pipeline.mjs render の
+  // 末尾と同じ [TIME] 行）。timing.json を開かなくても、どこで時間を使ったかが分かる。
+  process.stderr.write(`${summaryLine(readTiming(workDir))} jobId=${jobId}\n`);
   job.stage = "done";
   // AUD-P2-20a: 終端到達時刻を記録する(reclaimTerminalJobsの保持期間判定に使う)。
   job.terminatedAt = Date.now();
