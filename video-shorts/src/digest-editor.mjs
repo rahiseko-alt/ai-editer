@@ -371,39 +371,54 @@ function scriptToText(script) {
   return script.map((s, i) => `#${i + 1} [${s.hook || ""}] ${s.keepText}`).join("\n\n");
 }
 
-/** 批評プロンプト。dur を渡すと「尺に合っているか」を合否条件として一緒に判定させる。
- *  旧実装は尺を引数に持たず、採点観点にも尺が無かったため、反復するほど目標尺と無関係な
- *  「採点関数の最高点」へ収束し、1分指定と1分半指定が同じ台本になっていた。
+// 【criticPrompt は廃止】採点と直しを別々の呼び出しにしていた頃の批評プロンプト。
+// 合格しない素材では「批評→修正」を最大3周＝最大5回 AI を直列で呼んでおり、遅さの一因
+// だった（マスター指摘 2026-08-17）。いまは reviewPrompt が1回でまとめて行う。
+
+/**
+ * 採点と直しを1回の呼び出しでまとめて頼む（批評→修正の2往復を1往復にする）。
  *
- *  understanding（理解の段階の出力）を渡すと、批評は「面白いか」だけでなく
- *  「理解した主題から外れていないか」も見る。これが無いと、批評は台本テキストだけを見るため、
- *  主題と関係の薄い"単体で映える区間"を高く採点し、反復するほど主題から離れていく。
- *  引数は任意で、渡さなければ従来どおりの文面になる（既存の呼び方を壊さない）。 */
-function criticPrompt(script, dur = null, understanding = null) {
+ * 【なぜ（マスター指摘 2026-08-17「相変わらず遅い」「1回でまとめてやれよ」）】
+ * 旧実装は「批評で1回・修正で1回」を最大3周するので、合格しない素材では最大5回 AI を
+ * 直列で呼んでいた。1回に数十秒かかるため、ここだけで数分を使う。
+ * 採点と直しは同じ台本を見て行う作業なので、分ける必然が無い。1回で
+ * 「点数と、合格でないなら直した台本」を返させれば往復が半分になる。
+ * 分けないほうが直しの質も落ちにくい（採点した本人がその場で直すので、
+ * 減点の理由と直しの内容がずれない）。
+ *
+ * 合格なら script を返させない（返答が無駄に大きくならないように）。
+ */
+function reviewPrompt(transcriptText, script, dur = null, understanding = null) {
   const durBlock = durationBlock(dur);
   const undBlock = understandingBlock(understanding, "critic");
-  return `あなたは辛口の編集レビュアーです。次のダイジェスト台本（この順序で連結して1本の動画にする）を` +
-    `観点別に配点で評価してください。各観点20点満点・合計100点で採点します。\n` +
+  return `あなたは辛口の編集レビュアー兼編集者です。次のダイジェスト台本（この順序で連結して1本の動画にする）を` +
+    `観点別に配点で評価し、**合格でなければ、その場で直した台本も返してください**。\n` +
+    `各観点20点満点・合計100点で採点します。\n` +
     `観点の定義: 掴み(最初3秒で視聴者を引き込むか)/流れ(展開が自然で飽きないか)/` +
     `密度(冗長・繰り返し・雑談が無く濃いか)/山場(明確な盛り上がりがあるか)/締め(余韻ある終わり方か)。\n` +
-    `各観点は「なぜその点か」を減点根拠つきで判断し、満点でない観点は必ず fixes に改善指示を書くこと。\n\n` +
+    `各観点は「なぜその点か」を減点根拠つきで判断すること。\n\n` +
     (durBlock
       ? `${durBlock}尺は点数とは別の「満たすか満たさないか」の条件です。実測が許容範囲に入っているかを` +
-        `fitsDuration で答え、外れているなら durationFix に「どの区間をどうするか」を具体的に書くこと。` +
-        `また、上の【この尺の方針】に照らして構成そのものが合っているか（短い尺なのに話題を詰め込んでいないか、` +
-        `長い尺なのに起伏が無いか）も見て、合っていなければ issues に挙げること。\n\n`
+        `fitsDuration で答えること。外れているなら、直した台本で許容範囲へ入れること` +
+        `（尺は点数と引き換えにできません）。また、上の【この尺の方針】に照らして構成そのものが` +
+        `合っているか（短い尺なのに話題を詰め込んでいないか、長い尺なのに起伏が無いか）も見ること。\n\n`
       : "") +
     (undBlock ? `${undBlock}\n` : "") +
+    `${VERBATIM}\n\n` +
     `# 台本（連結順）\n${scriptToText(script)}\n\n` +
+    `# 参照可能な全文字起こし（直すときはここから抜き出す）\n${wrapUntrustedText("transcript", transcriptText)}\n\n` +
     `# 出力（JSONのみ）\n` +
     `{"scores":{"掴み":0-20,"流れ":0-20,"密度":0-20,"山場":0-20,"締め":0-20},` +
     `"score":合計(0-100の整数),"pass":true/false,"weakest":"最も低い観点名",` +
-    (durBlock ? `"fitsDuration":true/false,"durationFix":"尺を合わせる具体指示(合っていれば空文字)",` : "") +
-    `"issues":["問題点"],"fixes":["観点名: その観点を何点上げるための具体的改善指示"]}\n` +
-    `fixes は必ず先頭に観点名を付ける。score は scores の合計と一致させる。` +
+    (durBlock ? `"fitsDuration":true/false,` : "") +
+    `"issues":["問題点"],` +
+    `"script":[{"keepText":"...","hook":"...","reason":"..."}]}\n` +
     `pass は ${PASS_SCORE}点以上かつ致命的問題が無い` +
     (durBlock ? `、かつ fitsDuration が true の` : "") +
-    `場合のみ true。`;
+    `場合のみ true。\n` +
+    `**pass が true のときは script を空配列にしてよい**（直す必要が無いため）。` +
+    `pass が false のときは、最も低い観点を最優先で引き上げた台本を script に入れること。` +
+    `既に高い観点は壊さないこと。`;
 }
 
 /** 批評の観点別スコアを、そのまま meta へ残せる素直な形（観点名→数値）に整える。
@@ -578,7 +593,9 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     const durNow = durOf(script);
     // 批評にも理解を渡す（理解に照らして主題から外れていないかを見させる）。理解が取れなかった
     // ときは null のまま渡り、従来どおり台本テキストだけを見る批評になる。
-    try { critique = parseJson(await callClaude(criticPrompt(script, durNow, understanding), onLog, true, cwd)); }
+    // 採点と直しは1回の呼び出しでまとめて頼む（reviewPrompt）。旧実装は批評と修正で
+    // 2回に分けており、合格しない素材では最大5回 AI を直列で呼んでいた（＝遅さの一因）。
+    try { critique = parseJson(await callClaude(reviewPrompt(transcriptText, script, durNow, understanding), onLog, true, cwd)); }
     catch (e) { onLog(`[digest] 検証 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
     const score = Number(critique.score) || 0;
     // 尺は点数と引き換えにできない条件として扱う。実測が許容範囲外なら、点数が高くても合格にしない。
@@ -599,12 +616,17 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
     }
     if (fits && (critique.pass || score >= PASS_SCORE)) { iterations = i; break; }
     if (i === MAX_ITER) { iterations = i; break; }
-    onLog(`[digest] 修正 ${i}回目`);
-    let revised;
-    try { revised = parseJson(await callClaude(revisePrompt(transcriptText, script, critique, durNow), onLog, true, cwd)).script; }
-    catch (e) { onLog(`[digest] 修正 ${i}回目の応答処理に失敗（JSON崩れ/timeout/spawn等）→best(score=${best.score})で確定: ${e.message}`); break; }
-    if (Array.isArray(revised) && revised.length) { script = revised; iterations = i + 1; }
-    else break;
+    // 直した台本は、いま受け取った同じ応答の中に入っている（追加の呼び出しはしない）。
+    const revised = critique.script;
+    if (Array.isArray(revised) && revised.length) {
+      onLog(`[digest] 修正 ${i}回目（同じ応答に入っていた直しを採用: ${revised.length}区間）`);
+      script = revised;
+      iterations = i + 1;
+    } else {
+      // 合格していないのに直しが返っていない＝これ以上良くならないので、best で確定する。
+      onLog(`[digest] 修正 ${i}回目: 直した台本が返らなかった→best(score=${best.score})で確定`);
+      break;
+    }
   }
 
   const chosen = best.score >= 0 ? best.script : script;
