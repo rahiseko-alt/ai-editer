@@ -172,13 +172,25 @@ export function collectGapCandidates(words) {
 }
 
 /**
- * 判断結果のファイルから、planTrim へ渡す判定表を作る。
+ * 判断結果のファイルから、判定データ（素材全体の絶対添字ベース）を読む。
  * ファイルが無い／読めないときは null（呼び元が「判断が取れなかった」として扱う）。
+ *
+ * 【2026-08-17 の作り直し（G-TRIM2-CLIP）】旧実装はここで「クリップ相対の語→素材全体の
+ * 添字」への引き当て（indexOfWord）まで行い、isFiller/cutSilence の関数を直接返していた。
+ * 引き当てを語の**表記**で行っていたため、同じ表記の語が素材の別の場所（別のクリップ）にも
+ * あると、2本目以降のクリップで誤った判定が使われた（先頭の「あの」が言い淀みなら、後半の
+ * 「あの資料を」も消えた）。無音の cutSilence も同様に、絶対時刻とクリップ相対時刻を比べて
+ * いたため、segStart>0 のクリップでは実質つねに false になっていた（無音が一切詰まらない）。
+ *
+ * 引き当ての責務は呼び出し側（pipeline.mjs）へ移した。呼び出し側は
+ * `indexesInRange()`（srt-builder.mjs）で「クリップの語が素材全体で何番目か」を求め、
+ * 各語オブジェクトへ `_absIndex` として持たせてから planTrim へ渡す。planTrim は
+ * それを使って judge を絶対添字で呼ぶので、ここでは絶対添字の集合を返すだけでよい。
+ *
  * @param {string} workDir
- * @param {{w:string,start:number,end:number}[]} words クリップ相対ではなく素材全体の語
- * @returns {{isFiller:Function, cutSilence:Function}|null}
+ * @returns {{fillers:Set<number>, cutGaps:Set<number>}|null}
  */
-export function loadTrimJudge(workDir, words) {
+export function loadTrimJudge(workDir) {
   const p = path.join(workDir, TRIM_JUDGE_FILE);
   if (!fs.existsSync(p)) return null;
   let data;
@@ -188,26 +200,26 @@ export function loadTrimJudge(workDir, words) {
     return null;
   }
   if (!data || !Array.isArray(data.fillers) || !Array.isArray(data.cutGaps)) return null;
-  const fillerSet = new Set(data.fillers);
-  // 「詰めてよい間」は、直前の語の終わりの時刻で引けるようにしておく。
-  // 添字ではなく時刻で持つのは、planTrim がクリップ相対の語しか見ないため
-  // （区間を切り出したあとは添字が全体のものとずれる）。
-  const cutEnds = new Set(
-    data.cutGaps.map((i) => (words[i] ? Number(words[i].end.toFixed(3)) : null)).filter((v) => v !== null),
-  );
-  return {
-    // planTrim はクリップ相対の添字を渡してくるので、語そのもので引き当てる。
-    isFiller: (index, word) => fillerSet.has(indexOfWord(words, word, index)),
-    cutSilence: (start) => cutEnds.has(Number(start.toFixed(3))),
-    _absoluteFillers: fillerSet,
-    _cutEnds: cutEnds,
-  };
+  return { fillers: new Set(data.fillers), cutGaps: new Set(data.cutGaps) };
 }
 
-/** クリップ相対の語を、素材全体の添字へ引き当てる（同じ語が複数あっても順番で当てる）。 */
-function indexOfWord(words, word, hint) {
-  if (words[hint] && words[hint].w === word) return hint;
-  return words.findIndex((w) => w.w === word);
+/**
+ * loadTrimJudge() が返した判定データから、planTrim へ渡す judge オブジェクトを作る。
+ *
+ * isFiller/cutSilence はどちらも**絶対添字**で呼ばれる前提（trim-plan.mjs 側が、各語の
+ * `_absIndex`（無ければ list 内の位置）を渡す）。ここでは Set の有無を見るだけでよく、
+ * 表記の突き合わせも時刻の突き合わせも行わない。
+ *
+ * @param {{fillers:Set<number>, cutGaps:Set<number>}|null} data
+ * @returns {{isFiller:Function, cutSilence:Function}|null}
+ */
+export function judgeFor(data) {
+  if (!data) return null;
+  return {
+    isFiller: (absIndex) => data.fillers.has(absIndex),
+    // afterIndex は「その無音の直前の語」の絶対添字。先頭の無音（直前に語が無い）は -1。
+    cutSilence: (_start, _end, afterIndex) => afterIndex >= 0 && data.cutGaps.has(afterIndex),
+  };
 }
 
 /**

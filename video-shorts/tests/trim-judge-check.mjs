@@ -20,6 +20,7 @@ import {
   buildTrimPrompt,
   collectGapCandidates,
   loadTrimJudge,
+  judgeFor,
   parseTrimResponse,
   trimJudgeStage,
   MAX_FILLER_RATIO,
@@ -87,7 +88,7 @@ function makeWorkDir() {
     assert.strictEqual(r.fillers, 1, `言い淀みが ${r.fillers} 件（期待 1）`);
     assert.strictEqual(r.cutGaps, 1, `詰める間が ${r.cutGaps} 件（期待 1）`);
 
-    const judge = loadTrimJudge(dir, WORDS);
+    const judge = judgeFor(loadTrimJudge(dir));
     assert.ok(judge, "判定表が読めない");
     const plan = planTrim(WORDS, { duration: DURATION, cutSilence: true, cutFillers: true, judge });
     const kept = (a, b) =>
@@ -105,7 +106,7 @@ function makeWorkDir() {
     const dir = makeWorkDir();
     const runModel = async () => JSON.stringify({ fillers: [], cutGaps: [] });
     await trimJudgeStage({ workDir: dir, runModel });
-    const judge = loadTrimJudge(dir, WORDS);
+    const judge = judgeFor(loadTrimJudge(dir));
     const plan = planTrim(WORDS, { duration: DURATION, cutSilence: true, cutFillers: true, judge });
     assert.ok(
       Math.abs(plan.keptSeconds - DURATION) <= 0.05,
@@ -210,9 +211,9 @@ function makeWorkDir() {
 
   await t("判定表が無いときは null を返す（呼び元が『判断が取れなかった』と分かる）", () => {
     const dir = makeWorkDir();
-    assert.strictEqual(loadTrimJudge(dir, WORDS), null);
+    assert.strictEqual(loadTrimJudge(dir), null);
     fs.writeFileSync(path.join(dir, TRIM_JUDGE_FILE), "{壊れたJSON", "utf-8");
-    assert.strictEqual(loadTrimJudge(dir, WORDS), null, "壊れた判定表を読めたことにしている");
+    assert.strictEqual(loadTrimJudge(dir), null, "壊れた判定表を読めたことにしている");
     fs.rmSync(dir, { recursive: true, force: true });
   });
 

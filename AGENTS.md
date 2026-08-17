@@ -78,10 +78,15 @@
      （`.claude/agents/independent-verifier.md`）が判定する。＝作業した本人以外・報告を鵜呑みにせず
      自分で `verify` を再実行・再観察し、敵対的に落としにいく。
 - **基準は着手前に固定**：`criteria` / `verify` は着手前に決め、作業の途中で自分に都合よく緩めない。
-- **基準を凍結する PR では、外部レビューへ出す前に `basis-reviewer` を通す**（`.claude/agents/basis-reviewer.md`）。
+- **基準を凍結する PR では、外部レビューへ出す前に `basis-reviewer` と `precedent-reviewer` を並列で通す**
+  （`.claude/agents/basis-reviewer.md` / `.claude/agents/precedent-reviewer.md`）。役割は別：
+  `basis-reviewer` は基準そのものの質（atomic・十分・平易・探り済み）を見る。`precedent-reviewer` は
+  `docs/failures.md`（151件超・書き込み専用ログ化している）を全件読み、この計画・基準が過去に実際に
+  踏んだ失敗と同じ構造でないかを、該当エントリの日付・行番号つきで反証する（AGENTS.md 昇格済みの
+  教訓だけでは反証の75%が防げないことを2026-08-17に実測。`docs/failures.md` 参照）。
   外部レビュー（CodeRabbit 等）はレート制限があり1往復に数十分かかるため、**一次レビュアーにしない**。
-  ローカルの `basis-reviewer` は回数制限が無く、実装とドキュメントを読んだうえで反証を出せる。
-  順序は「自分で書く → `basis-reviewer` で落としにいく → 全部直す → 外部レビューは最後に1回」。
+  ローカルのレビュアーは回数制限が無く、実装とドキュメントを読んだうえで反証を出せる。
+  順序は「自分で書く → `basis-reviewer` と `precedent-reviewer` を並列 → 全部直す → 外部レビューは最後に1回」。
   2026-08-08 に、この順序を守らなかった結果、外部レビュー6往復（約5時間）で13件だったところが、
   `basis-reviewer` 1回（9分）で22件出た。差の実例は `docs/failures.md` 2026-08-08 を参照。
 - **`verify` を書いたら、凍結前に次の3点を自分で確認する**（同日の失敗から）。
