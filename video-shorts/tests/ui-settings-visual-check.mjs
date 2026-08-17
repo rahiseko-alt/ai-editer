@@ -32,10 +32,9 @@ import {
 import { FONTS_DIR } from "../src/subtitle-styles.mjs";
 
 const PORT = 59241; // このテスト専用の固定ポート(タスク指定)
-const ATSEC = 1.2; // 全ジョブで共通: 素材2語目("ブラボー"相当)が表示されている時刻。karaoke/line
-                    // モードは区間の全長にわたって何かしら表示中、popモードも単語間の隙間なく
-                    // 連続表示されるため(popEventsは次語のstartまでを表示区間にする)、この
-                    // 時刻ならどのモードでも字幕本文が表示されている。
+const ATSEC = 1.2; // 全ジョブで共通: 素材2語目("ブラボー"相当)が表示されている時刻。字幕は
+                    // 行単位で出る(1枚の字幕＝1イベント・話し終わるまで出っぱなし)ので、
+                    // この時刻ならどのスタイルでも字幕本文が表示されている。
 
 let pass = 0, fail = 0;
 async function t(name, fn) {
@@ -153,7 +152,7 @@ try {
     }
   }
 
-  console.log("11本のジョブを実ブラウザ×実サーバ×実ffmpegで作成中(数十秒かかります)...");
+  console.log("10本のジョブを実ブラウザ×実サーバ×実ffmpegで作成中(数十秒かかります)...");
   const specs = [
     ["default", {}],
     ["mincho", { captionFont: "mincho" }],
@@ -164,12 +163,12 @@ try {
     ["outlineBlue", { captionOutlineColor: "#0000FF" }],
     ["outlineOrange", { captionOutlineColor: "#FFA500" }],
     ["innerOn", { captionInner: "#FFFF00" }],
-    ["pop", { subStyle: "pop" }],
     ["bold", { subStyle: "bold" }],
   ];
   // server/index.mjs の jobsRateLimiter は POST /api/jobs を「固定ウィンドウ60秒に10回まで」
-  // (キー"global"共通)に制限している(P1-2(E))。11本を間を置かず作ると11本目が429で落ちる
-  // ため、10本目を作った直後、最初のジョブ作成からウィンドウが確実に明け直すまで待つ。
+  // (キー"global"共通)に制限している(P1-2(E))。11本目以降を間を置かず作ると429で落ちるため、
+  // 10本作った直後は、最初のジョブ作成からウィンドウが確実に明け直すまで待つ
+  // (2026-08-17 に pop を削除して10本になったので、現在この待機には入らない)。
   const jobs = {};
   const batchStartedAt = Date.now();
   for (let i = 0; i < specs.length; i++) {
@@ -255,33 +254,15 @@ try {
   // ============================================================
   // 2026-08-16: マスター指示「そもそも話に合わせて色を変えなくて良い」により、既定(karaoke)からも
   // 単語ハイライトの色替えタグが消えた。そのため「karaokeには色替えタグが有る」を
-  // スタイルの差の根拠にできなくなった。差の根拠を Style ヘッダ行(fontSize/配置/余白)と
-  // fad 演出タグへ移す（criteria が言う「構造的に異なる」の中身を差し替えただけで、
-  // 基準そのものは変えていない）。色替えタグが全スタイルから消えていることは、
+  // スタイルの差の根拠にできなくなった。差の根拠を Style ヘッダ行(fontSize/配置/余白)へ移す
+  // （criteria が言う「構造的に異なる」の中身を差し替えただけで、基準そのものは変えていない）。
+  // 2026-08-17: マスター指示「1語ずつポンポン出すな…こんな機能削除しろ」で "pop" プリセット
+  // (1語だけ画面中央に出しては消す・fad 演出タグ付き)を削除したので、pop を使っていた
+  // 「構造が異なる」検査は bold のものだけを残した。色替えタグが全スタイルから消えていることは、
   // この直下の別検査と tests/caption-fit-check.mjs が担当する。
-  await t("STYLE: popはkaraoke(既定)と.ass構造が異なる(Styleヘッダとfad演出タグ)", async () => {
-    const karaokeLines = captionDialogueLines(assOf("default"));
-    const popLines = captionDialogueLines(assOf("pop"));
-    assert.ok(karaokeLines.length > 0, "karaokeのCaption行が空");
-    assert.ok(popLines.length > 0, "popのCaption行が空");
-    const kStyle = (assOf("default").match(/^Style: Caption,.*$/m) || [""])[0];
-    const pStyle = (assOf("pop").match(/^Style: Caption,.*$/m) || [""])[0];
-    assert.ok(
-      kStyle && pStyle && kStyle !== pStyle,
-      `Styleヘッダ行が既定と同一(fontSize/配置/余白が反映されていない): karaoke="${kStyle}" pop="${pStyle}"`,
-    );
-    assert.ok(
-      popLines.some((l) => l.includes("\\fad(40,40)")),
-      "pop側にfad演出タグ(\\fad(40,40))が無い(SUBTITLE_STYLES.pop.modeの差が反映されていない)",
-    );
-    assert.ok(
-      !karaokeLines.some((l) => l.includes("\\fad(40,40)")),
-      "karaoke側にfad演出タグが付いている(popと構造が同じ=偽実装の疑い)",
-    );
-  });
   await t("STYLE: どのスタイルにも、話に合わせて色を変えるタグが入っていない", async () => {
-    // 2026-08-16 マスター指示。既定・pop・bold のどれを選んでも、字幕の途中で色が変わらない。
-    for (const key of ["default", "pop", "bold"]) {
+    // 2026-08-16 マスター指示。既定・bold のどちらを選んでも、字幕の途中で色が変わらない。
+    for (const key of ["default", "bold"]) {
       const lines = captionDialogueLines(assOf(key));
       assert.ok(lines.length > 0, `${key}のCaption行が空`);
       const withTag = lines.filter((l) => /\\c&H[0-9A-Fa-f]{8}&/.test(l));
@@ -295,12 +276,6 @@ try {
     const boldStyle = (assOf("bold").match(/^Style: Caption,.*$/m) || [""])[0];
     assert.ok(karaokeStyle && boldStyle && karaokeStyle !== boldStyle,
       `Styleヘッダ行が既定と同一(fontSize/outline/shadow/marginV等が反映されていない): karaoke="${karaokeStyle}" bold="${boldStyle}"`);
-  });
-  await t("STYLE: popで作成した動画の字幕領域に実際に文字が描画されている(空白のままではない)", async () => {
-    const { w, h, buf } = frameOf("pop");
-    const cropped = cropBelow(buf, w, h, 200); // 上部200pxはHook表示域(全style共通)なので除く
-    const n = countNonBlack(cropped);
-    assert.ok(n > 100, `Hook域を除いた非黒画素数=${n}(> 100 を期待。popの本文字幕が実際に描かれているか)`);
   });
   await t("STYLE: boldで作成した動画の字幕領域に実際に文字が描画されている(空白のままではない)", async () => {
     const { w, h, buf } = frameOf("bold");

@@ -2,7 +2,12 @@
 // 背景ボックス付き ASS 字幕を生成する。9:16(1080x1920)前提。
 //
 // 既製SaaSの「全ユーザー同一字幕」を避け自前デザインを握る（差別化・RB FORKOFF）。
-// スタイルは選択式（subtitle-styles.mjs の登録を参照）: karaoke/pop/line を mode で切替。
+// スタイルは選択式（subtitle-styles.mjs の登録を参照）。
+//
+// 【2026-08-17 マスター指示「1語ずつポンポン出すな」】字幕は必ず**行単位**で出す。
+// 1枚の字幕（＝語のまとまり）につき Dialogue イベントは1つだけで、その行は
+// 話し終わるまで出っぱなしになる。語ごとにイベントを刻む描画（旧 karaoke mode）も、
+// 1語だけ画面中央に出しては消す描画（旧 pop プリセット）も、両方とも削除した。
 
 import { DEFAULT_SUBTITLE_STYLE, computeSubtitleScale, scaleToken, resolveCaptionStyle } from "./subtitle-styles.mjs";
 
@@ -108,12 +113,6 @@ export function groupCaptions(words, maxChars = 18, fits = null, measure = null,
   }));
 }
 
-/** words を maxChars 程度の行にまとめる。各行に words[] を保持（karaoke mode 用） */
-export function groupCaptionsWords(words, maxChars = 14, fits = null, measure = null, budgetPx = Infinity) {
-  const groups = rebalanceShortCaptions(groupWordArrays(words, maxChars, fits), measure, budgetPx, fits);
-  return groups.map((g) => ({ words: g, start: g[0].start, end: g[g.length - 1].end }));
-}
-
 /**
  * 秒 → ASS タイム形式 h:mm:ss.cc
  *
@@ -147,7 +146,7 @@ function escAss(text) {
 
 // ── AUD-P2-22: canvasに収まる表示幅(全角=2/半角=1カラム)を基準にした折り返し ──────────
 //
-// 文字「数」ベースの既存グルーピング(groupCaptions/groupCaptionsWords の maxChars)だけでは、
+// 文字「数」ベースの既存グルーピング(groupCaptions の maxChars)だけでは、
 // canvasが小さい（拡大ガードで縮小された場合等）ときや、1語が極端に長い（伸ばし語・URL等）
 // ときに、その1トークンだけで canvas の横幅からはみ出しうる（groupCaptions* は「既に中身が
 // ある行に足すと超える」場合しか改行しないため、単独の長い1語はそのまま素通りする）。
@@ -356,32 +355,6 @@ function splitByDisplayWidth(text, budgetPx, scaledFontSize, wideRatio, narrowRa
   return out.length ? out : [text];
 }
 
-/**
- * 字幕1枚ぶんの語を、語の境目に関係なく「幅」で折り返し、行ごとの run 配列を返す。
- * run は「同じ語から来た連続する文字」の塊で、ハイライト色の判定に元の語 index を保つ。
- */
-function wrapRuns(ws, budgetPx, fs, st) {
-  const advance = (ch) => charAdvancePx(ch, fs, st.wideRatio, st.narrowRatio);
-  const chars = [];
-  ws.forEach((w, wordIndex) => {
-    // 半角の語どうしは、間に空白を入れて「語の区切りが読める」ようにする
-    // （2026-08-16。groupCaptions* が語を "" で連結していたため 'Helloeveryone' になっていた）。
-    if (needsSpace(chars.length ? chars[chars.length - 1].ch : "", w.w))
-      chars.push({ ch: " ", wordIndex });
-    for (const ch of Array.from(w.w)) chars.push({ ch, wordIndex });
-  });
-  const lines = wrapChars(chars, budgetPx, advance).map((ln) => {
-    const runs = [];
-    for (const c of ln) {
-      const last = runs[runs.length - 1];
-      if (last && last.wordIndex === c.wordIndex) last.text += c.ch;
-      else runs.push({ text: c.ch, wordIndex: c.wordIndex });
-    }
-    return runs;
-  });
-  return lines.length ? lines : [[]];
-}
-
 /** スタイルに応じた ASS ヘッダ（[Script Info]+[V4+ Styles]+[Events] 見出し）を作る
  *  @param {number} captionMarginV Caption スタイルの MarginV（px・スケール適用済み） */
 function buildHeader(W, H, font, st, align, scale, captionMarginV, scaledFontSize, scaledOutline) {
@@ -421,7 +394,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
  * BorderStyle=3(不透明ボックス)には頼らない(buildHeader()のコメント参照。この環境では
  * 塗りつぶしにならなかったため)。矩形は字幕の安全エリア(左右余白=captionMarginLR)いっぱいの
  * 横幅・フォントサイズ基準の高さを持つ帯として、区間の全長(duration)ぶん1本だけ描く
- * (karaoke等で単語ごとに複数のCaptionイベントがあっても、帯の位置はどれも同じ1本の帯で足りる)。
+ * (字幕は行ごとに複数のCaptionイベントに分かれるが、帯の位置はどれも同じなので1本で足りる)。
  * Layer -1(他のCaptionイベントより小さい)にして、文字より必ず背面に描かれるようにする。
  * @param {object} st resolveCaptionStyle() が返すスタイル
  * @param {number} W canvas幅
@@ -429,21 +402,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
  * @param {number} duration 区間長(秒)
  * @param {number} captionMarginLR Captionスタイルの左右余白(スケール後)
  * @param {number} scaledFontSize Captionスタイルのフォントサイズ(スケール後)
- * @param {number} align Captionスタイルの Alignment(2=下中央 / 5=画面中央)
  * @param {number} captionMarginV Captionスタイルの MarginV(px・スケール適用済み)
  * @returns {string[]}
  */
-function buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, align, captionMarginV) {
+function buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, captionMarginV) {
   if (!st.box?.enabled) return [];
   const bandHeight = Math.round(scaledFontSize * 1.3);
   const x1 = captionMarginLR;
   const w = Math.max(1, W - captionMarginLR * 2);
-  // 帯の縦位置は Caption スタイルの Alignment に合わせる（st.mode ではなく align を見る。
-  // 字幕の位置を明示したときは pop でも align=2 へ落ちるため、mode で判定すると帯だけ
-  // 画面中央に取り残される）。
-  const y1 = align === 5
-    ? Math.round(H / 2 - bandHeight / 2) // align=5: 画面中央基準
-    : Math.max(0, H - captionMarginV - bandHeight); // align=2: 下端基準
+  // 帯の縦位置は文字と同じ下端基準(Alignment=2)で決める。画面中央基準(Alignment=5)の
+  // 分岐は pop プリセット専用だったので、プリセットごと削除した（2026-08-17）。
+  const y1 = Math.max(0, H - captionMarginV - bandHeight);
   const draw = `m 0 0 l ${w} 0 ${w} ${bandHeight} 0 ${bandHeight}`;
   return [
     `Dialogue: -1,${assTime(0)},${assTime(duration)},Caption,,0,0,0,,` +
@@ -457,7 +426,7 @@ function buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize
  *   Layer 0（背面・外側）: 幅=st.outline(スケール後)・色=st.outlineColor で、文字色も
  *     outlineColorと同じ単色にして塗りつぶす（外側の縁だけが輪として見える下地）。
  *   Layer 1（前面・内側）: 幅=st.innerOutline.width(スケール後)・色=st.innerOutline.color で、
- *     文字色は元のまま(karaokeのハイライト等はそのまま活きる)。
+ *     文字色は元のまま。
  * ASSはLayer番号が大きいほど後から(上に)描画されるため、Layer1がLayer0の上に重なり、
  * 外側の縁の輪だけが内側の縁の外にリングとして残る。
  * @param {string[]} events "Dialogue: 0,...,Caption,,0,0,0,,text" 形式の行の配列(Hookを含む)
@@ -489,58 +458,19 @@ function applyInnerOutline(events, st, scale) {
   return out;
 }
 
-/** karaoke: 行を出しつつ、現在の単語だけ highlight 色で 1 語ずつ移動表示 */
-function karaokeEvents(relWords, st, maxChars, budgetPx, fs, fits) {
-  const measure = (t) => textWidthPx(t, fs, st.wideRatio, st.narrowRatio);
-  const lines = groupCaptionsWords(relWords, maxChars, fits, measure, budgetPx);
-  const ev = [];
-  for (const line of lines) {
-    const ws = line.words;
-    // 字幕1枚ぶんの文字を、語の境目に関係なく「幅」で折り返す（wrapRuns）。
-    // 【2026-08-16 の直し】旧実装は語ごとに splitByDisplayWidth で断片化してから積んでいたため、
-    // 改行できる位置が語の切れ目に限られ、11文字の語では 9+2 のように短い行が生まれた
-    // （22文字の字幕が 9/2/9/2 の4行になり、上限3行も破っていた）。文字単位で積めば 9/9/4 になる。
-    for (let i = 0; i < ws.length; i++) {
-      const start = ws[i].start;
-      const end = i < ws.length - 1 ? ws[i + 1].start : line.end; // 次語まで連続表示（点滅防止）
-      if (end <= start) continue;
-      const text = wrapRuns(ws, budgetPx, fs, st)
-        .map((runs) =>
-          runs
-            .map((run) => {
-              const escaped = escAss(run.text);
-              // highlight が base と同じなら色の切り替えタグを一切書かない（G-CAP-FIT-COLOR。
-              // 話に合わせて色を変えないスタイルでは、途中で色が変わる余地そのものを残さない）。
-              return run.wordIndex === i && st.highlight && st.highlight !== st.base
-                ? `{\\c${st.highlight}&}${escaped}{\\c${st.base}&}`
-                : escaped;
-            })
-            .join(""),
-        )
-        .join("\\N");
-      ev.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Caption,,0,0,0,,${text}`);
-    }
-  }
-  return ev;
-}
-
-/** pop: 1 単語だけ画面中央に大きく、フェードで出ては消える */
-function popEvents(relWords, duration, budgetPx, fs, st) {
-  const ev = [];
-  for (let i = 0; i < relWords.length; i++) {
-    const w = relWords[i];
-    const start = w.start;
-    const end = i < relWords.length - 1 ? relWords[i + 1].start : Math.min(duration, w.end + 0.3);
-    if (end <= start) continue;
-    const text = splitByDisplayWidth(w.w, budgetPx, fs, st.wideRatio, st.narrowRatio)
-      .map(escAss)
-      .join("\\N");
-    ev.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Caption,,0,0,0,,{\\fad(40,40)}${text}`);
-  }
-  return ev;
-}
-
-/** line: 行単位でまとめて表示（現状互換） */
+/**
+ * 行単位でまとめて表示する（唯一の描画方式）。
+ *
+ * 1枚の字幕（groupCaptions がまとめた語のかたまり）につき Dialogue は**1つだけ**。
+ * 表示は先頭の語が始まる時刻から最後の語が終わる時刻まで続くので、読んでいる途中で
+ * 文字が入れ替わらない。
+ *
+ * 【2026-08-17 の是正】旧 karaoke mode はここを語の数だけ刻んでいた（1語につき1イベント。
+ * 実測: 60秒・150語のクリップで Caption イベント 150 個／文面は 18 種類）。文面はどの
+ * イベントも同じ行全体で、語ごとに色を変える処理も 2026-08-16 に外れていたため、
+ * 「同じ絵を 150 回描き直す」だけの状態だった。マスター指示「1語ずつポンポン出すな」に
+ * 従い、語ごとに刻む経路そのものを削除した。
+ */
 function lineEvents(relWords, maxChars, budgetPx, fs, st, fits) {
   const measure = (t) => textWidthPx(t, fs, st.wideRatio, st.narrowRatio);
   const captions = groupCaptions(relWords, maxChars, fits, measure, budgetPx);
@@ -578,10 +508,15 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   // resolveCaptionStyle() 由来のスタイルは st.fontFamily を持つ（書体選択・G-EDIT-CAPTION-STYLE）。
   // 持たない場合(旧来のプリセットそのまま・テスト等)は opts.fontMain / DEFAULT_FONT にフォールバック。
   const fontMain = st.fontFamily ?? opts.fontMain ?? DEFAULT_FONT;
-  // 字幕の位置を明示したとき(resolveCaptionStyle が st.align=2 を立てる)はそれを優先する。
-  // 未指定なら従来どおり pop=画面中央 / それ以外=下中央。
-  const align = st.align ?? (st.mode === "pop" ? 5 : 2);
-  const maxChars = opts.maxChars ?? (st.mode === "karaoke" ? 14 : 18);
+  // 字幕は常に画面下端基準(Alignment=2)。画面中央基準(Alignment=5)は 1語だけ中央に出す
+  // pop プリセット専用だったが、そのプリセットごと削除した（2026-08-17）。Alignment=5 は
+  // ASS の仕様上 MarginV を無視するため、残しておくと「位置を選べるのに効かない」状態を
+  // 作ってしまう。古い state.json（align:5 や mode:"pop" を持つ）を焼き直すときも、
+  // ここで下端基準に揃える。
+  const align = 2;
+  // 語のまとまり方は「実際に描いたときの幅」で決めるのが既定（下の fitsLine）。
+  // maxChars は opts.maxChars を明示したときだけ効く（既存検査の互換のため残している）。
+  const maxChars = opts.maxChars ?? 18;
 
   // AUD-P2-22: canvasに応じてstyleの絶対px値を比例縮小し、実際に収まる見た目カラム数を求める。
   const scale = computeSubtitleScale(W, H);
@@ -621,7 +556,7 @@ export function buildAss(relWords, hook, duration, opts = {}) {
   const header = buildHeader(W, H, fontMain, st, align, scale, captionMarginV, scaledFontSize, scaledOutline);
   let events = [];
   events = events.concat(
-    buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, align, captionMarginV),
+    buildBackgroundBand(st, W, H, duration, captionMarginLR, scaledFontSize, captionMarginV),
   );
   if (hook) {
     const hookLines = splitByDisplayWidth(hook, hookBudgetPx, hookFontSize, st.wideRatio, st.narrowRatio)
@@ -643,11 +578,9 @@ export function buildAss(relWords, hook, duration, opts = {}) {
       : (text) =>
           splitByDisplayWidth(text, budgetPx, scaledFontSize, st.wideRatio, st.narrowRatio).length <=
           CAPTION_MAX_LINES;
-  if (st.mode === "karaoke")
-    events = events.concat(karaokeEvents(relWords, st, maxChars, budgetPx, scaledFontSize, fitsLine));
-  else if (st.mode === "pop")
-    events = events.concat(popEvents(relWords, duration, budgetPx, scaledFontSize, st));
-  else events = events.concat(lineEvents(relWords, maxChars, budgetPx, scaledFontSize, st, fitsLine));
+  // 本文字幕は行単位で出す（唯一の描画方式）。スタイルによる分岐は無い＝どのスタイルを
+  // 選んでも「1枚の字幕＝1イベント」で、語が1つずつ切り替わることはない（2026-08-17）。
+  events = events.concat(lineEvents(relWords, maxChars, budgetPx, scaledFontSize, st, fitsLine));
 
   events = applyInnerOutline(events, st, scale);
 

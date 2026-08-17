@@ -559,14 +559,16 @@ function inkColors(buf) {
     .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
 }
 
+/** 色の検査に使う固定素材（3語・1秒ずつ）。 */
+const COLOR_WORDS = [
+  { w: "あああ", start: 0, end: 1 },
+  { w: "いいい", start: 1, end: 2 },
+  { w: "ううう", start: 2, end: 3 },
+];
+
 /** 同じ字幕が出ている3つの時点の「使われている色」を返す。 */
-function colorsOverTime(style) {
-  const words = [
-    { w: "あああ", start: 0, end: 1 },
-    { w: "いいい", start: 1, end: 2 },
-    { w: "ううう", start: 2, end: 3 },
-  ];
-  const ass = buildAss(words, "", 3, { width: W, height: H, style });
+function colorsOverTime(style, mutate = (x) => x) {
+  const ass = mutate(buildAss(COLOR_WORDS, "", 3, { width: W, height: H, style }));
   return [0.5, 1.5, 2.5].map((at) => inkColors(readPixelsRgb(bake(ass, { atSec: at }))));
 }
 
@@ -593,14 +595,44 @@ for (const key of Object.keys(SUBTITLE_STYLES)) {
 }
 
 t("COLOR 対照: 話に合わせて色を変えるスタイルだと、3枚の色が割れる", () => {
-  const speechSynced = { ...resolveCaptionStyle("karaoke", {}), highlight: "&H0000FFFF" };
-  const sets = colorsOverTime(speechSynced);
+  // 【2026-08-17 の作り直し】以前はプリセットの highlight を黄色にした偽スタイルを作って
+  // 対照にしていたが、語ごとに色を変える描画そのものを製品から削除したため、その作り方では
+  // 対照が成立しなくなった（実装が色替えタグを一切書かないので、検出器の良し悪しに関わらず
+  // 1色になる＝この対照が「検出器は使い物になる」ことを何も言えなくなる）。
+  // そこで、製品が出した .ass の2語目だけを黄色にする色替えタグを**この検査が直接書き込み**、
+  // 「1枚の中に2色ある状態」を人工的に作って、検出器がそれを見分けられることを確かめる。
+  // 末尾3文字を黄色にする（語の切れ目ではなく文字数で切るのは、字幕が幅で折り返されて
+  // 語が \N をまたいで割れることがあるため。製品の本文にはタグが1つも無いので素のまま切れる）。
+  const yellow = (ass) =>
+    ass.replace(/^(Dialogue: 0,.*,Caption,,0,0,0,,)(.*)$/gm, (line, head, body) => {
+      const chars = Array.from(body);
+      if (chars.length < 6) return line;
+      const tail = chars.slice(-3).join("");
+      assert.ok(!/[{}\\]/.test(tail), `対照を埋め込む末尾にタグが混じっている: ${tail}`);
+      return `${head}${chars.slice(0, -3).join("")}{\\c&H0000FFFF&}${tail}{\\c&H00FFFFFF&}`;
+    });
+  const sets = colorsOverTime(resolveCaptionStyle("karaoke", {}), (ass) => {
+    const out = yellow(ass);
+    assert.notStrictEqual(out, ass, "対照の色替えタグを埋め込めていない（字幕の本文が読めていない）");
+    return out;
+  });
   console.log(`  [実測] 対照: ${sets.map((s2) => s2.map((c) => `rgb(${c})`).join("+")).join(" / ")}`);
   const detected = sets.some((s2) => s2.length > 1);
   assert.ok(detected, "色を変えるスタイルなのに1色だと判定した＝色の違いを見分けられていない");
 });
 
-t("COLOR: 画面から選べるスタイルに、話に合わせて色を変えるものが無い", () => {
+/** buildAss の出力から Caption の Dialogue 行の本文だけを取り出す。 */
+function captionBodies(ass) {
+  return ass
+    .split("\n")
+    .filter((l) => l.startsWith("Dialogue: ") && l.includes(",Caption,,"))
+    .map((l) => l.split(",,0,0,0,,")[1] ?? "");
+}
+
+t("COLOR: 画面から選べるスタイルが、字幕の途中で色を変えるタグを1つも書かない", () => {
+  // 【2026-08-17】以前はプリセットの highlight と base が同じ値かを見ていたが、語ごとに
+  // 色を変える描画を削除した際に highlight ごと消したので、**実際に焼かれる .ass に色替えの
+  // タグが1つも無いこと**を直接見る（宣言値ではなく出力を見るぶん、こちらの方が強い）。
   const html = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "webapp-mockup", "index.html"), "utf-8");
   const block = html.slice(html.indexOf('data-group="subStyle"'));
   const keys = [...block.slice(0, block.indexOf("</div>")).matchAll(/data-val="([^"]*)"/g)].map((m) => m[1]);
@@ -608,12 +640,75 @@ t("COLOR: 画面から選べるスタイルに、話に合わせて色を変え�
   for (const k of keys) {
     const s = SUBTITLE_STYLES[k];
     assert.ok(s, `画面にあるスタイル「${k}」が登録表に無い`);
-    assert.strictEqual(
-      s.highlight,
-      s.base,
-      `画面から選べる「${s.label}」が、話に合わせて色を変える設定になっている（highlight=${s.highlight} / base=${s.base}）`,
+    const bodies = captionBodies(buildAss(COLOR_WORDS, "", 3, { width: W, height: H, style: k }));
+    assert.ok(bodies.length > 0, `「${s.label}」の字幕が1行も出ていない`);
+    const colored = bodies.filter((b) => /\\[1-4]?c&H/i.test(b));
+    assert.deepStrictEqual(
+      colored,
+      [],
+      `画面から選べる「${s.label}」が、字幕の途中で色を変えるタグを書いている: ${colored.join(" / ")}`,
     );
   }
+});
+
+/* ══════ ⑤'' 1語ずつポンポン出さない（2026-08-17 マスター指示）══════ */
+//
+// 「1語ずつポンポン出すな！と指示したぞ。なぜいう事を聞かない。こんな機能削除しろ」。
+// 語のまとまり（1枚の字幕）につき Dialogue は1つだけで、語の数だけイベントを刻まない。
+// 旧実装（karaoke mode）は語ごとに Dialogue を出しており、実測で 60秒・150語のクリップに
+// Caption イベントが 150 個・そのうち文面はたった 18 種類（同じ絵を 150 回描き直していた）。
+/** 固定素材（16語・0.4秒刻み）。1枚に収まりきらない量にして、必ず複数枚に分かれるようにする。 */
+const LINE_WORDS = "今日は 動画編集 の 話 を します まず 最初に 素材 を 全部 見て 使える ところ だけ 残します"
+  .split(" ")
+  .map((w, i) => ({ w, start: i * 0.4, end: i * 0.4 + 0.32 }));
+
+/**
+ * 合格条件そのもの。「1語ずつポンポン出している」兆候を文章で返す（空なら合格）。
+ * 同じ文面の Dialogue が2つ以上ある＝同じ絵を描き直している＝語ごとに刻んでいる、と見なす。
+ */
+function perWordViolations(bodies, wordCount) {
+  const bad = [];
+  const seen = new Map();
+  for (const b of bodies) seen.set(b, (seen.get(b) ?? 0) + 1);
+  for (const [body, n] of seen) {
+    if (n > 1) bad.push(`同じ文面のイベントが ${n} 個ある: 「${body.slice(0, 20)}…」`);
+  }
+  if (bodies.length >= wordCount) {
+    bad.push(`字幕イベントが ${bodies.length} 個あり、語数 ${wordCount} と同じかそれ以上＝1語ずつ出している`);
+  }
+  return bad;
+}
+
+t("LINE: どのスタイルでも、字幕1枚につきイベントは1つだけ（語の数だけ刻まない）", () => {
+  for (const key of Object.keys(SUBTITLE_STYLES)) {
+    const bodies = captionBodies(
+      buildAss(LINE_WORDS, "", LINE_WORDS.length * 0.4, { width: W, height: H, style: key }),
+    );
+    console.log(`  [実測] ${key}: 語数=${LINE_WORDS.length} → 字幕イベント=${bodies.length}`
+      + `（文面の種類=${new Set(bodies).size}）`);
+    const bad = perWordViolations(bodies, LINE_WORDS.length);
+    assert.deepStrictEqual(bad, [], `「${SUBTITLE_STYLES[key].label}」: ${bad.join(" / ")}`);
+  }
+});
+
+t("LINE 対照: 旧実装と同じ「1語＝1イベント」の .ass なら、この検査が実際に落とせる", () => {
+  // 削除した karaoke mode がやっていたことを、この検査が自分で再現する（製品には無い）。
+  // 1枚の字幕の文面はそのままに、その字幕に含まれる語の数だけイベントへ複製する。
+  const ass = buildAss(LINE_WORDS, "", LINE_WORDS.length * 0.4, { width: W, height: H, style: PRODUCT_STYLE });
+  const bodies = captionBodies(ass);
+  const perWord = [];
+  let left = LINE_WORDS.length;
+  for (let i = 0; i < bodies.length; i++) {
+    // 最後の字幕に残りの語を全部割り当てる（合計が必ず語数と一致するようにする）。
+    const n = i === bodies.length - 1 ? left : Math.max(1, Math.floor(LINE_WORDS.length / bodies.length));
+    for (let k = 0; k < n; k++) perWord.push(bodies[i]);
+    left -= n;
+  }
+  console.log(`  [実測] 対照: 語数=${LINE_WORDS.length} → 字幕イベント=${perWord.length}`
+    + `（文面の種類=${new Set(perWord).size}）`);
+  assert.strictEqual(perWord.length, LINE_WORDS.length, "対照の作りが語数と合っていない");
+  const bad = perWordViolations(perWord, LINE_WORDS.length);
+  assert.ok(bad.length >= 1, "1語ずつ出している .ass を合格と判定した＝この検査は何も見ていない");
 });
 
 /* ══════ ⑤' 製品の既定の呼び方で、直したとおりに焼かれる ══════ */
@@ -768,7 +863,8 @@ t("INKBALANCE 対照: 縁取りを全周に倍増すると上限を超える（N
 
 /* ══════ ⑨ 見せ方や画面の向きを変えても、はみ出さず読める大きさ ══════ */
 // basis-reviewer 指摘: ここまでの実測はすべて既定の karaoke・縦型だけだった。
-// 実際には pop / bold / 背景帯ON / 内側縁取りON / 横向き の経路がある。
+// 実際には bold / 背景帯ON / 内側縁取りON / 横向き の経路がある
+// （2026-08-17 に "pop" プリセットを削除したので、その経路は無くなった）。
 // 各経路について「画面からはみ出さない」「字が読める大きさ」の2つを、焼いた画素で見る。
 
 /** 任意の canvas で焼いて、墨の位置と漢字の高さを測る。 */
@@ -791,7 +887,6 @@ function routeMeasure(style, cw, ch, text = "今日は動画編集の話をこ�
 }
 
 const ROUTES = [
-  ["1語ずつポップ", "pop", 1080, 1920],
   ["太字ライン", "bold", 1080, 1920],
   ["背景帯あり", resolveCaptionStyle(PRODUCT_STYLE, { box: { enabled: true, colorHex: "#102040" } }), 1080, 1920],
   ["内側縁取りあり", resolveCaptionStyle(PRODUCT_STYLE, { innerOutline: { enabled: true, colorHex: "#ffff00" } }), 1080, 1920],

@@ -12,8 +12,9 @@
 //
 // 【対照の置き方】どの段も「効いていないとき効いていないと言える」ことを同じ検査の中で示す。
 //   ・位置を渡さない場合は変更前と同じ MarginV になること（＝退行していないことの裏返し）
-//   ・pop プリセットは既定 Alignment=5 で ASS 仕様上 MarginV を見ない。位置を指定したときに
-//     Alignment=2 へ落ちていなければ「指定しても効かない」ので、それを検出する
+//   ・ASS 仕様上 Alignment=5（画面中央）は MarginV を見ない。どのスタイルでも Alignment=2
+//     でなければ「指定しても効かない」ので、それを検出する（2026-08-17 に Alignment=5 だった
+//     "pop" プリセットを削除。中央基準の分岐が残っていないことを、全スタイルで確かめる）
 //   ・parseJobParams は 0 を正当な値として通し、範囲外は undefined へ丸めること
 //   ・buildRenderArgs は 0 を落とさないこと（truthy 判定だと 0 だけ黙って消える）
 //
@@ -114,14 +115,16 @@ function startServer() {
     assert.strictEqual(marginV, Math.round(1080 * 0.25), "横向きで％が高さ基準になっていない");
   });
 
-  await t("出力: pop でも位置を指定すれば Alignment=2（下端基準）へ落ちる", () => {
-    // pop の既定は Alignment=5（画面中央）で、ASS 仕様上 MarginV を見ない。ここが 5 のままだと
-    // 「画面で動かせるのに一切効かない」状態になる。
-    const base = readCaptionStyleRow(assFor("pop", {}));
-    assert.strictEqual(base.align, 5, "pop の既定 Alignment が 5 でない（前提が崩れている）");
-    const moved = readCaptionStyleRow(assFor("pop", { posPercent: 40 }));
-    assert.strictEqual(moved.align, 2, "位置を指定しても Alignment が 5 のまま＝指定が効かない");
-    assert.strictEqual(moved.marginV, Math.round(1920 * 0.4), "pop の MarginV が指定どおりでない");
+  await t("出力: どのスタイルでも Alignment=2（下端基準）で、指定した位置がそのまま効く", () => {
+    // ASS の Alignment=5（画面中央）は仕様上 MarginV を見ない。どれか1つのスタイルでも
+    // 5 のままだと「画面で動かせるのに一切効かない」状態になるので、登録表の全スタイルで
+    // 見る（2026-08-17 に Alignment=5 だった "pop" プリセットを削除した。中央基準の分岐が
+    // どこかに残っていれば、ここで 5 として出る）。
+    for (const key of Object.keys(SUBTITLE_STYLES)) {
+      const moved = readCaptionStyleRow(assFor(key, { posPercent: 40 }));
+      assert.strictEqual(moved.align, 2, `${key}: Alignment が 2 でない＝位置の指定が効かない`);
+      assert.strictEqual(moved.marginV, Math.round(1920 * 0.4), `${key}: MarginV が指定どおりでない`);
+    }
   });
 
   await t("出力: 背景帯も、指定した位置へ一緒に動く", () => {
@@ -140,13 +143,13 @@ function startServer() {
     for (const [key, preset] of Object.entries(SUBTITLE_STYLES)) {
       const { align, marginV } = readCaptionStyleRow(assFor(key, {}));
       // scaleToken は 0 を 1 へ持ち上げる（字幕が完全に消えるのを防ぐ既存の作法）ので、
-      // 「変更前と同じ」の期待値もそれを通した値にする。pop は marginV=0 なので 1 になる。
+      // 「変更前と同じ」の期待値もそれを通した値にする。
       assert.strictEqual(
         marginV,
         scaleToken(preset.marginV, 1),
         `${key}: 未指定なのに MarginV が変わっている`,
       );
-      assert.strictEqual(align, preset.mode === "pop" ? 5 : 2, `${key}: 未指定なのに Alignment が変わっている`);
+      assert.strictEqual(align, 2, `${key}: 未指定なのに Alignment が変わっている`);
     }
   });
 

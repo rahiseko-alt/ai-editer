@@ -872,11 +872,42 @@ $("editing-error-close").addEventListener("click", hideEditing);
 // AIが使うと決めた所を白、それ以外を濃いグレーで並べ、その1枚がそのまま台本になる。
 // 白を押せば濃いグレー側へ落ちる（＝台本の修正）。落としたものはもう一度押せば戻る。
 //
-// scriptCtx: { jobId, jobToken, es, segments, meta, tokens, dropped:Set<tokenの番号>, busy }
-//   tokens[i] = {kind:"word", seg:番号, w, start, end}  … AIが使う語（白・消せる）
-//             | {kind:"word", seg:null,  w, start, end}  … AIが使わない語（濃いグレー・触れない）
+// さらに 2026-08-17（4回目の指摘「拾えるようにしろ」）：濃いグレー（AIが選ばなかった語）も
+// 押して「使う」側へ入れられる。AIの提案そのもの（tokens[i].seg）は書き換えず、ユーザーの
+// 操作だけを2つの集合で持つので、拾ったものを戻せば必ず元の提案の状態へ戻る。
+//
+// scriptCtx: { jobId, jobToken, es, segments, meta, tokens,
+//              dropped:Set<tokenの番号>, picked:Set<tokenの番号>, busy }
+//   tokens[i] = {kind:"word", seg:番号, w, start, end}  … AIが使うと決めた語
+//             | {kind:"word", seg:null,  w, start, end}  … AIが使わないと決めた語
 //             | {kind:"text", seg, text}                 … 全文に居場所が無かった区間（消せないが必ず出す）
+//   dropped … AIが選んだ語のうち、ユーザーが落としたもの
+//   picked  … AIが選ばなかった語のうち、ユーザーが拾ったもの
+//   ある語を使うかどうかは wordInUse() の1式だけで決まる（画面・秒数・書き出しが同じ式を見る）。
 let scriptCtx = null;
+
+/** 語 tokens[i] を「使う」状態か。AIの提案（t.seg）＋ユーザーの操作（dropped/picked）で決まる。 */
+function wordInUse(t, i) {
+  if (!t || t.kind !== "word") return false;
+  return t.seg === null ? scriptCtx.picked.has(i) : !scriptCtx.dropped.has(i);
+}
+
+/**
+ * 語 i を「使う／使わない」へ動かす。集合はAIの提案側と拾った側で分けたまま触る
+ * （混ぜると、拾ったものを戻したときに元の提案へ戻れなくなる）。
+ * 画面は作り直さずクラスの付け外しだけにする（全文は数千語あるため）。
+ */
+function setWordInUse(i, use, el) {
+  const t = scriptCtx?.tokens[i];
+  if (!t || t.kind !== "word") return false;
+  if (t.seg === null) {
+    if (use) scriptCtx.picked.add(i); else scriptCtx.picked.delete(i);
+  } else {
+    if (use) scriptCtx.dropped.delete(i); else scriptCtx.dropped.add(i);
+  }
+  if (el) el.classList.toggle("is-off", !use);
+  return true;
+}
 
 /** 区間の長さ（秒）。start/end が壊れていても負にはしない。 */
 function segSeconds(s) {
@@ -905,7 +936,10 @@ const scriptModal = attachModal($("script-overlay"), () => {
 });
 
 function openScriptReview(jobId, jobToken, es) {
-  scriptCtx = { jobId, jobToken, es, segments: [], meta: {}, tokens: [], dropped: new Set(), busy: false };
+  scriptCtx = {
+    jobId, jobToken, es, segments: [], meta: {}, tokens: [],
+    dropped: new Set(), picked: new Set(), busy: false,
+  };
   // 承認待ちの間は編集中カードをしまう。暗幕＋動く帯が出たままだと「もう書き出している」と
   // 見えてしまい、まだ始まっていないという事実が伝わらないため。
   hideEditing();
@@ -930,6 +964,7 @@ function openScriptReview(jobId, jobToken, es) {
       // 既定は「提示どおり全部使う」。消えるのはユーザーが明示的に消した所だけ。
       scriptCtx.tokens = buildScriptTokens(scriptCtx.segments, data.transcript);
       scriptCtx.dropped.clear();
+      scriptCtx.picked.clear();
       renderScriptFlow();
       // 全文を出せなかったときは、なぜ出せないのかをそのまま出す（黙って
       // 「AIが選んだ所だけ」に戻ると、全文が無いことに気づけない）。
@@ -991,28 +1026,47 @@ function buildScriptTokens(segs, transcript) {
 }
 
 /**
- * 残った語を、消された所で切り分けて区間の列へ組み直す。
- * 例: 語が [A B C D E] で C を消したら [AB] と [DE] の2区間。
- * keepText は残った語の w をそのまま連結した文字列にする（本文の逐語連続抜き出しという
+ * 「使う」状態の語を、使わない所で切り分けて区間の列へ組み直す。
+ * 例: 語が [A B C D E] で C だけ使わないなら [AB] と [DE] の2区間。
+ * keepText は使う語の w をそのまま連結した文字列にする（本文の逐語連続抜き出しという
  * 前提が保たれ、後段の逆照合で秒数が確定できる。ここを崩すと動画が作れなくなる）。
- * hook は元になった区間のものを引き継ぐ（分割されたら両方に同じものが付く）。
  * 秒数は語の実測（先頭語の start 〜 末尾語の end）。推定はしない。
  *
- * 本文は文字起こしの時系列で並んでいるが、送る区間の並びは「AIが決めた区間の順」へ戻す。
+ * 【区切りはAIの区間ではなく「使う／使わない」だけで決める】
+ * 拾った語（AIが選ばなかったのにユーザーが使うと決めた語）が2つのAI区間の間を埋めたら、
+ * その2つは1本に繋がる。音が途切れずに続くので、そこで切る理由が無いからである。
+ * 逆に、AIの区間の境目であっても語が連続して使われているなら切らない。
+ *
+ * 【hook】その区間に入った語のうち、AIの区間に属していた最初の語の hook を引き継ぐ。
+ * 拾った語だけで出来た区間には引き継ぐ元が無いので空文字（hook は必須ではない）。
+ *
+ * 【送る並び順】本文は文字起こしの時系列で並ぶが、送る並びは下の3段で決め直す。
  * まとめて1本(digest)では台本の並び順そのものが編集意図なので、画面の並び（時系列）を
- * そのまま送ると意図した順番が壊れる。同じ区間の中の順序は時系列のまま。
+ * そのまま送ると意図した順番が壊れる。かといって拾った語には「AIが決めた順」が無い。
+ *   ① 区間のキー ＝ その区間に入った「AIが選んでいた語」の seg のうち最小のもの。
+ *      → AIが決めた並びをそのまま守れる。拾った語が2つのAI区間を繋いだ場合は、
+ *        繋がった1本を若い方（先に出てくる方）の位置へ置く。繋がった＝音が連続する＝
+ *        もう別々の場所へは置けないので、片方に寄せるほか無く、若い方に寄せる。
+ *   ② AIの語を1つも含まない区間（全部が拾った語）はキーを持たない。時系列で直前に置いた
+ *      区間のキーを引き継ぎ、その直後に置く。拾う操作は「いま使っている所の前後を足す」
+ *      操作なので、元の話で隣にあるものの隣へ置くのが話として一番壊れない。
+ *      直前が無い（本文の先頭側で拾った）ときは先頭へ置く。
+ *   ③ 同じキー同士は時系列の順（安定並べ替え）。
  */
 function buildKeptRuns() {
   if (!scriptCtx) return [];
   const segs = scriptCtx.segments;
   const out = [];
   let run = null;
+  // 時系列で直前に置いた区間の並び順キー（②で引き継ぐ元）。まだ何も置いていなければ -1。
+  let lastKey = -1;
+  const push = (r) => { lastKey = r.key; out.push(r); };
   const flush = () => {
     if (run && run.words.length) {
       const first = run.words[0], last = run.words[run.words.length - 1];
       const len = last.end - first.start;
-      out.push({
-        seg: run.seg,
+      push({
+        key: run.key === null ? lastKey : run.key,
         keepText: run.words.map((w) => w.w).join(""),
         hook: run.hook,
         seconds: Number.isFinite(len) && len > 0 ? len : 0,
@@ -1021,23 +1075,31 @@ function buildKeptRuns() {
     run = null;
   };
   scriptCtx.tokens.forEach((t, i) => {
-    const hook = String(segs[t.seg]?.hook || "");
     if (t.kind === "text") {
       // 語に割れなかった区間はそのまま1区間として通す（消せないので必ず残る）。
       flush();
-      out.push({ seg: t.seg, keepText: t.text, hook, seconds: segSeconds(segs[t.seg]) });
+      push({
+        key: t.seg,
+        keepText: t.text,
+        hook: String(segs[t.seg]?.hook || ""),
+        seconds: segSeconds(segs[t.seg]),
+      });
       return;
     }
-    // AIが使わないと決めた語（seg が無い）とユーザーが消した語は、どちらもここで区間を切る。
-    if (t.seg === null || scriptCtx.dropped.has(i)) { flush(); return; }
-    if (!run || run.seg !== t.seg) { flush(); run = { seg: t.seg, hook, words: [] }; }
+    if (!wordInUse(t, i)) { flush(); return; }   // 使わない語＝ここで区間を切る
+    if (!run) run = { key: null, hook: "", words: [] };
+    if (t.seg !== null) {
+      // キーは最小の seg（①）、hook は最初に見つかったAIの語のもの。
+      if (run.key === null || t.seg < run.key) run.key = t.seg;
+      if (!run.hook) run.hook = String(segs[t.seg]?.hook || "");
+    }
     run.words.push(t);
   });
   flush();
-  // 区間の順序を「AIが決めた順」へ戻す（同じ区間の中は時系列のまま＝安定並べ替え）。
+  // ①②で付けたキーで並べ直す（同じキーは時系列のまま＝安定並べ替え＝③）。
   return out
     .map((r, i) => ({ r, i }))
-    .sort((a, b) => (a.r.seg - b.r.seg) || (a.i - b.i))
+    .sort((a, b) => (a.r.key - b.r.key) || (a.i - b.i))
     .map((x) => x.r);
 }
 
@@ -1058,13 +1120,13 @@ function renderScriptFlow() {
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
     if (t.kind !== "word") { buf.push(`<span class="script-raw">${esc(t.text)}</span>`); continue; }
-    if (t.seg === null) {
-      // AIが使わないと決めた所。消さずに濃いグレーで残す（全文が読めること）。
-      // 押しても何も起きない（使う側へ戻す操作はマスターの指示に無い）。
-      buf.push(`<span class="script-off" data-testid="script-word-off">${esc(t.w)}</span>`);
-      continue;
-    }
-    buf.push(`<span class="script-w${scriptCtx.dropped.has(i) ? " is-cut" : ""}" data-testid="script-word" data-i="${i}">${esc(t.w)}</span>`);
+    // 語はすべて押せる（AIが選ばなかった所も拾えるようにする）。クラスは2つだけ：
+    //   is-ai … AIが使うと決めていた語（＝元の提案。ユーザー操作では絶対に変えない）
+    //   is-off… いま使わない語（濃いグレー）。押す／ドラッグで付け外しするのはこれだけ。
+    // 見た目は CSS 側で4通りに割れる（白／点線下線＝拾った／グレー／グレー＋取り消し線＝落とした）。
+    const ai = t.seg !== null ? " is-ai" : "";
+    const off = wordInUse(t, i) ? "" : " is-off";
+    buf.push(`<span class="script-w${ai}${off}" data-testid="script-word" data-i="${i}">${esc(t.w)}</span>`);
   }
   buf.push(`</div>`);
   list.innerHTML = buf.join("");
@@ -1088,10 +1150,16 @@ function renderScriptMeta() {
   $("script-approve").disabled = scriptCtx.busy || runs.length === 0;
 }
 
-// ── 本文から任意の場所を消す ───────────────────────────────────
-// ドラッグで範囲を選ぶ → 離した時点で、その範囲に掛かった語が消える。
-// 消した語は消滅させず、取り消し線＋薄い表示で残す。もう一度クリック（タップ）で戻る。
-// 語を1つだけ消す／戻すのはクリック（タップ）だけでできる＝ドラッグが難しい環境の代替。
+// ── 本文の任意の場所を「使う／使わない」へ動かす ─────────────────
+// クリック（タップ）＝その語1つを入れ替える。白なら落ちる、濃いグレーなら拾う。
+// ドラッグ＝範囲まとめて。ただし **1回のドラッグは必ず片方向だけ** にする。
+//   向きは「押し始めた語のいまの状態」だけで決める：
+//     使っている語から始めた → その範囲を全部「使わない」へ
+//     使っていない語から始めた → その範囲を全部「使う」へ
+//   こうすると、1回のドラッグの中で落とすのと拾うのが混ざることが構造的に起きない
+//   （範囲ごとに語の状態を見て切り替える作りだと、白とグレーが混ざった範囲を撫でた瞬間に
+//    全部が反転して、何をしたのか分からなくなる）。
+// 語を1つだけ動かすのはクリック（タップ）だけでできる＝ドラッグが難しい環境の代替。
 
 /** 選択範囲 range が要素 el の中身と「長さのある重なり」を持つか。 */
 function rangeCoversNode(range, el) {
@@ -1108,8 +1176,11 @@ function rangeCoversNode(range, el) {
   return clip.toString().length > 0;
 }
 
-/** いま選ばれている範囲に掛かった語を消す。消したら true。 */
-function applyScriptSelectionCut() {
+/**
+ * いま選ばれている範囲に掛かった語を、片方向へまとめて動かす。動かしたら true。
+ * 向きは「ドラッグを始めた語」の状態が決める（上のコメント参照）。
+ */
+function applyScriptSelectionEdit() {
   if (!scriptCtx || scriptCtx.busy) return false;
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
@@ -1118,27 +1189,81 @@ function applyScriptSelectionCut() {
   const anchor = range.commonAncestorContainer;
   const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentNode;
   if (!anchorEl || !list.contains(anchorEl)) return false;   // 本文の外での選択は触らない
-  const hit = [];
-  // 全文は数千語ある。1語ずつ Range を作って測ると重いので、まず native の
-  // intersectsNode（速い）で範囲に掛かっていない語を落としてから、残りだけを厳密に測る。
-  list.querySelectorAll(".script-w").forEach((el) => {
-    if (range.intersectsNode && !range.intersectsNode(el)) return;
-    if (rangeCoversNode(range, el)) hit.push(el);
-  });
+  const flow = list.querySelector(".script-flow");
+  if (!flow) return false;
+  const hit = wordsInSelection(range, flow);
   if (hit.length === 0) return false;
-  hit.forEach((el) => { scriptCtx.dropped.add(Number(el.dataset.i)); el.classList.add("is-cut"); });
-  sel.removeAllRanges();   // 選択の青地を残さない（消えた事実だけが見えるように）
+  // 起点＝指／マウスを置いた語（sel.anchorNode）。ドラッグの向き（前へ／後ろへ）に関係なく
+  // 「押した所」で決まるので、始めた時点でどちらの操作になるかが分かる。
+  // 起点が語の上でなければ、範囲の先頭の語で代用する。
+  const startEl = wordElFromNode(sel.anchorNode, list, range) || hit[0];
+  const use = startEl.classList.contains("is-off");
+  hit.forEach((el) => setWordInUse(Number(el.dataset.i), use, el));
+  sel.removeAllRanges();   // 選択の青地を残さない（動いた事実だけが見えるように）
   renderScriptMeta();
   return true;
 }
 
+/**
+ * 選択範囲に掛かっている語の要素を、文書順に集める。
+ *
+ * 全文は数千語ある。全語を1つずつ範囲と突き合わせると、たとえ2語しか選んでいなくても
+ * 語数ぶんの比較が走る（8000語で約200ms＝ドラッグのたびに固まる）。
+ * 語は .script-flow の直下に文書順で並んでいるので、範囲の両端に当たる子要素の位置を
+ * 二分探索で求め、その間だけを見る。走査は「範囲に入った語の数」だけで済む。
+ */
+function wordsInSelection(range, flow) {
+  const kids = flow.children;
+  if (!kids.length) return [];
+  let first = 0, last = kids.length - 1;
+  try {
+    // 範囲より前に終わる要素は対象外 → 最初の候補（左端）を二分探索。
+    let lo = 0, hi = kids.length - 1, f = kids.length;
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1;
+      if (range.comparePoint(kids[m], kids[m].childNodes.length) < 0) lo = m + 1;
+      else { f = m; hi = m - 1; }
+    }
+    // 範囲より後に始まる要素も対象外 → 最後の候補（右端）を二分探索。
+    lo = 0; hi = kids.length - 1;
+    let l = -1;
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1;
+      if (range.comparePoint(kids[m], 0) > 0) hi = m - 1;
+      else { l = m; lo = m + 1; }
+    }
+    first = f; last = l;
+  } catch (_) {
+    first = 0; last = kids.length - 1;   // 比較できない形の範囲は安全側（全部見る）へ倒す
+  }
+  const hit = [];
+  for (let i = first; i <= last; i++) {
+    const el = kids[i];
+    if (!el.classList.contains("script-w")) continue;   // 触れない区間（.script-raw）は飛ばす
+    // 両端だけは「端がちょうど接しているだけ（重なりの長さ0）」を捨てる。
+    // 間の語は必ず範囲の内側にあるので、測り直す必要が無い。
+    if ((i === first || i === last) && !rangeCoversNode(range, el)) continue;
+    hit.push(el);
+  }
+  return hit;
+}
+
+/** node から、選択範囲に実際に掛かっている語の要素をたぐる（無ければ null）。 */
+function wordElFromNode(node, list, range) {
+  if (!node) return null;
+  const el = node.nodeType === 1 ? node : node.parentNode;
+  const w = el && el.closest ? el.closest(".script-w") : null;
+  if (!w || !list.contains(w)) return null;
+  return rangeCoversNode(range, w) ? w : null;
+}
+
 // ドラッグの終わりは本文の外で起きうるので document で受ける。
-// 直後に飛んでくる click（同じ操作の続き）で余計な語まで消さないよう、時刻で抑える。
+// 直後に飛んでくる click（同じ操作の続き）で余計な語まで動かさないよう、時刻で抑える。
 let scriptCutAt = 0;
-document.addEventListener("mouseup", () => { if (applyScriptSelectionCut()) scriptCutAt = Date.now(); });
+document.addEventListener("mouseup", () => { if (applyScriptSelectionEdit()) scriptCutAt = Date.now(); });
 // 触った指を離した時点ではまだ選択が確定していない環境があるので、1周待ってから読む。
 document.addEventListener("touchend", () => {
-  setTimeout(() => { if (applyScriptSelectionCut()) scriptCutAt = Date.now(); }, 0);
+  setTimeout(() => { if (applyScriptSelectionEdit()) scriptCutAt = Date.now(); }, 0);
 });
 
 $("script-list").addEventListener("click", (ev) => {
@@ -1146,9 +1271,8 @@ $("script-list").addEventListener("click", (ev) => {
   if (Date.now() - scriptCutAt < 400) return;   // 直前のドラッグの続き＝二重に効かせない
   const el = ev.target.closest(".script-w");
   if (!el) return;
-  const i = Number(el.dataset.i);
-  if (scriptCtx.dropped.has(i)) { scriptCtx.dropped.delete(i); el.classList.remove("is-cut"); }
-  else { scriptCtx.dropped.add(i); el.classList.add("is-cut"); }
+  // 押した語1つだけを入れ替える（白→落とす／濃いグレー→拾う）。
+  setWordInUse(Number(el.dataset.i), el.classList.contains("is-off"), el);
   renderScriptMeta();   // 合計の長さをその場で更新（作り直すと操作の途中で描画が飛ぶ）
 });
 
@@ -1177,8 +1301,8 @@ function postApproval(approved) {
   setScriptBusy(true);
   scriptStatus(approved ? "書き出しの準備をしています…" : "中止しています…");
   const body = approved
-    // 1つも消していないなら segments は省略できる（省略時＝提示どおり）。
-    ? (ctx.dropped.size === 0
+    // 1つも落としておらず1つも拾っていない＝提示のままなので segments は省略できる。
+    ? (ctx.dropped.size === 0 && ctx.picked.size === 0
         ? { approved: true }
         : { approved: true, segments: runs.map((r) => ({ keepText: r.keepText, hook: r.hook })) })
     : { approved: false };
