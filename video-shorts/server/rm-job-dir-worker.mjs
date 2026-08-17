@@ -17,6 +17,7 @@
 // 成功: 終了コード0。失敗(捕捉可能な例外): 終了コード1・stderrへ理由。
 
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const target = process.argv[2];
 if (!target) {
@@ -24,7 +25,36 @@ if (!target) {
   process.exit(2);
 }
 
+/**
+ * Windows で OS 自身の削除コマンドを使って消す。
+ *
+ * 【なぜ要るか（2026-08-17 マスターの実機で実測）】
+ * 上のコメントのとおり、Windows で日本語を含むパスを fs.rmSync の再帰削除に掛けると
+ * Node がネイティブクラッシュする。ワーカーへ隔離したのでサーバーは生き残るが、
+ * **削除そのものは永久に成功しない**。マスターの環境では同じ7件が1時間ごとに再試行され、
+ * 毎回 0xC0000409 で落ちてログを埋め、動画ファイルが消えずに溜まり続けていた。
+ * 溜まるほど「使用量を数える処理」が重くなるので、放置すると遅くなる一方になる。
+ *
+ * 隔離は「サーバーを守る」対策であって「削除できるようにする」対策ではなかった。
+ * Node の再帰削除を通さず、OS の rd コマンドへ渡せばこのクラッシュ経路を踏まない。
+ */
+function removeWithWindowsShell(p) {
+  // cmd の rd は引数を1つの塊として受けるので、パスは丸ごと引用符で囲む。
+  // shell:true にしないと rd（cmd の組み込みコマンド）は起動できない。
+  const r = spawnSync("cmd.exe", ["/d", "/s", "/c", `rd /s /q "${p}"`], {
+    windowsHide: true, encoding: "utf-8", timeout: 25_000,
+  });
+  // rd は「消せたか」を終了コードで正直に返さないことがあるので、実際に消えたかで判定する。
+  return !fs.existsSync(p) ? { ok: true } : { ok: false, detail: (r.stderr || r.stdout || "").toString().slice(0, 200) };
+}
+
 try {
+  if (process.platform === "win32") {
+    const first = removeWithWindowsShell(target);
+    if (first.ok) process.exit(0);
+    // rd で消えなかったときだけ Node 側を試す（クラッシュしてもこのワーカーが死ぬだけ）。
+    process.stderr.write(`rd で消えなかったので Node 側を試します: ${first.detail}\n`);
+  }
   fs.rmSync(target, { recursive: true, force: true });
   process.exit(0);
 } catch (e) {
