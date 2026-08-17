@@ -337,8 +337,22 @@ export function snapToSilence(segments, words, opts = {}) {
     // 時系列で並んでいる隣とだけ突き合わせて上限・下限にする。
     const prev = segments[i - 1];
     const next = segments[i + 1];
-    const lowerLimit = prev && prev.end <= seg.start ? prev.end : -Infinity;
-    const upperLimit = next && next.start >= seg.end ? next.start : Infinity;
+    // 【2026-08-17 マスター指摘「前の音が残っている」】
+    // ここは「文の途中から始まっていたら、かたまりの先頭まで前へ広げる」ための処理だが、
+    // 広げた先には **AI が選んでいない語** が入る。実測: AI が「本題は…」から選んでも、
+    // 直前に間が無いと 2.6s → 2.0s まで戻り、選ばれていない「ところで」が音に入っていた。
+    // これは虎の巻の「捨てた発話を尺合わせで戻さない」と同じ違反で、mergeShortSegments では
+    // 既に直してある。切り方の規則は AI へ渡してあるので（src/digest-editor.mjs CUT_RULES）、
+    // 機械が語をまたいで広げて救う必要はない。
+    //
+    // よって、広げてよいのは **選ばれた範囲の内側と、その外の無音だけ**。
+    // 選ばれた最初の語より前・最後の語より後ろの「語」には決して届かせない。
+    const firstWordStart = seg.start;
+    const lastWordEnd = seg.end;
+    const prevLimit = prev && prev.end <= seg.start ? prev.end : -Infinity;
+    const nextLimit = next && next.start >= seg.end ? next.start : Infinity;
+    const lowerLimit = Math.max(prevLimit, firstWordStart);
+    const upperLimit = Math.min(nextLimit, lastWordEnd);
     const newStart = snapStart(seg.start, words, window, minGap, lowerLimit);
     const newEnd = snapEnd(seg.end, words, window, minGap, upperLimit);
     // ガード: start >= end になるなら据え置き。

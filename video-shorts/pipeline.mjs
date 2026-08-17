@@ -11,6 +11,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   chunkSegments,
@@ -565,7 +566,35 @@ async function cmdRender(workDir, opts = {}) {
 
   const canvas = computeCanvas(orientation, srcW, srcH, fit);
 
-  for (let i = 0; i < resolved.length; i++) {
+  // 区間の書き出しを同時に走らせる。
+  //
+  // 【なぜ（マスター指摘「まだ遅い」の調査 2026-08-17）】旧実装はここを1本ずつ await して
+  // いたが、ffmpeg 1本では CPU を使い切れない（実測: 4コアで 1.85 コアぶんしか使わない）。
+  // 同時2本で1.67倍、同時4本で1.95倍（実測: 20秒クリップ4本が 56.1秒 → 28.8秒）。
+  //
+  // 【同時数の決め方】ジョブ単位の同時実行は server/pipeline-runner.mjs が別に持っている
+  // （MAX_CONCURRENT_JOBS=3）。ここで無制限に広げると最大 3×N 本の ffmpeg が同時に走り、
+  // マスターの PC が固まる。コア数の半分・上限3に抑えて、他のジョブぶんの余地を残す。
+  // 環境変数 CLIP_RENDER_POOL で変えられる。
+  const cpuCount = os.cpus?.().length || 2;
+  const poolRaw = Number(process.env.CLIP_RENDER_POOL ?? Math.min(3, Math.max(1, Math.floor(cpuCount / 2))));
+  const pool = Number.isFinite(poolRaw) && poolRaw > 0 ? Math.floor(poolRaw) : 1;
+  log(`[RENDER] ${resolved.length} 区間を同時 ${pool} 本で書き出します（CPU ${cpuCount} コア）`);
+
+  // 出来上がりの順序は入力順に保つ（manifest の index と画面の並びが入れ替わらないように）。
+  const slots = new Array(resolved.length).fill(null);
+  let cursor = 0;
+  const lanes = Array.from({ length: Math.min(pool, resolved.length) }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= resolved.length) return;
+      slots[i] = await renderOne(i);
+    }
+  });
+  await Promise.all(lanes);
+  for (const entry of slots) if (entry) manifest.push(entry);
+
+  async function renderOne(i) {
     const seg = resolved[i];
     const outFile = clipName(outDir, i, seg.hook);
     log(`[RENDER] #${i + 1} ${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s "${seg.hook}"`);
@@ -594,7 +623,7 @@ async function cmdRender(workDir, opts = {}) {
         label: `#${i + 1}`,
       });
       const size = await probeSize(outFile);
-      manifest.push({
+      const entry = {
         index: i + 1,
         file: path.basename(outFile),
         path: outFile,
@@ -617,10 +646,12 @@ async function cmdRender(workDir, opts = {}) {
           canvasW: canvas.w,
           canvasH: canvas.h,
         },
-      });
+      };
       log(`  [OK] ${path.basename(outFile)} ${size.width}x${size.height} vertical=${size.vertical}`);
+      return entry;
     } catch (e) {
       log(`  [FAIL] #${i + 1}: ${e.message}`);
+      return null;
     }
   }
 
