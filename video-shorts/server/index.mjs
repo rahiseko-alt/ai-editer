@@ -23,11 +23,7 @@ import {
   runGated,
   cancelJob,
   groqKeyAvailable,
-  submitApproval,
-  isAwaitingApproval,
 } from "./pipeline-runner.mjs";
-import { parseResponse } from "../src/select-segments.mjs";
-import { resolveSegments } from "../src/reverse-match.mjs";
 import { parseJobParams } from "./job-params.mjs";
 import {
   REFERENCE_CANVAS,
@@ -715,153 +711,6 @@ async function handlePostTerms(req, res, jobId) {
   return jsonRes(res, 200, { ok: true, ...result });
 }
 
-// ── 台本の提示と承認（マスター指示の編集フロー） ──────────────
-// 「使う部分を文字単位で決める → ユーザーに提示 → 承認を経て編集作業の開始」の、
-// 提示(GET /script)と承認(POST /approve)。認可は他のジョブ用APIと同じく
-// isAuthorizedForJob（ジョブごとのトークン）で、ここだけ緩めない。
-
-/** ジョブの state.json を読む。無ければ null。 */
-function readJobState(jobId) {
-  const p = path.join(WORK_ROOT, jobId, "state.json");
-  if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf-8"));
-}
-
-// GET /api/jobs/:id/script — 承認待ちの台本（使う区間）を返す
-function handleGetScript(req, res, jobId) {
-  const id = safeId(jobId);
-  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
-  const respPath = path.join(WORK_ROOT, id, "llm-response.json");
-  // まだ選定(s)が終わっていない＝台本が無い。「空の台本」を200で返すと画面が
-  // 「0区間の台本が確定した」と誤って見せるので、無いことは404で伝える。
-  if (!fs.existsSync(respPath)) return jsonRes(res, 404, { error: "Not Found" });
-
-  let raw, segs;
-  try {
-    raw = JSON.parse(fs.readFileSync(respPath, "utf-8"));
-    segs = parseResponse(raw); // keepText を持つ区間だけ（防御的パース）
-  } catch (e) {
-    return jsonRes(res, 500, { error: `台本を読めませんでした: ${e.message}` });
-  }
-
-  // 秒数は文字起こしへの逆マッチングで確定する（台本自体は秒数を持たない＝落とし穴#1）。
-  // 文字起こしがまだ無い/読めない・照合できなかった区間は 0 のままにする（0 は
-  // 「まだ確定していない」印であって、実際に0秒から始まる区間という意味ではない）。
-  const byText = new Map();
-  let transcriptWords = [];
-  // 全文を出せない理由。空文字＝出せている。黙って空の全文を返さないための控え
-  // （画面はこの理由をそのまま出し、「AIが1語も選ばなかった」と誤解させない）。
-  let transcriptReason = "";
-  try {
-    const transcript = readTranscript(id);
-    if (!transcript) {
-      transcriptReason = "文字起こしがまだありません";
-    } else {
-      transcriptWords = (Array.isArray(transcript.words) ? transcript.words : [])
-        .filter((w) => w && typeof w.w === "string" && w.w !== ""
-          && Number.isFinite(Number(w.start)) && Number.isFinite(Number(w.end)));
-      if (transcriptWords.length === 0) transcriptReason = "文字起こしに語がありません";
-      // digest（分数で切る）は台本の並び順そのものが編集意図なので順序を保つ。
-      const mode = readJobState(id)?.mode;
-      for (const r of resolveSegments(segs, transcript, { preserveOrder: mode === "digest" })) {
-        if (!byText.has(r.keepText)) byText.set(r.keepText, r);
-      }
-    }
-  } catch (e) {
-    // 逆マッチングは提示の付加情報。ここで落ちても台本自体は返す。
-    transcriptWords = [];
-    transcriptReason = `文字起こしを読めませんでした: ${e.message}`;
-  }
-
-  // 文字起こしの全語に「AIが使うと決めた区間の添字」を付ける（どこにも入っていなければ null）。
-  // 画面はこれをそのまま最初から最後まで並べ、seg があれば白・null なら濃いグレーで出す
-  // ＝それが台本（マスター指示 2026-08-17）。区間が重なっていたら添字の小さい方に付ける。
-  // 判定は segments[].words と同じ（区間の start/end にすっぽり収まる語）。
-  const resolvedByIndex = segs.map((s) => byText.get(s.keepText) || null);
-  const fullWords = transcriptWords.map((w) => {
-    const start = Number(w.start), end = Number(w.end);
-    let seg = null;
-    for (let i = 0; i < resolvedByIndex.length; i++) {
-      const r = resolvedByIndex[i];
-      if (r && start >= r.start - 1e-9 && end <= r.end + 1e-9) { seg = i; break; }
-    }
-    return { w: w.w, start, end, seg };
-  });
-  // 全文のどこにも居場所が無かった区間（逆照合できなかった／語が1つも入らなかった）。
-  // 黙って落とすと画面に出ていない文が書き出しに混ざるので、添字を渡して画面に必ず出させる。
-  const placed = new Set(fullWords.map((w) => w.seg));
-  const unresolved = segs.map((_, i) => i).filter((i) => !placed.has(i));
-
-  const rawMeta = raw && !Array.isArray(raw) && typeof raw === "object" ? (raw.meta || {}) : {};
-  return jsonRes(res, 200, {
-    segments: segs.map((s, i) => {
-      const r = byText.get(s.keepText);
-      return {
-        keepText: s.keepText,
-        hook: s.hook || "",
-        // 採用理由（reason）はここでは返さない。台本を書いた側の内部の記録であって、
-        // ユーザーに見せるものではない（マスター指示 2026-08-17）。llm-response.json には
-        // 残るので、後から「なぜこれを選んだのか」を辿ることはできる。
-        start: r ? r.start : 0,
-        end: r ? r.end : 0,
-        // この区間に実際に入っている語。画面はこれを1語ずつ置いて、ユーザーが好きな範囲を
-        // 好きなだけ選んで消せるようにする（マスター指示 2026-08-17：ブロック単位でしか
-        // 消せないのは編集になっていない）。
-        //
-        // なぜ keepText の文字ではなく語を配るのか：実際に切れるのは語の切れ目である
-        // （文字の途中を指定しても、音は語の頭・尻へ寄る＝src/reverse-match.mjs）。
-        // 文字単位で選ばせると「見た目の選択」と「実際に切れる位置」がズレて嘘になるので、
-        // 最初から語を単位にして、見たままが切れる状態にする。
-        words: r
-          ? transcriptWords
-              .filter((w) => w && w.start >= r.start - 1e-9 && w.end <= r.end + 1e-9)
-              .map((w) => ({ w: w.w, start: w.start, end: w.end }))
-          : [],
-        index: i,
-      };
-    }),
-    // 文字起こしの全文（使う所も使わない所も、最初から最後まで）。segments とは別に足した
-    // ので、既存の読み手（segments/meta しか見ない側）は今までどおり動く。
-    transcript: {
-      available: fullWords.length > 0,
-      // available:false のときだけ理由が入る。画面はこれを出す（空の全文を黙って見せない）。
-      reason: fullWords.length > 0 ? "" : (transcriptReason || "文字起こしを読めませんでした"),
-      words: fullWords,
-      unresolved,
-    },
-    meta: {
-      // 台本を書いた側(src/digest-editor.mjs)が meta へ足した情報（何を主題と理解したか等）は
-      // そのまま通す。約束した3つのキーは、下で必ず埋める（欠けたり別の意味になったりしない）。
-      ...rawMeta,
-      targetSeconds: Number.isFinite(rawMeta.targetSeconds) ? rawMeta.targetSeconds : null,
-      actualSeconds: Number.isFinite(rawMeta.actualSeconds) ? rawMeta.actualSeconds : null,
-      count: segs.length,
-    },
-  });
-}
-
-// POST /api/jobs/:id/approve — 台本を承認して編集作業（レンダリング）へ進める
-async function handleApprove(req, res, jobId) {
-  const id = safeId(jobId);
-  if (!id) return jsonRes(res, 400, { error: "Bad jobId" });
-  let body;
-  try {
-    body = JSON.parse((await readBody(req)).toString("utf-8") || "{}");
-  } catch (e) {
-    if (e instanceof BodyTooLargeError) return jsonRes(res, 413, { error: e.message });
-    return jsonRes(res, 400, { error: "本文が JSON ではありません" });
-  }
-  // 承認待ちでないジョブへの承認は409（まだ選定中／既に走り出した／終わっている）。
-  // 判定はメモリ上の承認待ち一覧が正で、submitApproval 側でも同じ確認をする
-  // （ここは分かりやすいエラーを返すためだけの先回り）。
-  if (!isAwaitingApproval(id)) {
-    return jsonRes(res, 409, { error: "このジョブは承認待ちではありません" });
-  }
-  const result = submitApproval(id, body);
-  if (!result.ok) return jsonRes(res, result.badRequest ? 400 : 409, { error: result.reason });
-  return jsonRes(res, 200, { ok: true, count: result.count ?? null });
-}
-
 // POST /api/jobs/:id/cancel — 実行中のジョブを手動でキャンセルする(AUD-P1-11a)
 function handleCancelJob(req, res, jobId) {
   const id = safeId(jobId);
@@ -1001,27 +850,6 @@ async function handleRequest(req, res) {
       return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
     }
     return handlePostTerms(req, res, id);
-  }
-
-  // GET /api/jobs/:id/script（承認待ちの台本を提示する）
-  const scriptMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/script$/);
-  if (method === "GET" && scriptMatch) {
-    const id = decodeId(scriptMatch[1]);
-    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
-    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
-    return handleGetScript(req, res, id);
-  }
-
-  // POST /api/jobs/:id/approve（台本を承認して編集作業へ進める／却下して中止する）
-  const approveMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/approve$/);
-  if (method === "POST" && approveMatch) {
-    const id = decodeId(approveMatch[1]);
-    if (id === null) return jsonRes(res, 400, { error: "Bad jobId" });
-    if (!isAuthorizedForJob(req, url, id)) return jsonRes(res, 403, { error: "Forbidden" });
-    if (!writeRateLimiter.allow(id)) {
-      return jsonRes(res, 429, { error: "リクエストが多すぎます。少し待ってから再試行してください。" });
-    }
-    return handleApprove(req, res, id);
   }
 
   // POST /api/jobs/:id/cancel（AUD-P1-11a: 実行中のジョブを手動でキャンセルする）
