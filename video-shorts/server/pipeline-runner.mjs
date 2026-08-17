@@ -848,7 +848,21 @@ function writeApprovedScript(workDir, segments) {
     current = null; // 読めない/無い場合は承認された台本だけで作り直す
   }
   const meta = current && !Array.isArray(current) && typeof current === "object" ? current.meta : null;
-  writeJsonAtomically(p, meta ? { segments, meta: { ...meta, count: segments.length } } : { segments });
+  // 採用理由（reason）は画面へ出さない内部の記録なので、承認の往復では戻ってこない。
+  // ここで元の台本から keepText で引き当てて残す（残さないと、承認した瞬間に
+  // 「なぜこれを選んだのか」が消え、あとから台本の質を検証できなくなる）。
+  const before = current && Array.isArray(current.segments) ? current.segments : [];
+  const reasonByText = new Map(
+    before.filter((s) => s && s.keepText && s.reason).map((s) => [s.keepText, s.reason]),
+  );
+  const withReason = segments.map((s) => {
+    const reason = s.reason || reasonByText.get(s.keepText) || "";
+    return reason ? { ...s, reason } : s;
+  });
+  writeJsonAtomically(
+    p,
+    meta ? { segments: withReason, meta: { ...meta, count: withReason.length } } : { segments: withReason },
+  );
 }
 
 /**
