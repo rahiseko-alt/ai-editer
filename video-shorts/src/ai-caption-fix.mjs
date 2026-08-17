@@ -16,6 +16,10 @@
 //   (3) 直前までのかたまりで既に決めた直し（かたまりをまたいで表記を揃えるための正）
 // を必ず添える。かたまり分けは「1回の返答で直しを求める範囲」を区切るだけで、
 // 「AI に見せる範囲」ではなくなった。
+// 台本が長すぎて全文を毎回添えられない素材だけ、先に1回「全体を読む」呼び出しをして
+// 話題と用語の一覧を作り、それを (1) の代わりに添える（分岐と閾値の理由は
+// FULL_SCRIPT_MAX_CHARS / OVERVIEW_EXCERPT_CHARS のコメント）。その1回が失敗しても
+// 工程は止めず、(2)(3) だけを手がかりに従来どおりの分割修正で続ける（理由は buildScriptContext）。
 //
 // 【AI に何をさせないか】ここで許すのは「既にある語の綴りの置き換え」だけである。
 // 語を足す・消す・並べ替える・時刻を変えることは、モデルの返答が何を言っていても起きない。
@@ -52,11 +56,264 @@ export const AI_FIXES_FILE = "ai-caption-fixes.json";
 /** 直す前の文字起こしの退避先のファイル名 */
 export const RAW_TRANSCRIPT_FILE = "transcript.raw.json";
 
-/** 1 回の呼び出しに渡す語数の既定。長い文字起こしを1回で渡すと返答が途中で切れる。 */
-export const CHUNK_WORDS = 200;
+/**
+ * 1 回の呼び出しで「直しの対象」として見せる語数の既定。
+ *
+ * これは AI が読める範囲ではない（台本の全文は毎回添える）。返ってくる JSON の量の上限であり、
+ * 多すぎると返答が途中で切れて 1 かたまり分の直しが丸ごと失われる。旧値 200 は
+ * 「AI に見える範囲」そのものだったので窓が狭いこと自体が欠陥だったが、いまは
+ * 文脈と切り離せるので、返答が切れない範囲でゆるめてある。
+ */
+export const CHUNK_WORDS = 400;
+
+/**
+ * 台本の全文をそのまま毎回添えてよい上限の文字数。
+ *
+ * 日本語の話し言葉はおよそ 300〜400 字/分なので 20,000 字はおよそ 50〜60 分の発話にあたる。
+ * ショート動画の素材はほぼこの中に収まり、その範囲では「要約を作る」よりも
+ * 全文をそのまま読ませた方が確実（要約は作った時点で情報が落ちる）。
+ * これを超える素材は、全文をかたまりの数だけ繰り返し添えると1回の入力が膨らみ、
+ * 入り切らない・遅い・途中で切れるのいずれかを踏むので、下の要約経路へ切り替える。
+ */
+export const FULL_SCRIPT_MAX_CHARS = 20_000;
+
+/**
+ * 台本が長すぎるときに「全体を読む」1回の呼び出しへ渡す、冒頭と末尾それぞれの文字数。
+ *
+ * 全文が入り切らない長さでも、話題・登場する固有名詞・言い回しの癖は冒頭と末尾に濃く出る。
+ * さらに中間の情報は「台本全体で繰り返し出てくる綴りと回数」（機械で数える。抜けが無い）で
+ * 補うので、中間を落としても「何の話か」を取り違えにくい。
+ */
+export const OVERVIEW_EXCERPT_CHARS = 8_000;
+
+/** 「繰り返し出てくる綴り」に載せる語の上限・最低出現回数・最低文字数。 */
+export const VOCAB_MAX_TERMS = 60;
+export const VOCAB_MIN_COUNT = 2;
+export const VOCAB_MIN_LENGTH = 2;
+
+/** 「すでに決めた直し」としてプロンプトへ載せる組の上限（長い素材で入力が膨らみ続けないため）。 */
+export const DECIDED_MAX_PAIRS = 200;
 
 /** 1 回の呼び出しに許す時間。server/claude-select.mjs と同じ 5 分。 */
 export const MODEL_TIMEOUT_MS = 300_000;
+
+/**
+ * 台本の本文を作る（マスターの言う「台本」＝人が読む文章の並び）。
+ *
+ * 正は段落の文章（segments[].text）。段落が無い素材のときだけ、語をつないだものへ落とす
+ * （日本語なので区切り文字は入れない）。ここで作った文字列は AI に「読むだけ」で渡す。
+ *
+ * @param {{text?:string}[]} segments
+ * @param {{w?:string}[]} words
+ * @returns {string}
+ */
+export function buildScriptText(segments, words) {
+  const lines = (Array.isArray(segments) ? segments : [])
+    .map((s) => (s && typeof s.text === "string" ? s.text.trim() : ""))
+    .filter((t) => t.length > 0);
+  if (lines.length > 0) return lines.join("\n");
+  return (words || []).map((w) => (w && typeof w.w === "string" ? w.w : "")).join("");
+}
+
+/**
+ * 台本全体で繰り返し出てくる綴りと、その回数を数える（機械で数えるので抜けが無い）。
+ *
+ * 【何の役に立つか】「動画」が 12 回出ていて「画」が 1 回だけ、のような偏りは、
+ * 少数派の側が変換ミスである強い手がかりになる。1 かたまりの中だけを見ていると
+ * この偏り自体が見えない（多数派が窓の外にあるため）ので、全体から作って毎回添える。
+ *
+ * 【正解表ではない】ここに載る綴りは直す前の文字起こしそのままで、誤変換も混ざる。
+ * だから「載っているから正しい」とは言えない。プロンプト側でもそう書く。
+ *
+ * 並びは回数の多い順、同数なら綴りの辞書順（同じ入力なら誰が動かしても同じ並びになる）。
+ *
+ * @param {{w?:string}[]} words
+ * @returns {{term:string,count:number}[]}
+ */
+export function buildVocabulary(words, opts = {}) {
+  const maxTerms = opts.maxTerms ?? VOCAB_MAX_TERMS;
+  const minCount = opts.minCount ?? VOCAB_MIN_COUNT;
+  const minLength = opts.minLength ?? VOCAB_MIN_LENGTH;
+  const counts = new Map();
+  for (const w of words || []) {
+    if (!w || typeof w.w !== "string") continue;
+    const term = w.w.trim();
+    // 1 文字の語（助詞など）は数だけ多くて手がかりにならないので載せない。
+    if (term.length < minLength) continue;
+    counts.set(term, (counts.get(term) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .filter(([, n]) => n >= minCount)
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .slice(0, maxTerms)
+    .map(([term, count]) => ({ term, count }));
+}
+
+/** 台本が長すぎるとき、冒頭と末尾だけを残した抜粋にする（中間は落ちたと明示する）。 */
+function excerptScript(scriptText, headTailChars = OVERVIEW_EXCERPT_CHARS) {
+  if (scriptText.length <= headTailChars * 2) return scriptText;
+  return `${scriptText.slice(0, headTailChars)}
+……（中略：台本が長いため中間は省略。省略した部分の語も下の「繰り返し出てくる綴り」には数え上げてある）……
+${scriptText.slice(-headTailChars)}`;
+}
+
+/**
+ * 台本が長すぎて全文を毎回添えられないときだけ使う、「全体を1回読ませる」プロンプト。
+ *
+ * ここでは直しを一切させない（返させるのは話題と用語だけ）。直しを混ぜると、
+ * 「見せていない語まで直す」経路がこちら側に増えてしまう。
+ */
+export function buildOverviewPrompt(scriptText, vocabulary) {
+  const vocab = formatVocabulary(vocabulary);
+  const body = vocab ? `${scriptText}\n\n【繰り返し出てくる綴りと回数】\n${vocab}` : scriptText;
+
+  return `あなたは日本語の動画台本を読んで、内容を掴む人です。校正はしません。
+
+# 台本（長いので冒頭と末尾の抜粋のことがあります）
+${wrapUntrustedText("SCRIPT", body)}
+
+# 返し方
+次の JSON のみを返す（説明文・前置き・後置きは不要。コードフェンスで囲んでも構わない）。
+{"topic":"何の話かを1〜2文で","terms":["固有名詞","専門用語"]}
+- topic は台本全体が何の話かを 1〜2 文で書く。
+- terms は台本に実際に出てくる固有名詞・専門用語・繰り返しの言い回しを 40 語まで。
+- 台本に出てこない語を作らない。綴りは台本に出てくるままを書く（ここで直そうとしない）。`;
+}
+
+/**
+ * 「全体を読ませた」返答から話題と用語を取り出す。
+ *
+ * 読めない返答は例外にする（呼び出し側が握って、台本無しの経路へ落とす）。
+ * ここで黙って空を返すと「全体を読ませたのに手がかりが0件だった」のか
+ * 「そもそも読めていない」のかがログから区別できなくなる。
+ */
+export function parseOverviewResponse(text) {
+  const data = JSON.parse(extractJsonBody(text));
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("台本の読み取りの返答が {\"topic\":...,\"terms\":[...]} の形ではありません");
+  }
+  const topic = typeof data.topic === "string" ? data.topic.trim().slice(0, 400) : "";
+  const terms = [];
+  const seen = new Set();
+  for (const t of Array.isArray(data.terms) ? data.terms : []) {
+    if (typeof t !== "string") continue;
+    const term = t.trim().replace(/[\r\n]+/g, " ").slice(0, 60);
+    if (term.length === 0 || seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+    if (terms.length >= 40) break;
+  }
+  if (topic === "" && terms.length === 0) {
+    throw new Error("台本の読み取りの返答に topic も terms もありません");
+  }
+  return { topic, terms };
+}
+
+/**
+ * 各かたまりのプロンプトへ添える「台本の文脈」を用意する。
+ *
+ * 【分岐（長さで決める。閾値の理由は各定数のコメント）】
+ *   full        : 台本が FULL_SCRIPT_MAX_CHARS 以内 → 全文をそのまま毎回添える（呼び出しは増えない）
+ *   vocab-only  : 台本は長いが、かたまりが1つしかない → その1回に全語が載るので、まとめは要らない
+ *   overview    : 台本が長く、かたまりも複数 → 1回だけ「全体を読む」呼び出しをして話題と用語を作る
+ *
+ * 【失敗しても止めない】overview の呼び出しが落ちても例外にしない。誤字直しは
+ * 「直せる所を直す」工程であって、全体を読む呼び出しの失敗でパイプライン全体を殺す理由が無い。
+ * 落ちたら理由をログへ出し、機械で数えた「繰り返し出てくる綴り」だけを手がかりに、
+ * 従来どおりの分割修正で続行する（vocab-only と同じ状態）。
+ *
+ * @returns {Promise<{mode:string,scriptText:string,topic:string,terms:string[],
+ *   vocabulary:{term:string,count:number}[]}>}
+ */
+export async function buildScriptContext({ words, segments, runModel, chunkCount = 1, onLog }) {
+  const vocabulary = buildVocabulary(words);
+  const scriptText = buildScriptText(segments, words);
+  const base = { scriptText: "", topic: "", terms: [], vocabulary };
+
+  if (scriptText.length === 0) return { ...base, mode: "none" };
+  if (scriptText.length <= FULL_SCRIPT_MAX_CHARS) {
+    return { ...base, mode: "full", scriptText };
+  }
+  if (chunkCount <= 1) return { ...base, mode: "vocab-only" };
+
+  try {
+    const answer = await runModel(buildOverviewPrompt(excerptScript(scriptText), vocabulary));
+    const { topic, terms } = parseOverviewResponse(answer);
+    if (onLog) {
+      onLog(`[ai-caption-fix] 台本が長い(${scriptText.length}字)ので、先に全体を読んで話題と用語(${terms.length}件)を作りました`);
+    }
+    return { ...base, mode: "overview", topic, terms };
+  } catch (e) {
+    if (onLog) {
+      onLog(`[ai-caption-fix] 台本全体の読み取りに失敗したので、繰り返し出てくる綴りだけを手がかりに続行します: ${e.message}`);
+    }
+    return { ...base, mode: "vocab-only" };
+  }
+}
+
+/** 「綴り(回数)」の一覧を1行にする。載せる語が無ければ空文字。 */
+function formatVocabulary(vocabulary) {
+  return (vocabulary || [])
+    .filter((v) => v && typeof v.term === "string" && Number.isInteger(v.count))
+    .map((v) => `${v.term}(${v.count})`)
+    .join(" / ");
+}
+
+/** すでに採用した直しを「「前」→「後」」の一覧にする（重複は畳む）。 */
+function formatDecided(decided) {
+  const pairs = [];
+  const seen = new Set();
+  for (const d of decided || []) {
+    if (!d || typeof d.before !== "string" || typeof d.after !== "string") continue;
+    // 極端に長い語は一覧を膨らませるだけなので載せない（直し自体は既に当たっている）。
+    if (d.before.length > MAX_WORD_LENGTH) continue;
+    // 重複を畳む鍵の区切りは、語に出てこない制御文字にする。空白で繋ぐと
+    // 「あ い」+「う」と「あ」+「い う」が同じ鍵になり、別々の組を重複と誤判定して片方を落とす。
+    const key = `${d.before}\u0000${d.after}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push(`「${d.before}」→「${d.after}」`);
+    if (pairs.length >= DECIDED_MAX_PAIRS) break;
+  }
+  return pairs.join("\n");
+}
+
+/**
+ * 台本の文脈を1つの非信頼テキストの囲いへまとめる。
+ *
+ * 【なぜ1つの囲いへ入れるか】台本の本文も、繰り返し出てくる綴りも、すでに決めた直しも、
+ * もとを辿れば音声から起こした非信頼なテキスト（after はそれを読んだモデルの出力）である。
+ * 囲いの外へ地の文として置くと、文字起こしの中に書かれた文が「AI への指示」として読める
+ * 位置に混ざる。囲いは1回分の乱数 nonce 付きなので、中から閉じタグを詐称できない。
+ *
+ * @returns {string} 添えるものが何も無ければ空文字
+ */
+function formatScriptContext(context, decided) {
+  const parts = [];
+  if (context && context.mode === "full" && context.scriptText) {
+    parts.push(`【台本の全文】\n${context.scriptText}`);
+  }
+  if (context && context.topic) parts.push(`【この台本の話題】\n${context.topic}`);
+  if (context && context.terms && context.terms.length > 0) {
+    parts.push(`【台本に出てくる用語】\n${context.terms.join(" / ")}`);
+  }
+  const vocab = formatVocabulary(context && context.vocabulary);
+  if (vocab) parts.push(`【台本全体で繰り返し出てくる綴りと回数】\n${vocab}`);
+  const decidedList = formatDecided(decided);
+  if (decidedList) parts.push(`【この台本で既に決めた直し】\n${decidedList}`);
+  if (parts.length === 0) return "";
+
+  return `
+# この動画の台本（内容を掴むために読む。ここ自体は直す対象ではない）
+${wrapUntrustedText("SCRIPT", parts.join("\n\n"))}
+- 台本と下の語は同じ音声から起こした同じ内容である。台本の側も直っていないので、
+  「台本にそう書いてあるから正しい」とは考えない。何の話かを掴むために読む。
+- 繰り返し出てくる綴りは正解表ではない。回数の少ない綴りが多い綴りの変換ミスでないかを
+  疑う手がかりとしてだけ使う。
+- 「既に決めた直し」は、この台本で先に確定した表記である。同じ語が同じ意味で下にも出てきたら、
+  同じ綴りへ揃える（場所によって別の直され方をさせないため）。
+`;
+}
 
 /**
  * 1 かたまり分の「変換ミスを直させる」プロンプトを組み立てる。
@@ -65,25 +322,34 @@ export const MODEL_TIMEOUT_MS = 300_000;
  * 乱数 nonce 付きのタグなので、文字起こしの中に閉じタグを書いておく細工をされても、
  * 乱数を当てられない限り境界の外へ抜け出せない。自前の固定文字列で囲むと詐称できてしまう。
  *
+ * 台本（context / decided）は「読むだけ」の材料として、別の囲いで添える。添える中身は
+ * formatScriptContext を見ること。ここに何を添えても、直しとして採用される範囲は
+ * 下の「直す対象」に並べた語だけで変わらない（範囲の判定は parseFixResponse の range が行う）。
+ *
  * @param {{w:string,start:number,end:number}[]} words このかたまりの語
  * @param {number} offset このかたまりの先頭が、文字起こし全体で何番目の語か
+ * @param {object} [context] buildScriptContext の戻り（省略時は台本を添えない）
+ * @param {{before:string,after:string}[]} [decided] ここまでのかたまりで既に採用した直し
  * @returns {string}
  */
-export function buildFixPrompt(words, offset) {
+export function buildFixPrompt(words, offset, context, decided) {
   // 添字は文字起こし全体での実添字（offset + i）。かたまりの中の番号を渡すと、
   // 2かたまり目以降の直しが先頭の語に当たってしまう。
   const lines = words.map((w, i) => `${offset + i}\t${w.w}`).join("\n");
+  const script = formatScriptContext(context, decided);
 
   return `あなたは日本語の文字起こしを校正する人です。音声認識が音は合っているのに字を間違えた所` +
-    `（変換ミス・同音異義語の取り違え）だけを、前後の文脈から直してください。
-
-# 文字起こし（1 行に 1 語で「添字<タブ>語」。添字は文字起こし全体での語の番号）
+    `（変換ミス・同音異義語の取り違え）だけを、台本全体の内容と前後の文脈から直してください。
+${script}
+# 直す対象の文字起こし（1 行に 1 語で「添字<タブ>語」。添字は文字起こし全体での語の番号）
 ${wrapUntrustedText("TRANSCRIPT", lines)}
 
 # できること・できないこと
 - できるのは、既にある語の綴りを別の綴りへ置き換えることだけ。
 - 語の追加・削除・並べ替え・時刻の変更はできない。
 - 言い回しの改善・要約・敬語の統一はしない。明らかな変換ミスだけを直す。
+- 直してよいのは「直す対象」に並んだ語だけ。台本の側だけを見た直しを返しても採用されない。
+- 同じ語は台本全体で同じ綴りへ揃える。場所によって違う直し方をしない。
 - 迷ったら直さない。直す必要が無ければ 1 件も返さなくてよい。
 
 # 返し方
@@ -275,14 +541,17 @@ function wordOffsetsInSegment(seg, words) {
 }
 
 /**
- * 文字起こしを AI に読ませ、変換ミスを直して transcript.json を置き換える工程。
+ * 文字起こしを AI に「台本」として読ませ、変換ミスを直して transcript.json を置き換える工程。
+ *
+ * 直しを求める範囲はかたまりに分けるが、台本の文脈（全文か、全体を読んで作った話題と用語）は
+ * どのかたまりの呼び出しにも必ず添える＝1回の AI が窓の中しか見ていない状態を作らない。
  *
  * @param {object} p
  * @param {string} p.workDir ジョブの作業フォルダ（transcript.json がある所）
  * @param {(promptDoc:string)=>Promise<string>} p.runModel モデルを呼ぶ関数
- * @param {number} [p.chunkWords] 1 回に渡す語数
+ * @param {number} [p.chunkWords] 1 回に「直す対象」として見せる語数
  * @param {(s:string)=>void} [p.onLog]
- * @returns {Promise<{fixed:number,total:number,chunks:number}>}
+ * @returns {Promise<{fixed:number,total:number,chunks:number,contextMode:string}>}
  */
 export async function aiCaptionFixStage({ workDir, runModel, chunkWords = CHUNK_WORDS, onLog }) {
   const transcriptPath = path.join(workDir, "transcript.json");
@@ -301,14 +570,30 @@ export async function aiCaptionFixStage({ workDir, runModel, chunkWords = CHUNK_
     chunks.push({ offset: i, words: words.slice(i, i + size) });
   }
 
+  // 先に台本全体の文脈を用意する。これを毎回のプロンプトへ添えることで、
+  // 1回の AI が「かたまりの中しか見ていない」状態を無くす（この工程の目的）。
+  // ここは失敗しても例外にしない（中で握って、文脈が薄い状態のまま続行する）。
+  const context = await buildScriptContext({
+    words,
+    segments: transcript.segments,
+    runModel,
+    chunkCount: chunks.length,
+    onLog,
+  });
+  if (onLog && chunks.length > 0) {
+    onLog(`[ai-caption-fix] 台本の渡し方=${context.mode}（台本 ${context.scriptText.length} 字 / 用語 ${context.terms.length} 件 / 繰り返し語 ${context.vocabulary.length} 件）を全 ${chunks.length} かたまりへ添えます`);
+  }
+
   // かたまりは順番に処理する（並列にしない）。並列にするとログが混ざって、
   // どのかたまりで何が起きたのかが読めなくなる。速さが要るようになってから並列にする。
+  // 順番であることは表記揃えにも効く: 直前までに採用した直し(collected)をそのまま
+  // 次のかたまりへ「既に決めた直し」として見せられる。
   const collected = [];
   for (let n = 0; n < chunks.length; n++) {
     const c = chunks[n];
     // runModel / parseFixResponse の例外はそのまま上へ投げる＝工程は失敗して終わる。
     // ここで握りつぶすと「AI が一度も答えていないのに直す所は無かった」ことになる。
-    const answer = await runModel(buildFixPrompt(c.words, c.offset));
+    const answer = await runModel(buildFixPrompt(c.words, c.offset, context, collected));
     // 採用するのは、このかたまりに出した語だけ（見せていない語への直しは捨てる）。
     const got = parseFixResponse(answer, words, { offset: c.offset, length: c.words.length });
     collected.push(...got);
@@ -325,6 +610,24 @@ export async function aiCaptionFixStage({ workDir, runModel, chunkWords = CHUNK_
   const fixes = collected
     .filter((f) => countByIndex.get(f.index) === 1)
     .sort((a, b) => a.index - b.index);
+
+  // 表記揃えの見張り。同じ綴りが場所によって別の綴りへ直されていたら、それを黙って通さずログへ出す。
+  // 【なぜ捨てないか】日本語では同じ音の語が文脈ごとに別の字になるのが正しい場合がある
+  // （「かいとう」が或る所では「回答」、別の所では「解答」）。機械には見分けが付かないので、
+  // ここで消すと正しい直しまで落ちる。揃えるのはプロンプト側（「既に決めた直し」を次の
+  // かたまりへ見せる）で行い、ここは人が気づけるようにするだけに留める。
+  if (onLog) {
+    const afterByBefore = new Map();
+    for (const f of fixes) {
+      if (!afterByBefore.has(f.before)) afterByBefore.set(f.before, new Set());
+      afterByBefore.get(f.before).add(f.after);
+    }
+    for (const [before, afters] of afterByBefore) {
+      if (afters.size > 1) {
+        onLog(`[ai-caption-fix] 表記が揃っていません: 「${before}」が ${[...afters].map((a) => `「${a}」`).join("・")} へ直されています（文脈で正しく分かれている場合もあります）`);
+      }
+    }
+  }
 
   const next = {
     ...transcript,
@@ -345,7 +648,7 @@ export async function aiCaptionFixStage({ workDir, runModel, chunkWords = CHUNK_
   );
   writeFileAtomically(transcriptPath, `${JSON.stringify(next, null, 2)}\n`);
 
-  return { fixed: fixes.length, total: words.length, chunks: chunks.length };
+  return { fixed: fixes.length, total: words.length, chunks: chunks.length, contextMode: context.mode };
 }
 
 /**

@@ -95,9 +95,69 @@ function parseJson(text) {
   return JSON.parse(extractBalanced((fence ? fence[1] : text).trim()));
 }
 
+// 「どこで切るか」の規則。docs/編集についての虎の巻.md の §2（言葉の側の切り方）が正で、
+// ここはその要点をプロンプトへ落としたもの。虎の巻と食い違ったら虎の巻が正（AGENTS.md）。
+//
+// なぜ要るか（マスター指摘 2026-08-17）: 旧 VERBATIM は「実在する連続した部分文字列」としか
+// 言っておらず、**単語の途中から始めてよい**と明示的に許していた。文字列としての部分列で
+// あることは、切り方として正しいことを何も保証しない。「動画編集」を割って「画編集」に
+// するような候補が、規則の上では合法だった。
+const CUT_RULES = `【切る位置の規則（部分文字列であれば良い、ではない）】\n` +
+  `1. keepText の先頭は文の先頭にする。末尾は文末表現の最後まで含める（「〜と思うんですよ」の「よ」まで）。\n` +
+  `2. 複合語は1語なので絶対に割らない（動画編集／文字起こし／切り抜き動画／視聴維持率 等）。` +
+  `「動画編集の話」を「画編集の話」にするような切り方は、部分文字列として存在しても禁止。\n` +
+  `3. 助詞（は・が・を・に・で・と・から・けど・ので 等）で始まる断片を作らない。助詞は直前の語と1つのまとまり。\n` +
+  `4. 接続詞（で、／それで、／だから、／でも、／なので、）や相槌（はい／うん／そうですね）で始めない。\n` +
+  `5. 指示語（それは／これが／あの件は／そういうのは）で始めない。指示先を含むまで範囲を前へ広げる。` +
+  `広げられないならその候補は捨てる。\n` +
+  `6. 接続助詞で終わらない（〜なんですけど、／〜して、／〜すると、）。主語だけ・目的語だけで終わらない。\n` +
+  `7. 迷ったら広く取る。短く削って意味が壊れるより、少し長い方が良い。\n` +
+  `8. 切り出した一片が、それ単体で読んで意味が通ること。通らないなら範囲を広げるか、その候補を捨てる。`;
+
 const VERBATIM = `【厳守】keepText は文字起こし本文に実在する連続した部分文字列を一字一句そのまま抜き出す。` +
   `語順を変える・言い換える・要約する・創作するのは禁止（後段が本文へ逆照合して秒数を確定するため）。` +
-  `順序（segmentsの並び）だけは自由に入れ替えてよい。`;
+  `順序（segmentsの並び）だけは自由に入れ替えてよい。\n\n${CUT_RULES}`;
+
+/** 先頭に来たらその断片が単体で意味を成さないもの（虎の巻 §2-3 / §2-4）。 */
+const BAD_HEAD_RE = /^(?:[はがをにへとでもや]|から|けど|けれど|ので|のに|そして|それで|だから|ですから|でも|しかし|なので|それから|ただ|つまり|要するに|で、|はい|ええ|うん|そうですね|それ|これ|あれ|そういう|こういう|あの件|その件)/;
+/** 末尾に来たら言い差し・宙ぶらりんになるもの（虎の巻 §2-3 / §2-4）。 */
+const BAD_TAIL_RE = /(?:[はがをにへとでもや]|けど|けれど|ですけど|ますけど|ので|のに|から|して|すると|であり|でして|ですが|ますが|、)$/;
+
+/**
+ * keepText が「切り出した一片として使えるか」を見る。
+ *
+ * 旧実装は `keepText.trim().length >= 4` だけで採否を決めており、文として閉じているかを
+ * 一度も見ていなかった（虎の巻 §8-C）。4文字の断片（「画編集の」）がそのまま通る。
+ *
+ * ここは機械的な足切りなので、日本語の係り受けを完全に判定することはできない。
+ * 狙いは「明らかに壊れている断片を落とす」ことだけで、正しさの保証は AI 側（CUT_RULES）に置く。
+ */
+export function isUsableKeepText(text) {
+  if (typeof text !== "string") return false;
+  const s = text.trim();
+  if (s.length < 6) return false;          // 4文字では文になり得ない。虎の巻 §2-5-4
+  if (BAD_HEAD_RE.test(s)) return false;
+  if (BAD_TAIL_RE.test(s)) return false;
+  return true;
+}
+
+/**
+ * 台本の区間配列を、使える形へ整える。
+ *
+ * 足切りで全滅すると製品が止まるため、`isUsableKeepText` で0件になったときだけ
+ * 従来の長さのみの条件へ退避する（落とすことより、動画が作れなくなる方が害が大きい）。
+ * 退避したことはログに残し、黙って基準が緩まないようにする。
+ */
+function pickUsableSegments(list, onLog = () => {}, where = "") {
+  const base = (list || []).filter((s) => s && typeof s.keepText === "string");
+  const strict = base.filter((s) => isUsableKeepText(s.keepText));
+  if (strict.length > 0) return strict;
+  const loose = base.filter((s) => s.keepText.trim().length >= 4);
+  if (loose.length > 0) {
+    onLog(`[digest] 切り方の条件を満たす区間が0件のため、長さのみの条件へ退避${where ? `（${where}）` : ""}: ${loose.length}件`);
+  }
+  return loose;
+}
 
 /**
  * 目標尺の帯ごとに「何を残し何を捨てるか」の方針そのものを変える。
@@ -422,8 +482,8 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
   const chosen = best.score >= 0 ? best.script : script;
   // reason（なぜこの区間を採ったか）は捨てない。ユーザーへ台本を提示して承認を取る画面で、
   // 「なぜこれが選ばれたか」が見えないと判断できないため（旧実装はここで落としていた）。
-  let segments = chosen
-    .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+  // 採否は「4文字以上か」ではなく「切り出した一片として使えるか」で見る（虎の巻 §8-C）。
+  let segments = pickUsableSegments(chosen, onLog, "台本の確定")
     .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
   if (segments.length === 0) throw new Error("採用可能な台本区間が0件です");
 
@@ -439,8 +499,7 @@ export async function runDigestEditor(workDir, onLog = () => {}, opts = {}) {
       const fixPrompt = durationFixPrompt(transcriptText, segments, { targetSeconds, targetMinutes, actualSeconds });
       try {
         const fixResp = parseJson(await callClaude(fixPrompt, onLog, true, cwd));
-        const fixed = (fixResp.script || [])
-          .filter((s) => s && typeof s.keepText === "string" && s.keepText.trim().length >= 4)
+        const fixed = pickUsableSegments(fixResp.script || [], onLog, "尺是正")
           .map((s) => ({ keepText: s.keepText.trim(), hook: (s.hook || "").trim(), reason: (s.reason || "").trim() }));
         if (fixed.length === 0) break;
         const fixedSeconds = measure(fixed);

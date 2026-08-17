@@ -768,6 +768,9 @@ function handleGetScript(req, res, jobId) {
       return {
         keepText: s.keepText,
         hook: s.hook || "",
+        // なぜこの区間を採ったかの理由。承認画面で「なぜこれが選ばれたか」が見えないと
+        // ユーザーは判断できないため、台本を書いた側が残した reason をそのまま通す。
+        reason: s.reason || "",
         start: r ? r.start : 0,
         end: r ? r.end : 0,
         index: i,

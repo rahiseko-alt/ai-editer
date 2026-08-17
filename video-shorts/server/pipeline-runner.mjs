@@ -787,6 +787,9 @@ export function normalizeApprovedSegments(list) {
     .map((s) => ({
       keepText: s.keepText.trim(),
       hook: typeof s.hook === "string" ? s.hook.trim() : "",
+      // 採用理由は承認で区間を選び直しても失わない（落とすと llm-response.json から
+      // 消え、あとから「なぜこれを選んだのか」を辿れなくなる）。
+      reason: typeof s.reason === "string" ? s.reason.trim() : "",
     }));
 }
 
@@ -1059,6 +1062,10 @@ async function runJob(jobId, inputAbsPath, opts) {
     mode,
     orient,
     targetMinutes,
+    // 画面の「1本の目安の長さ」。旧実装は render の引数にしか渡しておらず state.json に
+    // 入っていなかったため、topic 経路の選定は目安の長さを一度も知らないまま切っていた
+    // （尺は後段が機械的に切り詰めるだけになる）。選定が読めるようにここへ入れる。
+    durationMin: opts.durationMin ?? null,
     sub: opts.sub === "none" ? "none" : "on",
     // 無音・言い淀みを詰めるか。pipeline.mjs のレンダリングが state.trim を見る。
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない
