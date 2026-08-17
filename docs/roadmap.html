@@ -118,32 +118,18 @@
 <script type="application/json" id="roadmap-data">{
  "meta": {
   "title": "AI-Editer video-shorts ロードマップ",
-  "active": "G-CAP-FIT",
-  "next": "■ PR #130（https://github.com/rahiseko-alt/ai-editer/pull/130 ）は ci-green まで緑になり、basis-reviewer の反証10件も全部潰した。draft を外して CodeRabbit を1回通し、指摘に答えてマージする段階。CI の結果は https://github.com/rahiseko-alt/ai-editer/pull/130/checks 。本丸のジョブ名は「typecheck / lint / test / build」。ローカルでやり直すなら `cd /home/user/ai-editer && pnpm -j test`（誤記注意: 正しくは `pnpm -r test`。125本・約50分）。字幕だけなら `cd /home/user/ai-editer/video-shorts && node tests/caption-fit-check.mjs`（57 PASS / 0 FAIL・約4分・ffmpeg 必須）。■ 外部レビュー報告書（PR #131）の検証結果。実体は `git show origin/docs/adversarial-review-2026-08-16:外部レビュー報告書.md`（240行）。※報告書が対象と書いている commit 647cf082f188383445de2ddf205cc2503296b937 は**このリポジトリに存在しない**（`git cat-file -t` が Not a valid object name。origin/main は 31207d5）ので、記載を鵜呑みにせず1件ずつ実物で確かめること。※パスはリポジトリのルートからの相対。未追跡の dist/ と .claude/worktrees/ に同名ファイルの複製があるので grep の対象外にすること。【本物・最優先】語の引き当てが壊れている（video-shorts/src/trim-judge.mjs:200,208）。planTrim はクリップ相対の添字を渡すのに loadTrimJudge は素材全体の語配列で引くため、2本目以降のクリップでは hint が一致せず findIndex に落ち、素材全体で最初に出た同じ語の判定が使われる。結果、先頭の『あの』がフィラーなら動画後半の『あの資料を』も誤カットされる。同じファイルの cutSilence は同じ理由で既に時刻ベース（同 195-201）なので、isFiller も start/end による引き当てへ直す。【本物】API キーの伏字化漏れ（video-shorts/server/pipeline-runner.mjs:427-429）。secretsToRedact() は process.env しか見ないが、同ファイルの groqKeyAvailable():576-593 は『鍵が .env にしかない』運用を前提に .env を読んでいる。つまり env に無く .env にある状態は正規の運用で、そのとき SSE と state.json へ生の鍵が出る。既存の video-shorts/tests/security-secret-redaction-check.mjs は env 直注入なので検知できない。【本物・系統的】対照が同語反復（video-shorts/tests/webapp-aria-pressed-check.mjs:109-116）。assert.throws(() => assert.strictEqual(\"false\",\"true\")) で、製品も旧実装も一度も実行していない。リポジトリ全体の assert.throws を使った対照を洗い直すこと。docs/failures.md へ追記済み。【本物】画面の突き破り（video-shorts/webapp-mockup/styles-revamp.css:39-47）。--pane-left-w 200 + --pane-center-w 347 + --pane-right-w 640 = 1187px なのに --pane-break は 900px。900〜1187px で3ペインのまま入り切らない。【本物】未使用の GSAP 72KB（video-shorts/webapp-mockup/index.html:401、呼び出し0件）。【本物・中】依存が無いと exit 0 して緑になる検査。video-shorts/tests 配下で process.exit(0) を持つのは9ファイル：claude-run-failure-surface-check / e2e-manual-walkthrough / e2e-server / hdr-tonemap-check / init-hearing-batch-check / nosub-cover-fit-check / sar-normalize-check / silent-audio-render-check / subtitle-canvas-fit-check。加えて e2e-three-paths-check.mjs は ffmpeg 不在で return 0 する。新しい検査は exit 1 にしてあり方針が混在している。【本物だが影響は誇張】video-shorts/src/reframe.py:80-90,207 は全フレームをメモリ保持する（1080p 5分で約56GB）。ただし reframe は reframe_cli.py と検査からしか呼ばれておらず、製品の本線には入っていない。【誤り】smoke.mjs:521-529 が結線を偽装している、は誤り。その行は画面の静的検査で、名前も注釈もそう書いてある。結線の実測は video-shorts/tests/build-render-args-check.mjs が argv で行っている。【弱い】term-dictionary のプロトタイプ汚染。{ ...current, [key]: value } は計算キーなので __proto__ でも自前プロパティになるだけ。ただし『1ジョブのトークンで共有辞書を書き換えられる』構造は事実。【誤りを含む】concat の '\\'' が無効な構文、は誤り（ffmpeg concat の正規のエスケープ）。ただし Windows のバックスラッシュ問題は本物。【未検証】子プロセスのキャンセル追跡漏れ、os.tmpdir() の後始末、recaptionStage のタイムアウト無し、.tmp-${process.pid} の衝突、アップロードクォータの二重計上は、実物を確かめていない。■ 私が提案する着手順：1. trim-judge の時刻ベース引き当て／API キーの .env 伏字化。2. 対照の同語反復を全部洗い出し、実際の旧実装か製品への変異を通す形へ直す。3. 1187px の突き破り／GSAP 削除／SKIP の方針統一。4. 子プロセスのキャンセル追跡・os.tmpdir() の後始末（まず実物を確認）。5. Windows 系（concat パス、モックの拡張子）— マスターが Windows で動かすかどうか次第なので、着手前に確認する。■ 凍結前に必ずやる『探り3本』（AGENTS.md には無い。roadmap のノード detail の言い回し）：①偽物を当てる＝何も直していない現行の実装が、その基準で**実際に落ちる**ことを先に確かめる。②実測＝正しい実装での値を1回測って detail に残す。③壊す＝わざと壊した実装が落ちることを確かめる。今回の最大の穴（検査が製品の通る道を測っていなかった）は、①をやっていれば凍結の時点で出ていた。AGENTS.md にあるのは別物で、『verify を書いたら凍結前に 1.測る対象 2.偽の緑 3.再現性 を確認する』の3点。両方やること。■ マスター承認済みで未着手：① AIが切る所を、切る前に文字起こしの上で見せて直せるようにする（5分類の④場面の選別・⑤本番外の削除もここで引き受ける）。② 音の大きさを揃える（ラウドネス正規化）。③ G-UI-REVAMP-WIRING（17葉）。■ マスターに見てもらうこと：手元で実素材を1本流し、字幕が実物のショート動画の見た目になっているかを目で確認してもらう。■ 積み残し：16:9→9:16 で映像が canvas の31.7%しか占めず字幕が黒帯の中に出る件は、マスターが『位置じゃない』と言われたので保留。",
+  "active": "G-EDIT-TRIM2",
+  "next": "■ いま着手中: G-EDIT-TRIM2-CLIP-FILLER / -CLIP-SILENCE。基準は凍結済み（この直前のコミット）。次は実装と検査。直し方の方針: 判断（trim-judge）は素材の絶対時刻・絶対添字で持ち、planTrim はクリップ相対で動く。この2つの時間軸を橋渡しする口を1つ作る（例: loadTrimJudge の戻り値へ forClip(offsetSec) を足し、pipeline.mjs が segStart を渡して束ねた判断を planTrim へ渡す）。時間軸の変換を1箇所に閉じ込めるのが要点で、呼ぶ側が毎回オフセットを足す形にすると同じ取りこぼしが再発する。planTrim 側は judgeIsFiller に語そのもの（クリップ相対の start/end を持つ）を渡せるようにする必要がある。検査は video-shorts/tests/trim-judge-clip-offset-check.mjs（新規）で、package.json の test チェーンへ登録する。■ 次（外部レビューで本物と確認済み・着手順）:1. video-shorts/server/pipeline-runner.mjs:427-429 の secretsToRedact が .env を読まない。同ファイルの groqKeyAvailable():576-593 は『鍵が .env にしかない』運用を前提に .env を読んでいるので、env に無く .env にある状態は正規の運用。そのとき SSE と state.json へ生の鍵が出る。既存の video-shorts/tests/security-secret-redaction-check.mjs は env 直注入なので検知できない。2. 対照の同語反復（video-shorts/tests/webapp-aria-pressed-check.mjs:109-116）。assert.throws(() => assert.strictEqual(\"false\",\"true\")) で製品も旧実装も一度も実行していない。リポジトリ全体の assert.throws を使った対照を洗い直す。3. 画面の突き破り（video-shorts/webapp-mockup/styles-revamp.css:39-47。200+347+640=1187px なのに --pane-break は 900px）／未使用の GSAP 72KB（video-shorts/webapp-mockup/index.html:401）／依存が無いと exit 0 で緑になる検査9本。4. 未検証: 子プロセスのキャンセル追跡漏れ、os.tmpdir() の後始末、recaptionStage のタイムアウト無し、.tmp-${process.pid} の衝突、アップロードクォータの二重計上。5. Windows 系（concat のパス、モックの拡張子）は、マスターに『Windows で動かす予定があるか』を確認してから着手する。■ 外部レビュー報告書の実体: `git show origin/docs/adversarial-review-2026-08-16:外部レビュー報告書.md`（240行）。報告書が対象と書いている commit 647cf082... はこのリポジトリに存在しないので、記載は1件ずつ実物で確かめること。報告書の中で【誤り】と判明したもの: smoke.mjs:521-529 の結線偽装（実際は画面の静的検査）／concat の '\\'' が無効な構文（正規のエスケープ）。【弱い】term-dictionary のプロトタイプ汚染（計算キーなので Object.prototype は汚れない。ただし共有辞書を1ジョブのトークンで書き換えられる構造は事実）。【影響は誇張】reframe.py の全フレーム保持（製品の本線には入っていない）。■ PR #131（報告書1ファイルのみ）は OPEN のままで roadmap-required が赤。報告書の検証結果は既にこの meta.next へ取り込み済みなので、マスターの判断でクローズしてよい（roadmap を触らずに通す方法は無く、報告書のために roadmap を触るのは本末転倒）。■ マスター承認済みで未着手: ① AIが切る所を切る前に文字起こしの上で見せて直せるようにする ② 音の大きさを揃える（ラウドネス正規化）③ G-UI-REVAMP-WIRING（17葉）。■ マスターに見てもらうこと: 手元で実素材を1本流し、字幕が実物のショート動画の見た目になっているかを目で確認してもらう。■ 作法: セッション開始時は必ず `git fetch origin main && git checkout -B <branch> origin/main` してから roadmap を読む（古い枝のまま読むと現在地を誤る）。",
   "handoff": {
    "done": [
-    "【前半】PR #129 を CI 緑でマージ（squash 31207d5）。編集中は画面が少し暗くなって窓だけ明るくなり、窓の中に動きが出て、カードの枠が全画面で統一された。",
-    "【前半】マスター指示「そもそも話に合わせて色を変えなくて良い」を受け、字幕の色が途中で変わる仕組みを既定から外した（画面から選べる3スタイルすべてで highlight=base）。",
-    "【調査】マスター指摘「字幕は縦動画にした時に酷すぎる」の原因を、同梱フォントで実際に焼いて特定した。①折り返しの見積りが実測の1.88倍ずれ（全角1文字を1.30×文字サイズと数えていたが実測0.690）②縁取りが太すぎる（84pxの文字に14px＝16.7%）③ASS の Fontsize は字の実寸ではなく上下の余白を含む高さなので、指定84pxでも漢字の実高は画面の2.8%しかない。",
-    "【調査】ショート動画の字幕の実物（Instagram / TikTok / YouTube ショート）のスクリーンショットで確認。帯は無く、短い行を2〜3行に積み、文字は大きい。それまでの『1行を幅いっぱいに詰める』方向は逆だった。案A〜Cを画像で提示し、マスターが案C（実em 100px＝画面の5.2% / 1行9文字 / 3行 / 影なし）を選んだ。",
-    "【実装】案Cに合わせて字幕を作り直し、PR #130（draft、ブランチ claude/checkin-pe7vqm）を出した。commit は 000c1f2（基準の凍結）→ 69343c1（実装）→ 11a2685（done化）→ 6b1e01f（basis-reviewer 対応）。",
-    "【basis-reviewer】反証10件。最も重い1件は『検査が製品の通る道を一度も測っていない』。実際に測ると、既定のまま作った字幕は Fontsize 84 / Outline 14 / Shadow 8 / 同梱外の書体のままで、直した4項目がまるごと元に戻っていた（検査は40件すべて緑だった）。buildAss の入口で必ず resolveCaptionStyle を通すよう直し、WIRED の葉を新設。直しを戻すと7件が実際に落ちることを確認済み。",
-    "【basis-reviewer】同じ指摘から、英語まじりの字幕で単語が途中で切れ区切りも消えていた欠陥（'everyon|e' / 'Helloeveryone'）と、最後の行に1〜2文字だけ残る欠陥（実測 82.7/82.8/20.0）を直した。折り返しは『必要な行数を先に決めて等分点で折る』方式にし、半角の語は空白でしか折らないようにした（実測 67.4/71.9/77.4）。",
-    "【基準】G-CAP-FIT を8葉から13葉へ原子に切り直した（1葉=1受入事実）。NOWRAP は3回切り直し、最終的に『行数が必要最小限』へ。新設は MAXFILL / EVEN / WORDS / NOLOSS / WIRED。すべて meta.basisChanges に宣言済み。検査 caption-fit-check.mjs は 48 PASS / 0 FAIL、done-gate は新規done化7葉すべて合格。",
-    "【外部レビュー】マスターから外部レビュー報告書（PR #131 / 外部レビュー報告書.md、5専門エージェントによる敵対的監査）を参考資料として受領し、主要な指摘を1件ずつ実物のコードで検証した。結果は meta.next に整理して積んである。",
-    "【CI 対応】commit 6b1e01f で ci-green が赤になった。原因は今回の折り返し変更で、video-shorts/tests/recaption-human-vs-ai-check.mjs が .ass を生文字列で検索していたため。日本語には語の切れ目が無く折り返し(\\N)が語の途中に入る（実測「アルファデル\\Nタゼータオメガ」）ので、「デルタ」が見つからなくなっていた。ASSタグと \\N を取り除いてから探す形へ直した（16 PASS / 0 FAIL）。同じ形を探して video-shorts/tests/caption-ai-fix-served-check.mjs も同様に直した（23 PASS / 0 FAIL）。取り除くほうが「残っていないこと」の判定は厳しくなるので、緩める向きの変更ではない。",
-    "【引継ぎの検証】independent-verifier に「この会話を知らない人が再開できるか」を敵対的に検証させ、判定は『不十分』。指摘のうち事実誤りが1件あり、実物で確認して直した：新設5葉(MAXFILL/EVEN/WORDS/NOLOSS/WIRED)の evidence が 69343c1 を指していたが、git show 69343c1:video-shorts/tests/caption-fit-check.mjs に該当検査は0件で、6b1e01f に初めて入る。G-CAP-FIT の8葉(NOWRAP/SIZE/NOSHADOW/MAXFILL/EVEN/WORDS/NOLOSS/WIRED)の evidence を 6b1e01f へ訂正した。他の指摘（CI の見方が無い/パスに video-shorts 接頭辞が無い/「探り3本」の参照先が違う 等）も本引継ぎへ反映済み。",
-    "【反証の潰し込み】basis-reviewer の未対応4件をすべて潰した。(a) 焼き直しで書体の選択が失われる欠陥を直し（pipeline.mjs が state.captionStyle へ実際に使った値を残し、recaption-stage.mjs がそれを読む）、対照つきの検査を新設。(b) 黒を全周に増やす実装を見逃す穴を G-CAP-FIT-INKBALANCE で塞いだ（黒/白 の比。出荷値1.10倍 / 縁取り2倍1.97倍・上限1.5倍）。(c) 経路軸の葉が無い件を G-CAP-FIT-ROUTES で塞いだ（ポップ/太字ライン/背景帯/内側縁取り/横向きの5経路）。(d) G-CAP-FIT-COLOR の受入事実2つを COLOR-UI へ分離。caption-fit-check.mjs は 57 PASS / 0 FAIL。",
-    "【CI】ci-green が緑になった（commit 23e8039 / run 31953944526）。ローカルの pnpm -r test（125本）も全緑を確認済み。G-CAP-FIT は17葉すべて done、evidence は CI run URL または実装コミットの SHA。"
+    "PR #130 を CI 緑でマージした（squash 2821fb1）。縦動画の字幕を案C（実em 100px＝画面の5.2% / 短い行を積む / 影なし）へ作り直し、G-CAP-FIT を17葉へ原子化した。basis-reviewer 10件・independent-verifier・CodeRabbit 1件の指摘をすべて対応済み。",
+    "外部レビュー報告書（PR #131）の指摘のうち最優先の1件を実物で再現した: src/trim-judge.mjs の語の引き当てが壊れており、素材の6〜8秒を切り出したクリップで指示語「あの」に isFiller が true を返す（素材の先頭にあった言い淀みの判定が使われる）。",
+    "同じ確認で、報告書が触れていない2件目を見つけた: cutSilence も同じ形で壊れている。cutEnds は素材の絶対時刻を持つのに planTrim はクリップ相対の時刻で聞くため、先頭以外のクリップでは常に false が返る＝「間を詰める」が丸ごと効いていない。実測: judge.cutSilence(4.0)=true / planTrim が実際に聞く judge.cutSilence(0.0)=false。",
+    "G-EDIT-TRIM2 配下に G-EDIT-TRIM2-CLIP-FILLER / -CLIP-SILENCE の2葉を新設し、criteria/verify を凍結した（実装より先・別コミット）。探り①（偽物を当てる＝直す前の実装が実際に落ちる）は両方とも実行済みで、detail に実測値を記録してある。"
    ],
    "trouble": [
-    "検査が製品の通る道を測っていなかった（上記）。AGENTS.md の探り3本のうち『①偽物を当てる』を実行しないまま凍結したことが直接の原因。docs/failures.md へ追記済み。",
-    "同じ葉（G-CAP-FIT-NOWRAP）の基準を1日で3回切り直した。1・2回目は狙い（1行に入る量を少なく見積もっていないこと）を『行の幅』という間接的な量で測ろうとして成立しなかった。しきい値ではなく『測る量そのもの』を疑うべきだった。docs/failures.md へ追記済み。",
-    "NOSHADOW の測り方が影ではなく字形を測っており、対照（影あり）のほうが本番（影なし）より良い数字を出していた。墨ぜんたいの外枠で測り直して解決。『対照の数値が本番より良いなら測り方が壊れている』。",
-    "roadmap.html を文字列置換で編集して、別ノード(P0-5-A)の detail へ誤挿入した。**取り消し済み・確認済み**（P0-5-A の detail に字幕の記述は入っていない）。roadmap の JSON は python の json.dumps(ensure_ascii=False, indent=1) で完全に往復するので、**JSON としてパースして編集し書き戻す**のが安全。id を文字列検索でノードに当てるときは、同じ id が meta.basisChanges にも出るので「id の直後に \"kind\": \"state\" が続く」もので絞ること。",
-    "確認のために & で起動したままにした node プロセスが固定ポート59242を掴み、全体テストの1本を『server起動タイムアウト』で赤くした。**セッション終了時点では解放済み**（`ss -ltnp | grep 59242` が0件）。次回も確認用に起動したものは必ず落とし、この1行で確かめること。",
-    "evidence に、その変更を含まないコミットの SHA を書いていた（上記・訂正済み）。**evidence を書く前に `git show <SHA>:<ファイル>` で、その変更が本当にそのコミットに入っているかを確かめること。**",
-    "OCR で焼き込みを確かめる検査が「梅の花」を「梅の化」と読んで CI が赤になった。焼いたフレームを目で見ると描画は正しく、前処理の倍率だけを変えて測ると2倍のときだけ誤読した（等倍・0.75倍・0.5倍は正読）。前処理が scale=iw*2 と倍率固定で、字を大きくした結果 墨が200pxになり OCR の得意な大きさを外れていた。倍率ではなく出来上がりの横幅(1080px)へ正規化して解決。docs/failures.md へ追記済み。**検査の前処理に倍率を固定で書かない。揃えるべきは出来上がりの絶対値。**"
+    "前セッションの meta.next に『cutSilence は既に時刻ベースなので大丈夫』と書いたのは誤りだった。時刻ベースでも、片方が素材の絶対時刻・もう片方がクリップ相対時刻なら一致しない。**『時刻で引いているから安全』ではなく『どちらの時間軸か』まで確かめること。**",
+    "作業ツリーがマージ済みブランチのまま古くなっていた（別セッションでも同じ状態が起きて、8/14 時点の roadmap を読んで『PR #122 をマージせよ』という終わった指示を現在地と誤読しかけた）。**セッション開始時は必ず `git fetch origin main && git checkout -B <branch> origin/main` してから roadmap を読むこと。**"
    ]
   },
   "updated": "2026-08-16",
@@ -5188,6 +5174,38 @@
         }
        ],
        "detail": "【凍結前の探り3本(2026-08-16 実行)】①何も作っていない偽物を当てる: AI を一切呼ばない実装では (1)(2) が成功してしまい落ちる。②正しい実装で1回実測: 既存の字幕直し段が同じ作法（失敗したらジョブを止める）で実装済みであることを tests/caption-ai-fail-halts-job-check.mjs で確認した。同じ作法へ揃える。③意図的に壊したものを当てる: 『AIが駄目なら昔のやり方で詰める』退避実装を対照として置いた。これは一見親切だが、マスターが直そうとしている欠陥をそのまま出力に出したうえで、それを利用者に知らせない経路になる。"
+      },
+      {
+       "id": "G-EDIT-TRIM2-CLIP-FILLER",
+       "kind": "state",
+       "theme": "2本目以降の切り抜きでも、消してよい言い淀みだけが消える",
+       "meaning": "同じ「あの」でも、言い淀みの方だけが消え、「あの資料」の指示語は残る",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "素材の先頭以外から始まるクリップ（区間の開始が 0 でないクリップ）について、AI が『言い淀み』と判断した語だけが消え、同じ字面でも別の場所にある語は残る。判定は planTrim の戻り値 keep を見て、指示語の時間（クリップ相対 0〜1秒）が残っていることで行う。",
+         "verify": "固定素材（語6つ。同じ字面『あの』が、言い淀みの位置(index 0)と指示語の位置(index 4)に1つずつ。index 3『えー』の後に 4〜6秒の間がある）と、AI の判断 {fillers:[0,3], cutGaps:[3]} を検査側で組む。素材の 6〜8秒を切り出したクリップ（wordsInRange でクリップ相対へ直した語）を planTrim へ渡し、keep に指示語の時間が含まれることを見る。対照: 同じ素材・同じ AI の判断で、クリップの開始位置を教えないまま（＝直す前の実装と同じ呼び方）planTrim を走らせると、この指示語が keep から消えることを実測する。",
+         "verifyCmd": "node video-shorts/tests/trim-judge-clip-offset-check.mjs",
+         "evidence": null
+        }
+       ],
+       "detail": "【2026-08-16 新設】外部レビュー報告書の指摘を実物で確認して新設。src/trim-judge.mjs:200,208 の indexOfWord は、planTrim から渡るクリップ相対の添字で素材全体の語配列を引くため、2本目以降のクリップでは hint が一致せず findIndex に落ち、素材全体で最初に出た同じ語の判定が使われる。探り①(偽物を当てる)は実行済み: 直す前の実装で、素材6〜8秒のクリップの指示語「あの」に isFiller が true を返すことを実測した。"
+      },
+      {
+       "id": "G-EDIT-TRIM2-CLIP-SILENCE",
+       "kind": "state",
+       "theme": "2本目以降の切り抜きでも、詰めてよい間がちゃんと詰まる",
+       "meaning": "AIが「ここは詰めてよい」と言った間が、先頭以外のクリップでも無視されない",
+       "status": "todo",
+       "criteria": [
+        {
+         "text": "素材の先頭以外から始まるクリップについて、AI が『詰めてよい』と判断した間が実際に詰まる（判断が届かず1秒も詰まらない、が起きない）。判定は planTrim の戻り値の cutSeconds が 0 より大きいことと、cuts にその間が含まれることで行う。",
+         "verify": "固定素材（語6つ。同じ字面『あの』が、言い淀みの位置(index 0)と指示語の位置(index 4)に1つずつ。index 3『えー』の後に 4〜6秒の間がある）と、AI の判断 {fillers:[0,3], cutGaps:[3]} を検査側で組む。素材の 3〜8秒を切り出したクリップ（AI が詰めてよいと言った 4〜6秒の間を含む）を planTrim へ渡し、cutSeconds が 0 より大きく、cuts にその間が入っていることを見る。対照: クリップの開始位置を教えないまま（＝直す前の実装と同じ呼び方）走らせると cutSeconds が 0 になることを実測する。",
+         "verifyCmd": "node video-shorts/tests/trim-judge-clip-offset-check.mjs",
+         "evidence": null
+        }
+       ],
+       "detail": "【2026-08-16 新設】外部レビュー報告書は isFiller だけを指摘していたが、実物で測ると cutSilence も同じ形で壊れていた。cutEnds は素材の絶対時刻を持つのに、planTrim は区間相対の時刻で聞くため、先頭以外のクリップでは常に false が返る＝「間を詰める」が丸ごと効かない。探り①は実行済み: 素材4.0秒の間に対し judge.cutSilence(4.0)=true / planTrim が実際に聞く judge.cutSilence(0.0)=false を実測した。※前セッションの meta.next に『cutSilence は既に時刻ベースなので大丈夫』と書いたのは誤り。時刻ベースでも、片方が絶対時刻・もう片方がクリップ相対時刻なら一致しない。"
       }
      ]
     },
