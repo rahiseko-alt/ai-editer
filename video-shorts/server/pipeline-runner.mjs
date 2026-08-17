@@ -1081,6 +1081,12 @@ async function runJob(jobId, inputAbsPath, opts) {
     // 入っていなかったため、topic 経路の選定は目安の長さを一度も知らないまま切っていた
     // （尺は後段が機械的に切り詰めるだけになる）。選定が読めるようにここへ入れる。
     durationMin: opts.durationMin ?? null,
+    // 画面の「本数に分ける」で指定した作る本数。durationMin と同じ理由でここへ入れる＝
+    // topic 経路の選定（server/claude-select.mjs）はこの state.json しか読まないので、
+    // ここへ入れないと画面で本数を指定しても選定は一度もそれを知らないまま切る。
+    // render の argv には渡さない（本数は「どう括るか」の指示で、レンダリング側に対応する
+    // フラグが無い。渡す先が無いのに argv へ足すと、効かない結線が増えるだけになる）。
+    clips: opts.clips ?? null,
     sub: opts.sub === "none" ? "none" : "on",
     // 無音・言い淀みを詰めるか。pipeline.mjs のレンダリングが state.trim を見る。
     // ここへ入れ忘れると、画面で「詰める」を選んでも一度も詰まらない

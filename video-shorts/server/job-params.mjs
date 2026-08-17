@@ -21,6 +21,21 @@ import { getExportPreset } from "../src/export-presets.mjs";
 const SUPPORTED_CUTS = new Set(["topic", "minutes"]);
 const SUPPORTED_SIZES = new Set(["9:16", "16:9"]);
 
+/**
+ * 「本数に分ける」で受け付ける本数の上限。
+ *
+ * 【この値の理由】青天井にすると選定が破綻するので、破綻する手前で止める。根拠は2つ。
+ *  (a) 選定の最終段（server/claude-select.mjs の統合）は、候補の一覧を1つのプロンプトへ載せて
+ *      AI に読ませて「全体視点で残す本を決める」工程である。src/select-segments.mjs の
+ *      summarizeCandidates は候補が120件を超えると1件あたりに見せる文字数を半分へ落とす作りで、
+ *      そこから先は「全体を見て整える」判断そのものが成り立たなくなる。作る本数は必ず候補数以下
+ *      なので、統合が成立する範囲の内側（120の手前）に上限を置く。
+ *  (b) 1本が単体で意味を持つ最短（話題ひとまとまり＝およそ30秒。docs/編集についての虎の巻.md
+ *      原則2）で数えても、100本は本編50分ぶんを必要とする。これを超える本数を素材へ要求すると、
+ *      話題の途中で割る以外に達成手段が無くなる（虎の巻 §2-1 が禁じる切り方に追い込む指示になる）。
+ */
+export const MAX_CLIPS = 100;
+
 /** クエリパラメータ(URLSearchParams)を検証済みのジョブ設定へ正規化する */
 export function parseJobParams(searchParams) {
   const sub = searchParams.get("sub") === "on" ? "on" : "none";
@@ -108,6 +123,16 @@ export function parseJobParams(searchParams) {
   const durationMinRaw = Number(searchParams.get("durationMin"));
   const durationMin = Number.isFinite(durationMinRaw) && durationMinRaw > 0 ? durationMinRaw : undefined;
 
+  // 作る本数(cut=topicで「本数に分ける」を選んだときだけ意味を持つ設定)。durationMinと同じ作法＝
+  // 不正・範囲外・欠落は例外を投げず未指定(undefined)へ丸め、pipeline側をfail-fastさせない。
+  // 未指定のときは「AIが話題の切れ目で本数を決める」という従来の挙動へ戻る（既定値を作らない）。
+  // 1.5本のような非整数は丸めて解釈せず未指定へ落とす。切り捨てて解釈すると、利用者が指定した
+  // 覚えのない本数で話題が括られ、しかもそれが正常系として通ってしまう。
+  // 上限は MAX_CLIPS（＝100。理由はその定義のコメント）。
+  const clipsRaw = Number(searchParams.get("clips"));
+  const clips =
+    Number.isInteger(clipsRaw) && clipsRaw >= 1 && clipsRaw <= MAX_CLIPS ? clipsRaw : undefined;
+
   return {
     sub,
     cut,
@@ -128,5 +153,6 @@ export function parseJobParams(searchParams) {
     captionPos,
     exportPreset,
     durationMin,
+    clips,
   };
 }

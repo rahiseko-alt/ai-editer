@@ -137,12 +137,16 @@ const UNDERSTAND_SCHEMA = `{"subject":"主題1文",` +
  * 「素材の内容を理解する」段階のプロンプト（全文を1回で読み切れる長さのとき）。
  * ここでは区間を1つも決めさせない。理解を成果物として先に確定させ、そのあとの選定・統合が
  * それを参照する形にする（旧実装は理解の段階が無く、chunk ごとの思いつきで区切っていた）。
+ *
+ * @param {string} transcriptText 文字起こし全文
+ * @param {number|null} [clips] 作る本数。指定があるとここで話題を「その本数の塊」へ括らせる
+ *   （＝本数は統合の段で切り落とす数ではなく、括り方そのものへ効く）。未指定なら従来どおり。
  */
-export function buildUnderstandPrompt(transcriptText) {
+export function buildUnderstandPrompt(transcriptText, clips = null) {
   return `あなたは一流の動画編集者です。次の長編の文字起こし**全文**を読み、**まだ区間は1つも決めずに**、
 内容の理解だけを出力してください。ここで作るのは、このあとどこで区切るかを決めるための下地です。
 
-次を押さえること:
+${buildClipCountUnderstandBlock(clips)}次を押さえること:
 - 主題: この動画は結局なんの話か（1文）
 - 小テーマ: 主題を構成する話題の塊。出てくる順に、それぞれ「何の話か」「面白さの強さ(1-5)」と、
   その話題が始まる合図になる本文中の短い言い回し（cue。ここが区切り位置の手掛かりになる）
@@ -161,6 +165,11 @@ ${UNDERSTAND_SCHEMA}`;
  * 2段読みの1段目: 1ブロックぶんの骨格を書き出させるプロンプト。
  * ここでの出力は「そのブロックに何があったか」の記録で、次の段（全体統合）の入力になる。
  * 取りこぼすとその範囲は全体理解から永久に落ちるので、面白くない話題も必ず1件は残させる。
+ *
+ * 【ここには作る本数を渡さない】本数は素材全体に対する指示で、1ブロックが何本ぶんを担当するかは
+ * 全ブロックを突き合わせるまで決まらない。ここで本数を割り当てると、素材の前半が薄いだけの
+ * ブロックにも同じ本数を要求することになり、話題でない所を無理に切り出させる。
+ * 本数は次の段（buildGlobalUnderstandPrompt）＝全ブロックが揃ってから効かせる。
  */
 export function buildBlockOutlinePrompt(block, total) {
   const pos = `全${total}ブロック中 ${Number(block.index) + 1} 番目`;
@@ -183,7 +192,7 @@ ${wrapUntrustedText("transcript-block", block.text)}
  * 入力は1段目の出力（＝素材の全範囲がここに要約として集まっている）なので、
  * この段の AI は「全体を見たうえで」主題と構成を決められる。
  */
-export function buildGlobalUnderstandPrompt(outlines) {
+export function buildGlobalUnderstandPrompt(outlines, clips = null) {
   const body = outlines
     .map((o, i) => `## ブロック ${i + 1}\n${typeof o === "string" ? o : JSON.stringify(o)}`)
     .join("\n\n");
@@ -191,7 +200,7 @@ export function buildGlobalUnderstandPrompt(outlines) {
 各ブロックの骨格を書き出しました。以下がその全ブロックぶんです（素材の最初から最後までが
 ここに漏れなく含まれています）。これを突き合わせて、**素材全体としての理解**を1つにまとめてください。
 
-まとめ方:
+${buildClipCountUnderstandBlock(clips)}まとめ方:
 - 主題は、ブロックをまたいで繰り返し戻ってくる話が何かで決める（どこか1ブロックの話題ではない）
 - 小テーマは、隣り合うブロックで同じ話が続いているなら1つに束ねる（ブロック境界で割らない）
 - 山場は全ブロックを通して最も引きが強いものを1つ選ぶ
@@ -296,6 +305,105 @@ export function buildDurationBlock(target) {
   );
 }
 
+// ───────────────────────── 本数（作る本数の指定） ─────────────────────────
+
+/**
+ * 本数の指定として妥当か（1以上の整数か）。受け口 server/job-params.mjs が既に丸めているが、
+ * この経路は CLI からも呼ばれるので、プロンプト組み立て側でももう一度だけ確かめる
+ * （不正なら「指定なし」＝従来どおり AI が本数を決める、へ静かに戻る）。
+ */
+function validClips(clips) {
+  return Number.isInteger(clips) && clips >= 1;
+}
+
+/**
+ * 「作る本数」を **理解の段（①）** のプロンプトへ書き下すブロック。
+ *
+ * 【なぜ統合の段で上位N件を切るのではなく、理解の段から効かせるのか】
+ * docs/編集についての虎の巻.md §5-3「尺が変われば構成そのものが変わる」と同じ理屈である。
+ * 本数は「候補を作り終えたあとに数える数」ではなく「話題をいくつの塊に括るか」という指示で、
+ * 5本と決まっているなら話題の括り方そのものが5つ前提に変わる。10本ぶん括ってから5本を捨てるのは、
+ * 端を伸縮させて尺を合わせるのと同じ機械的な帳尻合わせで、出来上がる5本の中身が別物になる。
+ * （虎の巻 A10「尺の指定に対して端だけ伸縮する」の、本数版にあたる。）
+ *
+ * @param {number|null} clips 作る本数（1以上の整数。null/不正なら指定なし＝空文字を返す）
+ */
+export function buildClipCountUnderstandBlock(clips) {
+  if (!validClips(clips)) return "";
+  return (
+    `# 作る本数（先に決まっている条件）\n` +
+    `この素材からは最終的に **${clips}本** の動画を作ります。` +
+    `ですから小テーマ(themes)は、面白そうな所を思いつくだけ数え上げるのではなく、` +
+    `**${clips}個の塊に括って**ください（themes をちょうど${clips}件にする＝1件が動画1本になります）。\n` +
+    `${clips}本より多く括っておいて後で捨てる、という作り方をしないこと。` +
+    `本数が変われば括り方そのものが変わります。${clips}個に束ねるために、` +
+    `隣り合う小さい話題は1つにまとめ、1つに収まらない長い話題は「話が一段落する所」を cue に書いてください。\n` +
+    `素材にそもそも${clips}個ぶんの話題が無いときは、無理に割って${clips}個にしないこと。` +
+    `成立する数だけ出し、いくつ足りないかを subject の末尾に書いてください（水増しは禁止）。\n\n`
+  );
+}
+
+/**
+ * 「作る本数」を **選定の段（②）** のプロンプトへ書き下すブロック。
+ * chunk が複数あるときは、その chunk が素材の一部でしかないので「ここで全部採るな」と言う必要がある
+ * （言わないと、各 chunk が独立に ${clips} 本ずつ出して合計が本数の chunk 数倍になる）。
+ *
+ * @param {number|null} clips
+ * @param {number} [total] chunk の総数
+ */
+export function buildClipCountSelectBlock(clips, total = 1) {
+  if (!validClips(clips)) return "";
+  if (!(total > 1)) {
+    return (
+      `# 作る本数\n` +
+      `この素材からは **${clips}本** 作ります（上の理解の小テーマが、その${clips}本に対応しています）。\n` +
+      `ここが素材の全体なので、ちょうど${clips}件の区間を出してください。` +
+      `多めに出しておいて後で選ぶ、という出し方をしないこと（どれを残すかは、いま区切るあなたが決めます）。\n` +
+      `${clips}件ぶんの話題が素材に無いなら、足りないまま出してください。` +
+      `1つの話題を無理に2つへ割って数を合わせないこと（話の途中で切れた本ができます）。\n\n`
+    );
+  }
+  return (
+    `# 作る本数\n` +
+    `この素材からは全体で **${clips}本** 作ります（上の理解の小テーマが、その${clips}本に対応しています）。\n` +
+    `いまあなたが担当しているのは素材の一部なので、**この範囲で${clips}本すべてを採ろうとしないこと**。` +
+    `上の小テーマのうち、中心（結論を言っている所）がこの範囲にあるものだけを採ってください。\n` +
+    `該当が1つも無ければ0件で構いません。数を埋めるために、小テーマに無い所を切り出さないこと。\n\n`
+  );
+}
+
+/**
+ * 「作る本数」を **統合の段（③）** のプロンプトへ書き下すブロック。
+ * ここは最後の関門なので、多い場合・足りない場合それぞれの振る舞いを名指しで決めておく。
+ * とくに「足りないから戻す」を禁じる（虎の巻の原則＝捨てると判断したものを尺合わせで復活させない）。
+ *
+ * @param {number|null} clips
+ * @param {number} [candidateCount] いま手元にある候補の件数
+ */
+export function buildClipCountIntegrationBlock(clips, candidateCount) {
+  if (!validClips(clips)) return "";
+  const n = Number(candidateCount);
+  let situation = `候補を${clips}本へ整えてください。`;
+  if (Number.isFinite(n) && n > clips) {
+    situation =
+      `いま候補は${n}件あり、${clips}本より多い状態です。重なりによる重複・ほぼ同じ内容・` +
+      `本編でない所（挨拶・機材確認・締めの定型）から順に落として${clips}本にしてください。` +
+      `「番号が後ろだから落とす」「先頭から${clips}件を採る」といった機械的な切り方をしないこと。` +
+      `どれを残すかは、素材全体の中でその話が独立して成立しているかで決めてください。`;
+  } else if (Number.isFinite(n) && n < clips) {
+    situation =
+      `いま候補は${n}件しかなく、${clips}本に足りません。**足りないまま${n}件を返してください。**` +
+      `1つの候補を2つに割る・ほぼ同じ話を別の本として二重に数える、といった水増しは禁止です。`;
+  }
+  return (
+    `# 作る本数\n` +
+    `最終的に残すのは **${clips}本** です。${situation}\n` +
+    `【禁止】本数を合わせるために、いったん「落とす」と判断した候補を戻さないこと。` +
+    `捨てると決めたものを数合わせで復活させるのは、要らないと判断した発話を尺合わせで戻すのと同じで、` +
+    `出来上がりが壊れます。${clips}本に届かないなら、届かないまま返してください。\n\n`
+  );
+}
+
 // ───────────────────────── ② 選定（chunk ごと） ─────────────────────────
 
 /**
@@ -328,19 +436,20 @@ export function buildPositionBlock(chunk, total) {
  * @param {{index?:number,start?:number,end?:number,text:string}} chunk
  * @param {number} [targetCount] 件数の上限目安（0=上限なし）
  * @param {string} [mode] 選定モード（プロンプト経路を持つモードのみ）
- * @param {{understanding?:object|null, duration?:object|null, total?:number}} [ctx]
+ * @param {{understanding?:object|null, duration?:object|null, clips?:number|null, total?:number}} [ctx]
  *   understanding = ①で作った素材全体の理解 / duration = 1本あたりの尺の条件 /
+ *   clips = 作る本数（指定があるとき。①の理解が既にこの本数へ括られている前提で書く） /
  *   total = chunk の総数（位置の説明に使う）。いずれも任意＝渡さなければ従来と同じプロンプト。
  */
 export function buildPrompt(chunk, targetCount = 0, mode = DEFAULT_MODE, ctx = {}) {
   const m = requirePromptMode(mode);
-  const { understanding = null, duration = null, total = 1 } = ctx;
+  const { understanding = null, duration = null, clips = null, total = 1 } = ctx;
   const limit = targetCount > 0 ? `（多くても ${targetCount} 件程度に抑える）` : "";
   return `${SYSTEM_RULES_BASE}
 
 ${m.fragment}
 
-${buildUnderstandingBlock(understanding)}${buildDurationBlock(duration)}${buildPositionBlock(chunk, total)}# 文字起こし本文（この範囲を分割する）
+${buildUnderstandingBlock(understanding)}${buildDurationBlock(duration)}${buildClipCountSelectBlock(clips, total)}${buildPositionBlock(chunk, total)}# 文字起こし本文（この範囲を分割する）
 ${wrapUntrustedText("transcript-chunk", chunk.text)}
 
 # 指示
@@ -362,6 +471,7 @@ ${OUTPUT_SCHEMA}`;
 export function buildRequestDoc(chunks, mode = DEFAULT_MODE, ctx = {}) {
   const m = requirePromptMode(mode);
   const total = chunks.length;
+  const clips = validClips(ctx.clips) ? ctx.clips : null;
   const blocks = chunks.map(
     (c) => `\n<!-- CHUNK ${c.index} -->\n${buildPrompt(c, m.targetCount, mode, { ...ctx, total })}`
   );
@@ -371,7 +481,10 @@ chunk 数: ${total}。
 
 【順序（守ること）】まず全 CHUNK の本文を通して読み、この素材が結局なんの話で、
 どこに山場があり、どこが捨ててよい所かを掴んでください。**そのあとで**区間を決めます。
-CHUNK ごとに独立して判断すると、同じ話題が二重に採られたり、全体の山場を外したりします。
+${clips
+      ? `作る本数は **${clips}本** に決まっています。全 CHUNK を読んだ段階で話題を${clips}個の塊へ括り、` +
+        `その括りに沿って区間を決めてください（多めに出してから${clips}本を選ぶ、という作り方をしないこと）。\n`
+      : ""}CHUNK ごとに独立して判断すると、同じ話題が二重に採られたり、全体の山場を外したりします。
 各 CHUNK は前後と一部が重なっているので、またぎの話題は中心がある側の CHUNK でだけ採ってください。
 全候補を 1 つの {"segments":[...]} に統合して llm-response.json に書いてください（秒数は出力しない）。
 ${blocks.join("\n")}
@@ -412,7 +525,7 @@ export function summarizeCandidates(segments, edgeChars = 80) {
  * AI が動かせるのは「どの候補を残すか／落とすか」と「見出し・理由の文言」だけ。
  */
 export function buildIntegrationPrompt(candidates, ctx = {}) {
-  const { understanding = null, duration = null } = ctx;
+  const { understanding = null, duration = null, clips = null } = ctx;
   const list = candidates
     .map(
       (c) =>
@@ -426,13 +539,15 @@ export function buildIntegrationPrompt(candidates, ctx = {}) {
 本編でない所（挨拶・機材確認・締めの定型）が混ざっている**ことがあります。
 これを素材全体の視点で1本の並びとして整えてください。
 
-${buildUnderstandingBlock(understanding)}${buildDurationBlock(duration)}【守ること】
+${buildUnderstandingBlock(understanding)}${buildDurationBlock(duration)}${buildClipCountIntegrationBlock(clips, candidates.length)}【守ること】
 - 本文（keepText）は書き換えません。あなたが決めるのは「どの候補を残すか」と「見出し・理由の文言」だけです。
 - 並び順は素材の時系列のまま（番号の昇順）にしてください。入れ替えないでください。
-- 落としてよいのは、重なりによる重複／ほぼ同じ内容の重複／本編でない所（挨拶・機材確認・締めの定型・
+${validClips(clips)
+      ? `- 残す本数は上に書いた ${clips}本 です。重なりによる重複／ほぼ同じ内容の重複／本編でない所を先に落とし、` +
+        `それでも ${clips}本 を超えるときだけ、素材全体の中で弱い（単体で成立しにくい・話の中心が薄い）ものから落としてください。\n`
+      : `- 落としてよいのは、重なりによる重複／ほぼ同じ内容の重複／本編でない所（挨拶・機材確認・締めの定型・
   本編と関係ない雑談）だけです。**本編の話題を「面白くないから」という理由で落とさないでください**
-  （このモードは素材を漏れなく使うのが前提です）。
-- 重複している2件は、話の中心が入っている方（結論まで入っている方）を残してください。
+  （このモードは素材を漏れなく使うのが前提です）。\n`}- 重複している2件は、話の中心が入っている方（結論まで入っている方）を残してください。
 - 残す候補には、素材全体の中での位置づけが分かる見出しと理由を付け直してください
   （範囲ごとに切ったときの見出しは、全体を知らずに付けたものです）。
 
@@ -451,11 +566,12 @@ ${wrapUntrustedText("candidates", list)}
  *
  * @param {Array<{keepText:string,hook?:string,reason?:string}>} candidates 元の候補（順序＝index）
  * @param {object} decision buildIntegrationPrompt の返答をパースしたもの
- * @param {{minKeepRatio?:number}} [opts]
+ * @param {{minKeepRatio?:number, expectedCount?:number|null}} [opts]
+ *   expectedCount = 作る本数の指定（あれば）。消しすぎの歯止めの掛け方が変わる（下記コメント）。
  * @returns {{segments:Array, dropped:number}|null} 採用できなければ null（呼び出し側は元の候補で続行）
  */
 export function applyIntegration(candidates, decision, opts = {}) {
-  const { minKeepRatio = 0.5 } = opts;
+  const { minKeepRatio = 0.5, expectedCount = null } = opts;
   const list = decision && Array.isArray(decision.segments) ? decision.segments : null;
   if (!list || list.length === 0) return null;
 
@@ -469,10 +585,21 @@ export function applyIntegration(candidates, decision, opts = {}) {
   }
   if (chosen.size === 0) return null;
 
-  // 消しすぎの歯止め。topic は「取りこぼし禁止＝素材を最大限使う」モードなので、
-  // 半分以上が落ちたら重複整理ではなく選び直しをしている＝統合を採用しない
-  // （AI の1回の返答で素材の大半が消えるのを、機械で止める）。
-  if (chosen.size < Math.ceil(candidates.length * minKeepRatio)) return null;
+  // 消しすぎの歯止め。
+  //
+  // 本数の指定が無いとき: topic は「取りこぼし禁止＝素材を最大限使う」モードなので、半分以上が
+  // 落ちたら重複整理ではなく選び直しをしている＝統合を採用しない（AI の1回の返答で素材の大半が
+  // 消えるのを機械で止める）。
+  //
+  // 本数の指定があるとき: 減らすこと自体が利用者の指示なので、この歯止めは外す。ここで落として
+  // 整理前の候補へ戻すと、AI が「落とす」と判断した候補を本数合わせのために復活させることになり、
+  // docs/編集についての虎の巻.md の原則（捨てると決めたものを数合わせで戻さない）に正面から反する。
+  // 指定より少ない結果もそのまま採り、「指定どおりにならなかった」ことは呼び出し側が正直に報告する。
+  const floor =
+    Number.isInteger(expectedCount) && expectedCount >= 1
+      ? 1
+      : Math.ceil(candidates.length * minKeepRatio);
+  if (chosen.size < floor) return null;
 
   // 並びは番号の昇順＝素材の時系列に必ず戻す（返答が入れ替えてきても機械で直す。
   // topic は全カバーが前提で、並べ替えは編集意図に含まれない）。
