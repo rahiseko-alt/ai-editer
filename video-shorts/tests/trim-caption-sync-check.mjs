@@ -206,7 +206,17 @@ try {
   });
 
   // ── 製品経路で詰め、字幕を写す（pipeline.mjs と同じ順）──────────────────
-  const plan = planTrim(words, { duration: TA_DUR, fps: size.fps });
+  // 【2026-08-17 虎の巻 §4-1 による変更】言い淀みの判断は AI（judge）がする。
+  // 「なんか」は「何か」にもなるため、judge が無いと固定の一覧では消さなくなった
+  // （docs/編集についての虎の巻.md §4-1・§8-H）。この素材の index6 が「なんか」で、
+  // judge を渡さないと残り、この検査が見ている「残った4語だけが字幕へ写る」が測れない。
+  // 期待値を5語へ緩めるのではなく、AI が素材の言い淀み4区間をすべて言い淀みと
+  // 判断した状態を渡す。cutSilence は渡さない（長さの閾値より優先されてしまうため）。
+  const fillerIdx = new Set(segs.map((x, i) => (x.kind === "filler" ? i : -1)).filter((i) => i >= 0));
+  const plan = planTrim(words, {
+    duration: TA_DUR, fps: size.fps,
+    judge: { isFiller: (index) => fillerIdx.has(index) },
+  });
   const assWords = remapWords(words, plan.keep);
   t("前提: 残った語（言い淀みを除いた4語）だけが字幕へ写る", () => {
     assert.strictEqual(assWords.length, 4, `実=${JSON.stringify(assWords)}`);

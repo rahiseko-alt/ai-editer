@@ -523,7 +523,7 @@ async function cmdRender(workDir, opts = {}) {
     } else {
       const s = handles.stats;
       log(`[INFO] 切り口を実測無音の内側へ: 無音 ${s.measured}箇所を実測 /`
-        + ` のりしろ 前${PAD_HEAD}s・後${PAD_TAIL}s を ${s.clampedIntoSilence}箇所で無音の内側へ抑えた`
+        + ` のりしろ 前${PAD_HEAD}s・後${PAD_TAIL}s のうち ${s.clampedIntoSilence}箇所を無音の内側へ収め直した`
         + `（端 ${s.edges} 個中 ${s.insideSilence} 個が無音の内側 / 接する無音が無い端 ${s.noSilenceAtEdge} 個）`);
     }
   }

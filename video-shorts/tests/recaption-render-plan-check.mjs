@@ -20,9 +20,13 @@
 //
 // 【素材設計・境界値】
 //  - 素材長 4.0 秒・10fps。語は先頭 0.0-0.5秒("A")と末尾 3.5-4.0秒("B")の2語だけで、
-//    間の 3.0 秒は無音（既定の無音しきい値 0.20 秒を大きく超える）→ 詰めると 1.3 秒残る。
+//    間の 3.0 秒は無音（既定の無音しきい値 0.20 秒を大きく超える）→ 詰めると 1.7 秒残る。
 //    2026-08-16: マスター指示「発言の後にだけ、余韻を0.3秒存在させる」により、詰める無音の
-//    直前に残る発言があるとき 0.3 秒を残すようになった。語 0.5+0.5 秒＋余韻 0.3 秒＝1.3 秒。
+//    直前に残る発言があるとき余韻を残すようになった。
+//    【2026-08-17 虎の巻 §3-4・§8-I による変更】残す余韻を一律 0.3 秒から
+//    clamp(元の間×0.25, 0.3, 0.7) へ変えた。0.5 秒の息継ぎも 10 秒の空白も同じ 0.3 秒に
+//    潰れており、話者のリズムを機械的にならしていたため。ここの間は 3.0 秒なので
+//    clamp(0.75, 0.3, 0.7) = 0.7 秒が残る。語 0.5+0.5 秒＋余韻 0.7 秒＝1.7 秒。
 //    ffprobe の実測許容は ±0.15 秒（1コマ=0.1秒の2コマ弱ぶん。fps境界の丸めを吸収しつつ、
 //    4.0秒との取り違えは検出できる十分小さい値）。
 //  - 解像度は 320x180（1080x1920 へは6.75倍ぶんの拡大になるため、computeCanvas() の
@@ -57,7 +61,7 @@ const OUT_DIR = path.join(OUT_ROOT, JOB_ID);
 
 const SRC_W = 320, SRC_H = 180, SRC_FPS = 10;
 const TOTAL_SEC = 4.0;
-const EXPECT_TRIMMED_SEC = 1.3; // word "A"(0.5s) + 余韻(0.3s) + word "B"(0.5s)
+const EXPECT_TRIMMED_SEC = 1.7; // word "A"(0.5s) + 余韻(0.7s) + word "B"(0.5s)
 const DURATION_TOLERANCE_SEC = 0.15;
 const GUARDED_W = 320, GUARDED_H = 568; // computeCanvas(portrait, 320, 180) の実測値
 
@@ -167,7 +171,7 @@ async function main() {
   report("AUD-P1-02a(生成側): candidates.json の候補に renderPlan.keep が書かれている",
     !!(entry.renderPlan && Array.isArray(entry.renderPlan.keep) && entry.renderPlan.keep.length > 0),
     JSON.stringify(entry.renderPlan));
-  report("AUD-P1-02a(生成側): renderPlan.clipDuration が詰め後の尺(≈1.0秒)になっている",
+  report("AUD-P1-02a(生成側): renderPlan.clipDuration が詰め後の尺(≈1.7秒)になっている",
     entry.renderPlan && Math.abs(entry.renderPlan.clipDuration - EXPECT_TRIMMED_SEC) < DURATION_TOLERANCE_SEC,
     `実=${entry.renderPlan && entry.renderPlan.clipDuration}`);
   report("AUD-P1-02b(生成側): candidates.json 直下に実素材解像度 srcW/srcH が書かれている",
