@@ -8,7 +8,12 @@ const state = {
   // 「間を詰める」は2つのつまみ（G-EDIT-TRIM2・マスター指示のB案）。
   // 黙っている時間と言い淀みは目的が違う（尺 と 見苦しさ）ので別々に選べる。
   trimSilence: "none", trimFiller: "none",
-  cut: "topic", cutMin: 3,
+  // 切り方（マスター指示 2026-08-17）。3択で、画面には選んだものの入力欄だけを出す。
+  //   "minutes" … ダイジェスト（面白い所を集めて1本）。長さ＝cutMin（空＝AIにおまかせ）
+  //   "clips"   … 本数に分ける。本数＝clips（空＝AIにおまかせ）
+  //   "topic"   … 分数指定。1本の長さ＝durationMin（空＝AIにおまかせ）
+  // サーバへ送る形（cut/cutMin/clips/durationMin）は run() が組み立てる。
+  cut: "topic", cutMin: "", clips: "",
   size: "9:16", device: "phone",
   // 字幕スタイル一式・尺の指示・書き出しプリセット(G-EDIT-UI-SETTINGS-WIRING-CLIENT)。
   // 既定値はすべて「未指定」を表す空文字列(captionInner/captionBandはoff)。run()の送信処理は
@@ -403,18 +408,20 @@ function updateExportDesc() {
   el.textContent = t[state.exportPreset] ?? t[""];
 }
 
-// ---- カット詳細の表示切替＋入力 ----
+// ---- 切り方の詳細（入力欄）の表示切替＋入力 ----
+// 選んだ切り方に対応する .cut-note（data-for）だけを出す＝入力欄は常に1つしか出ない。
 function showCut() {
   document.querySelectorAll(".cut-note").forEach((p) => p.classList.toggle("hidden", p.dataset.for !== state.cut));
 }
-// 「1本の目安の長さ」は『話題で切る』のときだけ意味を持つ(分数で切るモードではcutMinが
-// その役目を担う)ので、そのときだけ画面に出す(G-EDIT-UI-SETTINGS-DURATION-VISIBILITY)。
+// 「1本の長さ」は『分数指定』(cut=topic)のときだけ意味を持つ。ダイジェストでは cut-min が、
+// 本数に分けるでは cut-clips がその役目を担うので、そのときだけ画面に出す
+// (G-EDIT-UI-SETTINGS-DURATION-VISIBILITY)。
 function updateDurationVisibility() {
   const el = $("card-duration");
   if (el) el.classList.toggle("hidden", state.cut !== "topic");
 }
 
-// つなぎ目の間は「分数で切る」(=digest)のときしか効かない。
+// つなぎ目の間は「ダイジェスト」(=digest)のときしか効かない。
 // server/pipeline-runner.mjs:818 が cut==="minutes" のときだけ mode="digest" にし、
 // pipeline.mjs:453 が mode==="digest" のときだけ breath を適用するため。
 // 2026-08-16 まで、この設定は「話題で切る」でも表示され、選んでも出力が1ミリも
@@ -423,24 +430,48 @@ function updateBreathVisibility() {
   const el = $("card-breath");
   if (el) el.classList.toggle("hidden", state.cut !== "minutes");
 }
+
+// 数の入力欄の共通の読み取り。数字として読めない・範囲外・(本数なら)整数でない値は
+// 「未指定」＝空文字列にして送らない（サーバ側の既定＝AIにおまかせへ倒す）。
+// 画面の値そのものは書き換えない（打っている途中の文字を勝手に消さないため）。
+function readNumField(el, { min, max, integer = false }) {
+  if (!el) return "";
+  const raw = String(el.value).trim();
+  if (raw === "") return "";
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "";
+  if (integer && !Number.isInteger(n)) return "";
+  if (n < min || n > max) return "";
+  return String(n);
+}
+
+// 分数指定（cut=topic）の「1本の長さ」。小数可（従来どおり）。
 const durationMinInput = $("duration-min");
 if (durationMinInput) durationMinInput.addEventListener("input", () => {
-  state.durationMin = durationMinInput.value; refresh();
+  state.durationMin = readNumField(durationMinInput, { min: 1, max: 60 });
+  refresh();
 });
-// サーバー(server/job-params.mjs)の正規化(1-60の有限値のみ許可・それ以外は既定3)と
-// 表示・送信内容を一致させる（空/範囲外のまま「0分」等と表示してサーバー設定とずれるのを防ぐ）。
-function normalizeCutMin(raw) {
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 1 && n <= 60 ? n : 3;
-}
+// ダイジェスト（cut=minutes）の「長さ」。小数可。空欄＝AIにおまかせ。
 const cutMinInput = $("cut-min");
 if (cutMinInput) cutMinInput.addEventListener("input", () => {
-  state.cutMin = normalizeCutMin(cutMinInput.value); refresh();
+  state.cutMin = readNumField(cutMinInput, { min: 1, max: 60 });
+  refresh();
+});
+// 本数に分ける（cut=topic ＋ clips）の「本数」。1以上の整数だけを受ける
+// （上限100はサーバ側 server/job-params.mjs の MAX_CLIPS と揃える）。
+const cutClipsInput = $("cut-clips");
+if (cutClipsInput) cutClipsInput.addEventListener("input", () => {
+  state.clips = readNumField(cutClipsInput, { min: 1, max: 100, integer: true });
+  refresh();
 });
 function cutText() {
-  if (state.cut === "topic") return "話題で切る（AIが切れ目を判断）";
-  if (state.cut === "minutes") return `分数で切る（${state.cutMin}分以内・区切りの良い所）`;
-  return "話題で切る（AIが切れ目を判断）";
+  if (state.cut === "minutes") {
+    return state.cutMin ? `ダイジェスト（${state.cutMin}分くらいで1本）` : "ダイジェスト（長さはAIにおまかせ）";
+  }
+  if (state.cut === "clips") {
+    return state.clips ? `本数に分ける（${state.clips}本）` : "本数に分ける（本数はAIにおまかせ）";
+  }
+  return state.durationMin ? `分数指定（1本 ${state.durationMin}分くらい）` : "分数指定（長さはAIにおまかせ）";
 }
 
 // ---- AI確認文 ----
@@ -461,7 +492,7 @@ function refresh() {
 // 編集内容サマリ（右の確認カードと中央モーダルで共用）
 function summaryHTML() {
   const subText = state.sub === "on" ? "あり" : "なし";
-  const rows = [["動画", state.file?.name || "—"], ["サイズ", state.size], ["字幕", subText], ["カット", cutText()]];
+  const rows = [["動画", state.file?.name || "—"], ["サイズ", state.size], ["字幕", subText], ["切り方", cutText()]];
   return rows.map(([k, v]) => `<li><b>${k}</b><span>${esc(v)}</span></li>`).join("");
 }
 function esc(s) {
@@ -690,12 +721,30 @@ function run() {
   // 「画面には足したのに送信処理へ反映し忘れる」事故が起きた反省による)。
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(state)) {
-    if (["file", "device", "cutMin"].includes(k)) continue; // 個別処理する項目(下)は除く
+    if (["file", "device", "cutMin", "cut", "clips", "durationMin"].includes(k)) continue; // 個別処理する項目(下)は除く
     if (v === "" || v == null) continue; // 未指定は送らない(サーバー側の既定に従う)
     params.set(k, String(v));
   }
   params.set("name", state.file.name);
-  if (state.cut === "minutes") params.set("cutMin", String(state.cutMin));
+  // 切り方の3択（画面）→ サーバの既存パラメータ（マスター指示 2026-08-17）。
+  //   ダイジェスト  cut=minutes （サーバ側で mode=digest）＋ 長さ
+  //   本数に分ける  cut=topic ＋ clips=<本数>
+  //   分数指定      cut=topic ＋ durationMin=<分>
+  // どれも空欄なら何も足さない＝サーバ側の既定（AIにおまかせ）に従う。
+  params.set("cut", state.cut === "minutes" ? "minutes" : "topic");
+  if (state.cut === "minutes") {
+    if (state.cutMin !== "") {
+      params.set("durationMin", String(state.cutMin));
+      // cutMin も併せて送る。ダイジェストの狙いの尺は server/pipeline-runner.mjs の
+      // resolveJobSettings() が cutMin から targetMinutes を作っているためで、
+      // ここを落とすと画面で入れた長さがダイジェストに効かなくなる（既存の受け渡しを壊さない）。
+      params.set("cutMin", String(state.cutMin));
+    }
+  } else if (state.cut === "clips") {
+    if (state.clips !== "") params.set("clips", String(state.clips));
+  } else if (state.durationMin !== "") {
+    params.set("durationMin", String(state.durationMin));
+  }
   fetch(`/api/jobs?${params}`, withTokenHeader({ method: "POST", body: state.file }))
     .then((res) => {
       if (!res.ok) return res.json().then((d) => Promise.reject(d.error || d.message || "ジョブ作成失敗"));

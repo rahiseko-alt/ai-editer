@@ -136,76 +136,47 @@
         </div>
       </section>
 
-      <!-- グループ2.5: 顔モザイク -->
-      <section class="settings-group" id="card-mosaic" aria-labelledby="h-mosaic">
-        <h2 class="group-label" id="h-mosaic">
-          顔を隠す
-        </h2>
-        <div class="chips mosaic-toggle" data-group="mosaic" data-testid="setting-row" data-setting-key="mosaic" role="group" aria-label="顔モザイクのあり・なし">
-          <button class="chip mosaic-chip is-on" data-val="none" aria-pressed="true">なし</button>
-          <button class="chip mosaic-chip" data-val="on" aria-pressed="false">あり</button>
-        </div>
-        <p class="group-note" id="mosaic-desc">写り込んだ顔はそのまま出ます。</p>
-      </section>
-
-      <!-- 無音・言い淀みを詰める（G-EDIT-TRIM） -->
-      <section class="settings-group" id="card-trim" aria-labelledby="h-trim">
-        <h2 class="group-label" id="h-trim">
-          間を詰める
-        </h2>
-        <p class="group-note">黙っている時間</p>
-        <div class="chips trim-toggle" data-group="trimSilence" data-testid="setting-row" data-setting-key="trimSilence" role="group" aria-label="黙っている時間を詰める・詰めない">
-          <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">そのまま</button>
-          <button class="chip trim-chip" data-val="on" aria-pressed="false">詰める</button>
-        </div>
-        <p class="group-note">「えーと」などの言い淀み</p>
-        <div class="chips trim-toggle" data-group="trimFiller" data-testid="setting-row" data-setting-key="trimFiller" role="group" aria-label="言い淀みを消す・残す">
-          <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">残す</button>
-          <button class="chip trim-chip" data-val="on" aria-pressed="false">消す</button>
-        </div>
-        <p class="group-note" id="trim-desc">黙っている時間と「えーと」はそのまま残ります。</p>
-      </section>
-
-      <!-- グループ4b: つなぎ目の間（G-EDIT-BREATH-SERVER） -->
-      <section class="settings-group" id="card-breath" aria-labelledby="h-breath">
-        <h2 class="group-label" id="h-breath">
-          つなぎ目の間
-        </h2>
-        <div class="chips breath-toggle" data-group="breath" data-testid="setting-row" data-setting-key="breath" role="group" aria-label="つなぎ目の間の長さ">
-          <button class="chip breath-chip is-on" data-val="" aria-pressed="true">おまかせ</button>
-          <button class="chip breath-chip" data-val="0.4" aria-pressed="false">短め</button>
-          <button class="chip breath-chip" data-val="1" aria-pressed="false">長め</button>
-          <button class="chip breath-chip" data-val="off" aria-pressed="false">なし</button>
-        </div>
-        <p class="group-note" id="breath-desc">見どころを繋いだ所に、一呼吸ぶんの間が入ります。</p>
-      </section>
-
-      <!-- グループ3: カット -->
+      <!-- グループ3: 切り方（マスター指示 2026-08-17「基本は字幕ありなし/縦横/
+           ダイジェストor本数に分けるor分数指定/これだけでサクサク編集できるようにしろ」）。
+           表に出す設定は「字幕・切り方・サイズ」の3つだけにし、選んだ切り方に応じて
+           入力欄を1つだけ出す（3つ並べない）。
+           画面の3択とサーバへ送る値の対応は app.js の run() を参照。
+             ダイジェスト(minutes) → cut=minutes（サーバ側で mode=digest）
+             本数に分ける(clips)   → cut=topic ＋ clips=<本数>
+             分数指定(topic)       → cut=topic ＋ durationMin=<分> -->
       <section class="settings-group" id="card-cut" aria-labelledby="h-cut">
         <h2 class="group-label" id="h-cut">
-          カットの目安
+          切り方
         </h2>
-        <div class="chips chips-wrap" data-group="cut" data-testid="setting-row" data-setting-key="cut" role="group" aria-label="カット方法">
-          <button class="chip is-on" data-val="topic" aria-pressed="true">話題で切る</button>
-          <button class="chip" data-val="minutes" aria-pressed="false">分数で切る</button>
+        <div class="chips chips-wrap" data-group="cut" data-testid="setting-row" data-setting-key="cut" role="group" aria-label="切り方">
+          <button class="chip" data-val="minutes" aria-pressed="false">ダイジェスト</button>
+          <button class="chip" data-val="clips" aria-pressed="false">本数に分ける</button>
+          <button class="chip is-on" data-val="topic" aria-pressed="true">分数指定</button>
         </div>
         <div class="cut-detail" id="cut-detail">
-          <p class="cut-note" data-for="topic">AIが話題の切れ目を判断して自動でカットします。</p>
           <p class="cut-note hidden" data-for="minutes">
-            <label for="cut-min">分数：</label>
-            <input type="number" id="cut-min" value="3" min="1" max="60" />
-            分以内で、区切りの良いところで切ります。
+            動画の中の面白い所を集めて、1本にまとめます。
+            <label for="cut-min">長さ</label>
+            <input type="number" id="cut-min" min="1" max="60" step="0.1" inputmode="decimal" placeholder="おまかせ" aria-label="ダイジェスト1本の長さ（分）" />
+            分（空欄ならAIにおまかせ）
           </p>
+          <p class="cut-note hidden" data-for="clips">
+            話題ごとに切り分けて、指定した本数を作ります。
+            <label for="cut-clips">本数</label>
+            <input type="number" id="cut-clips" min="1" max="100" step="1" inputmode="numeric" placeholder="おまかせ" aria-label="作る本数" />
+            本（空欄ならAIにおまかせ）
+          </p>
+          <p class="cut-note" data-for="topic">話題ごとに切り分けて、1本あたりの長さを下で決めます。</p>
         </div>
       </section>
 
-      <!-- グループ3b: 1本の目安の長さ（カット=話題で切る のときだけ表示。G-EDIT-UI-SETTINGS-DURATION-VISIBILITY） -->
+      <!-- グループ3b: 1本の長さ（切り方=分数指定 のときだけ表示。G-EDIT-UI-SETTINGS-DURATION-VISIBILITY） -->
       <section class="settings-group hidden" id="card-duration" aria-labelledby="h-duration">
-        <h2 class="group-label" id="h-duration">1本の目安の長さ</h2>
+        <h2 class="group-label" id="h-duration">1本の長さ</h2>
         <p class="duration-note">
-          <label for="duration-min">目安：</label>
-          <input type="number" id="duration-min" min="1" max="60" />
-          分くらいで、AIが話題の切れ目を判断してまとめます（空欄ならAIにおまかせ）。
+          <label for="duration-min">長さ</label>
+          <input type="number" id="duration-min" min="1" max="60" step="0.1" inputmode="decimal" placeholder="おまかせ" />
+          分くらいで、話題の切れ目に合わせて切ります（空欄ならAIにおまかせ）。
         </p>
       </section>
 
@@ -240,6 +211,64 @@
           <button class="chip" data-val="light" aria-pressed="false">軽くして共有</button>
         </div>
         <p class="group-note" id="export-desc">これまでどおりの画質・大きさで書き出します。</p>
+      </section>
+
+      <!-- グループ8: 詳しい設定（既定は閉じたまま。マスター指示 2026-08-17）
+           「顔を隠す」「間を詰める」「つなぎ目の間」は消さずにここへ入れる。既定値のままで
+           困らない設定なので、普段は目に入らないようにする。開けば従来どおり使える。
+           中の3つは枠を持たない（カードの中にカードを二重に置かない＝G-UI-CARDFRAME）。 -->
+      <section class="settings-group" id="card-advanced" aria-labelledby="h-advanced">
+        <details class="adv" id="advanced-details">
+          <summary class="group-label adv-summary" id="h-advanced" data-testid="advanced-toggle">詳しい設定</summary>
+          <div class="adv-body">
+
+            <!-- 顔モザイク -->
+            <div class="adv-group" id="card-mosaic" aria-labelledby="h-mosaic">
+              <h3 class="group-label" id="h-mosaic">
+                顔を隠す
+              </h3>
+              <div class="chips mosaic-toggle" data-group="mosaic" data-testid="setting-row" data-setting-key="mosaic" role="group" aria-label="顔モザイクのあり・なし">
+                <button class="chip mosaic-chip is-on" data-val="none" aria-pressed="true">なし</button>
+                <button class="chip mosaic-chip" data-val="on" aria-pressed="false">あり</button>
+              </div>
+              <p class="group-note" id="mosaic-desc">写り込んだ顔はそのまま出ます。</p>
+            </div>
+
+            <!-- 無音・言い淀みを詰める（G-EDIT-TRIM） -->
+            <div class="adv-group" id="card-trim" aria-labelledby="h-trim">
+              <h3 class="group-label" id="h-trim">
+                間を詰める
+              </h3>
+              <p class="group-note">黙っている時間</p>
+              <div class="chips trim-toggle" data-group="trimSilence" data-testid="setting-row" data-setting-key="trimSilence" role="group" aria-label="黙っている時間を詰める・詰めない">
+                <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">そのまま</button>
+                <button class="chip trim-chip" data-val="on" aria-pressed="false">詰める</button>
+              </div>
+              <p class="group-note">「えーと」などの言い淀み</p>
+              <div class="chips trim-toggle" data-group="trimFiller" data-testid="setting-row" data-setting-key="trimFiller" role="group" aria-label="言い淀みを消す・残す">
+                <button class="chip trim-chip is-on" data-val="none" aria-pressed="true">残す</button>
+                <button class="chip trim-chip" data-val="on" aria-pressed="false">消す</button>
+              </div>
+              <p class="group-note" id="trim-desc">黙っている時間と「えーと」はそのまま残ります。</p>
+            </div>
+
+            <!-- つなぎ目の間（G-EDIT-BREATH-SERVER。ダイジェストのときだけ効くので、
+                 それ以外の切り方では中でも出さない） -->
+            <div class="adv-group hidden" id="card-breath" aria-labelledby="h-breath">
+              <h3 class="group-label" id="h-breath">
+                つなぎ目の間
+              </h3>
+              <div class="chips breath-toggle" data-group="breath" data-testid="setting-row" data-setting-key="breath" role="group" aria-label="つなぎ目の間の長さ">
+                <button class="chip breath-chip is-on" data-val="" aria-pressed="true">おまかせ</button>
+                <button class="chip breath-chip" data-val="0.4" aria-pressed="false">短め</button>
+                <button class="chip breath-chip" data-val="1" aria-pressed="false">長め</button>
+                <button class="chip breath-chip" data-val="off" aria-pressed="false">なし</button>
+              </div>
+              <p class="group-note" id="breath-desc">見どころを繋いだ所に、一呼吸ぶんの間が入ります。</p>
+            </div>
+
+          </div>
+        </details>
       </section>
 
     </div><!-- /col-settings -->

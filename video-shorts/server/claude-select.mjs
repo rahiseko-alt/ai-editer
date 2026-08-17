@@ -135,11 +135,10 @@ function readState(workDir) {
  * （job-params.mjs の durationMin。話題で切るときだけ意味を持つ設定）と、
  * digest 用の targetMinutes の両方を見る。
  *
- * ※ 2026-08-17 現在、server/pipeline-runner.mjs は durationMin を state.json へ書いていない
- *   （updateState に渡していない）ため、画面から topic で流すとここは null になる。
- *   このファイルからは直せないので（今回の編集許可の外）、runClaudeSelect(workDir, onLog,
- *   { targetMinutes }) で渡すか、pipeline-runner の updateState へ durationMin を1行足せば
- *   そのまま効く形にしてある。渡らなかったときは「尺の条件なし」として素直に振る舞う
+ * ※ 上記の結線（server/pipeline-runner.mjs の updateState が durationMin を state.json へ書く）は
+ *   2026-08-17 に入った。それ以前は書かれておらず、画面から topic で流すとここが常に null になり、
+ *   選定は目安の長さを一度も知らないまま切っていた。
+ *   どこからも渡らなかったときは「尺の条件なし」として素直に振る舞う
  *   （黙って既定値をでっち上げると、指定していない尺で切られたことに誰も気付けない）。
  *
  * @returns {{targetSeconds:number,targetMinutes:number,charBudget:number}|null}
@@ -164,6 +163,25 @@ export function resolveDurationTarget({ opts = {}, state = {}, transcript = {}, 
 }
 
 /**
+ * 「作る本数」を決める（画面の「本数に分ける」）。
+ *
+ * 優先順は 呼び出し引数 > state.json（server/pipeline-runner.mjs が画面の clips をここへ書く）。
+ * 指定が無ければ null を返し、**従来どおり AI が本数を決める**（既定値をでっち上げない＝
+ * 指定していない本数で切られたことに誰も気付けない、という状態を作らない）。
+ *
+ * 受け口 server/job-params.mjs が既に 1以上の整数・上限つきへ丸めているが、この関数は CLI 経由の
+ * state.json も読むので、ここでももう一度「1以上の整数か」だけ確かめる。
+ *
+ * @returns {number|null}
+ */
+export function resolveClipCount({ opts = {}, state = {} } = {}) {
+  const raw = [opts.clips, state.clips].find(
+    (v) => v !== null && v !== undefined && v !== "" && Number.isInteger(Number(v)) && Number(v) >= 1
+  );
+  return raw === undefined ? null : Number(raw);
+}
+
+/**
  * ① 素材の全体を読んで「理解」を作る。
  *
  * 短い素材は全文を1回で読ませる（直読み）。長すぎて1回で読み切れない素材は、
@@ -171,14 +189,19 @@ export function resolveDurationTarget({ opts = {}, state = {}, transcript = {}, 
  * （2段読み）。どちらの経路でも、素材のどの範囲も必ず1回は読解を通る＝全体を読んでいる。
  * 閾値 DIRECT_READ_CHARS とその根拠は src/select-segments.mjs のコメントが正。
  *
+ * 作る本数（clips）の指定があるときは、**この理解の段で話題をその本数の塊へ括らせる**。
+ * 統合の段で上位N件を切り落とすのではなく、括り方そのものを本数前提に変えるのが狙い
+ * （理由は src/select-segments.mjs buildClipCountUnderstandBlock のコメントが正）。
+ * 2段読みのときは、1段目（ブロックごとの骨格）には本数を渡さず、全ブロックが揃う2段目で効かせる。
+ *
  * @returns {Promise<{understanding:object|null, readMode:string, blocks:number, blocksFailed:number}>}
  */
-export async function buildUnderstanding(transcriptText, { cwd, onLog = () => {} } = {}) {
+export async function buildUnderstanding(transcriptText, { cwd, onLog = () => {}, clips = null } = {}) {
   const shape = '{"subject":"...","themes":[...],"peak":{...},"discard":[...],"speakerStyle":"..."}';
 
   if (transcriptText.length <= DIRECT_READ_CHARS) {
     onLog(`[claude-select] 全文（${transcriptText.length}文字）を1回で読んで理解を作ります`);
-    const understanding = await runJsonPrompt(buildUnderstandPrompt(transcriptText), {
+    const understanding = await runJsonPrompt(buildUnderstandPrompt(transcriptText, clips), {
       cwd,
       onLog,
       timeoutMs: READ_TIMEOUT_MS,
@@ -218,7 +241,7 @@ export async function buildUnderstanding(transcriptText, { cwd, onLog = () => {}
         `残り ${outlines.length} ブロックぶんで全体像を作ります（その範囲は理解に含まれません）`
     );
   }
-  const understanding = await runJsonPrompt(buildGlobalUnderstandPrompt(outlines), {
+  const understanding = await runJsonPrompt(buildGlobalUnderstandPrompt(outlines, clips), {
     cwd,
     onLog,
     timeoutMs: READ_TIMEOUT_MS,
@@ -231,12 +254,12 @@ export async function buildUnderstanding(transcriptText, { cwd, onLog = () => {}
  * ③ 候補を全体視点で整える。失敗したら null を返し、呼び出し側は整理前の候補で続行する
  * （統合はあくまで仕上げで、これが無くても選定結果自体は使えるため）。
  */
-async function integrateCandidates(candidates, { cwd, onLog, understanding, duration }) {
+async function integrateCandidates(candidates, { cwd, onLog, understanding, duration, clips = null }) {
   // 候補が多いほど1件あたりに見せられる文字数は減らす（一覧そのものが窓に収まらなくなるため）。
   const edgeChars = candidates.length > 120 ? 40 : 80;
   const summary = summarizeCandidates(candidates, edgeChars);
   const decision = await runJsonPrompt(
-    buildIntegrationPrompt(summary, { understanding, duration }),
+    buildIntegrationPrompt(summary, { understanding, duration, clips }),
     {
       cwd,
       onLog,
@@ -244,7 +267,8 @@ async function integrateCandidates(candidates, { cwd, onLog, understanding, dura
       shapeHint: '{"segments":[{"index":0,"hook":"...","reason":"..."}],"dropped":[]}',
     }
   );
-  return applyIntegration(candidates, decision);
+  // 本数の指定があるときは「消しすぎの歯止め」の掛け方が変わる（applyIntegration のコメントが正）。
+  return applyIntegration(candidates, decision, { expectedCount: clips });
 }
 
 /**
@@ -258,8 +282,8 @@ async function integrateCandidates(candidates, { cwd, onLog, understanding, dura
  *
  * @param {string} workDir - work/<id> の絶対パス
  * @param {(msg:string)=>void} [onLog]
- * @param {{targetMinutes?:number, mode?:string}} [opts] - 1本あたりの目標尺（分）と選定モード。
- *   どちらも任意。省略時は state.json から読む（既存の呼び出し方は変わらない）。
+ * @param {{targetMinutes?:number, mode?:string, clips?:number}} [opts] - 1本あたりの目標尺（分）・
+ *   選定モード・作る本数。いずれも任意。省略時は state.json から読む（既存の呼び出し方は変わらない）。
  * @returns {Promise<{segments: object[], incomplete: boolean, failedChunks: number,
  *   totalChunks: number, understandingFailed: boolean, meta: object}>}
  */
@@ -296,6 +320,14 @@ export async function runClaudeSelect(workDir, onLog = () => {}, opts = {}) {
     onLog("[claude-select] 1本あたりの尺の指定は無し（AI が話題の切れ目で判断します）");
   }
 
+  // 作る本数（画面の「本数に分ける」）。指定があると①の理解の段から効かせる＝話題の括り方が変わる。
+  const clips = resolveClipCount({ opts, state });
+  if (clips !== null) {
+    onLog(`[claude-select] 作る本数の指定: ${clips}本（この本数に括る前提で素材を読みます）`);
+  } else {
+    onLog("[claude-select] 作る本数の指定は無し（AI が話題の数だけ本数を決めます）");
+  }
+
   const cwd = createIsolatedCwd(path.basename(workDir));
 
   // ── ① 理解: 素材の全体を読む ──────────────────────────────
@@ -303,7 +335,7 @@ export async function runClaudeSelect(workDir, onLog = () => {}, opts = {}) {
   let readMeta = { readMode: "none", blocks: 0, blocksFailed: 0 };
   let understandingFailed = false;
   try {
-    const r = await buildUnderstanding(transcriptText, { cwd, onLog });
+    const r = await buildUnderstanding(transcriptText, { cwd, onLog, clips });
     understanding = r.understanding;
     readMeta = { readMode: r.readMode, blocks: r.blocks, blocksFailed: r.blocksFailed };
     const themeCount = Array.isArray(understanding?.themes) ? understanding.themes.length : 0;
@@ -333,6 +365,7 @@ export async function runClaudeSelect(workDir, onLog = () => {}, opts = {}) {
     const promptDoc = buildPrompt(chunk, targetCount, mode, {
       understanding,
       duration,
+      clips,
       total: chunks.length,
     });
     const segs = await runOneChunk(promptDoc, onLog, cwd);
@@ -366,9 +399,13 @@ export async function runClaudeSelect(workDir, onLog = () => {}, opts = {}) {
 
   let segments = deduped;
   let integrated = false;
-  if (chunks.length > 1 && deduped.length > 1) {
+  // 統合を回す条件。従来は「chunk が複数あるとき」だけ＝範囲をまたぐ重複の掃除が目的だった。
+  // 本数の指定があるときは、chunk が1つでも「全体を見て何本にするか」を決め直す段が要るので、
+  // 本数が指定どおりでないときも回す（1 chunk の素材で 8 件出たのに 5 本指定、が素通りしていた）。
+  const needsClipFix = clips !== null && deduped.length !== clips;
+  if (deduped.length > 1 && (chunks.length > 1 || needsClipFix)) {
     try {
-      const r = await integrateCandidates(deduped, { cwd, onLog, understanding, duration });
+      const r = await integrateCandidates(deduped, { cwd, onLog, understanding, duration, clips });
       if (r) {
         segments = r.segments;
         integrated = true;
@@ -381,9 +418,28 @@ export async function runClaudeSelect(workDir, onLog = () => {}, opts = {}) {
     }
   }
 
+  // 本数が指定どおりにならなかったときの扱い。
+  //
+  // 【水増しも切り捨てもしない】足りないからといって、統合で落とした候補を戻したり、1つの区間を
+  // 2つへ割ったりはしない（docs/編集についての虎の巻.md：捨てると決めたものを数合わせで戻さない／
+  // 話題の途中で割らない）。多いからといって先頭N件で機械的に切り落とすこともしない（並び順は
+  // 素材の時系列なので、それは「後半を丸ごと捨てる」のと同じで、編集の判断ではない）。
+  // 代わりに、指定と実際の差をログと meta に必ず残して、黙って違う本数を返さないようにする。
+  if (clips !== null && segments.length !== clips) {
+    onLog(
+      `[claude-select] [WARN] 作る本数の指定は${clips}本でしたが、${segments.length}本になりました。` +
+        `素材の話題の数が指定に合わないか、統合が指定どおりに絞れませんでした。` +
+        `本数を合わせるための水増し・機械的な切り捨ては行いません（そのぶん中身が壊れるため）。`
+    );
+  }
+
   const meta = {
     mode,
     count: segments.length,
+    // 指定した本数と実際の本数を両方残す（片方だけだと「指定どおりだったのか」が後から分からない）。
+    clipsRequested: clips,
+    clipsActual: segments.length,
+    clipsSatisfied: clips === null ? null : segments.length === clips,
     understanding,
     understandingFailed,
     ...readMeta,

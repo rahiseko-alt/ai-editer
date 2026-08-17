@@ -340,3 +340,53 @@ html::before, html::after, body::before, body::after { content: none; background
   white-space: nowrap;
   border: 0;
 }
+
+/* ===== 14. 詳しい設定（折りたたみ）＝マスター指示 2026-08-17 =====
+   表に出す設定を「字幕・切り方・サイズ」の3つへ絞り、「顔を隠す」「間を詰める」
+   「つなぎ目の間」は消さずにここへ入れる（既定は閉じたまま。開けば従来どおり使える）。
+   カードの中にもう1枚カードを置かない（G-UI-CARDFRAME の二重枠禁止）ので、
+   中の小見出しは枠も地の色も持たせない。 */
+.adv { min-height: 0; }
+.adv-summary {
+  cursor: pointer;
+  list-style: none;               /* 既定の三角は自前の記号に置き換える */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.adv-summary::-webkit-details-marker { display: none; }
+.adv-summary::before {
+  content: "＋";
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+}
+.adv[open] > .adv-summary::before { content: "−"; }
+.adv-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.adv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 10px);
+  margin-top: var(--sp-2, 10px);
+}
+.adv-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1, 6px);
+  border: 0;                      /* カードの中に別の枠を作らない */
+  background: transparent;
+  padding: 0;
+}
+.adv-group.hidden { display: none; }
+
+/* 切り方の入力欄（長さ・本数）。数字欄は .cut-note input のCSSを共有する。
+   ラベルと数字欄が行の途中で分かれても読めるよう、行の折返しだけ許す。 */
+.cut-note { display: block; }
+.cut-note label, .duration-note label { white-space: nowrap; }
+.cut-note input[type=number], .duration-note input[type=number] { margin: 0 2px; }
+
+/* 狭い画面でも数字欄がはみ出さないようにする（この画面は横幅の狭い環境でも出る）。 */
+@media (max-width: 480px) {
+  .cut-note input[type=number], .duration-note input[type=number] { width: 64px; }
+}
