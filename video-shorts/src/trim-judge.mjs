@@ -25,8 +25,43 @@ import path from "node:path";
 /** この工程が書き出すファイル名。render 段がここから判断結果を読む。 */
 export const TRIM_JUDGE_FILE = "trim-judge.json";
 
-/** 1回の問い合わせで見せる語の数。ai-caption-fix と同じ考え方（長すぎると精度が落ちる）。 */
-export const CHUNK_WORDS = 120;
+/**
+ * 1回の問い合わせで見せる語の数。
+ *
+ * 【2026-08-17 マスター指摘「まだ遅い」で 120 → 3000】
+ * ここを小さくすると、その数で素材が割られて**割った数だけ AI を直列で呼ぶ**
+ * （下の for ループが 1 かたまりずつ await する）。旧値 120 では 30 分の素材（約4500語）で
+ * **38 回**になり、1回に数十秒かかるのでこの工程だけで数十分を使う計算だった。
+ * この工程は「間を詰める」が有効なときだけ走るため既定では動いていなかったが、
+ * 常時オンにすればそのまま乗るので先に直す。
+ *
+ * 分ける必要が薄い。AI が返すのは**言い淀みの番号と詰めてよい間の番号だけ**（本文ではない）
+ * ので、語数を増やしても返答はほとんど増えない。増えるのは依頼文の側だけで、そちらは
+ * 20万トークン級の文脈窓に対して桁違いに小さい。
+ * ai-caption-fix より小さめの 3000 にしてあるのは、こちらは**語を1行ずつ添字付きで**
+ * 並べる形式で1語あたりの文字数が多く、さらに前後の「参考」行が加わるため。
+ * 3000 語は日本語の話速でおよそ 20 分ぶんで、ふつうの素材は 1〜2 回で終わる。
+ */
+export const CHUNK_WORDS = 3000;
+
+/**
+ * かたまりを同時に何個まで問い合わせるか。
+ *
+ * 【2026-08-17 「遅い原因をすべて探らせろ」の調査で、直列 → プール並列へ】
+ * 上の CHUNK_WORDS を大きくしても、12時間級の素材のように**それでも複数かたまりになる**
+ * ものは残る。旧実装はそれを 1 かたまりずつ await していたので、かたまりの数だけ
+ * 数十秒（実測 3000 語で 41.8 秒）が積み上がっていた。
+ *
+ * このかたまりは**互いに独立している**。依頼文は words と自分の範囲だけから組み立てており、
+ * 前のかたまりの答えを次のかたまりへ渡していない（誤字直し src/ai-caption-fix.mjs が
+ * 「すでに決めた直し」を持ち回るために直列を必要としているのとは、ここが違う）。
+ * 集計も添字の Set で重複を畳んでから並べ替えるので、答えが返る順番は結果に影響しない。
+ * よって同時に投げてよい。3 は server/claude-select.mjs の chunk 並列と同じ数に揃えた。
+ *
+ * 失敗の扱いは直列のときと変わらない（1つでも失敗したら工程ごと失敗する＝
+ * G-EDIT-TRIM2-FAILSTOP）。判定表を書く前に例外にするので、途中まで書けた表は残らない。
+ */
+export const JUDGE_POOL = Number(process.env.TRIM_JUDGE_POOL ?? 3);
 
 /**
  * かたまりの前後に「参考」として見せる語の数（答えてよい範囲には入れない）。
@@ -292,8 +327,9 @@ export async function trimJudgeStage({ workDir, runModel, chunkWords = CHUNK_WOR
   const allFillers = [];
   const allCutGaps = [];
   const dropped = [];
-  let chunkCount = 0;
 
+  // かたまりの材料を先に全部そろえる（問い合わせはこのあと同時に投げる）。
+  const jobs = [];
   for (let i = 0; i < words.length; i += size) {
     const chunk = words.slice(i, i + size);
     // かたまりの**末尾の語の後ろ**にある間も候補に含める（次の語が在るときだけ）。
@@ -309,15 +345,50 @@ export async function trimJudgeStage({ workDir, runModel, chunkWords = CHUNK_WOR
       before: words.slice(Math.max(0, i - CONTEXT_WORDS), i),
       after: words.slice(i + size, i + size + CONTEXT_WORDS),
     };
-    const nonce = nonceOf();
-    const prompt = buildTrimPrompt(chunk, i, gaps, nonce, context);
-    const answer = await runModel(prompt);
-    const r = parseTrimResponse(answer, { offset: i, length: chunk.length }, gaps.map((g) => g.index));
+    jobs.push({ offset: i, chunk, gaps, context });
+  }
+  const chunkCount = jobs.length;
+
+  // かたまりは互いに独立なので同時に投げる（理由は JUDGE_POOL の説明が正）。
+  // 1つでも失敗したら工程ごと失敗させる＝直列だったときと同じ FAILSTOP。失敗が出たら
+  // 残りのかたまりは新たに投げない（答えを捨てる工程のために待たせ続けない）。
+  const poolSize = Number.isFinite(JUDGE_POOL) && JUDGE_POOL > 0 ? Math.floor(JUDGE_POOL) : 1;
+  const answers = new Array(jobs.length);
+  let cursor = 0;
+  let aborted = false;
+  async function lane() {
+    while (cursor < jobs.length) {
+      if (aborted) return;
+      const n = cursor++;
+      const job = jobs[n];
+      const nonce = nonceOf();
+      const prompt = buildTrimPrompt(job.chunk, job.offset, job.gaps, nonce, job.context);
+      try {
+        const answer = await runModel(prompt);
+        answers[n] = parseTrimResponse(
+          answer,
+          { offset: job.offset, length: job.chunk.length },
+          job.gaps.map((g) => g.index),
+        );
+      } catch (e) {
+        aborted = true;
+        throw e;
+      }
+      // 何かたまり目かは並びの位置で出す（同時に投げるので、終わる順番は前後しうる）。
+      const r = answers[n];
+      log(`  [TRIM-JUDGE] ${n + 1}/${chunkCount}かたまり目: 言い淀み${r.fillers.length}件 / 詰める間${r.cutGaps.length}件`);
+    }
+  }
+  // Promise.all は最初の失敗でそのまま上へ投げる＝判定表を書く前に工程が終わる。
+  await Promise.all(Array.from({ length: Math.min(poolSize, jobs.length) }, lane));
+
+  // 集計はかたまりの並び順で行う（答えが返った順ではない）。同じ素材なら同じ並びの
+  // dropped が残り、後から読んで「どのかたまりの答えを捨てたか」が追える。
+  for (const r of answers) {
+    if (!r) continue;
     allFillers.push(...r.fillers);
     allCutGaps.push(...r.cutGaps);
     dropped.push(...r.dropped);
-    chunkCount += 1;
-    log(`  [TRIM-JUDGE] ${chunkCount}かたまり目: 言い淀み${r.fillers.length}件 / 詰める間${r.cutGaps.length}件`);
   }
 
   const result = {

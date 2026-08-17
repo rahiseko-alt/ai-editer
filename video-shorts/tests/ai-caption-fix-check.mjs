@@ -38,7 +38,7 @@ import {
   parseFixResponse,
 } from "../src/ai-caption-fix.mjs";
 import { MAX_WORD_LENGTH, applyEdits, readEdits, saveWordEdit } from "../src/caption-store.mjs";
-import { runClaudeJson } from "../src/claude-run.mjs";
+import { DEFAULT_CLAUDE_MODEL, runClaudeJson } from "../src/claude-run.mjs";
 import { runDigestEditor } from "../src/digest-editor.mjs";
 import { CONFIG_FILE as FAKE_CLAUDE_CONFIG_FILE } from "./helpers/fake-claude-main.mjs";
 
@@ -650,7 +650,7 @@ async function withFakeClaude(fake, fn) {
 await t("E: 共通口は終了コード非0のとき stderr 全文を Error.stderr で渡す（切り詰めた本文で分岐させない）", async () => {
   // 呼び出し側（digest-editor）は「--model が原因の失敗か」を stderr の中身で判定する。
   // message へ埋めた抜粋だけを渡すと、長い stderr の末尾に出る理由を見落として再試行しなくなる。
-  const long = `${"x".repeat(1200)}\nError: unknown model claude-opus-4-8\n`;
+  const long = `${"x".repeat(1200)}\nError: unknown model ${DEFAULT_CLAUDE_MODEL}\n`;
   const fake = installFakeClaude("gate", { kind: "fail", exit: 1, stderr: long });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vs-gate-cwd-"));
   await withFakeClaude(fake, () => assert.rejects(
@@ -807,7 +807,7 @@ await t("E: digest-editor は上位モデルを --model で pin する（共通�
   const calls = fake.calls();
   assert.ok(calls.length >= 1);
   for (const c of calls) {
-    assert.strictEqual(modelOf(c), "claude-opus-4-8", `--model が付いていない: ${c.argv.join(" ")}`);
+    assert.strictEqual(modelOf(c), DEFAULT_CLAUDE_MODEL, `--model が付いていない: ${c.argv.join(" ")}`);
     assert.ok(c.argv.includes("--tools") && c.argv[c.argv.indexOf("--tools") + 1] === "",
       "共通口の守り(--tools \"\")が消えている");
   }
@@ -820,18 +820,18 @@ await t("E: --model が原因の失敗のときだけ1度だけ既定モデル�
     kind: "digest-model-gate",
     modelArg: "--model",
     exit: 1,
-    stderr: `${"y".repeat(1200)}\nError: unknown model claude-opus-4-8\n`,
+    stderr: `${"y".repeat(1200)}\nError: unknown model ${DEFAULT_CLAUDE_MODEL}\n`,
   });
   const logs = [];
   const r = await withFakeClaude(fake, () => runDigestEditor(digestWork(), (m) => logs.push(m)));
   assert.strictEqual(r.segments.length, 1, "退避して完走していない");
   const models = fake.calls().map(modelOf);
   // 1回目=pin、2回目=既定へ退避。退避は呼び出しごとに1度だけで、次の呼び出しはまた pin から始まる。
-  assert.deepStrictEqual(models.slice(0, 2), ["claude-opus-4-8", null], `退避の順序が違う: ${models}`);
+  assert.deepStrictEqual(models.slice(0, 2), [DEFAULT_CLAUDE_MODEL, null], `退避の順序が違う: ${models}`);
   assert.strictEqual(logs.filter((l) => l.includes("再試行")).length >= 1, true, "退避したのに黙っている");
   assert.deepStrictEqual(
     logs.filter((l) => l.includes("再試行"))[0],
-    "[digest] --model claude-opus-4-8 失敗→CLI既定モデルで再試行",
+    `[digest] --model ${DEFAULT_CLAUDE_MODEL} 失敗→CLI既定モデルで再試行`,
   );
 });
 
