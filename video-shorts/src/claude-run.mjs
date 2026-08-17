@@ -21,6 +21,21 @@ import { buildSafeEnv, NO_TOOLS_ARGS } from "./claude-safety.mjs";
 export const DEFAULT_CLAUDE_TIMEOUT_MS = 300_000;
 
 /**
+ * サーバー側の一時的な混雑を示す文言。ここだけは待てば直る失敗なので再試行する。
+ *
+ * 【2026-08-17 マスターの実機で発生】ダイジェストの台本づくりが
+ * "API Error: 529 Overloaded. This is a server-side issue, usually temporary —
+ * try again in a moment." で落ち、動画作成全体が失敗した。529 はこちらの入力とは
+ * 無関係な Anthropic 側の混雑で、1回で諦めるべき失敗ではない。
+ * 全呼び出しがここ（runClaudeJson）を通るので、1箇所に置けば誤字修正・区間選定・
+ * 言い淀みの判断のどこで起きても同じように救われる。
+ */
+const OVERLOADED_RE = /(?:^|\s)529(?:\s|$)|overloaded/i;
+/** 529 を検知したときに待つ秒数と、待って再試行する最大回数。 */
+const OVERLOAD_RETRY_DELAY_MS = 10_000;
+const OVERLOAD_MAX_RETRIES = 2;
+
+/**
  * この製品が使うモデル。全工程をここで統一する（マスター指示 2026-08-17「全部Opus5で統一しろ」）。
  *
  * 【なぜ1箇所で持つか】これまでは、台本を作るダイジェストだけが自分で `--model` を指定し、
@@ -133,7 +148,23 @@ function parseEnvelopeLoosely(raw) {
  *   （src/digest-editor.mjs が「--model が原因の失敗か」を判定するのに使う。切り詰めると
  *    判定が message の切り詰め位置に依存してしまうので、message とは別に丸ごと渡す）。
  */
-export function runClaudeJson({
+export function runClaudeJson(opts) {
+  const onLog = opts.onLog ?? (() => {});
+  const attempt = (retriesLeft) =>
+    runClaudeJsonOnce(opts).catch((e) => {
+      // 終了コードが 0 でない失敗にだけ stderr/stdout が付く（打ち切り・spawn 失敗には付かない）。
+      const failureText = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
+      if (retriesLeft > 0 && OVERLOADED_RE.test(failureText)) {
+        onLog(`[claude] サーバー混雑(529)を検知→${OVERLOAD_RETRY_DELAY_MS / 1000}秒待って再試行（残り${retriesLeft}回）`);
+        return new Promise((resolve) => setTimeout(resolve, OVERLOAD_RETRY_DELAY_MS))
+          .then(() => attempt(retriesLeft - 1));
+      }
+      throw e;
+    });
+  return attempt(OVERLOAD_MAX_RETRIES);
+}
+
+function runClaudeJsonOnce({
   stdin,
   cwd,
   timeoutMs = DEFAULT_CLAUDE_TIMEOUT_MS,
