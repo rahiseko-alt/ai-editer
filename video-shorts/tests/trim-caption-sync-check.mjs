@@ -12,14 +12,27 @@
 // 失敗が記録済み）。RMSエンベロープで十分検出できる（ASR・MFCC/DTW 不要）。
 //
 // ── なぜ「表示終了+0.2秒後は読めない」条件を廃止したか（反証(9)の是正）───────────
-// 出荷既定のkaraokeスタイル（src/subtitle-styles.mjs: DEFAULT_SUBTITLE_STYLE="karaoke"）は、
-// 1語ごとに Dialogue イベントを出すが、**そのテキストは常に行全体**で、現在語だけ色を変える
-// だけの実装（src/srt-builder.mjs:104-122 karaokeEvents）。したがって「表示終了」後も次のイベントで
-// 同じ行がそのまま出続けるのは実装のバグではなく構造上の必然で、正しい実装でも4行中2行が
-// 不合格になっていた（実測済み）。加えて最後の行は常にクリップ終端で終わるため、+0.2秒後の
-// フレームがどのスタイルでも存在しない。よってこの条件は廃止し、受入事実を
-// 「字幕の表示開始が、その語が実際に発声される時刻と一致する」の1つに絞る
+// 出荷既定のスタイルは、1枚の字幕（語のまとまり）が話し終わるまで出っぱなしになる。
+// したがって「表示終了」後も同じ行がそのまま出続けるのは実装のバグではなく構造上の必然で、
+// 正しい実装でも4行中2行が不合格になっていた（実測済み）。加えて最後の行は常にクリップ終端で
+// 終わるため、+0.2秒後のフレームがどのスタイルでも存在しない。よってこの条件は廃止し、
+// 受入事実を「字幕の表示開始が、その語が実際に発声される時刻と一致する」の1つに絞る
 // （AGENTS.md「1葉＝1事実」。件数の一致は同じ結果の構成手段であり独立した受入事実ではない）。
+//
+// ── 2026-08-17: 字幕が行単位になったので、時刻の測り方を2本立てにした ────────────
+// マスター指示「1語ずつポンポン出すな」により、既定スタイルは1枚の字幕につき Dialogue を
+// 1つしか出さなくなった（旧実装は語の数だけ刻んでいた）。素材の4語はまとめて1枚に収まるので、
+// 既定の .ass からは「1枚目の表示開始」しか読めず、そのままでは測定点が4→1に減ってしまう。
+// 検査を薄くしないため、次の2つを両方測る（どちらも比較相手は**出力音声**のまま）。
+//   (1) 語ごとの時刻そのもの: buildAss の既存オプション maxChars=1 で「1語＝1枚」に強制し、
+//       4語すべての表示開始を発話開始と突き合わせる（従来と同じ4点。対照A/B/Cもこの経路で測る）。
+//       maxChars は前からある製品のオプションで、検査のために足した専用の抜け道ではない。
+//   (2) 出荷される既定（行単位）の時刻: 既定の .ass の各字幕の表示開始が、その行の最初の語の
+//       発話開始と一致すること（judgeLines）。1枚目は必ず最初の発話から始まる。
+// 細かいずれ（+0.10秒）の検出は (1) が担う。この素材では4語が1枚に収まるため (2) の測定点は
+// 1つしか無く、1点だけでは +0.10秒 が許容誤差(0.08秒)に埋もれる（実測: 1枚目の開始 0.000秒 に
+// 対し発話開始 0.03秒台なので差 0.06〜0.08秒）。(2) が測る1枚目の開始時刻は、(1) が音声と
+// 突き合わせている語の時刻そのものなので、(1) の4点で漏れなく押さえられる。
 //
 // ── 素材（凍結。他のTRIM葉と同じ計算・同じ数値を使う）────────────────────────
 // 音声は calibration.flac（そのまま。区間は加工しない）、映像はこの検査が合成する
@@ -179,6 +192,41 @@ function judge(assStarts, onsets) {
   return bad;
 }
 
+/**
+ * 出荷される既定（行単位の字幕）の合格条件。
+ *
+ * 1枚の字幕は複数の語をまとめて出すので、.ass から読めるのは「その行の最初の語の時刻」だけ。
+ * よって「字幕の表示開始の並びは、発話開始の並びの部分列である（順序どおり・許容誤差以内）」
+ * を条件にする。1枚目は必ず最初の発話から始まっていなければならない（先頭の語が欠けている、
+ * あるいは全体がずれている状態を、ここで落とす）。
+ */
+function judgeLines(assStarts, onsets) {
+  const bad = [];
+  if (assStarts.length === 0) {
+    bad.push("字幕イベントが1つも無い");
+    return bad;
+  }
+  if (assStarts.length > onsets.length) {
+    bad.push(`字幕イベント数 ${assStarts.length} が発話区間数 ${onsets.length} より多い`);
+    return bad;
+  }
+  let next = 0; // まだ対応づけていない発話区間の先頭
+  for (let i = 0; i < assStarts.length; i++) {
+    const j = onsets.findIndex((o, idx) => idx >= next && Math.abs(assStarts[i] - o) <= TOL_SEC);
+    if (j < 0) {
+      bad.push(`字幕${i + 1}枚目: 表示開始 ${assStarts[i].toFixed(3)}秒 と一致する発話開始が無い`
+        + `（許容 ${TOL_SEC}秒 / 発話開始=${onsets.map((o) => o.toFixed(3)).join(", ")}）`);
+      return bad;
+    }
+    if (i === 0 && j !== 0) {
+      bad.push(`1枚目の字幕が ${j + 1} 番目の発話から始まっている（最初の発話から出ていない）`);
+      return bad;
+    }
+    next = j + 1;
+  }
+  return bad;
+}
+
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "vs-capsync-"));
 
 try {
@@ -225,17 +273,24 @@ try {
   const canvas = computeCanvas("portrait", size.width, size.height);
   const startAt = snapStart(0, size.fps);
 
+  /** 出荷される既定の呼び方（行単位）で .ass を作る。 */
+  const assDefault = (wordsForAss) =>
+    buildAss(wordsForAss, null, plan.keptSeconds, { style: "karaoke", width: canvas.w, height: canvas.h });
+  /** 語ごとの時刻をそのまま読むための呼び方（既存オプション maxChars=1 で 1語＝1枚に強制）。 */
+  const assPerWord = (wordsForAss) =>
+    buildAss(wordsForAss, null, plan.keptSeconds,
+      { style: "karaoke", width: canvas.w, height: canvas.h, maxChars: 1 });
+
   async function renderWithWords(label, wordsForAss) {
     const assPath = path.join(work, `${label}.ass`);
-    const assText = buildAss(wordsForAss, null, plan.keptSeconds,
-      { style: "karaoke", width: canvas.w, height: canvas.h });
+    const assText = assDefault(wordsForAss);
     fs.writeFileSync(assPath, assText, "utf-8");
     const outPath = path.join(work, `${label}.mp4`);
     await renderClip({
       input: TA, start: startAt, end: TA_DUR, assPath, output: outPath,
       orientation: "portrait", srcW: size.width, srcH: size.height, keep: plan.keep,
     });
-    return { assText, outPath };
+    return { assText, perWordAssText: assPerWord(wordsForAss), outPath };
   }
 
   // ── 本番: 正しく写した字幕で焼く ─────────────────────────────────
@@ -246,10 +301,32 @@ try {
     assert.strictEqual(correctOnsets.length, assWords.length, `実=${JSON.stringify(correctOnsets)}`);
   });
 
-  const correctStarts = parseAssStarts(correct.assText);
+  const correctStarts = parseAssStarts(correct.perWordAssText);
   t(`正しい実装: 字幕の表示開始が、実際の発話開始と±${TOL_SEC}秒以内で一致する（4語すべて）`, () => {
     const bad = judge(correctStarts, correctOnsets);
     assert.strictEqual(bad.length, 0, bad.join(" / "));
+  });
+
+  // ── 出荷される既定（行単位）でも同じことを測る ──────────────────────────
+  // 上の4点は maxChars=1 で「1語＝1枚」に強制して測った値。実際に焼かれる .ass は語を
+  // まとめて1枚にするので、その1枚ごとの表示開始も発話開始と一致していなければならない。
+  t(`出荷される既定（行単位）: 字幕1枚ごとの表示開始が、その行の最初の語の発話開始と`
+    + `±${TOL_SEC}秒以内で一致する`, () => {
+    const starts = parseAssStarts(correct.assText);
+    console.log(`  [実測] 既定の字幕イベント数=${starts.length} / 発話区間数=${correctOnsets.length}`
+      + ` / 表示開始=${starts.map((x) => x.toFixed(3)).join(", ")}`);
+    const bad = judgeLines(starts, correctOnsets);
+    assert.strictEqual(bad.length, 0, bad.join(" / "));
+  });
+
+  // 行単位の字幕が「1語ずつ」に戻っていないことを、件数そのもので押さえる
+  // （2026-08-17 マスター指示。語の数だけ Dialogue を出す実装へ戻ると、ここで落ちる）。
+  t("出荷される既定: 4語が1枚にまとまり、語の数だけイベントを出していない", () => {
+    const n = parseAssStarts(correct.assText).length;
+    const perWord = parseAssStarts(correct.perWordAssText).length;
+    console.log(`  [実測] 既定=${n}イベント / 1語＝1枚に強制すると=${perWord}イベント`);
+    assert.strictEqual(perWord, 4, `1語＝1枚の強制が効いていない（実=${perWord}）`);
+    assert.ok(n < perWord, `語の数だけイベントを出している（既定=${n} / 語数=${perWord}）`);
   });
 
   // ── 対照A（軌道修正C-7反証(8)の再現）: 字幕を一律+0.5秒ずらした偽物は不合格になる ──
@@ -257,21 +334,29 @@ try {
   // 壊れている状態を、実際にレンダリングして確かめる（テスト専用の製品オプションは足さない）。
   const shifted = assWords.map((w) => ({ ...w, start: w.start + 0.5, end: w.end + 0.5 }));
   const shiftedRender = await renderWithWords("shift05", shifted);
-  const shiftedStarts = parseAssStarts(shiftedRender.assText);
+  const shiftedStarts = parseAssStarts(shiftedRender.perWordAssText);
   t("対照A: 字幕を一律+0.5秒ずらした偽物は、4語すべてで許容誤差を超えて検出される"
     + "（旧verifyはこの偽物を4行中4行合格させていた＝恒真式が解消したことの証明）", () => {
     const bad = judge(shiftedStarts, correctOnsets);
     assert.strictEqual(bad.length, 4, `検出できたのは${bad.length}/4件: ${bad.join(" / ")}`);
   });
 
+  t("対照A': 行単位の判定でも、+0.5秒ずらした偽物を検出する", () => {
+    const bad = judgeLines(parseAssStarts(shiftedRender.assText), correctOnsets);
+    assert.ok(bad.length >= 1, "行単位の判定が +0.5秒 のずれを見逃した");
+  });
+
   // ── 対照B: 語が1つ脱落した字幕は、件数不一致として検出される ────────────────
   const dropped = assWords.slice(1); // 1語目「こんにちは」が脱落した想定
   t("対照B: 語が1つ脱落した字幕は、発話区間数との食い違いとして検出される", () => {
-    const bad = judge(parseAssStarts(
-      buildAss(dropped, null, plan.keptSeconds, { style: "karaoke", width: canvas.w, height: canvas.h })
-    ), correctOnsets);
+    const bad = judge(parseAssStarts(assPerWord(dropped)), correctOnsets);
     assert.strictEqual(bad.length, 1, `実=${JSON.stringify(bad)}`);
     assert.ok(/食い違う/.test(bad[0]), bad[0]);
+  });
+
+  t("対照B': 行単位の判定でも、先頭の語が脱落した字幕を検出する", () => {
+    const bad = judgeLines(parseAssStarts(assDefault(dropped)), correctOnsets);
+    assert.ok(bad.length >= 1, "行単位の判定が、先頭の語の脱落を見逃した");
   });
 
   // ── 対照C（2026-08-12 basis-reviewerの指摘で追加）: 字幕が一律+0.10秒ずれる偽物も検出される ──
@@ -282,9 +367,10 @@ try {
   const bias010Render = await renderWithWords("bias010", bias010);
   t("対照C: 字幕を一律+0.10秒ずらした偽物も、許容誤差を超えて検出される"
     + "（許容誤差を緩く取りすぎて偽の緑を作っていないことの証明）", () => {
-    const bad = judge(parseAssStarts(bias010Render.assText), correctOnsets);
+    const bad = judge(parseAssStarts(bias010Render.perWordAssText), correctOnsets);
     assert.ok(bad.length >= 1, `1件も検出できなかった（許容誤差が緩すぎる）`);
   });
+
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

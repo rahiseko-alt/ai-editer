@@ -72,16 +72,23 @@
   font-size: 15px; line-height: 2.1; color: var(--ink);
   overflow-wrap: anywhere;
 }
-/* 語＝実際に音が切れる単位。ここを選んで消す。AIが使うと決めた所＝本文と同じ濃さ（白い方）。 */
+/* 語＝実際に音が切れる単位。すべての語が押せる（落とす／拾う）。
+   使う語＝本文と同じ濃さ（白い方）。使わない語＝濃いグレー（.is-off）。この2状態が基本。 */
 .script-w { cursor: pointer; border-radius: 3px; }
 .script-w:hover { background: var(--surface-2); }
-/* AIが使わないと決めた所。読める濃さのグレーで全文の中に残す（消えていないことが分かる）。
-   ここを押して使う側へ戻す操作は無いので、押せる見た目にしない。 */
-.script-off { color: var(--muted); cursor: default; }
-/* 消した所は消滅させず、取り消し線＋薄い表示で残す（何を消したか見えること）。
-   AIが使わない所（取り消し線なし）と見分けが付くので、押せば戻せることが分かる。 */
-.script-w.is-cut { text-decoration: line-through; color: var(--muted); opacity: .5; }
-.script-w.is-cut:hover { opacity: .75; }
+/* いま使わない所。読める濃さのグレーで全文の中に残す（消えていないことが分かる）。 */
+.script-w.is-off { color: var(--muted); }
+/* AIが使うと決めていたのに落とした所は、取り消し線＋薄い表示にする（何を落としたか見えること）。
+   AIが元から使わない所（取り消し線なし）と見分けが付くので、押せば戻せることが分かる。 */
+.script-w.is-ai.is-off { text-decoration: line-through; opacity: .5; }
+.script-w.is-ai.is-off:hover { opacity: .75; }
+/* AIは選ばなかったが自分で拾った所。使う＝白のままで、点線の下線だけを足して
+   「ここは自分で足した」と見た目で分かるようにする（文言は足さない）。 */
+.script-w:not(.is-ai):not(.is-off) {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
 /* 逆照合できず語に割れなかった区間。書き出しには必ず入るので本文と同じ濃さで出し、
    選べないことは「選択の色が乗らない」ことで示す（薄くすると消したように見えてしまう）。 */
 .script-raw { color: var(--ink); cursor: default; user-select: none; -webkit-user-select: none; }

@@ -215,7 +215,7 @@ try {
     const buf = fs.readFileSync(sample);
     const params = {
       sub: "none", cut: "topic", size: "9:16", name: "sample.mp4",
-      subStyle: "pop", captionFont: "mincho", captionFill: "#ff0000",
+      subStyle: "bold", captionFont: "mincho", captionFill: "#ff0000",
       captionOutlineColor: "#00ff00", captionInner: "#ffff00", captionBand: "#000000",
       durationMin: "2", exportPreset: "light",
     };
@@ -257,8 +257,8 @@ try {
       `ジョブが完走していない: ${JSON.stringify(data)}`);
 
     // 1本目の候補(セグメント "アルファブラボー" 0.0-2.0s)の0.5秒目を焼き出す。
-    // karaokeモードは行全体が区間内ずっと表示され、現在の単語だけ黄色・他は既定の白のまま
-    // (src/srt-builder.mjsのkaraokeEvents)なので、区間内のどの時点でも白画素が写る。
+    // 字幕は行単位(1枚の字幕＝1イベント)で、その行が話し終わるまで出っぱなしになる
+    // (src/srt-builder.mjs の lineEvents)ので、区間内のどの時点でも白画素が写る。
     const framePng = extractFramePng(data.candidates[0].path, 0.5);
     const buf2 = readPixelsRgb(framePng);
     const colors = dominantColors(buf2, [0, 0, 0], 16, 16);
@@ -347,7 +347,8 @@ try {
       buffer: fs.readFileSync(sample),
     });
     await page.click('[data-group="sub"] .chip[data-val="on"]');
-    await page.click('[data-group="subStyle"] .chip[data-val="pop"]');
+    // 2026-08-17: 既定以外の値として使っていた "pop"（1語ずつポップ）は削除されたので "bold" を選ぶ。
+    await page.click('[data-group="subStyle"] .chip[data-val="bold"]');
     await page.selectOption('[data-group="captionFont"]', "mincho");
     await page.fill("#caption-fill", "#ff0000");
     await page.dispatchEvent("#caption-fill", "input");
@@ -357,7 +358,7 @@ try {
 
     const before = await readSelections(page);
     assert.deepStrictEqual(before, {
-      subStyle: "pop", captionFont: "mincho", captionFill: "#ff0000",
+      subStyle: "bold", captionFont: "mincho", captionFill: "#ff0000",
       durationMin: "2", exportPreset: "light",
     }, `選択直後の値が期待と違う: ${JSON.stringify(before)}`);
 

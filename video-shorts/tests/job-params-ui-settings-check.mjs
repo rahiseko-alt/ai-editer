@@ -44,10 +44,19 @@ const UI_SETTINGS_KEYS = [
 
 // ── (1) 正当な値は、対応するCLI側パーサでも実際に受理される ────────────────────
 
-t("subStyle=pop はそのまま通り、getStyle()が実際に受理する", () => {
-  const p = parseJobParams(new URLSearchParams({ subStyle: "pop" }));
-  assert.strictEqual(p.subStyle, "pop");
+t("subStyle=bold はそのまま通り、getStyle()が実際に受理する", () => {
+  const p = parseJobParams(new URLSearchParams({ subStyle: "bold" }));
+  assert.strictEqual(p.subStyle, "bold");
   assert.ok(getStyle(p.subStyle), "getStyle(subStyle) が null ではない");
+});
+
+// 2026-08-17 マスター指示「1語ずつポンポン出すな…こんな機能削除しろ」で消した "pop"。
+// 画面に古い選択肢が残っていたり、ブックマークされた古いURLで送られてきても、
+// 存在しないスタイルとして既定へ丸める（ジョブを失敗させない）。
+t("削除した subStyle=pop は、存在しないスタイルとして既定へ丸まる", () => {
+  assert.strictEqual(getStyle("pop"), null, "pop がまだ登録表に残っている");
+  const p = parseJobParams(new URLSearchParams({ subStyle: "pop" }));
+  assert.strictEqual(p.subStyle, DEFAULTS.subStyle);
 });
 
 t("captionFont=mincho はそのまま通り、getFont()が実際に受理する", () => {

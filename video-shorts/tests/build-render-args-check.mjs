@@ -66,7 +66,7 @@ t("退行検知: opts.breath が無ければ --breath は付かない", () => {
 
 // ── 新設定8件: それぞれ渡したときに対応するフラグが実在すること ──
 const NEW_FLAG_CASES = [
-  ["subStyle", "--sub-style", "pop"],
+  ["subStyle", "--sub-style", "bold"],
   ["captionFont", "--caption-font", "mincho"],
   ["captionFill", "--caption-fill", "#FF0000"],
   ["captionOutlineColor", "--caption-outline-color", "#000000"],

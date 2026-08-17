@@ -3,10 +3,13 @@
 // 将来の Web UI の「字幕スタイル」ドロップダウンも、この登録表をそのまま読む（単一正本）。
 //
 // 色は ASS 形式 &HAABBGGRR（例: 白=&H00FFFFFF / 黄=&H0000FFFF）。
-// mode が描画方式を決める:
-//   "karaoke" 行は出っぱなし＋現在の単語だけ highlight 色（Reels/TikTok 定番）
-//   "pop"     1単語だけ画面中央に大きく、出ては消える（勢い重視）
-//   "line"    行単位でまとめて表示（現状互換・安定）
+// mode が描画方式を決める。現在の値は "line"（行単位でまとめて表示）だけである:
+//   "line"    語のまとまり（1枚の字幕）ごとに1イベント。行はそのまま出続ける
+//
+// 2026-08-17 マスター指示「1語ずつポンポン出すな！と指示したぞ。なぜいう事を聞かない。
+// こんな機能削除しろ」により、1語ずつ出す描画方式（"pop" プリセット＝1単語だけ画面中央に
+// 大きく出しては消す／"karaoke" mode＝語ごとに Dialogue を出して現在語だけ色を変える）を
+// 両方とも削除した。語が1つずつ切り替わる見え方を、選択肢としても実装としても残さない。
 //
 // 2026-08-14 追加: 書体(font)・文字色(fill)・外側縁取り色(outlineColor)・内側縁取り
 // (innerOutline)・背景帯(box) を、上のプリセット(見た目の骨格=mode/fontSize/marginV等)とは
@@ -143,15 +146,13 @@ export const SUBTITLE_STYLES = {
   karaoke: {
     label: "標準",
     description: "白1色。行は出っぱなしで、話の進みに合わせて切り替わる",
-    mode: "karaoke",
+    // 2026-08-17: 旧 mode "karaoke"（語ごとに Dialogue を出す）を廃止し "line" に統一した。
+    // 語ごとの色替えは 2026-08-16 の指示で既に無くなっており、出していた Dialogue は
+    // どれも同じ行の文面（実測: 150語で 150 イベント・文面は 18 種類）だったため、
+    // 見た目を変えずに「1枚の字幕＝1イベント」へ畳める。
+    mode: "line",
     fontSize: 84,
     base: "&H00FFFFFF", // 白
-    // 2026-08-16 マスター指示「そもそも話に合わせて色を変えなくて良い」により、
-    // 読んでいる語だけ黄色にする表示をやめた。highlight を base と同じにすると
-    // srt-builder 側が色の切り替えタグを一切書かない（G-CAP-FIT-COLOR）。
-    // 日本語の文字起こしは文節でまとまって返るため、1語ずつではなく文節が丸ごと
-    // 黄色くなり、二色に割れた塊に見えていた。
-    highlight: "&H00FFFFFF",
     // outline はここでは決めない。resolveCaptionStyle() が「書体ごとに実測した比 ×
     // fontSize」で上書きする（2026-08-16 / G-CAP-FIT-OUTLINE）。2026-08-14 に太くした
     // 値(14=16.7%)は、隣の文字の黒とくっついて字が黒い塊に埋もれる太さだった。
@@ -162,25 +163,12 @@ export const SUBTITLE_STYLES = {
     // 下からの余白を 360→420 へ上げる（下端に寄りすぎないようにする）。
     marginV: 420, // 画面下からの余白（固定値。区間の行数が変わってもこの値は動かない）
   },
-  pop: {
-    label: "1語ずつポップ",
-    description: "1単語だけ画面中央に大きく、出ては消える（勢い重視）",
-    mode: "pop",
-    fontSize: 120,
-    base: "&H00FFFFFF",
-    highlight: "&H00FFFFFF", // 話に合わせて色は変えない（2026-08-16 マスター指示）
-    outline: 16,
-    outlineColor: "&H00000000",
-    shadow: 9,
-    marginV: 0, // 中央表示
-  },
   bold: {
     label: "太字ライン",
     description: "行単位の白・太字・黒縁（最小変更・安定）",
     mode: "line",
     fontSize: 88,
     base: "&H00FFFFFF",
-    highlight: "&H00FFFFFF", // 話に合わせて色は変えない（2026-08-16 マスター指示）
     outline: 13,
     outlineColor: "&H00000000",
     shadow: 7,
@@ -282,7 +270,7 @@ export function hexToAss(hex) {
 }
 
 /**
- * ベースのプリセット(karaoke/pop/bold＝mode・fontSize・marginV等の骨格)に、
+ * ベースのプリセット(karaoke/bold＝mode・fontSize・marginV等の骨格)に、
  * 書体・文字色・縁取り色・内側縁取り・背景帯の「上乗せカスタマイズ」を合成する。
  * overrides の各キーは省略可（省略した項目はプリセットの既定のまま）。
  * @param {string} styleKey SUBTITLE_STYLES のキー
@@ -360,10 +348,6 @@ export function resolveCaptionStyle(styleKey, overrides = {}) {
       );
     }
     style.marginVRatio = p / 100;
-    // 位置を明示したときは必ず下端基準(Alignment=2)にする。pop プリセットの既定 Alignment=5
-    // (画面中央)は ASS の仕様上 MarginV を無視するため、そのままだと指定した位置が効かない
-    // ＝「選べるのに効かない設定」になる。
-    style.align = 2;
   }
 
   return style;

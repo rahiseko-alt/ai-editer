@@ -24,8 +24,9 @@ async function t(name, fn) {
 // 8設定それぞれについて、既定以外の値をどう選ぶか(操作)と、送信クエリに現れるべきkey=valueの対。
 const CASES = [
   {
-    key: "subStyle", expectPair: "subStyle=pop",
-    act: (page) => page.click('[data-group="subStyle"] .chip[data-val="pop"]'),
+    // 2026-08-17: 既定以外の値として使っていた "pop"（1語ずつポップ）は削除されたので "bold" を選ぶ。
+    key: "subStyle", expectPair: "subStyle=bold",
+    act: (page) => page.click('[data-group="subStyle"] .chip[data-val="bold"]'),
   },
   {
     key: "captionFont", expectPair: "captionFont=mincho",

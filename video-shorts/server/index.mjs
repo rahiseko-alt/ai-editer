@@ -122,8 +122,8 @@ setInterval(sweepExpiredJobsNow, 60 * 60 * 1000).unref();
 /**
  * 字幕スタイルごとの「既定の縦位置」を、画面のつまみの初期位置に使える形（％）で返す。
  * 単位は画面の高さに対する％で、0＝一番下（ASS の MarginV と同じ意味）。
- * pop プリセットだけは既定が画面中央（Alignment=5・MarginV を見ない）なので null を返し、
- * 画面側は「中央」として描く。
+ * （2026-08-17 に「1語ずつポップ」を削除したので、中央表示の例外は無くなった。
+ *   どのスタイルも下からの余白で位置が決まる。）
  *
  * 正は src/subtitle-styles.mjs。画面へ数値を書き写すとプリセットを直したとき片方だけ
  * 古くなるので、ここで計算して配る。
@@ -133,7 +133,7 @@ function captionPosDefaults() {
   const refH = REFERENCE_CANVAS.portrait.height;
   const out = {};
   for (const [key, st] of Object.entries(SUBTITLE_STYLES)) {
-    out[key] = st.mode === "pop" ? null : Math.round((st.marginV / refH) * 1000) / 10;
+    out[key] = Math.round((st.marginV / refH) * 1000) / 10;
   }
   return out;
 }
