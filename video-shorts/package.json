@@ -5,7 +5,8 @@
     "node": ">=20.0.0 <24.0.0"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "serve": "node server/index.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

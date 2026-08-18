@@ -1,0 +1,105 @@
+<!--
+  AI-Editer 本番UI（バックエンド未実装。API契約は ui/app.js 冒頭コメントを正とする）。
+  デモ版（../demo-ui/index.html）とは別物：ここでは本物の fetch のみを行い、
+  サーバーが無い間はエラーを正直に表示する（タイマーでの進捗偽装はしない）。
+-->
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI-Editer</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="offlineBanner" class="banner" role="status" hidden>
+  <span id="offlineBannerText">サーバーに接続できません。バックエンドが起動しているか確認してください。</span>
+  <button type="button" class="btn ghost small" id="retryHealthBtn">再接続を試す</button>
+</div>
+
+<div class="app">
+  <header>
+    <div class="brand"><span class="mark" aria-hidden="true">AE</span>AI-Editer</div>
+    <div class="header-right">
+      <span id="serverStatus" class="server-status" role="status" aria-live="polite">確認中…</span>
+      <button class="btn ghost" id="fullscreenBtn" type="button">全画面</button>
+      <button class="btn" id="exportBtn" type="button" disabled>ダウンロード</button>
+    </div>
+  </header>
+
+  <aside class="left" aria-labelledby="materialsHeading">
+    <h2 id="materialsHeading" class="section-title">素材</h2>
+    <button type="button" class="drop" id="dropZone" aria-describedby="dropZoneHint">
+      動画をドラッグ&amp;ドロップ<br />またはクリックして選択
+    </button>
+    <p id="dropZoneHint" class="sr-only">対応形式は動画ファイルです。選択するとまず一覧に追加され、サーバーへの送信は下部の「実行」を押した時に行われます。</p>
+    <input type="file" id="fileInput" accept="video/*" multiple hidden />
+    <ul class="clip-list" id="clipList" aria-label="追加した素材の一覧"></ul>
+  </aside>
+
+  <main class="center">
+    <h2 class="sr-only">プレビュー</h2>
+    <div class="stage v-landscape" id="stage">
+      <p class="empty" id="stageEmpty"><b>素材が選択されていません</b>左の枠から動画を追加してください</p>
+      <video id="player" playsinline controls style="display:none;"></video>
+    </div>
+
+    <div class="output-tabs" id="outputTabs" role="group" aria-label="出力候補の切り替え" hidden></div>
+
+    <form class="instruction-bar" id="instructionForm">
+      <label for="instructionInput" class="sr-only">編集の指示</label>
+      <textarea id="instructionInput" placeholder="指示を入力（例：1分半のダイジェストで／NGと雑談は落として）" rows="2" autocomplete="off"></textarea>
+      <button class="btn primary" id="runBtn" type="submit">実行</button>
+    </form>
+    <p id="runHint" class="hint" role="status" aria-live="polite"></p>
+  </main>
+
+  <aside class="right" aria-labelledby="settingsHeading">
+    <h2 id="settingsHeading" class="section-title">設定</h2>
+    <div class="field">
+      <span class="field-label" id="aspectLabel">縦横比</span>
+      <div class="seg-toggle" role="group" aria-labelledby="aspectLabel">
+        <button type="button" data-aspect="landscape" aria-pressed="true">横（16:9）</button>
+        <button type="button" data-aspect="portrait" aria-pressed="false">縦（9:16）</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="switch-row">
+        <label for="captionSwitch" id="captionSwitchLabel">字幕を付ける</label>
+        <button type="button" class="switch on" id="captionSwitch" role="switch" aria-checked="true" aria-labelledby="captionSwitchLabel"></button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label" id="durationLabel">目標の尺</span>
+      <div class="duration-row" role="group" aria-labelledby="durationLabel">
+        <input type="number" id="durationMinutes" min="0" max="60" step="1" value="1" aria-label="目標の尺（分）" />
+        <span aria-hidden="true">分</span>
+        <input type="number" id="durationSeconds" min="0" max="59" step="1" value="30" aria-label="目標の尺（秒）" />
+        <span aria-hidden="true">秒</span>
+      </div>
+      <div class="range-val" id="durationVal">1分30秒</div>
+    </div>
+
+  </aside>
+</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="stageName" hidden>
+  <div class="progress-card">
+    <div class="spinner" id="overlaySpinner" aria-hidden="true"></div>
+    <div class="stage-name" id="stageName" role="status" aria-live="polite">処理中</div>
+    <div class="stage-sub" id="stageSub" role="status" aria-live="polite"></div>
+    <div class="pbar"><div id="pbarFill"></div></div>
+    <button type="button" class="btn ghost" id="cancelJobBtn">中止</button>
+    <div class="overlay-actions" id="overlayActions" hidden>
+      <button type="button" class="btn" id="overlayCloseBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="toastText"></span></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,278 @@
+/* AI-Editer 本番UI スタイル。配色・トーンは demo-ui/index.html と揃える（同一プロダクトの見た目統一）。 */
+:root{
+  --bg:#0b0d12;
+  --panel:#12151c;
+  --panel-2:#171b24;
+  --line:#242a36;
+  --text:#e7eaf0;
+  --text-dim:#8b93a3;
+  --accent:#4f7cff;
+  --accent-2:#7c5cff;
+  --good:#39c98a;
+  --cut:#3a4152;
+  --warn:#e3b341;
+  --danger:#e35d5d;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Hiragino Sans","Noto Sans JP",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* author の display 指定が UA の [hidden]{display:none} より詳細度で勝ってしまうため明示する
+   （.output-tabs/.overlay 等、hidden 属性で表示切替する要素すべてに効かせる）。 */
+[hidden]{display:none !important;}
+
+.banner{
+  display:flex;align-items:center;justify-content:center;gap:14px;
+  background:#3a1f1f;border-bottom:1px solid var(--danger);color:#ffd9d9;
+  padding:8px 16px;font-size:13px;text-align:center;
+}
+.banner .small{padding:4px 10px;font-size:12px;}
+
+/* マスター指示(2026-08-18)「UIは2カラムにしろ」: 左カラム(幅220pxは変えない)を上下に分割し、
+   上=A(素材)・下=C(設定)を積む。中央だったBは右側1カラムへ統合し、A・Cの高さぶんを縦に使う。 */
+.app{
+  display:grid;
+  grid-template-columns:220px 1fr;
+  grid-template-rows:56px 1fr 1fr;
+  height:100vh;
+}
+header{
+  grid-column:1/3;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 20px;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#12151c,#0f1218);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:.3px;}
+.brand .mark{
+  width:24px;height:24px;border-radius:7px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:#fff;
+}
+.header-right{display:flex;align-items:center;gap:10px;}
+.server-status{font-size:12px;color:var(--text-dim);}
+.server-status.online{color:var(--good);}
+.server-status.offline{color:var(--danger);}
+
+.btn{
+  appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+  padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:.15s;
+}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  border:none;font-weight:600;
+}
+.btn.primary:hover{filter:brightness(1.08);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn.ghost{background:transparent;}
+
+aside.left{
+  grid-column:1;grid-row:2;
+  border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  padding:16px 12px;
+  overflow-y:auto;
+  background:var(--panel);
+}
+.section-title{
+  font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;
+  margin:4px 6px 10px;font-weight:600;
+}
+.drop{
+  display:block;width:100%;
+  border:1.5px dashed var(--line);
+  border-radius:10px;
+  padding:18px 10px;
+  text-align:center;
+  font-size:12.5px;
+  color:var(--text-dim);
+  background:transparent;
+  cursor:pointer;
+  transition:.15s;
+  font-family:inherit;
+}
+.drop.dragover{border-color:var(--accent);color:var(--text);background:rgba(79,124,255,.06);}
+.clip-list{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;}
+.clip-card{
+  display:flex;gap:8px;align-items:center;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:6px;
+  cursor:pointer;width:100%;text-align:left;color:var(--text);font-family:inherit;font-size:inherit;
+}
+.clip-card.active{border-color:var(--accent);}
+.clip-card canvas{width:52px;height:32px;border-radius:5px;background:#000;flex:none;}
+.clip-meta{overflow:hidden;flex:1;}
+.clip-meta .name{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.clip-meta .dur{font-size:11px;color:var(--text-dim);}
+
+main.center{
+  grid-column:2;grid-row:2/4;
+  display:flex;flex-direction:column;
+  padding:18px 22px;
+  overflow:hidden;
+}
+.stage{
+  flex:1;
+  display:flex;align-items:center;justify-content:center;
+  background:#000;
+  border-radius:12px;
+  overflow:hidden;
+  position:relative;
+  min-height:0;
+}
+/* マスター指示(2026-08-18)「デフォルトは縦も横も全画面」: 枠(.stage)自体は常に使える領域
+   いっぱいに広げる。動画の縦横比は video 側の object-fit:contain だけで保つ（枠の形は変えない）。 */
+.stage.v-portrait,.stage.v-landscape{width:100%;height:100%;}
+.stage video{width:100%;height:100%;object-fit:contain;background:#000;}
+.stage .empty{color:var(--text-dim);font-size:13px;text-align:center;padding:20px;margin:0;}
+.stage .empty b{color:var(--text);display:block;font-size:14px;margin-bottom:6px;}
+
+.output-tabs{display:flex;gap:6px;margin-top:14px;}
+.output-tabs button{
+  background:var(--panel-2);border:1px solid var(--line);color:var(--text-dim);
+  padding:4px 10px;border-radius:6px;font-size:11.5px;cursor:pointer;
+}
+.output-tabs button[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+.instruction-bar{
+  margin-top:14px;
+  display:flex;gap:10px;align-items:flex-end;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px;
+}
+.instruction-bar textarea{
+  flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+  color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:inherit;
+  resize:vertical;min-height:38px;max-height:160px;line-height:1.4;
+}
+.instruction-bar textarea:focus{border-color:var(--accent);}
+.hint{font-size:12px;color:var(--danger);margin:8px 2px 0;min-height:1.2em;}
+
+aside.right{
+  grid-column:1;grid-row:3;
+  border-right:1px solid var(--line);
+  padding:16px 14px;
+  overflow-y:auto;
+  background:var(--panel);
+}
+.field{margin-bottom:16px;}
+.field label,.field-label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px;}
+.seg-toggle{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.seg-toggle button{
+  flex:1;background:var(--panel-2);border:none;color:var(--text-dim);padding:8px 0;font-size:12.5px;cursor:pointer;
+  font-family:inherit;
+}
+.seg-toggle button[aria-pressed="true"]{background:var(--accent);color:#fff;}
+.switch-row{display:flex;align-items:center;justify-content:space-between;}
+.switch-row label{margin:0;color:var(--text);font-size:13px;}
+.switch{
+  width:38px;height:22px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line);
+  position:relative;cursor:pointer;flex:none;padding:0;
+}
+.switch.on{background:var(--accent);border-color:var(--accent);}
+.switch::after{
+  content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;transition:.15s;
+}
+.switch.on::after{left:18px;}
+.duration-row{display:flex;align-items:center;gap:6px;}
+.duration-row span{font-size:12px;color:var(--text-dim);}
+.duration-row input[type="number"]{
+  width:56px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
+  color:var(--text);padding:4px 6px;font-size:12px;font-family:inherit;
+}
+.range-val{font-size:12px;color:var(--text-dim);text-align:right;}
+
+.overlay{
+  position:fixed;inset:0;background:rgba(8,9,13,.72);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;z-index:50;
+}
+.progress-card{
+  width:360px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;
+  text-align:center;
+}
+.spinner{
+  width:36px;height:36px;border-radius:50%;
+  border:3px solid var(--line);border-top-color:var(--accent);
+  margin:0 auto 16px;animation:spin 0.9s linear infinite;
+}
+.progress-card.error .spinner{border-top-color:var(--danger);animation:none;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.stage-name{font-size:14px;font-weight:600;margin-bottom:4px;}
+.stage-sub{font-size:12px;color:var(--text-dim);margin-bottom:14px;}
+/* 進捗率はサーバーから配信されない（完了/失敗の一発通知のみ）ため、実数値の代わりに
+   不確定（indeterminate）表示にする。偽の割合を見せないための意図的な選択。 */
+.pbar{height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden;position:relative;}
+.pbar > div{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+.pbar.indeterminate > div{
+  width:40%;
+  animation:pbar-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes pbar-indeterminate{
+  0%{transform:translateX(-100%);}
+  100%{transform:translateX(250%);}
+}
+#cancelJobBtn{margin-top:16px;}
+.overlay-actions{margin-top:16px;}
+.overlay-actions[hidden]{display:none;}
+
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--panel-2);border:1px solid var(--good);color:var(--text);
+  padding:12px 20px;border-radius:10px;font-size:13px;
+  opacity:0;transition:.25s;display:flex;align-items:center;gap:8px;z-index:60;
+  pointer-events:none;
+}
+.toast.error{border-color:var(--danger);}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast .dot{width:8px;height:8px;border-radius:50%;background:var(--good);}
+.toast.error .dot{background:var(--danger);}
+
+/* --- レスポンシブ（mobile-first の逆順で崩す：デスクトップ3ペインを基準に、狭い画面で縦積みへ） ---
+   マスター指示(2026-08-18)「画面表示が狭すぎる」の実測結果: 左右パネル220px+280pxが固定幅のため、
+   901〜1150px幅（ノートPCでよくある実効解像度）でプレビューが画面の4割弱まで圧縮される「崖」があった。
+   901px時点でプレビュー357px→900px時点で857pxと縦積み切替直後に急改善することも実測済みなので、
+   3カラムを維持しようとする範囲を狭め、この帯域を縦積みへ倒す。 */
+@media (max-width:1150px){
+  .app{
+    display:flex;flex-direction:column;
+    height:auto;min-height:100vh;
+  }
+  header{padding:0 14px;}
+  aside.left,aside.right{
+    border:none;border-bottom:1px solid var(--line);
+    max-height:none;overflow:visible;
+  }
+  main.center{padding:14px;}
+  /* main.center が height:auto の縦積みレイアウトでは flex:1 が効かないため、
+     縦横どちらの向きでも明示的な高さを与える（全画面方針を縦積みレイアウトでも維持する）。 */
+  .stage{min-height:220px;height:60vh;}
+}
+
+@media (max-width:600px){
+  .header-right{gap:6px;}
+  .btn{padding:6px 10px;font-size:12px;}
+  .server-status{display:none;}
+  .instruction-bar{flex-direction:column;align-items:stretch;}
+  .instruction-bar .btn{width:100%;}
+  .progress-card{width:calc(100vw - 40px);}
+  .duration-row{flex-wrap:wrap;}
+}

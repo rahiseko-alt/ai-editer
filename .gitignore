@@ -46,3 +46,6 @@ __pycache__/
 
 # 診断ツールの出力（実行のたびに上書きされる作業ファイル）
 video-shorts/diagnose-claude-log.txt
+
+# UIの送信ボタン⇄私（Claudeセッション）の同期用キュー・アップロード・出力（会話内容・動画本体を含むため非コミット）
+/.runtime/
