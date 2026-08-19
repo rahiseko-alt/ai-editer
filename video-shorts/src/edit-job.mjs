@@ -462,34 +462,9 @@ function snapRanges(ranges, silences, phraseUnits) {
   });
 }
 
-// ---------- 5. 切り出し・結合 ----------
-function cutAndConcat(videoPath, ranges, outPath) {
-  console.log("[6/8] 切り出し・結合中…");
-  const filters = [];
-  const labels = [];
-  ranges.forEach((r, i) => {
-    const dur = r.end - r.start;
-    const fadeOutSt = Math.max(0, dur - 0.02);
-    filters.push(`[0:v]trim=${r.start}:${r.end},setpts=PTS-STARTPTS[v${i}]`);
-    filters.push(
-      `[0:a]atrim=${r.start}:${r.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02,afade=t=out:st=${fadeOutSt}:d=0.02[a${i}]`
-    );
-    labels.push(`[v${i}][a${i}]`);
-  });
-  filters.push(`${labels.join("")}concat=n=${ranges.length}:v=1:a=1[outv][outa]`);
-  runSync("ffmpeg", [
-    "-y",
-    "-i", videoPath,
-    "-filter_complex", filters.join(";\n"),
-    "-map", "[outv]", "-map", "[outa]",
-    "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-    "-c:a", "aac", "-b:a", "192k",
-    outPath,
-  ]);
-}
-
-// ---------- 6. 縦型変換 ----------
-/** 映像の実寸(幅・高さ)を取得する。字幕の PlayResX/Y・帯の座標を実寸に追従させるために使う。 */
+// ---------- 5〜8. 切り出し・結合・縦型変換・字幕焼き込み ----------
+/** 映像の実寸(幅・高さ)を取得する。字幕の PlayResX/Y・帯の座標を実寸に追従させるために使う。
+ * 縦型出力時は renderFinal 内で固定で 1080x1920 にするため、このprobeは横型のときだけ使う。 */
 function probeDimensions(videoPath) {
   const out = runSync("ffprobe", [
     "-v", "error",
@@ -503,28 +478,6 @@ function probeDimensions(videoPath) {
     throw new Error(`映像の実寸を取得できませんでした: ${out}`);
   }
   return { width, height };
-}
-
-/** settings.aspect==="portrait" のときだけ呼ぶ。1080x1920へletterbox変換する
- * （余白は黒帯、映像は縮小のみで欠けさせない）。
- *
- * 【2026-08-18】既存の顔追跡クロップ実装 src/reframe.py を先に試したが、Windows環境で
- * "[WinError 206] ファイル名または拡張子が長すぎます" で失敗した。フレームごとのx位置を
- * 1本の -vf 条件式（if(eq(n,0),..),if(eq(n,1),..)... をフレーム数ぶん連結）に埋め込む実装のため、
- * 動画が長い（フレーム数が多い）と Windows のコマンドライン長上限を超える。これは
- * reframe.py 自体の作り（Linux/macOSでのみ検証されていた可能性）に起因する既存の不具合で、
- * 今回の「縦横比を反映させる」の範囲を超える改修が要る。ここでは確実に動く letterbox 方式
- * （顔追跡なし）で「指定した縦横比になる」ことを優先し、顔追跡クロップは別課題として切り分ける。 */
-function reframeToPortrait(inPath, outPath, workDir) {
-  console.log("[7/8] 縦型変換中（letterbox）…");
-  runSync("ffmpeg", [
-    "-y",
-    "-i", inPath,
-    "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
-    "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-    "-c:a", "copy",
-    outPath,
-  ], { cwd: workDir });
 }
 
 // ---------- 7. 字幕 ----------
@@ -772,26 +725,72 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 /**
- * 【2026-08-19】以前はここで `drawbox=...color=black@1.0:t=fill` を敷いていた。
- * 画面下部 27.8%（1080p なら y=780 から 300px）を不透明の黒で塗り潰すもので、
- * 横型の出力では実際の映像の上に被さり、人物の胴体が黒帯で切れていた。
- * 帯は置かず、白文字＋黒縁だけで背景から字を切り離す（マスター決定 2026-08-19）。
- * 素材にすでに字幕が焼かれている動画では、その字幕が見えるようになるが、代替は作らない。
+ * 切り出し・結合（クロスフェード付き）、縦型変換（letterbox）、字幕焼き込みを
+ * 1本の filter_complex にまとめ、ffmpeg を1回だけ実行して直接 outPath へ書き出す。
+ *
+ * 【2026-08-19】以前は「切り出し・結合」「縦型変換」「字幕焼き込み」を別々のffmpeg呼び出し
+ * （それぞれフル再エンコード、libx264 crf18 preset medium）に分けていた。設定次第で最大3回
+ * 連続の再エンコードが走り、長尺動画では render 全体の大半の時間をここが占めていた
+ * （マスター指摘「遅いです」を受けて調査・特定。同じ内容を1回のエンコードにまとめた）。
+ * 各処理のフィルタ内容そのものは変えていない。
+ *
+ * 縦型変換（letterbox）についての経緯【2026-08-18】: 既存の顔追跡クロップ実装 src/reframe.py を
+ * 先に試したが、Windows環境で "[WinError 206] ファイル名または拡張子が長すぎます" で失敗した。
+ * フレームごとのx位置を1本の -vf 条件式に埋め込む実装のため、動画が長い（フレーム数が多い）と
+ * Windows のコマンドライン長上限を超える。ここでは確実に動く letterbox 方式（顔追跡なし）で
+ * 「指定した縦横比になる」ことを優先し、顔追跡クロップは別課題として切り分けた。
+ *
+ * 字幕の帯についての経緯【2026-08-19】: 以前は `drawbox=...color=black@1.0:t=fill` で
+ * 画面下部27.8%を不透明の黒で塗り潰していたが、横型の出力では実際の映像の上に被さり、
+ * 人物の胴体が黒帯で切れていた。帯は置かず、白文字＋黒縁だけで背景から字を切り離す
+ * （マスター決定2026-08-19）。素材にすでに字幕が焼かれている動画では、その字幕が見えるように
+ * なるが、代替は作らない。
+ *
+ * @param {{videoPath:string, ranges:{start:number,end:number}[], portrait:boolean,
+ *   assPath:string|null, workDir:string, outPath:string}} args
  */
-function burnCaptions(inPath, assPath, outPath, workDir) {
-  console.log("[8/8] 字幕を焼き込み中…");
-  // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
-  // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
-  const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
-  const relFonts = path.relative(workDir, FONTS_DIR).split(path.sep).join("/");
+function renderFinal({ videoPath, ranges, portrait, assPath, workDir, outPath }) {
+  console.log("[6/8] 切り出し・結合中…");
+  const filters = [];
+  const labels = [];
+  ranges.forEach((r, i) => {
+    const dur = r.end - r.start;
+    const fadeOutSt = Math.max(0, dur - 0.02);
+    filters.push(`[0:v]trim=${r.start}:${r.end},setpts=PTS-STARTPTS[v${i}]`);
+    filters.push(
+      `[0:a]atrim=${r.start}:${r.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02,afade=t=out:st=${fadeOutSt}:d=0.02[a${i}]`
+    );
+    labels.push(`[v${i}][a${i}]`);
+  });
+  filters.push(`${labels.join("")}concat=n=${ranges.length}:v=1:a=1[outv][outa]`);
+
+  let videoLabel = "outv";
+  if (portrait) {
+    console.log("[7/8] 縦型変換中（letterbox）…");
+    filters.push(
+      "[outv]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[outv2]"
+    );
+    videoLabel = "outv2";
+  }
+  if (assPath) {
+    console.log("[8/8] 字幕を焼き込み中…");
+    // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
+    // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
+    const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
+    const relFonts = path.relative(workDir, FONTS_DIR).split(path.sep).join("/");
+    filters.push(`[${videoLabel}]subtitles=${relAss}:fontsdir=${relFonts}[vfinal]`);
+    videoLabel = "vfinal";
+  }
+
   runSync(
     "ffmpeg",
     [
       "-y",
-      "-i", inPath,
-      "-vf", `subtitles=${relAss}:fontsdir=${relFonts}`,
+      "-i", videoPath,
+      "-filter_complex", filters.join(";\n"),
+      "-map", `[${videoLabel}]`, "-map", "[outa]",
       "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-      "-c:a", "copy",
+      "-c:a", "aac", "-b:a", "192k",
       outPath,
     ],
     { cwd: workDir }
@@ -847,9 +846,15 @@ async function prepareMain(jobId) {
     const units = groupIntoPhrases(transcript.words || [], silences);
     // 原子的に書く（一時ファイル→rename）。見張り（server/watch-jobs.mjs）は units.json の
     // 出現を「選定待ち」の合図として読むので、書き込み途中の中途半端な内容を読ませない。
+    //
+    // 【2026-08-19】pretty-print(indent:2)だと1文節あたり6行に膨れ、長尺動画（数千文節）だと
+    // このセッションが units.json を読み切るだけで長時間かかっていた。中身は変えず、1文節1行に
+    // 詰めた配列として書く（JSON.parse する側は空白の違いを気にしないのでrenderMain・
+    // watch-jobs.mjs は無変更で動く）。
     writeJsonAtomically(
       path.join(workDir, "units.json"),
-      units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w }))
+      units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w })),
+      (data) => `[\n${data.map((u) => JSON.stringify(u)).join(",\n")}\n]`
     );
     console.log(`  文節 ${units.length} 個。work/${jobId}/units.json を見て、keep.json を書いてください。`);
     console.log(`  終わったら: node src/edit-job.mjs render ${jobId}`);
@@ -934,27 +939,20 @@ async function renderMain(jobId) {
     for (const line of decision.notApplied) console.log(`  [未反映] ${line}`);
     checkCancelled(workDir);
 
-    const trimmedPath = path.join(workDir, "trimmed.mp4");
-    cutAndConcat(job.video.path, ranges, trimmedPath);
-    checkCancelled(workDir);
-
-    let framedPath = trimmedPath;
-    if (job.settings?.aspect === "portrait") {
-      framedPath = path.join(workDir, "portrait.mp4");
-      reframeToPortrait(trimmedPath, framedPath, workDir);
-      checkCancelled(workDir);
-    }
-    const dims = probeDimensions(framedPath);
+    const portrait = job.settings?.aspect === "portrait";
+    // 縦型は letterbox 先が常に1080x1920なのでprobe不要。横型は元動画の実寸を使う
+    // （trim/concatは解像度を変えないため、書き出し後も同じ実寸になる）。
+    const dims = portrait ? { width: 1080, height: 1920 } : probeDimensions(job.video.path);
 
     const resultPath = path.join(outDir, "result.mp4");
+    let assPath = null;
     if (job.settings?.caption) {
-      const assPath = path.join(workDir, "captions.ass");
+      assPath = path.join(workDir, "captions.ass");
       buildAssFile(transcript, ranges, assPath, dims);
       checkCancelled(workDir);
-      burnCaptions(framedPath, assPath, resultPath, workDir);
-    } else {
-      fs.copyFileSync(framedPath, resultPath);
     }
+    renderFinal({ videoPath: job.video.path, ranges, portrait, assPath, workDir, outPath: resultPath });
+    checkCancelled(workDir);
 
     console.log("[完了] 完了記録を書き込み中…");
     appendResult({

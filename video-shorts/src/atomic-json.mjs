@@ -17,12 +17,15 @@ import path from "node:path";
  * 確定させてから最終pathへ rename する。
  * @param {string} filePath 書き込み先の最終パス
  * @param {object} data JSON化するオブジェクト
+ * @param {(data: object) => string} [serialize] JSON文字列化の方法。省略時は従来どおり
+ *   pretty-print（2スペースインデント）。行数を抑えたい大きな配列（例: units.json）向けに
+ *   差し替え可能にしてある（他の呼び出し元の既定挙動は一切変わらない）。
  */
-export function writeJsonAtomically(filePath, data) {
+export function writeJsonAtomically(filePath, data, serialize = (d) => JSON.stringify(d, null, 2)) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = `${filePath}.tmp-${process.pid}`;
-  const buf = Buffer.from(`${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  const buf = Buffer.from(`${serialize(data)}\n`, "utf-8");
   const fd = fs.openSync(tmp, "w");
   try {
     // fs.writeSync は要求したバイト数を全部書き切るとは限らない（部分書き込みが起こりうる）。
