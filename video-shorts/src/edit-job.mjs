@@ -9,27 +9,31 @@
 //
 // 手順（固定・この順で必ず実行する）:
 //   1. 文字起こし（transcribe.py --backend auto。GROQ_API_KEY があれば自動でGroqを使う）
-//   2. 無音区間の実測（ffmpeg silencedetect）
-//   3. 区間選定（claude -p / Opus5固定。虎の巻の要点をプロンプトに埋め込み、
-//      文字起こしの「セグメント番号」だけを選ばせる＝時刻を捏造させない）
-//   4. 選ばれたセグメントの前後端を、実測した無音の内側へスナップ
+//   2. 台本の誤字修正（ai-caption-fix.mjs。全体を読んでから直す＝マスターの編集フロー指示
+//      「台本をAIが読む→誤字を直す→内容を理解する」に当たる工程）
+//   3. 無音区間の実測（ffmpeg silencedetect）
+//   4. 区間選定（claude -p / Opus5固定。虎の巻の要点をプロンプトに埋め込み、
+//      文字起こしの「セグメント番号」だけを選ばせる＝時刻を捏造させない。
+//      あわせて「指示のどれを反映したか／できなかったか」も書かせる）
+//      → 選ばれた区間の前後端を、実測した無音の内側へスナップ
 //   5. 切り出し・結合（短いクロスフェード付き）
-//   6. 縦型変換（settings.aspect==="portrait" のときのみ。reframe.py で顔追跡クロップ／
-//      letterbox に自動切替。2026-08-18 発覚: 以前はこの工程が丸ごと無く、
-//      「縦」を指定しても素材のネイティブ比率のまま出力されていた）
+//   6. 縦型変換（settings.aspect==="portrait" のときのみ。letterbox 方式）
 //   7. 字幕（caption:true のときのみ。白文字＋黒縁だけで焼く＝黒帯は敷かない。
-//      PlayResX/Y・文字サイズ・縁の太さ・余白はすべて実際の映像サイズから算出する
-//      ＝縦型変換後の実寸に追従する）
-//   8. 出力・完了記録
+//      BudouX の文節を最小単位に詰めるので語の途中で折れない。接続助詞で終わるカードは次へ送る。
+//      文字サイズ・縁の太さ・余白はすべて実際の映像サイズから算出する）
+//   → 出力・完了記録
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
 import { runClaudeJson } from "./claude-run.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
 import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
+import { Parser as BudouxParser } from "./vendor/budoux/parser.mjs";
+import { model as BUDOUX_JA_MODEL } from "./vendor/budoux/ja-model.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -129,7 +133,7 @@ function transcribe(videoPath, workDir) {
 
 // ---------- 2. 無音実測 ----------
 function detectSilences(videoPath) {
-  console.log("[2/7] 無音区間を実測中…");
+  console.log("[3/7] 無音区間を実測中…");
   const r = spawnSync("ffmpeg", ["-i", videoPath, "-af", "silencedetect=noise=-30dB:d=0.15", "-f", "null", "-"], {
     encoding: "utf-8",
   });
@@ -152,6 +156,13 @@ function detectSilences(videoPath) {
  * （旧実装 trim-plan.mjs の AFTER_SPEECH_MARGIN_SEC を踏襲）。無音自体より長くは伸ばさない
  * （虎の巻 原則4: 元々そこにあった無音だけを使う。合成しない）。 */
 const AFTER_SPEECH_MARGIN_SEC = 0.3;
+
+/** BudouX のパーサは状態を持たないので1個を使い回す（モデルの読み込みは1回だけ）。 */
+let _budoux = null;
+function budouxParser() {
+  if (!_budoux) _budoux = new BudouxParser(BUDOUX_JA_MODEL);
+  return _budoux;
+}
 
 /**
  * t に最も近い無音区間を探し、kind に応じて余韻/助走ぶんだけ寄せた時刻を返す。
@@ -177,7 +188,63 @@ function snapToSilence(t, silences, kind, maxDistance = 1.0) {
   return Math.max(best.end - AFTER_SPEECH_MARGIN_SEC, best.start + edgeMargin);
 }
 
-// ---------- 3. 区間選定（Opus5） ----------
+// ---------- 2.5 台本化（文節の切れ目を取る） ----------
+//
+// 【2026-08-19】ここは最初 LLM に「文と文節の切れ目の添字」を返させていたが、実測して捨てた。
+//   - 遅い（かたまりごとに claude -p の往復が増える）
+//   - 精度が出ない（複合語を割るなと指示しても「ラッシュ/カット」を割った）
+// 代わりに BudouX（Google, Apache-2.0, src/vendor/budoux）を同梱して使う。辞書も外部通信も
+// 不要で 0.03ms/回、同じ入力なら常に同じ出力になる。
+//
+// 実測（同じ素材・同じ採用区間で比較）:
+//   カード末が語の途中で終わる   縦型 85% → 0% / 横型 75% → 0%
+//   行の中で語が割れる           縦型 29箇所 → 0 / 横型 6箇所 → 0
+// 残る欠陥（助詞・接続助詞で終わるカード）は句読点が無い限り解けない。docs/caption-plan.md 参照。
+
+/** 語の並びから、BudouX の文節境界で区切った塊を作る。塊は {w,start,end} を持つので、
+ * packWordsIntoLines / buildCaptionCards がそのまま1トークンとして扱える。
+ *
+ * 【時刻の戻し方】BudouX は文字列しか見ないので、語を連結した文字列の「文字位置」で
+ * 元の語へ逆写像し、塊の start = 先頭語の start、end = 末尾語の end とする。
+ * （文字を足し引きしないので、この対応は必ず一致する）
+ */
+export function groupIntoPhrases(words) {
+  if (!words.length) return [];
+  const text = words.map((w) => w.w).join("");
+  const phrases = budouxParser().parse(text);
+
+  const units = [];
+  let wordIdx = 0;
+  let consumedInWord = 0; // いま見ている語のうち、すでに塊へ配った文字数
+  for (const phrase of phrases) {
+    let need = phrase.length;
+    const first = wordIdx;
+    while (need > 0 && wordIdx < words.length) {
+      const remain = words[wordIdx].w.length - consumedInWord;
+      if (remain > need) {
+        // 文節の境界が語の内側に来た場合（部分語をまたがず割った場合）。
+        // 語は分割せず、この語まで塊に含める（欠けさせない＝虎の巻 原則3）。
+        consumedInWord += need;
+        need = 0;
+      } else {
+        need -= remain;
+        consumedInWord = 0;
+        wordIdx += 1;
+      }
+    }
+    const last = Math.max(first, (consumedInWord > 0 ? wordIdx : wordIdx - 1));
+    units.push({
+      w: phrase,
+      start: words[first].start,
+      end: words[Math.min(last, words.length - 1)].end,
+      br: null,
+    });
+  }
+  return units;
+}
+
+
+// ---------- 4. 区間選定（Opus5） ----------
 /**
  * 採用する区間を選ばせる。同時に「指示のどれをどう反映したか／できなかったか」も書かせる。
  *
@@ -189,7 +256,7 @@ function snapToSilence(t, silences, kind, maxDistance = 1.0) {
  * @returns {Promise<{ranges:{start:number,end:number}[], applied:string[], notApplied:string[]}>}
  */
 async function selectSegments(transcript, instruction, settings, workDir) {
-  console.log("[3/7] 区間選定中（Opus5）…");
+  console.log("[4/7] 区間選定中（Opus5）…");
   const segList = transcript.segments
     .map((s, i) => `${i}\t${s.start.toFixed(2)}-${s.end.toFixed(2)}\t${s.text}`)
     .join("\n");
@@ -255,7 +322,7 @@ function snapRanges(ranges, silences) {
 
 // ---------- 5. 切り出し・結合 ----------
 function cutAndConcat(videoPath, ranges, outPath) {
-  console.log("[4/7] 切り出し・結合中…");
+  console.log("[5/7] 切り出し・結合中…");
   const filters = [];
   const labels = [];
   ranges.forEach((r, i) => {
@@ -307,7 +374,7 @@ function probeDimensions(videoPath) {
  * 今回の「縦横比を反映させる」の範囲を超える改修が要る。ここでは確実に動く letterbox 方式
  * （顔追跡なし）で「指定した縦横比になる」ことを優先し、顔追跡クロップは別課題として切り分ける。 */
 function reframeToPortrait(inPath, outPath, workDir) {
-  console.log("[5/7] 縦型変換中（letterbox）…");
+  console.log("[6/7] 縦型変換中（letterbox）…");
   runSync("ffmpeg", [
     "-y",
     "-i", inPath,
@@ -432,10 +499,36 @@ export function packWordsIntoLines(words, budgetPx, fontSize) {
   return lines;
 }
 
-/** 直前の語が句読点（文の終わり）で終わっているか。行数の上限を破らない範囲でだけ使う
- * 早期区切りのヒント（下の buildCaptionCards 参照）。 */
-function endsSentence(word) {
-  return /[。！？」]$/.test(word.w);
+/** その塊が文の終わりか。行数の上限を破らない範囲でだけ使う早期区切りのヒント。
+ *
+ * 【2026-08-19 実測】Groq の日本語文字起こしには句読点が一切付かないため、この判定は
+ * 一度も成立していない＝早期区切りは事実上死んでいる。カードは「2行いっぱいまで詰める」
+ * だけになる。ここを本当に効かせるには文の切れ目（句読点）が要る。docs/caption-plan.md 参照。 */
+function endsSentence(unit) {
+  return unit.br === "文" || /[。！？」]$/.test(unit.w);
+}
+
+// 末尾がこれで終わるカードは、次へ続く途中で切れている（虎の巻 §2-4「接続助詞・言い差しで
+// 終わるのは禁止」）。文の終わりと判定された塊には適用しない（「〜から。」等は文として閉じている）。
+const DANGLING_TAIL_RE = /(?:って|て|で|けど|けれど|けれども|が|し|から|ので|のに|たら|れば|なら|ながら|つつ|ものの|とか|や|に|を|は|も|の|と)$/;
+
+/**
+ * 接続助詞・言い差しで終わっているカードの末尾の文節を、次のカードへ送る（虎の巻 §2-4）。
+ * 送った結果カードが空になるなら送らない（欠けさせるより、途中で切れている方がまし＝原則3）。
+ */
+export function fixDanglingCardTails(cards, budgetPx, fontSize) {
+  for (let i = 0; i < cards.length - 1; i++) {
+    const cur = cards[i];
+    while (cur.length >= 2) {
+      const last = cur[cur.length - 1];
+      if (endsSentence(last) || !DANGLING_TAIL_RE.test(last.w)) break;
+      // 送り先が2行に収まらなくなるなら送らない。2行以内という保証の方が優先で、
+      // これを破ると字幕が画面外へ積み上がる（この見張りが無くて実際に3行のカードが出た）。
+      if (packWordsIntoLines([last, ...cards[i + 1]], budgetPx, fontSize).length > CAPTION_MAX_LINES) break;
+      cards[i + 1].unshift(cur.pop());
+    }
+  }
+  return cards.filter((c) => c.length > 0);
 }
 
 /**
@@ -500,7 +593,10 @@ export function buildAssFile(transcript, ranges, assPath, dims) {
     for (const w of rel) relWords.push({ w: w.w, start: w.start + newBase, end: w.end + newBase });
     newBase += r.end - r.start;
   }
-  const cards = buildCaptionCards(relWords, budgetPx, fontSize);
+  // 語ではなく文節を最小単位にしてから、幅で詰める（語の途中で折れないようにする）。
+  // 切れ目が1つも取れなかった場合は、従来どおり語のまま扱う（編集は止めない）。
+  const units = groupIntoPhrases(relWords);
+  const cards = fixDanglingCardTails(buildCaptionCards(units, budgetPx, fontSize), budgetPx, fontSize);
   const LEAD = 0.05;
   const MAXHOLD = 0.6;
   // 終了時刻は「次のカードの表示開始より前」を絶対条件にする（最低表示時間の底上げより優先。
@@ -541,7 +637,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * 素材にすでに字幕が焼かれている動画では、その字幕が見えるようになるが、代替は作らない。
  */
 function burnCaptions(inPath, assPath, outPath, workDir) {
-  console.log("[6/7] 字幕を焼き込み中…");
+  console.log("[7/7] 字幕を焼き込み中…");
   // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
   // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
   const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
@@ -582,7 +678,25 @@ async function main() {
     // （マスターが送ったつもりの文が、ここまで届いているかを目で確かめられるようにする）。
     console.log(`[0/7] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
     checkCancelled(workDir);
-    const transcript = transcribe(job.video.path, workDir);
+    transcribe(job.video.path, workDir);
+    checkCancelled(workDir);
+    // マスターの編集フロー指示「台本をAIが読む→誤字を直す→内容を理解する」に当たる工程。
+    // 実装は src/ai-caption-fix.mjs に既にあったが、パイプラインへ繋がっていなかったため
+    // 「一般生物」「バリティス」のような誤認識が生のまま焼かれていた。
+    console.log("[2/7] 台本の誤字を直しています（全体を読んでから直します）…");
+    try {
+      const r = await aiCaptionFixStage({
+        workDir,
+        runModel: createDefaultRunModel(workDir),
+        onLog: (l) => console.log(`  ${l}`),
+      });
+      console.log(`  ${r.total} 語中 ${r.fixed} 語を直しました`);
+    } catch (err) {
+      // 誤字が残るだけで動画は作れる。ここで止めない。
+      console.log(`  誤字修正に失敗しました（そのまま続行します）: ${err.message}`);
+    }
+    checkCancelled(workDir);
+    const transcript = JSON.parse(fs.readFileSync(path.join(workDir, "transcript.json"), "utf-8"));
     checkCancelled(workDir);
     const silences = detectSilences(job.video.path);
     checkCancelled(workDir);
@@ -620,7 +734,7 @@ async function main() {
       fs.copyFileSync(framedPath, resultPath);
     }
 
-    console.log("[7/7] 完了記録を書き込み中…");
+    console.log("[完了] 完了記録を書き込み中…");
     appendResult({
       id: jobId,
       status: "done",
