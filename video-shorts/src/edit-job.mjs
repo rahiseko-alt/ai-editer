@@ -573,11 +573,32 @@ function textWidthPx(text, fontSize) {
 
 /**
  * 語配列を、画面幅に収まる行へ貪欲に詰める（captacity の calculate_lines() 相当）。
- * 語(w.w)は不可分な1トークンとして扱い、**語と語の境界でしか折らない**（単語の途中では
- * 絶対に割らない＝マスター制約）。1語だけで1行の予算を超える場合（長いURL等・通常の
- * 日本語の語では起きない）は、割らずにそのまま1行として置く（はみ出しより分断しない
- * ことを優先。captacity も同じ方針＝ "too long for frame" でも割らずにそのまま置く）。
+ * 語(w.w)は原則、語と語の境界でしか折らない（単語の途中では絶対に割らない＝マスター制約）。
+ * ただし1語だけで1行の予算を超える場合は例外で、下記 breakLongToken により文字単位で
+ * さらに折り返す（日本語のBudouX融合語で実際に発生することを確認したため。英単語・URL等の
+ * 半角語も同じ経路で文字単位に割れるが、書き起こしにURLが出てくることは無く実害は無い）。
  */
+/** 1トークンだけで budgetPx を超える場合に、文字単位でさらに複数行へ分割する。
+ * 日本語(CJK)は文字間にスペースが要らないため、文字単位で折れても不自然にならない。
+ * 句読点・無音が検出されない発話区間ではBudouXの文節認識だけで長い塊が1語に融合することがあり
+ * （例：「ありますよねあれ該当する」）、割らずに1行として置く既定動作（英単語・URL向け）のままだと
+ * 縦型（幅が狭い）で画面端からはみ出す事故になる。実際に c5b1f1f7 ジョブで確認した。 */
+function breakLongToken(token, budgetPx, fontSize) {
+  const lines = [];
+  let cur = "";
+  for (const ch of token) {
+    const candidate = cur + ch;
+    if (cur && textWidthPx(candidate, fontSize) > budgetPx) {
+      lines.push(cur);
+      cur = ch;
+    } else {
+      cur = candidate;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 export function packWordsIntoLines(words, budgetPx, fontSize) {
   const lines = [];
   let cur = "";
@@ -588,6 +609,13 @@ export function packWordsIntoLines(words, budgetPx, fontSize) {
       cur = w.w;
     } else {
       cur = candidate;
+    }
+    // ここに来た時点で cur が w.w 単体のままなら（＝直前の分岐で単語がそのまま入った場合のみ）、
+    // その1語だけで既に budgetPx を超えていないか確認し、超えていれば文字単位で追加分割する。
+    if (textWidthPx(cur, fontSize) > budgetPx) {
+      const broken = breakLongToken(cur, budgetPx, fontSize);
+      lines.push(...broken.slice(0, -1));
+      cur = broken[broken.length - 1] ?? "";
     }
   }
   if (cur) lines.push(cur);
