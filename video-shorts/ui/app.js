@@ -52,6 +52,15 @@
  * GET /media/:jobId/:filename
  *   完成した .mp4 を配信する（Range 対応・シーク可）。<video src> にも書き出しリンクにもそのまま使える。
  *   400: jobId 形式不正・パストラバーサル試行・許可外拡張子 / 404: ファイル無し
+ *
+ * GET /api/jobs/:jobId/result
+ *   ページ読み込み時に前回のジョブの状態を1回だけ問い合わせる（SSEと違い接続を張らない）。
+ *   recoverLastJob() が localStorage の jobId を使って呼ぶ（2026-08-19: タブのリロード・
+ *   別タブでの再訪問・処理が別プロセスで進む、いずれの場合も SSE 経由の状態復元はできない
+ *   という事故を踏まえて追加）。
+ *   -> 200 { done: true, record: <event:result の data と同じ形> }
+ *   -> 200 { done: false, submittedAt: string(ISO) }   // 投入済み・処理中
+ *   -> 400 / 404 / 5xx（server/http-utils.mjs の sendError() 形）
  */
 (() => {
   "use strict";
@@ -129,7 +138,6 @@
   const overlay = document.getElementById("overlay");
   const stageName = document.getElementById("stageName");
   const stageSub = document.getElementById("stageSub");
-  const pbar = overlay.querySelector(".pbar");
   const overlayActions = document.getElementById("overlayActions");
   const overlayCloseBtn = document.getElementById("overlayCloseBtn");
   const cancelJobBtn = document.getElementById("cancelJobBtn");
@@ -161,6 +169,46 @@
   let connectOpened = false;
   let errorStreak = 0;
   let connectTimeoutTimer = null;
+
+  // --- 直近ジョブの復元（localStorage） ---
+  // 2026-08-19の事故: SSEは「投入したタブが開いたまま」前提に依存しており、リロード・別タブでは
+  // job-eventSource受信の起点となる jobId 自体がJS変数（モジュールスコープのクロージャ）ごと消える。
+  // jobId だけを覚えておき、読み込み時にサーバーへ1回問い合わせて状態を復元する（recoverLastJob）。
+  const LAST_JOB_STORAGE_KEY = "vs.lastJob";
+
+  function saveLastJob(jobId) {
+    try {
+      localStorage.setItem(LAST_JOB_STORAGE_KEY, JSON.stringify({ jobId }));
+    } catch (_err) {
+      // プライベートモード等で localStorage が使えなくても、通常の投入・SSE受信フローは
+      // 影響を受けない（復元機能だけを諦める）。
+    }
+  }
+
+  function loadLastJobId() {
+    try {
+      const raw = localStorage.getItem(LAST_JOB_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed.jobId === "string" ? parsed.jobId : null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  // jobId が一致する場合だけ消す。無条件の removeItem() だと、別タブが直後に新しいジョブを
+  // 保存した直後に古い復元処理がそれを巻き添えで消してしまう競合が起きうるため。
+  function clearLastJobIfMatches(jobId) {
+    try {
+      const raw = localStorage.getItem(LAST_JOB_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.jobId === jobId) localStorage.removeItem(LAST_JOB_STORAGE_KEY);
+    } catch (_err) {
+      // 壊れた値は判断できない場合は消さずに放置する（loadLastJobId側のtry/catchが
+      // 同じく null 扱いにするので、動作上は無害）。
+    }
+  }
 
   // --- サーバー疎通確認 ---
   async function checkHealth() {
@@ -407,11 +455,10 @@
     if (!job || !job.id) {
       setOverlayState("processing", "送信しています", elapsedLabelText());
     } else {
-      setOverlayState(
-        "processing",
-        "AIが内容を読んで編集しています",
-        `${elapsedLabelText()}／10〜30分かかります。進行は「AI-Editer 編集の進行」の黒い画面に出ます`,
-      );
+      // マスター指示（2026-08-19）: 表示は経過時間・「編集中」・「中止」の3つだけにする。
+      // 所要時間の目安や「進行は別画面に出る」という説明（docs/failures.md の事故を受けて
+      // 追加したもの）は表示からは外すが、経緯はこのコメントに残す。
+      setOverlayState("processing", "編集中", elapsedLabelText());
     }
   }
 
@@ -445,6 +492,7 @@
       const body = await apiFetch("/api/jobs", { method: "POST", body: form });
       job.id = body.jobId;
       job.status = "queued";
+      saveLastJob(body.jobId);
       startJobEvents(body.jobId);
     } catch (err) {
       stopElapsedTimer();
@@ -596,7 +644,6 @@
   }
   function setOverlayState(kind, title, sub) {
     progressCard.classList.toggle("error", kind === "error");
-    pbar.classList.toggle("indeterminate", kind === "processing");
     stageName.textContent = title;
     stageSub.textContent = sub || "";
     overlayActions.hidden = kind !== "error";
@@ -613,6 +660,7 @@
     runBtn.disabled = false;
     showToast("中止しました");
     if (cancellingId) {
+      clearLastJobIfMatches(cancellingId);
       try {
         await apiFetch(`/api/jobs/${encodeURIComponent(cancellingId)}/cancel`, { method: "POST" });
       } catch {
@@ -629,6 +677,52 @@
     toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
   }
 
+  // --- 前回ジョブの復元（ページ読み込み時に1回だけ） ---
+  async function recoverLastJob() {
+    const jobId = loadLastJobId();
+    if (!jobId) return;
+
+    let body;
+    try {
+      body = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}/result`);
+    } catch (err) {
+      // 待っている間にユーザーが既に何か（新規投入等）を始めていたら、絶対にそれを上書きしない。
+      if (job !== null) return;
+      if (!(err instanceof ApiError) || !err.network) {
+        // サーバーは応答したが、この jobId を知らない（400: 形式不正 / 404: 記録なし）。
+        // .runtime 掃除後の古い参照等。実害の無い状況なので、静かに消して通常の空表示に戻す
+        // （マスターが古いページを開いただけで怖いエラーを見せない）。
+        clearLastJobIfMatches(jobId);
+      }
+      // ネットワークエラー（サーバー未起動）の場合は判断材料が無いので何もしない。
+      // 次回の読み込みや「再接続」操作で改めて復元を試みる。
+      return;
+    }
+
+    if (job !== null) return; // 同上：待っている間にユーザーが既に新しい操作を始めていた
+
+    if (body && body.done) {
+      // job-events.mjs の event:result と全く同じデータ形なので、同じ関数へそのまま渡す
+      // （DOM操作ロジックを重複させない）。
+      job = { id: jobId, status: "queued", result: null };
+      showOverlay();
+      onJobResult(body.record);
+      return;
+    }
+
+    // まだ完了していない＝処理中。SSEを再開して完了を待つ。
+    // 経過時間は「今」からではなく、サーバーが記録している本当の投入時刻（chat-inbox.jsonl の
+    // at）から計算する。リロードした瞬間から0秒で数え直すのは実態と異なる嘘の表示になる
+    // （タイマーで完了を偽装することは絶対にしない、という本ファイルの方針に反する）。
+    job = { id: jobId, status: "queued", result: null };
+    jobStartedAt = body && body.submittedAt ? Date.parse(body.submittedAt) : null;
+    showOverlay();
+    setOverlayState("processing", "編集中", elapsedLabelText());
+    elapsedTimer = setInterval(tickElapsed, 1000);
+    startJobEvents(jobId);
+  }
+
   // --- 初期化 ---
   checkHealth();
+  recoverLastJob();
 })();

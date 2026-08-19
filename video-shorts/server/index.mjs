@@ -1,13 +1,15 @@
 // server/index.mjs — UI（ブラウザ）とメインの Claude セッションを繋ぐだけの中継ローカルサーバー。
 //
 // このファイル（および server/ 配下）は、AI の判断・動画処理を一切行わない。
-// 行うのは次の5つだけ:
+// 行うのは次の6つだけ:
 //   1. POST /api/jobs            — ジョブ投入（multipart） → .runtime/chat-inbox.jsonl へ追記
 //   2. GET  /api/jobs/:id/events — 完了通知（SSE、.runtime/results.jsonl を読むだけ）
-//   3. POST /api/jobs/:id/cancel — 中止依頼（work/<jobId>/.cancel を置くだけ。実際の打ち切りは
+//   3. GET  /api/jobs/:id/result — 状態の同期確認（ページ読み込み時の1回きりの問い合わせ用。
+//      SSEと違い接続を張らない。詳細は server/job-result.mjs）
+//   4. POST /api/jobs/:id/cancel — 中止依頼（work/<jobId>/.cancel を置くだけ。実際の打ち切りは
 //      edit-job.mjs 側がこのフラグを見て行う。詳細は server/job-cancel.mjs）
-//   4. GET  /media/:jobId/:file  — 完成動画の配信（.runtime/outputs/ を読むだけ）
-//   5. 上記以外の GET/HEAD       — video-shorts/ui/ の静的配信
+//   5. GET  /media/:jobId/:file  — 完成動画の配信（.runtime/outputs/ を読むだけ）
+//   6. 上記以外の GET/HEAD       — video-shorts/ui/ の静的配信
 //
 // node:http 以外の依存は使わない（新規ライブラリ追加禁止・自前実装が方針）。
 // マスター指示によりローカル専用（127.0.0.1 のみ bind、0.0.0.0 にはしない）。
@@ -16,6 +18,7 @@ import http from "node:http";
 
 import { handleJobSubmit } from "./job-submit.mjs";
 import { handleJobEvents } from "./job-events.mjs";
+import { handleJobResult } from "./job-result.mjs";
 import { handleJobCancel } from "./job-cancel.mjs";
 import { handleMedia } from "./media-server.mjs";
 import { serveStatic } from "./static-files.mjs";
@@ -26,6 +29,7 @@ const PORT = Number(process.env.PORT) > 0 ? Number(process.env.PORT) : 5178;
 const ALLOWED_ORIGIN = `http://${HOST}:${PORT}`;
 
 const JOB_EVENTS_RE = /^\/api\/jobs\/([^/]+)\/events$/;
+const JOB_RESULT_RE = /^\/api\/jobs\/([^/]+)\/result$/;
 const JOB_CANCEL_RE = /^\/api\/jobs\/([^/]+)\/cancel$/;
 const MEDIA_RE = /^\/media\/([^/]+)\/([^/]+)$/;
 
@@ -71,6 +75,11 @@ async function handleRequest(req, res) {
   const eventsMatch = JOB_EVENTS_RE.exec(pathname);
   if (req.method === "GET" && eventsMatch) {
     return handleJobEvents(req, res, decodeURIComponent(eventsMatch[1]));
+  }
+
+  const resultMatch = JOB_RESULT_RE.exec(pathname);
+  if (req.method === "GET" && resultMatch) {
+    return handleJobResult(req, res, decodeURIComponent(resultMatch[1]));
   }
 
   const cancelMatch = JOB_CANCEL_RE.exec(pathname);

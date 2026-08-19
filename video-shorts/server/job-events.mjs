@@ -13,11 +13,14 @@ const HEARTBEAT_MS = 15000;
 
 /**
  * results.jsonl 全体を読み、id が一致する行があれば parse して返す。無ければ null。
+ * 同一 jobId の行が複数あった場合（keep.json を書き直して再 render した等）は、
+ * 最後に一致した行＝最新の状態を返す（先頭の古い記録を返すと、やり直し後の
+ * 成功結果を無視して古い失敗記録を返してしまう）。
  * 書き込み最中の不完全な行（rename ではなく append のjsonlなので理論上は起き得るが、
  * appendFileSync による1回のwriteなのでほぼ起きない）は JSON.parse 失敗として読み飛ばし、
  * 次のポーリングで再読込する。
  */
-async function findResultLine(jobId) {
+export async function findResultLine(jobId) {
   let text;
   try {
     text = await fs.readFile(resultsPath(), "utf-8");
@@ -25,6 +28,7 @@ async function findResultLine(jobId) {
     if (err && err.code === "ENOENT") return null;
     throw err;
   }
+  let latest = null;
   for (const line of text.split("\n")) {
     const s = line.trim();
     if (!s) continue;
@@ -34,9 +38,9 @@ async function findResultLine(jobId) {
     } catch (_err) {
       continue;
     }
-    if (obj && obj.id === jobId) return obj;
+    if (obj && obj.id === jobId) latest = obj;
   }
-  return null;
+  return latest;
 }
 
 export function handleJobEvents(req, res, jobId) {

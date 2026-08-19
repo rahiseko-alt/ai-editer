@@ -112,3 +112,32 @@ export function appendJsonLine(filePath, obj) {
   const line = `${JSON.stringify(obj)}\n`;
   fs.appendFileSync(filePath, line, "utf-8");
 }
+
+/**
+ * jsonl ファイルを1行ずつ読み、id が一致する最初の行を返す（無ければ null）。
+ * chat-inbox.jsonl は crypto.randomUUID() で発行した id ごとに1行しか書かれない契約なので、
+ * 「最初」か「最後」かは実質問題にならない（server/job-events.mjs の findResultLine と
+ * 同じ「最初に見つかった行」の挙動に揃えておく）。書き込み最中の不完全な行は
+ * JSON.parse 失敗として読み飛ばす。
+ */
+export async function findJsonlRecordById(filePath, id) {
+  let text;
+  try {
+    text = await fs.promises.readFile(filePath, "utf-8");
+  } catch (err) {
+    if (err && err.code === "ENOENT") return null;
+    throw err;
+  }
+  for (const line of text.split("\n")) {
+    const s = line.trim();
+    if (!s) continue;
+    let obj;
+    try {
+      obj = JSON.parse(s);
+    } catch (_err) {
+      continue;
+    }
+    if (obj && obj.id === id) return obj;
+  }
+  return null;
+}
