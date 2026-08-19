@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 
 import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
 import { runClaudeJson } from "./claude-run.mjs";
+import { planFillerCuts, subtractCuts } from "./filler-cut.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
 import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
 import { Parser as BudouxParser } from "./vendor/budoux/parser.mjs";
@@ -42,16 +43,49 @@ const RUNTIME_DIR = path.join(REPO_ROOT, ".runtime");
 const CHAT_INBOX = path.join(RUNTIME_DIR, "chat-inbox.jsonl");
 const RESULTS_JSONL = path.join(RUNTIME_DIR, "results.jsonl");
 
-/** 虎の巻(docs/編集についての虎の巻.md)の要点だけをプロンプトへ埋め込む（全文は長すぎるため）。 */
+/** docs/合格条件.md と docs/編集についての虎の巻.md の要点をプロンプトへ埋め込む（全文は長すぎるため）。
+ * 合否は「人間が見て良い編集か」だけで決まる（マスター指示 2026-08-19）。 */
 const EDIT_BIBLE_SUMMARY = `
-編集の判断基準（要点。詳細は docs/編集についての虎の巻.md）:
+# ダイジェストとは何か（ここを外すと、そもそも成果物にならない）
+ダイジェストは**背骨だけ・一番おいしいところだけ**で構成されたものです。
+山場を選んで繋ぐ（抽出型）のであって、「無音や言い淀みを間引いて少し短くする」
+（短縮編集）ではありません。
+**長さの目標はありません。** 何秒に収めるかを考えないでください。
+考えるのは「この話の背骨はどこか」「一番おいしいのはどこか」だけです。
+背骨と山場だけを選んだ結果が何秒になっても、それが正しい長さです。
+
+# 構成（時系列を守る必要はありません）
+1. 冒頭 = 結論そのもの。動画中で最も強い一文を、素材の順番を無視して先頭に置く。
+   挨拶・自己紹介・前置き・「本番いきます」のような掛け声で始めるのは失格です。
+2. 本体 = それ単体で意味が通るブロックを2〜3個。
+3. 締め = 見終わって持ち帰るものがある一文で閉じる。
+順番の入れ替えは許されます。ただし因果（Aの説明がBの前提）が壊れる並べ替えは禁止です。
+
+# 必ず捨てる（優先度順）
+挨拶 → 自己紹介 → 前置き・掛け声 → 本題から逸れた余談 → 同じ話の繰り返し → 長すぎる間
+
+# 必ず残す
+結論となる主張 / 話の転換点 / 感情のピーク
+
+# 約束と回収（ここを外すと、見た人は「話が終わっていない」と感じます）
+素材の中に「これから3つ紹介します」「理由は2つあります」のような**数の約束**や、
+「なぜかというと」のような**問いの提示**があるとき、次のどちらかしか選べません。
+  (a) その約束の一文を採用し、**約束した数だけ全部**拾う。
+  (b) 約束の一文ごと採用しない（そうすれば回収の義務も発生しません）。
+**「3つ紹介します」を入れて1つしか見せない、は最も重い失格です。**
+長さが足りなくて全部拾えないなら、迷わず (b) を選び、1つの話題を最後まで見せてください。
+
+# 切り方（これを破ったら他が良くても失格）
 - 選ぶのは「文の先頭から文の末尾まで」の完全な文だけ。文の途中・単語の途中を含む断片は選ばない。
-- 選んだ一片は、それ単体で読んで何の話か分かること。指示語(それ/あれ)や接続詞(で/だから)で始まる断片は選ばない。
-- カメラチェック・マイクテスト・撮影の裏側の会話（「本番いきます」「はい、カット」等）は落とす。
-- 本題と無関係な個人的な脱線（本題に戻る前の雑談）は落とす。ただし脱線から本題へ戻る締めの一文は、
-  それ単体で意味が通るなら残してよい。
-- 動画が「これから◯つ紹介します」等の約束をしていたら、その約束の数だけ律儀に拾う（約束を破らない）。
-- 迷ったら広く残す（狭く削って意味を壊すより、多少長くなる方が安全）。
+- **どの区間も、冒頭が接続詞(そこで/で/だから/でも)・助詞・指示語(それ/これ/あの件)で始まってはいけません。**
+- 末尾は言い切りで終わること（接続助詞「〜て」「〜けど」や言い差しで終わらない）。
+- 選んだ一片は、それ単体で読んで何の話か分かること。
+- 動画内で使う指示語は、その指す先が採用した区間の中に無ければいけません。
+- 冒頭で立てた問い・約束には、採用した区間の中で必ず答えが出ていること（言いかけて終わらない）。
+
+# 絶対禁止
+元の発言の意図や趣旨を変えてしまう切り方。本人が言っていない文を継ぎ接ぎで作ること。
+迷ったら広く残す（狭く削って意味を壊すより、多少長い方が安全）。
 `.trim();
 
 function usage() {
@@ -124,7 +158,7 @@ function runSync(cmd, args, opts = {}) {
 function transcribe(videoPath, workDir) {
   const py = resolvePython();
   const out = path.join(workDir, "transcript.json");
-  console.log("[1/7] 文字起こし中（Groqがあれば自動使用）…");
+  console.log("[1/8] 文字起こし中（Groqがあれば自動使用）…");
   runSync(py, [path.join(VIDEO_SHORTS_DIR, "src", "transcribe.py"), videoPath, out, "--lang", "ja", "--backend", "auto"], {
     cwd: VIDEO_SHORTS_DIR,
   });
@@ -133,7 +167,7 @@ function transcribe(videoPath, workDir) {
 
 // ---------- 2. 無音実測 ----------
 function detectSilences(videoPath) {
-  console.log("[3/7] 無音区間を実測中…");
+  console.log("[3/8] 無音区間を実測中…");
   const r = spawnSync("ffmpeg", ["-i", videoPath, "-af", "silencedetect=noise=-30dB:d=0.15", "-f", "null", "-"], {
     encoding: "utf-8",
   });
@@ -256,37 +290,21 @@ export function groupIntoPhrases(words) {
  * @returns {Promise<{ranges:{start:number,end:number}[], applied:string[], notApplied:string[]}>}
  */
 async function selectSegments(transcript, instruction, settings, workDir) {
-  console.log("[4/7] 区間選定中（Opus5）…");
+  console.log("[4/8] 区間選定中（Opus5）…");
   const segList = transcript.segments
     .map((s, i) => `${i}\t${s.start.toFixed(2)}-${s.end.toFixed(2)}\t${s.text}`)
     .join("\n");
-  const sourceSec = transcript.duration ?? (transcript.segments.at(-1)?.end ?? 0);
   const prompt = `あなたは動画編集者です。以下の文字起こし（セグメント番号付き）から、
 採用するセグメント番号だけを選んでください。
 
 ${EDIT_BIBLE_SUMMARY}
 
 # 判断の優先順位（上が強い。下のために上を崩さない）
-1. 選んだ一片が、それ単体で意味が閉じていること（文の途中で始まらない・終わらない）
+1. 選んだ一片が、それ単体で意味が閉じていること
 2. 動画が立てた約束を守ること（「3つ紹介します」なら3つとも拾う）
 3. 長さ
 
-**3が1や2を崩してはいけません。** 長さのために掴みを落とす、説明を落とす、
-文を途中で切る——これらは常に誤りです。長くなるほうを選んでください。
-
-# 長さの決め方
-ユーザーの指示に長さの指定（「1分で」「30秒」等）があれば、それを目安にしてください。
-ただし目安であって厳守すべき数値ではありません。1・2を満たしたうえで最も近づける、が正しい態度です。
-指定が無ければ、**長さは自分で決めてください**。決め方は「話が自然に閉じるところまで」です。
-素材の長さは ${Math.round(sourceSec)} 秒です。目安として、選んだ結果が次のどれに当たるかで
-構成そのものを変えてください（長さは結果であって目標ではありません）。
-
-- 〜45秒 : 主張1つだけ。前置き・導入・具体例は全部捨て、最も強い一文から始めて結論で終える
-- 〜90秒 : 主張1つ＋裏づけの具体例1つ
-- 〜180秒: 掴み→具体例2つ以上→山場→締め。起伏を組む
-- 180秒〜: 小テーマ2〜3に分ける。テーマごとに山場を1つ。最後に全体を締める
-
-# ユーザーの指示（空なら「良い抜粋を自動で作る」という指示として扱う）
+# ユーザーの指示（空なら# ユーザーの指示（空なら「良い抜粋を自動で作る」という指示として扱う）
 ${instruction || "(指示なし。上の編集基準に従って自動で判断してください)"}
 
 # セグメント一覧（番号 タブ 開始-終了秒 タブ 本文）
@@ -298,7 +316,9 @@ ${segList}
  "applied": ["反映した指示と、それをどう反映したか（1件1行）"],
  "notApplied": ["反映できなかった指示と、その理由（1件1行）"]}
 
-- "keep" の各ペアは "この番号からこの番号までを連続して採用する" という意味です（開始・終了とも上のセグメント番号）。
+- "keep" の各ペアは "この番号からこの番号までを連続して採用する" という意味です。
+- **"keep" に並べた順番が、そのまま完成動画の順番になります。**
+  最も強い一文を含むペアを先頭に置いてください（素材の順番どおりに並べる必要はありません）。
 - "applied" / "notApplied" は、上の「ユーザーの指示」に書かれた要求を1つずつ拾って書き分けてください。
   指示が空なら両方とも空配列にしてください。
 - このツールができるのは「元の映像から区間を選んで繋ぐこと」と「字幕を焼くこと」だけです。
@@ -317,6 +337,8 @@ ${segList}
   if (!Array.isArray(parsed.keep) || parsed.keep.length === 0) {
     throw new Error("区間選定の応答に keep 配列がありません");
   }
+  // keep に並べられた順番をそのまま使う（素材の時系列に並べ替えない）。
+  // ダイジェストは recap ではないので時系列拘束が無く、最も強い一文を先頭に置ける（合格条件 §1）。
   const ranges = parsed.keep.map(([a, b]) => {
     const from = transcript.segments[Math.min(a, b)];
     const to = transcript.segments[Math.max(a, b)];
@@ -340,7 +362,7 @@ function snapRanges(ranges, silences) {
 
 // ---------- 5. 切り出し・結合 ----------
 function cutAndConcat(videoPath, ranges, outPath) {
-  console.log("[5/7] 切り出し・結合中…");
+  console.log("[6/8] 切り出し・結合中…");
   const filters = [];
   const labels = [];
   ranges.forEach((r, i) => {
@@ -392,7 +414,7 @@ function probeDimensions(videoPath) {
  * 今回の「縦横比を反映させる」の範囲を超える改修が要る。ここでは確実に動く letterbox 方式
  * （顔追跡なし）で「指定した縦横比になる」ことを優先し、顔追跡クロップは別課題として切り分ける。 */
 function reframeToPortrait(inPath, outPath, workDir) {
-  console.log("[6/7] 縦型変換中（letterbox）…");
+  console.log("[7/8] 縦型変換中（letterbox）…");
   runSync("ffmpeg", [
     "-y",
     "-i", inPath,
@@ -655,7 +677,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * 素材にすでに字幕が焼かれている動画では、その字幕が見えるようになるが、代替は作らない。
  */
 function burnCaptions(inPath, assPath, outPath, workDir) {
-  console.log("[7/7] 字幕を焼き込み中…");
+  console.log("[8/8] 字幕を焼き込み中…");
   // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
   // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
   const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
@@ -694,14 +716,14 @@ async function main() {
     }
     // 受け取った指示をそのまま出す。空なら「空だった」ことが分かるように明示する
     // （マスターが送ったつもりの文が、ここまで届いているかを目で確かめられるようにする）。
-    console.log(`[0/7] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
+    console.log(`[0/8] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
     checkCancelled(workDir);
     transcribe(job.video.path, workDir);
     checkCancelled(workDir);
     // マスターの編集フロー指示「台本をAIが読む→誤字を直す→内容を理解する」に当たる工程。
     // 実装は src/ai-caption-fix.mjs に既にあったが、パイプラインへ繋がっていなかったため
     // 「一般生物」「バリティス」のような誤認識が生のまま焼かれていた。
-    console.log("[2/7] 台本の誤字を直しています（全体を読んでから直します）…");
+    console.log("[2/8] 台本の誤字を直しています（全体を読んでから直します）…");
     try {
       const r = await aiCaptionFixStage({
         workDir,
@@ -719,7 +741,22 @@ async function main() {
     const silences = detectSilences(job.video.path);
     checkCancelled(workDir);
     const decision = await selectSegments(transcript, job.instruction, job.settings, workDir);
-    const ranges = snapRanges(decision.ranges, silences);
+    let ranges = snapRanges(decision.ranges, silences);
+
+    // 言い淀み（クラスA=母音性フィラー）を切る。消せないものは消さない。
+    console.log("[5/8] 言い淀みを切っています…");
+    const fillerPlan = planFillerCuts(transcript.words || [], silences);
+    if (fillerPlan.aborted) {
+      console.log("  フィラー判定が半数を超えたため、判定が壊れているとみなして1つも切りません");
+    } else {
+      ranges = subtractCuts(ranges, fillerPlan.cuts);
+      const cutSec = fillerPlan.cuts.reduce((a, c) => a + (c.end - c.start), 0);
+      console.log(`  ${fillerPlan.cuts.length}箇所 / 計${cutSec.toFixed(1)}秒を除去（見送り ${fillerPlan.skipped.length}箇所）`);
+      for (const c of fillerPlan.cuts) console.log(`    切: ${c.start.toFixed(2)}s 「${c.word}」`);
+      for (const k of fillerPlan.skipped) console.log(`    残: ${k.start.toFixed(2)}s 「${k.word}」← ${k.reason}`);
+    }
+    decision.fillerCuts = fillerPlan.cuts;
+    decision.fillerSkipped = fillerPlan.skipped;
     // 反映報告を作業フォルダにも残す（UI の表示が壊れても、あとから何が起きたか追えるようにする）。
     fs.writeFileSync(
       path.join(workDir, "decision.json"),
