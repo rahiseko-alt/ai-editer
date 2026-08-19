@@ -399,14 +399,18 @@
     return m > 0 ? `${m}分${s}秒経過` : `${s}秒経過`;
   }
 
+  // 2026-08-19: 以前ここは「完了まで数分かかることがあります」と出していた。実際は
+  // 文字起こしのあと AI が「どこを使うか」を内容を読んで決めるため、10〜30分かかる。
+  // この乖離のせいでマスターが「固まった」と判断して中止を押し、prepare 済みのジョブが
+  // 1本無駄になった（docs/failures.md 参照）。かかる時間と、進行がどこに出るかを正直に書く。
   function tickElapsed() {
     if (!job || !job.id) {
       setOverlayState("processing", "送信しています", elapsedLabelText());
     } else {
       setOverlayState(
         "processing",
-        "サーバーで処理しています",
-        `${elapsedLabelText()}（完了まで数分かかることがあります）`,
+        "AIが内容を読んで編集しています",
+        `${elapsedLabelText()}／10〜30分かかります。進行は「AI-Editer 編集の進行」の黒い画面に出ます`,
       );
     }
   }

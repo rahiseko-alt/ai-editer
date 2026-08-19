@@ -36,6 +36,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
+import { writeJsonAtomically } from "./atomic-json.mjs";
 import { planFillerCuts, subtractCuts } from "./filler-cut.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
 import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
@@ -109,6 +110,36 @@ class CancelledError extends Error {}
 function checkCancelled(workDir) {
   if (fs.existsSync(path.join(workDir, ".cancel"))) {
     throw new CancelledError("中止されました");
+  }
+}
+
+/**
+ * 中止の旗を下ろす。
+ *
+ * 【2026-08-19 実際に踏んだ罠】`.cancel` を作るコード（server/job-cancel.mjs）はあるのに、
+ * **消すコードがリポジトリのどこにも無かった。** そのため一度中止したジョブは二度と render
+ * できず、prepare 済みで文字起こしも終わっているジョブが永久に死ぬ（実際に 62bce4ac… が
+ * この状態になった）。
+ *
+ * 規則:
+ *   - **中止として記録した時点で下ろす**（旗の役目はそこで終わる）。これで「記録は cancelled なのに
+ *     旗が残っていて二度と render できない」状態が消える。
+ *   - **`render` の開始時は下ろす。ただし黙って下ろさず、下ろしたことを必ず表示する。**
+ *     render はセッションが明示的に叩くコマンドなので、過去の中止指示より新しい意思である。
+ *     ただし「中止を押した直後に render が走って、中止が無言で消える」ことは避けたいので、
+ *     消したという事実を画面に出す。
+ *   - **`prepare` の開始時は下ろさない。** 当初は下ろしていたが、それが穴だった（敵対検証で発見）:
+ *     ワーカーは直列に処理するので、投入したジョブは前のジョブが終わるまでキューで待つ。
+ *     待っている間にマスターが中止を押しても、prepare 開始時に旗を下ろしてしまうと
+ *     **中止が黙って無効化され、そのジョブは最後まで走ってしまう。** キュー待ち中の中止を
+ *     尊重するため、prepare は旗を見つけたら（既存の checkCancelled で）そのまま打ち切る。
+ */
+function clearCancel(workDir) {
+  try {
+    fs.unlinkSync(path.join(workDir, ".cancel"));
+    return true;
+  } catch (_err) {
+    return false; // 無ければ何もしない（存在しないのが通常）
   }
 }
 
@@ -310,11 +341,52 @@ export function groupIntoPhrases(words) {
 
 
 // ---------- 4. 無音スナップ ----------
+/**
+ * 無音へ寄せる。ただし **採用範囲の外にある発話へは絶対に食い込ませない。**
+ *
+ * 【2026-08-19 実測した欠陥】snapToSilence は「最寄りの無音」へ寄せるだけで、その先に何が
+ * あるかを見ていない（虎の巻 §8-E が警告している問題）。実際に次が起きた:
+ *   - 区間の開始を 0.586 秒巻き戻し、**接続詞だから外すと決めた文節121「続いて」を戻した**
+ *     → カット冒頭が接続詞で始まり、合格条件 項目4 に違反した。
+ *   - 区間の終端を 1.019 秒はみ出させ、**捨てると決めた余談の頭（文節139「なんか」140「最近って」）
+ *     を飲み込んだ** → 「なんか最近」という無意味な断片が繋ぎ目に残った。
+ * どちらも「区間選定は正しいのに、後工程が黙って上書きする」という壊れ方で、選定側をいくら
+ * 慎重にやっても防げない。よってスナップ側に歯止めを置く。
+ *
+ * 歯止め: 範囲の直前・直後にある文節（＝捨てると決めたもの）の境界を越えない。
+ * 無音の中で寄せる自由は保ちつつ、隣の発話は絶対に含めない（虎の巻 原則1）。
+ */
 function snapRanges(ranges, silences, phraseUnits) {
-  return ranges.map((r) => ({
-    start: snapToSilence(r.start, silences, "start", phraseUnits),
-    end: snapToSilence(r.end, silences, "end", phraseUnits),
-  }));
+  const EPS = 0.01;
+  return ranges.map((r) => {
+    // 範囲の直前・直後にある発話（＝捨てると決めた文節）の境界。ここを越えてはいけない。
+    let prevEnd = 0;
+    let nextStart = Infinity;
+    for (const u of phraseUnits) {
+      if (u.end <= r.start + EPS) prevEnd = Math.max(prevEnd, u.end);
+      if (u.start >= r.end - EPS) nextStart = Math.min(nextStart, u.start);
+    }
+
+    // 実測した無音のうち、**その窓の内側に完全に収まるものだけ**を候補にする。
+    // 以前は全部の無音を候補にしていたため、捨てると決めた発話の向こう側にある無音へ
+    // 寄ってしまい、その発話を丸ごと飲み込んでいた（実測: 文節139「なんか」140「最近って」）。
+    const usable = silences.filter((s) => s.start >= prevEnd - EPS && s.end <= nextStart + EPS);
+
+    // 使える無音が無い場合の既定値＝**隣の発話との「間」の中央**。
+    // 文字起こしのタイムスタンプは音響境界と 100〜400ms ずれる（虎の巻 §3-2）ので、
+    // 語境界のすぐ隣で切ると、ずれの方向次第で隣の語を拾うか自分の語を削る。
+    // 間の中央なら、どちらへずれても等しく余裕がある。
+    const midStart = prevEnd > 0 ? r.start - (r.start - prevEnd) / 2 : r.start;
+    const midEnd = Number.isFinite(nextStart) ? r.end + (nextStart - r.end) / 2 : r.end;
+
+    const snappedStart = snapToSilence(r.start, usable, "start", phraseUnits);
+    const snappedEnd = snapToSilence(r.end, usable, "end", phraseUnits);
+    // snapToSilence は候補が無いと引数をそのまま返す。その場合だけ中央へ寄せる。
+    const start = snappedStart === r.start ? midStart : snappedStart;
+    const end = snappedEnd === r.end ? midEnd : snappedEnd;
+
+    return end > start ? { start, end } : { start: r.start, end: r.end };
+  });
 }
 
 // ---------- 5. 切り出し・結合 ----------
@@ -672,6 +744,7 @@ async function prepareMain(jobId) {
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
+  // ここで clearCancel はしない。キュー待ち中に押された中止を尊重するため（clearCancel の説明参照）。
 
   try {
     if (!job.video || !job.video.path) {
@@ -695,24 +768,22 @@ async function prepareMain(jobId) {
     checkCancelled(workDir);
     const transcript = JSON.parse(fs.readFileSync(path.join(workDir, "transcript.json"), "utf-8"));
     const silences = detectSilences(job.video.path);
-    fs.writeFileSync(path.join(workDir, "silences.json"), `${JSON.stringify(silences, null, 2)}\n`, "utf-8");
+    writeJsonAtomically(path.join(workDir, "silences.json"), silences);
 
     console.log("[4/4] 文節に分けています…");
     const units = groupIntoPhrases(transcript.words || []);
-    fs.writeFileSync(
+    // 原子的に書く（一時ファイル→rename）。見張り（server/watch-jobs.mjs）は units.json の
+    // 出現を「選定待ち」の合図として読むので、書き込み途中の中途半端な内容を読ませない。
+    writeJsonAtomically(
       path.join(workDir, "units.json"),
-      `${JSON.stringify(
-        units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w })),
-        null,
-        2
-      )}\n`,
-      "utf-8"
+      units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w }))
     );
     console.log(`  文節 ${units.length} 個。work/${jobId}/units.json を見て、keep.json を書いてください。`);
     console.log(`  終わったら: node src/edit-job.mjs render ${jobId}`);
   } catch (err) {
     if (err instanceof CancelledError) {
       appendResult({ id: jobId, status: "cancelled", message: err.message, at: new Date().toISOString() });
+      clearCancel(workDir); // 中止として記録した時点で旗の役目は終わり（残すと次の render が即死する）
       console.log(`中止: ${jobId}`);
     } else {
       appendResult({ id: jobId, status: "error", message: err.message, at: new Date().toISOString() });
@@ -732,6 +803,12 @@ async function renderMain(jobId) {
   const job = readInboxJob(jobId);
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
+  // render は明示的に叩かれたコマンド＝過去の中止指示より新しい意思なので旗を下ろす。
+  // ただし黙って下ろすと「中止したのに完走した」が誰にも伝わらないので、必ず表示する。
+  if (clearCancel(workDir)) {
+    console.log("[注意] 中止の旗が立っていましたが、render の明示的な実行として下ろしました。");
+    console.log("       中止したままにしたい場合は、いま Ctrl+C で止めてください。");
+  }
 
   try {
     const unitsPath = path.join(workDir, "units.json");
@@ -820,6 +897,7 @@ async function renderMain(jobId) {
   } catch (err) {
     if (err instanceof CancelledError) {
       appendResult({ id: jobId, status: "cancelled", message: err.message, at: new Date().toISOString() });
+      clearCancel(workDir); // 中止として記録した時点で旗の役目は終わり（残すと次の render が即死する）
       console.log(`中止: ${jobId}`);
     } else {
       appendResult({ id: jobId, status: "error", message: err.message, at: new Date().toISOString() });

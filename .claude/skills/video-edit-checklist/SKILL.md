@@ -1,6 +1,6 @@
 ---
 name: video-edit-checklist
-description: Use when deciding which segments of a video-shorts job to keep (writing work/<jobId>/keep.json for video-shorts/src/edit-job.mjs), before running "node src/edit-job.mjs render <jobId>", or before reporting any edited video as finished, done, or 合格. Also trigger on requests like "編集して"「区間を決めて」「keep.json書いて」「検品して」「完成した」「レンダーして」「動画できた」 about a video-shorts job. Enforces the mandatory two-phase procedure (segment selection from units.json, then post-render inspection against docs/合格条件.md) so quality holds even when a future session has no memory of why this exists. A clean process exit from edit-job.mjs is not evidence of a good edit — do not skip this skill just because the command succeeded.
+description: Use for the whole video-shorts editing loop in this repo. Trigger when starting or launching the local editing UI (「立ち上げて」「起動して」「UIを出して」「ローカルで動かして」), when a job becomes ready for segment selection (writing work/<jobId>/keep.json for video-shorts/src/edit-job.mjs), before running "node src/edit-job.mjs render <jobId>", and before reporting any edited video as finished, done, or 合格. Also triggers on 「編集して」「区間を決めて」「keep.json書いて」「検品して」「完成した」「レンダーして」「動画できた」. Covers three mandatory phases: arming the job watcher so submitted videos are never missed, selecting segments by reading units.json in full, and inspecting the rendered output against docs/合格条件.md. Launching the UI without arming the watcher, or a clean process exit from edit-job.mjs, is not evidence of anything — do not skip this skill because a command succeeded.
 ---
 
 # 動画編集：区間選定と出力前検品
@@ -21,6 +21,38 @@ description: Use when deciding which segments of a video-shorts job to keep (wri
 
 このスキルの役割は、セッションが変わっても同じ2フェーズを必ず踏ませること。
 「動いた」「エラーが出なかった」は合格の根拠にしない。
+
+## フェーズ0：見張りを張る（UIが上がっていると分かった時点で、他の何より先に）
+
+```
+Monitor({
+  command: "cd /c/Users/user/ai-editer/video-shorts && node server/watch-jobs.mjs",
+  description: "動画編集ジョブの選定待ち・失敗・中止・停滞",
+  persistent: true
+})
+```
+
+`見張り開始: ...` の1行を**実際に受け取るまでは、張れていないものとして扱う**。
+以後、`選定待ち <jobId> 文節<N> 指示「…」` が通知で届く。それが来たらフェーズ1に入る。
+失敗・中止・停滞（投入から15分進んでいない）も同じ経路で届く。
+
+**なぜこれが要るか**：ワーカーは `prepare`（文字起こし〜文節化）までしか自動実行せず、
+正常終了時は `results.jsonl` に何も書かない。完了の合図はワーカーの黒い画面に出るだけで、
+**このセッションには何も届かない。** 2026-08-19、それに気づかず prepare 済みのジョブ
+（226文節）を放置し、待たされたマスターが中止を押した。見張りはその穴を塞ぐ唯一の線。
+
+**外しやすい点（すべて実際に踏みうる）**
+
+- **義務は「誰が起動したか」に依存しない。** マスターが自分で `起動.bat` を押した場合も、
+  既に動いていた場合も同じ。`起動.bat` は見張りを張らない（ウィンドウ2枚を開くだけ）。
+- **`起動.bat` が動いた ≠ 起動が終わった。** bat の「起動しました」はウィンドウ2枚の意味だけ。
+- **ワーカーが出す `[worker] 見張りを開始します` は別物。** あれはワーカーが投入フォルダを
+  見る話。これが出ていてもフェーズ0は終わっていない。
+- **`Monitor` がツール一覧に無ければ `ToolSearch` で `select:Monitor` を読み込む。**
+  **`Bash` のバックグラウンド実行で代用してはいけない**（常駐プロセスは終了しないので
+  1行ごとの通知が届かず、「張ったつもり」で投入を取りこぼす＝直したかった不具合の再発）。
+- 張れていない状態で「立ち上げました」「準備できました」「投入してください」
+  「お待ちしています」の**いずれも言ってはいけない**。気づけないので嘘になる。
 
 ## フェーズ1：区間選定（render の前）
 
