@@ -22,7 +22,6 @@ function maxUploadBytes() {
 
 const ASPECTS = new Set(["portrait", "landscape"]);
 const MAX_OUTPUT_COUNT = 20;
-const MAX_TARGET_DURATION_SEC = 3600; // マスター指示(2026-08-18): 尺の上限は1時間
 
 // Windows のファイル名で使えない記号（制御文字はコード点で別途判定する。
 // 正規表現の文字クラスへ バックスラッシュ0 のような制御文字エスケープを書くと編集ツール上で
@@ -185,11 +184,10 @@ export async function handleJobSubmit(req, res) {
   }
   const caption = captionRaw === "true";
 
-  const targetDurationSec = Number(fields.targetDurationSec);
-  if (!Number.isFinite(targetDurationSec) || targetDurationSec <= 0 || targetDurationSec > MAX_TARGET_DURATION_SEC) {
-    cleanupUpload();
-    return sendError(res, 400, `targetDurationSec は1以上${MAX_TARGET_DURATION_SEC}以下の数値を指定してください`);
-  }
+  // 【2026-08-19 削除】targetDurationSec（目標の尺）。マスター判断で撤去した。
+  // 必須の数値目標だったため、編集の AI が意味の完結より尺合わせを優先し、動画の掴みや
+  // 機能の説明を尺のために落としていた（.runtime/work/*/decision.json に記録が残っている）。
+  // 尺を指定したいときは instruction に「1分半で」と書く＝意味と天秤にかけられる制約になる。
 
   const outputCount = Number(fields.outputCount);
   if (!Number.isInteger(outputCount) || outputCount < 1 || outputCount > MAX_OUTPUT_COUNT) {
@@ -202,7 +200,7 @@ export async function handleJobSubmit(req, res) {
     at: new Date().toISOString(),
     instruction,
     video: videoInfo ? { path: videoInfo.path, originalName: videoInfo.originalName } : null,
-    settings: { aspect, caption, targetDurationSec, outputCount },
+    settings: { aspect, caption, outputCount },
   };
 
   try {

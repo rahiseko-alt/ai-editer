@@ -75,16 +75,11 @@
       </div>
     </div>
 
-    <div class="field">
-      <span class="field-label" id="durationLabel">目標の尺</span>
-      <div class="duration-row" role="group" aria-labelledby="durationLabel">
-        <input type="number" id="durationMinutes" min="0" max="60" step="1" value="1" aria-label="目標の尺（分）" />
-        <span aria-hidden="true">分</span>
-        <input type="number" id="durationSeconds" min="0" max="59" step="1" value="30" aria-label="目標の尺（秒）" />
-        <span aria-hidden="true">秒</span>
-      </div>
-      <div class="range-val" id="durationVal">1分30秒</div>
-    </div>
+    <!-- 【2026-08-19 削除】「目標の尺」の入力欄。マスター判断で撤去した。
+         必須の数値目標だったため、AI が意味の完結より尺合わせを優先し、掴みや説明を
+         尺のために落としていた（判断ログで確認）。尺を決めたいときは指示欄に
+         「1分半で」のように書く＝意味と天秤にかけられる制約として扱われる。
+         経緯と根拠は docs/failures.md の 2026-08-19 の項。 -->
 
   </aside>
 </div>

@@ -21,7 +21,6 @@
  *     instruction        (string, 任意。自然文の指示。空文字可)
  *     aspect             ("portrait" | "landscape", 必須)
  *     caption            ("true" | "false" の文字列, 必須)
- *     targetDurationSec  (正の数値を文字列化, 必須)
  *     outputCount        (1〜20の整数を文字列化, 必須)
  *   -> 201 { jobId: string }
  *   -> 400（validation）/ 413（サイズ超過）/ 5xx
@@ -126,9 +125,6 @@
 
   const aspectButtons = Array.from(document.querySelectorAll("[data-aspect]"));
   const captionSwitch = document.getElementById("captionSwitch");
-  const durationMinutes = document.getElementById("durationMinutes");
-  const durationSeconds = document.getElementById("durationSeconds");
-  const durationVal = document.getElementById("durationVal");
 
   const overlay = document.getElementById("overlay");
   const stageName = document.getElementById("stageName");
@@ -361,42 +357,10 @@
     captionSwitch.setAttribute("aria-checked", String(on));
   });
 
-  // --- 目標の尺（分・秒を独立入力。空欄は0として扱う。上限1時間） ---
-  const MAX_DURATION_SEC = 3600; // マスター指示(2026-08-18): 尺の上限は1時間
-
-  function clampDurationField(el, max) {
-    if (el.value.trim() === "") return; // 空欄はそのまま許容（送信時に0として扱う）
-    let v = Math.trunc(Number(el.value));
-    if (!Number.isFinite(v) || v < 0) v = 0;
-    if (v > max) v = max;
-    el.value = String(v);
-  }
-
-  function getTargetDurationSec() {
-    const m = durationMinutes.value.trim() === "" ? 0 : Number(durationMinutes.value);
-    const s = durationSeconds.value.trim() === "" ? 0 : Number(durationSeconds.value);
-    const mm = Number.isFinite(m) ? m : 0;
-    const ss = Number.isFinite(s) ? s : 0;
-    return Math.max(0, Math.min(MAX_DURATION_SEC, Math.trunc(mm * 60 + ss)));
-  }
-
-  function updateDurationLabel() {
-    const total = getTargetDurationSec();
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    durationVal.textContent = m > 0 ? `${m}分${s ? s + "秒" : ""}` : `${s}秒`;
-  }
-  durationMinutes.addEventListener("input", updateDurationLabel);
-  durationSeconds.addEventListener("input", updateDurationLabel);
-  durationMinutes.addEventListener("change", () => {
-    clampDurationField(durationMinutes, 60);
-    updateDurationLabel();
-  });
-  durationSeconds.addEventListener("change", () => {
-    clampDurationField(durationSeconds, 59);
-    updateDurationLabel();
-  });
-  updateDurationLabel();
+  // 【2026-08-19 削除】「目標の尺」の入力欄。マスター判断で撤去した。
+  // 必須の数値目標だったため、AI が意味の完結より尺合わせを優先していた
+  // （判断ログに「60秒に収めるため具体例と使い方説明を落とし」等が残っている）。
+  // 尺を指定したいときは指示欄に「1分半で」と書く。docs/failures.md 2026-08-19 の項。
 
   // --- 全画面 ---
   fullscreenBtn.addEventListener("click", () => {
@@ -458,18 +422,11 @@
       runHint.textContent = "動画を追加するか、指示を入力してください。";
       return;
     }
-    const targetDurationSec = getTargetDurationSec();
-    if (targetDurationSec <= 0) {
-      runHint.textContent = "目標の尺を入力してください（0秒は指定できません）。";
-      return;
-    }
-
     const form = new FormData();
     if (activeMaterial) form.append("video", activeMaterial.file, activeMaterial.name);
     form.append("instruction", instructionInput.value.trim());
     form.append("aspect", currentAspect);
     form.append("caption", captionSwitch.classList.contains("on") ? "true" : "false");
-    form.append("targetDurationSec", String(targetDurationSec));
     form.append("outputCount", String(OUTPUT_COUNT));
 
     closeJobEvents();
