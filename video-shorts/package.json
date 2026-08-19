@@ -6,7 +6,8 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "serve": "node server/index.mjs"
+    "serve": "node server/index.mjs",
+    "worker": "node server/job-worker.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
