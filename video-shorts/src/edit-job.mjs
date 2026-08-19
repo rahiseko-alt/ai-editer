@@ -1,24 +1,31 @@
 // video-shorts [固定手順] .runtime/chat-inbox.jsonl の1ジョブを、実際に編集して
 // .runtime/outputs/<jobId>/result.mp4 へ書き出し、.runtime/results.jsonl へ完了を記録する。
 //
-// 2026-08-18 マスター指示「時間がかかりすぎ。Groqを使え。手順を固定しろ」を受けて、
-// 手作業のbashコマンド往復（文字起こし→無音実測→区間選定→切り出し→字幕→焼き込み）を
-// 1本のコマンドに固定した。
+// 【2026-08-19 マスター指示】「UIに素材を投げる→文字起こしする→お前が内容を決める→
+// FFmpegで書き出し」にしろ。以前は区間選定を別プロセスの claude -p（毎回まっさらな
+// 使い捨てのOpus5呼び出し。この対話の文脈も虎の巻も合格条件も持たない）に丸投げしており、
+// それが「その名も、コズム」が「も、コズム」になるような、意味の通らない断片を生む
+// 直接原因だった（docs/failures.md 参照）。「内容を決める」のは、この対話をしている
+// セッション自身にする。そのため2コマンドに分割した:
 //
-// 使い方: node src/edit-job.mjs <jobId>
+//   node src/edit-job.mjs prepare <jobId>
+//     文字起こし→誤字修正→無音実測→文節化（BudouX）までを自動実行する。
+//     ワーカー（server/job-worker.mjs）がジョブ投入を検知して自動で呼ぶ。
+//     結果は work/<jobId>/units.json（番号付き文節一覧）・silences.json に残る。
+//     ★ここで自動処理は止まる。区間選定はしない。★
 //
-// 手順（固定・この順で必ず実行する）:
-//   1. 文字起こし（transcribe.py --backend auto。GROQ_API_KEY があれば自動でGroqを使う）
-//   2. 台本の誤字修正（ai-caption-fix.mjs。全体を読んでから直す＝マスターの編集フロー指示
-//      「台本をAIが読む→誤字を直す→内容を理解する」に当たる工程）
-//   3. 無音区間の実測（ffmpeg silencedetect）
-//   4. 区間選定（claude -p / Opus5固定。虎の巻の要点をプロンプトに埋め込み、
-//      文字起こしの「セグメント番号」だけを選ばせる＝時刻を捏造させない。
-//      あわせて「指示のどれを反映したか／できなかったか」も書かせる）
-//      → 選ばれた区間の前後端を、実測した無音の内側へスナップ
-//   5. 切り出し・結合（短いクロスフェード付き）
-//   6. 縦型変換（settings.aspect==="portrait" のときのみ。letterbox 方式）
-//   7. 字幕（caption:true のときのみ。白文字＋黒縁だけで焼く＝黒帯は敷かない。
+//   node src/edit-job.mjs render <jobId>
+//     work/<jobId>/keep.json（{"keep":[[開始文節番号,終了文節番号],...],
+//     "applied":[...], "notApplied":[...]}）を読み、無音スナップ・言い淀み除去・
+//     切り出し・縦型変換・字幕・出力までを実行する。
+//     ★keep.json は、このセッションが units.json を実際に読んで直接書く。★
+//
+// 手順（render 側。固定・この順で必ず実行する）:
+//   1. 無音スナップ（実測した無音の内側へ寄せる）
+//   2. 言い淀みを切る（母音性フィラーのみ。消せないものは消さない）
+//   3. 切り出し・結合（短いクロスフェード付き）
+//   4. 縦型変換（settings.aspect==="portrait" のときのみ。letterbox 方式）
+//   5. 字幕（caption:true のときのみ。白文字＋黒縁だけで焼く＝黒帯は敷かない。
 //      BudouX の文節を最小単位に詰めるので語の途中で折れない。接続助詞で終わるカードは次へ送る。
 //      文字サイズ・縁の太さ・余白はすべて実際の映像サイズから算出する）
 //   → 出力・完了記録
@@ -29,7 +36,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
-import { runClaudeJson } from "./claude-run.mjs";
 import { planFillerCuts, subtractCuts } from "./filler-cut.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
 import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
@@ -89,7 +95,8 @@ const EDIT_BIBLE_SUMMARY = `
 `.trim();
 
 function usage() {
-  console.error("使い方: node src/edit-job.mjs <jobId>");
+  console.error("使い方: node src/edit-job.mjs prepare <jobId>  （文字起こし〜文節化。ワーカーが自動実行）");
+  console.error("       node src/edit-job.mjs render <jobId>   （work/<jobId>/keep.json を読んで書き出し）");
   process.exit(1);
 }
 
@@ -199,15 +206,39 @@ function budouxParser() {
 }
 
 /**
+ * ffmpeg silencedetect が語中の子音の破裂音などを誤検出することがある。
+ *
+ * 【2026-08-19 実測した3連鎖の事故】
+ * (1) 「きれいに」の"き"と"れ"の間に 0.15 秒の無音を検出し、語の途中で切れた。
+ * (2) (1) の対策として「0.2秒未満は無視」という長さの閾値を入れたところ、
+ *     今度は「動画」という語の内部にある 0.308 秒の誤検出無音（閾値を通過してしまう）
+ *     にスナップし、"今日は"ごと語の先頭が削れた。長さの閾値は対症療法で、
+ *     閾値をどこに引いても新しい誤検出が閾値の内側に来れば同じ事故が形を変えて起きる。
+ * (3) 根本原因を「無音が語の内部にあるか」に切り替え、word-level timestamp と
+ *     突き合わせる判定に直したが、まだ (1) が再発した。原因は Groq の日本語
+ *     word timestamp が文字単位に近い部分語で返ること（既知の仕様。「きれいに」が
+ *     "き""れ""い""に"の4語に分かれている）。無音がその**2つの部分語の境界**に
+ *     またがっていたため、「1語に完全内包」の判定をすり抜けた。
+ * → 判定対象を部分語ではなく **BudouX の文節（groupIntoPhrases の結果）** にする。
+ *   文節は「意味のある1つの単位」なので、その内部にまたがる無音は誤検出とみなせる。
+ */
+function isInsideAnyWord(silence, phraseUnits) {
+  const EPS = 0.005;
+  return phraseUnits.some((u) => silence.start >= u.start - EPS && silence.end <= u.end + EPS);
+}
+
+/**
  * t に最も近い無音区間を探し、kind に応じて余韻/助走ぶんだけ寄せた時刻を返す。
  * 見つからなければ t をそのまま返す（切らない安全側）。
  * @param {"start"|"end"} kind "end"=区間の終わり(語尾。無音の頭から0.3秒残す)、
  *   "start"=区間の始まり(語頭。無音の尾から0.3秒遡って助走を付ける)
+ * @param {{start:number,end:number,w:string}[]} phraseUnits 文節の内部の誤検出無音を除外するために使う
  */
-function snapToSilence(t, silences, kind, maxDistance = 1.0) {
+function snapToSilence(t, silences, kind, phraseUnits, maxDistance = 1.0) {
   let best = null;
   let bestDist = Infinity;
   for (const s of silences) {
+    if (isInsideAnyWord(s, phraseUnits)) continue;
     const dist = t >= s.start && t <= s.end ? 0 : Math.min(Math.abs(t - s.start), Math.abs(t - s.end));
     if (dist < bestDist) {
       bestDist = dist;
@@ -278,104 +309,11 @@ export function groupIntoPhrases(words) {
 }
 
 
-// ---------- 4. 区間選定（Opus5） ----------
-/**
- * 採用する区間を選ばせる。同時に「指示のどれをどう反映したか／できなかったか」も書かせる。
- *
- * 【なぜ反映報告を書かせるか（2026-08-19 マスター指摘）】これまでは指示がプロンプトへ届いて
- * いても、結果を見て「効いたのか無視されたのか」を確かめる手段が無かった。BGM のように
- * このツールが原理的にできない指示も、黙って落ちるだけだった。反映できなかったことが
- * 画面に出て初めて「反映されていない」と分かる。
- *
- * @returns {Promise<{ranges:{start:number,end:number}[], applied:string[], notApplied:string[]}>}
- */
-async function selectSegments(transcript, instruction, settings, workDir) {
-  console.log("[4/8] 区間選定中（Opus5）…");
-
-  // 【2026-08-19】以前は Groq が返す自然なセグメント（1個5〜15秒、複数の話題や余談が
-  // 同じ塊に同居することが多い）を選択の最小単位にしていた。実測すると「本題中の余談だけ
-  // 抜きたい」という指示を AI が繰り返し「セグメント単位でしか選べないため分離できません」
-  // として諦めていた。この素材（149秒）は無音がほぼ無くノンストップで喋っており
-  // （ギャップ0.15秒以上が3箇所のみ）、無音実測でも細分化できない。
-  // 代わりに BudouX の文節（groupIntoPhrases。同素材で187個＝平均0.8秒）を選択の最小単位
-  // にする。文節の切れ目自体は崩れることがある（「32」「1」に割れる等）が、選ぶのは
-  // 「連続する文節の範囲」であり、範囲の中間がどこで割れていようと音声は欠落しない。
-  // 崩れて困るのは範囲の始点・終点だけで、それは虎の巻の「文の先頭〜文末」指示で守らせる。
-  const units = groupIntoPhrases(transcript.words || []);
-  if (!units.length) throw new Error("文字起こしに語がありません");
-  const unitList = units.map((u, i) => `${i}\t${u.start.toFixed(2)}-${u.end.toFixed(2)}\t${u.w}`).join("\n");
-  const prompt = `あなたは動画編集者です。以下の文字起こし（文節番号付き。区切りは機械的なもので、
-「32」「1」のように数字が割れている等の乱れがあります。番号は"だいたいこの位置"を示すだけです）
-から、採用する文節番号だけを選んでください。
-
-${EDIT_BIBLE_SUMMARY}
-
-# 判断の優先順位（上が強い。下のために上を崩さない）
-1. 選んだ一片が、それ単体で意味が閉じていること
-2. 動画が立てた約束を守ること（「3つ紹介します」なら3つとも拾う）
-3. 長さ
-
-# 文節番号の使い方（重要）
-1つの文節は短すぎて意味の単位になりません。**必ず複数の文節をまたぐ範囲**（文の先頭の
-文節番号 〜 文末の文節番号）で選んでください。範囲の開始は文・意味の先頭に、終了は
-文末表現の終わりに合わせてください（範囲の途中に文節の乱れがあっても問題ありません）。
-この番号のおかげで、1つの発話セグメントの中から**本題だけを抜いて余談を飛ばす**ことが
-できます。余談を挟んで前後が同じ話をしているなら、前後をそれぞれ別の範囲として選び、
-両方を keep に入れてください（繋げるとどこが余談だったか分からなくなります）。
-
-# ユーザーの指示（空なら「良い抜粋を自動で作る」という指示として扱う）
-${instruction || "(指示なし。上の編集基準に従って自動で判断してください)"}
-
-# 文節一覧（番号 タブ 開始-終了秒 タブ 文節）
-${unitList}
-
-# 出力形式
-他の文章を一切書かず、次のJSON形式のみを出力してください:
-{"keep": [[開始番号, 終了番号], ...],
- "applied": ["反映した指示と、それをどう反映したか（1件1行）"],
- "notApplied": ["反映できなかった指示と、その理由（1件1行）"]}
-
-- "keep" の各ペアは "この番号からこの番号までを連続して採用する" という意味です。
-- **"keep" に並べた順番が、そのまま完成動画の順番になります。**
-  最も強い一文を含むペアを先頭に置いてください（素材の順番どおりに並べる必要はありません）。
-- "applied" / "notApplied" は、上の「ユーザーの指示」に書かれた要求を1つずつ拾って書き分けてください。
-  指示が空なら両方とも空配列にしてください。
-- このツールができるのは「元の映像から区間を選んで繋ぐこと」と「字幕を焼くこと」だけです。
-  BGMを付ける・効果音を足す・映像を加工する・話していないことを足す、といった要求は実行できないので、
-  必ず "notApplied" に理由付きで書いてください（黙って無視しないでください）。`;
-
-  const stdout = await runClaudeJson({
-    stdin: prompt,
-    cwd: workDir,
-    timeoutMs: 300_000,
-    onLog: (l) => console.log(l),
-  });
-  const jsonMatch = String(stdout).match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`区間選定の応答からJSONを取り出せませんでした: ${String(stdout).slice(0, 300)}`);
-  const parsed = JSON.parse(jsonMatch[0]);
-  if (!Array.isArray(parsed.keep) || parsed.keep.length === 0) {
-    throw new Error("区間選定の応答に keep 配列がありません");
-  }
-  // keep に並べられた順番をそのまま使う（素材の時系列に並べ替えない）。
-  // ダイジェストは recap ではないので時系列拘束が無く、最も強い一文を先頭に置ける（合格条件 §1）。
-  const ranges = parsed.keep.map(([a, b]) => {
-    const from = units[Math.min(a, b)];
-    const to = units[Math.max(a, b)];
-    if (!from || !to) throw new Error(`不正な文節番号: ${a}, ${b}`);
-    return { start: from.start, end: to.end };
-  });
-  // 反映報告は「あれば表示する」もの。書式が崩れても編集そのものは止めない
-  // （ここで例外にすると、指示の書き方ひとつで動画が出なくなる）。
-  const asLines = (v) =>
-    Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim()) : [];
-  return { ranges, applied: asLines(parsed.applied), notApplied: asLines(parsed.notApplied) };
-}
-
 // ---------- 4. 無音スナップ ----------
-function snapRanges(ranges, silences) {
+function snapRanges(ranges, silences, phraseUnits) {
   return ranges.map((r) => ({
-    start: snapToSilence(r.start, silences, "start"),
-    end: snapToSilence(r.end, silences, "end"),
+    start: snapToSilence(r.start, silences, "start", phraseUnits),
+    end: snapToSilence(r.end, silences, "end", phraseUnits),
   }));
 }
 
@@ -716,33 +654,34 @@ function burnCaptions(inPath, assPath, outPath, workDir) {
 }
 
 // ---------- メイン ----------
-async function main() {
-  const jobId = process.argv[2];
-  if (!jobId) usage();
+//
+// 【2026-08-19 マスター指示】「UIに素材を投げる→文字起こしする→お前が内容を決める→
+// FFmpegで書き出し」にしろ。区間選定を別プロセスの claude -p（毎回まっさらな使い捨ての
+// Opus5呼び出し）に丸投げしていたのが、意味の通らない断片を出す原因だった
+// （「その名も、コズム」が「も、コズム」になる等。docs/failures.md 参照）。
+// 「内容を決める」のはこのセッション（虎の巻・合格条件・過去の失敗を全部知っている）。
+// 2コマンドに分割する:
+//   node src/edit-job.mjs prepare <jobId>  文字起こし〜文節化まで（ワーカーが自動実行）
+//   node src/edit-job.mjs render <jobId>   work/<jobId>/keep.json を読んで書き出しまで
+//                                          （keep.json はこのセッションが直接書く）
 
+/** prepare: 文字起こし・誤字修正・無音実測・文節化までを行い、判断材料を work/<jobId> に残す。 */
+async function prepareMain(jobId) {
   const job = readInboxJob(jobId);
-
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
 
   try {
-    // 動画の有無の確認は必ず try の中で行う（外に置くと、この throw だけ下の catch を通らず
-    // results.jsonl に何も書かれないまま落ち、UI の完了通知が永久に来ない）。
     if (!job.video || !job.video.path) {
       throw new Error("このジョブには動画がありません（instructionのみのテスト送信の可能性）");
     }
-    // 受け取った指示をそのまま出す。空なら「空だった」ことが分かるように明示する
-    // （マスターが送ったつもりの文が、ここまで届いているかを目で確かめられるようにする）。
-    console.log(`[0/8] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
+    console.log(`[0/4] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
     checkCancelled(workDir);
     transcribe(job.video.path, workDir);
     checkCancelled(workDir);
-    // マスターの編集フロー指示「台本をAIが読む→誤字を直す→内容を理解する」に当たる工程。
-    // 実装は src/ai-caption-fix.mjs に既にあったが、パイプラインへ繋がっていなかったため
-    // 「一般生物」「バリティス」のような誤認識が生のまま焼かれていた。
-    console.log("[2/8] 台本の誤字を直しています（全体を読んでから直します）…");
+    console.log("[2/4] 台本の誤字を直しています（全体を読んでから直します）…");
     try {
       const r = await aiCaptionFixStage({
         workDir,
@@ -751,18 +690,78 @@ async function main() {
       });
       console.log(`  ${r.total} 語中 ${r.fixed} 語を直しました`);
     } catch (err) {
-      // 誤字が残るだけで動画は作れる。ここで止めない。
       console.log(`  誤字修正に失敗しました（そのまま続行します）: ${err.message}`);
     }
     checkCancelled(workDir);
     const transcript = JSON.parse(fs.readFileSync(path.join(workDir, "transcript.json"), "utf-8"));
-    checkCancelled(workDir);
     const silences = detectSilences(job.video.path);
-    checkCancelled(workDir);
-    const decision = await selectSegments(transcript, job.instruction, job.settings, workDir);
-    let ranges = snapRanges(decision.ranges, silences);
+    fs.writeFileSync(path.join(workDir, "silences.json"), `${JSON.stringify(silences, null, 2)}\n`, "utf-8");
 
-    // 言い淀み（クラスA=母音性フィラー）を切る。消せないものは消さない。
+    console.log("[4/4] 文節に分けています…");
+    const units = groupIntoPhrases(transcript.words || []);
+    fs.writeFileSync(
+      path.join(workDir, "units.json"),
+      `${JSON.stringify(
+        units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w })),
+        null,
+        2
+      )}\n`,
+      "utf-8"
+    );
+    console.log(`  文節 ${units.length} 個。work/${jobId}/units.json を見て、keep.json を書いてください。`);
+    console.log(`  終わったら: node src/edit-job.mjs render ${jobId}`);
+  } catch (err) {
+    if (err instanceof CancelledError) {
+      appendResult({ id: jobId, status: "cancelled", message: err.message, at: new Date().toISOString() });
+      console.log(`中止: ${jobId}`);
+    } else {
+      appendResult({ id: jobId, status: "error", message: err.message, at: new Date().toISOString() });
+      console.error(`失敗: ${err.message}`);
+      process.exitCode = 1;
+    }
+  }
+}
+
+/**
+ * render: work/<jobId>/keep.json を読み、書き出しまで実行する。
+ * keep.json の形式: {"keep": [[開始文節番号, 終了文節番号], ...],
+ *                     "applied": ["反映した指示"], "notApplied": ["反映できなかった指示"]}
+ * keep はこのセッションが units.json を読んで直接決める（区間選定の自動化はしない）。
+ */
+async function renderMain(jobId) {
+  const job = readInboxJob(jobId);
+  const workDir = path.join(RUNTIME_DIR, "work", jobId);
+  const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
+
+  try {
+    const unitsPath = path.join(workDir, "units.json");
+    const keepPath = path.join(workDir, "keep.json");
+    if (!fs.existsSync(unitsPath)) throw new Error(`prepare を先に実行してください: ${unitsPath} がありません`);
+    if (!fs.existsSync(keepPath)) throw new Error(`keep.json がありません（このセッションが直接書きます）: ${keepPath}`);
+
+    const units = JSON.parse(fs.readFileSync(unitsPath, "utf-8"));
+    const silences = JSON.parse(fs.readFileSync(path.join(workDir, "silences.json"), "utf-8"));
+    const transcript = JSON.parse(fs.readFileSync(path.join(workDir, "transcript.json"), "utf-8"));
+    const keepDoc = JSON.parse(fs.readFileSync(keepPath, "utf-8"));
+    if (!Array.isArray(keepDoc.keep) || keepDoc.keep.length === 0) {
+      throw new Error("keep.json の keep 配列が空です");
+    }
+
+    const asLines = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()) : []);
+    const decision = {
+      ranges: keepDoc.keep.map(([a, b]) => {
+        const from = units[Math.min(a, b)];
+        const to = units[Math.max(a, b)];
+        if (!from || !to) throw new Error(`不正な文節番号: ${a}, ${b}`);
+        return { start: from.start, end: to.end };
+      }),
+      applied: asLines(keepDoc.applied),
+      notApplied: asLines(keepDoc.notApplied),
+    };
+
+    checkCancelled(workDir);
+    let ranges = snapRanges(decision.ranges, silences, groupIntoPhrases(transcript.words || []));
+
     console.log("[5/8] 言い淀みを切っています…");
     const fillerPlan = planFillerCuts(transcript.words || [], silences);
     if (fillerPlan.aborted) {
@@ -776,7 +775,6 @@ async function main() {
     }
     decision.fillerCuts = fillerPlan.cuts;
     decision.fillerSkipped = fillerPlan.skipped;
-    // 反映報告を作業フォルダにも残す（UI の表示が壊れても、あとから何が起きたか追えるようにする）。
     fs.writeFileSync(
       path.join(workDir, "decision.json"),
       `${JSON.stringify({ instruction: job.instruction ?? "", ...decision, ranges }, null, 2)}\n`,
@@ -813,7 +811,6 @@ async function main() {
       id: jobId,
       status: "done",
       output: resultPath,
-      // UI が「この指示で編集しました／反映した内容／反映できなかった項目」を出すための材料。
       instruction: job.instruction ?? "",
       applied: decision.applied,
       notApplied: decision.notApplied,
@@ -832,10 +829,15 @@ async function main() {
   }
 }
 
+async function main() {
+  const [, , cmd, jobId] = process.argv;
+  if (!cmd || !jobId || (cmd !== "prepare" && cmd !== "render")) usage();
+  if (cmd === "prepare") await prepareMain(jobId);
+  else await renderMain(jobId);
+}
+
 // 検証スクリプト等からこのファイルを import して buildCaptionCards/wrapCardText/buildAssFile を
-// 単体で叩けるように、`node src/edit-job.mjs <jobId>` として直接実行されたときだけ main() を
-// 走らせる（import 時に process.exit(1) を伴う usage() が即実行されるのを防ぐ）。
-// 実行方法(使い方コメント)は変えていない＝直接実行時の挙動は従来どおり。
+// 単体で叩けるように、直接実行されたときだけ main() を走らせる。
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   main();
 }

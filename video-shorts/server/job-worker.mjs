@@ -109,18 +109,24 @@ function scanInbox() {
 }
 
 /**
- * 1件だけ編集処理を起動して、終わるまで待つ。
- * ffmpeg と `claude -p` はどちらも重いので、同時には走らせない（キュー直列）。
+ * 1件だけ「文字起こし〜文節化」（prepare）を起動して、終わるまで待つ。
+ * ffmpeg 等が重いので、同時には走らせない（キュー直列）。
+ *
+ * 【2026-08-19 マスター指示】「内容を決める」のは別プロセスの使い捨てLLMではなく、
+ * この対話をしているセッション自身にする。ワーカーは prepare（文字起こし〜文節化）
+ * までしか自動実行しない。区間選定（work/<jobId>/keep.json を書いて render を叩く）は
+ * このセッションが直接行う＝ prepare の正常終了は「完了」ではないので results.jsonl
+ * には何も書かない（UI は render が終わるまで処理中のまま待つ）。
  */
 function runJob(jobId) {
   return new Promise((resolve) => {
-    log(`編集を開始します: ${jobId}`);
-    const child = spawn(process.execPath, [EDIT_JOB, jobId], {
+    log(`prepare を開始します: ${jobId}`);
+    const child = spawn(process.execPath, [EDIT_JOB, "prepare", jobId], {
       cwd: VIDEO_SHORTS_DIR,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // 進行がマスターの目に見えるよう、子の出力はそのまま流す（edit-job.mjs が [n/7] を出す）。
+    // 進行がマスターの目に見えるよう、子の出力はそのまま流す。
     const relay = (stream, write) => {
       stream.setEncoding("utf-8");
       stream.on("data", (chunk) => write(chunk));
@@ -128,10 +134,9 @@ function runJob(jobId) {
     relay(child.stdout, (c) => process.stdout.write(c));
     relay(child.stderr, (c) => process.stderr.write(c));
 
-    const finish = (message) => {
-      // edit-job.mjs は自分で done/error/cancelled を results.jsonl へ書く。
-      // ここで書くのは「edit-job.mjs が書けずに死んだ」場合だけ。書かないと UI の SSE が
-      // 永久に待ち続けて、マスターから見て「反映されない」状態になる。
+    const fail = (message) => {
+      // prepare 自体が失敗した場合（起動できない・異常終了）だけは記録する。
+      // これを書かないと UI の SSE が永久に待ち続けてしまう。
       if (!hasResult(jobId)) {
         appendJsonLine(resultsPath(), {
           id: jobId,
@@ -139,22 +144,22 @@ function runJob(jobId) {
           message,
           at: new Date().toISOString(),
         });
-        log(`完了記録が無いまま終わったので、失敗として記録しました: ${jobId} — ${message}`);
+        log(`prepare が失敗として終わりました: ${jobId} — ${message}`);
       }
       resolve();
     };
 
     child.on("error", (err) => {
-      finish(`編集処理を起動できませんでした: ${err.message}`);
+      fail(`prepare を起動できませんでした: ${err.message}`);
     });
     child.on("close", (code, signal) => {
       if (code === 0) {
-        log(`終了しました: ${jobId}`);
-        // 正常終了でも完了記録が無いのは異常（書き込みに失敗している）。UI を待たせないため記録する。
-        finish("編集処理は正常終了しましたが、完了記録が書かれていません");
+        // prepare の正常終了。ここでは完了記録を書かない（内容を決めるのはこれから）。
+        log(`prepare 完了: ${jobId} — work/${jobId}/units.json を見て keep.json を書き、render してください`);
+        resolve();
         return;
       }
-      finish(`編集処理が異常終了しました（code=${code} signal=${signal ?? "なし"}）`);
+      fail(`prepare が異常終了しました（code=${code} signal=${signal ?? "なし"}）`);
     });
   });
 }
