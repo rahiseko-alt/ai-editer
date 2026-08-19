@@ -46,6 +46,10 @@
 
     <div class="output-tabs" id="outputTabs" role="group" aria-label="出力候補の切り替え" hidden></div>
 
+    <!-- 完成後に「この指示で編集しました／反映した内容／反映できなかった項目」を出す欄。
+         指示が効いたのか無視されたのかを、出力を見ただけでは判断できなかったため足した。 -->
+    <section class="apply-report" id="applyReport" aria-live="polite" hidden></section>
+
     <form class="instruction-bar" id="instructionForm">
       <label for="instructionInput" class="sr-only">編集の指示</label>
       <textarea id="instructionInput" placeholder="指示を入力（例：1分半のダイジェストで／NGと雑談は落として）" rows="2" autocomplete="off"></textarea>

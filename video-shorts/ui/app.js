@@ -117,6 +117,7 @@
   const player = document.getElementById("player");
 
   const outputTabs = document.getElementById("outputTabs");
+  const applyReport = document.getElementById("applyReport");
 
   const instructionForm = document.getElementById("instructionForm");
   const instructionInput = document.getElementById("instructionInput");
@@ -302,7 +303,44 @@
     job = null;
     outputTabs.hidden = true;
     outputTabs.innerHTML = "";
+    clearApplyReport();
     exportBtn.disabled = true;
+  }
+
+  function clearApplyReport() {
+    applyReport.hidden = true;
+    applyReport.innerHTML = "";
+  }
+
+  /**
+   * 「この指示で編集しました／反映した内容／反映できなかった項目」を出す。
+   * 反映できなかった項目こそが要点なので、1件も無いときでも「全部反映した」と明言する
+   * （空欄のままだと、報告が出ていないのか反映漏れが無いのか区別できない）。
+   */
+  function renderApplyReport(data) {
+    const instruction = typeof data.instruction === "string" ? data.instruction : "";
+    const applied = Array.isArray(data.applied) ? data.applied : [];
+    const notApplied = Array.isArray(data.notApplied) ? data.notApplied : [];
+
+    const listHtml = (items, cls) =>
+      `<ul class="${cls}">${items.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`;
+
+    let html = "<h3>この指示で編集しました</h3>";
+    html += instruction
+      ? `<p class="said">${escapeHtml(instruction)}</p>`
+      : `<p class="said none">（指示なし。自動で判断しました）</p>`;
+
+    if (applied.length) {
+      html += "<h3>反映した内容</h3>" + listHtml(applied, "hit");
+    }
+    if (notApplied.length) {
+      html += "<h3>反映できなかった項目</h3>" + listHtml(notApplied, "miss");
+    } else if (instruction) {
+      html += `<h3>反映できなかった項目</h3><p class="said none">ありません（指示はすべて反映しました）</p>`;
+    }
+
+    applyReport.innerHTML = html;
+    applyReport.hidden = false;
   }
 
   // --- 縦横比 ---
@@ -569,6 +607,7 @@
     player.style.display = "block";
     stageEmpty.style.display = "none";
     exportBtn.disabled = false;
+    renderApplyReport(data);
     showToast("処理が完了しました");
   }
 

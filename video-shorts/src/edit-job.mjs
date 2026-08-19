@@ -17,9 +17,9 @@
 //   6. 縦型変換（settings.aspect==="portrait" のときのみ。reframe.py で顔追跡クロップ／
 //      letterbox に自動切替。2026-08-18 発覚: 以前はこの工程が丸ごと無く、
 //      「縦」を指定しても素材のネイティブ比率のまま出力されていた）
-//   7. 字幕（caption:true のときのみ。語の間の無音でのみ改行し、単語の途中では絶対に割らない。
-//      素材に焼き込み済みの字幕を隠す不透明帯を敷いてから焼く。PlayResX/Y・帯の座標は
-//      実際の映像サイズから動的に算出する＝縦型変換後の実寸に追従する）
+//   7. 字幕（caption:true のときのみ。白文字＋黒縁だけで焼く＝黒帯は敷かない。
+//      PlayResX/Y・文字サイズ・縁の太さ・余白はすべて実際の映像サイズから算出する
+//      ＝縦型変換後の実寸に追従する）
 //   8. 出力・完了記録
 
 import { spawn, spawnSync } from "node:child_process";
@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 
 import { runClaudeJson } from "./claude-run.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
-import { FONTS_DIR, FONT_CATALOG } from "./subtitle-styles.mjs";
+import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -178,6 +178,16 @@ function snapToSilence(t, silences, kind, maxDistance = 1.0) {
 }
 
 // ---------- 3. 区間選定（Opus5） ----------
+/**
+ * 採用する区間を選ばせる。同時に「指示のどれをどう反映したか／できなかったか」も書かせる。
+ *
+ * 【なぜ反映報告を書かせるか（2026-08-19 マスター指摘）】これまでは指示がプロンプトへ届いて
+ * いても、結果を見て「効いたのか無視されたのか」を確かめる手段が無かった。BGM のように
+ * このツールが原理的にできない指示も、黙って落ちるだけだった。反映できなかったことが
+ * 画面に出て初めて「反映されていない」と分かる。
+ *
+ * @returns {Promise<{ranges:{start:number,end:number}[], applied:string[], notApplied:string[]}>}
+ */
 async function selectSegments(transcript, instruction, settings, workDir) {
   console.log("[3/7] 区間選定中（Opus5）…");
   const segList = transcript.segments
@@ -199,8 +209,16 @@ ${segList}
 
 # 出力形式
 他の文章を一切書かず、次のJSON形式のみを出力してください:
-{"keep": [[開始番号, 終了番号], [開始番号, 終了番号], ...]}
-各ペアは "この番号からこの番号までを連続して採用する" という意味です（開始・終了とも上のセグメント番号）。`;
+{"keep": [[開始番号, 終了番号], ...],
+ "applied": ["反映した指示と、それをどう反映したか（1件1行）"],
+ "notApplied": ["反映できなかった指示と、その理由（1件1行）"]}
+
+- "keep" の各ペアは "この番号からこの番号までを連続して採用する" という意味です（開始・終了とも上のセグメント番号）。
+- "applied" / "notApplied" は、上の「ユーザーの指示」に書かれた要求を1つずつ拾って書き分けてください。
+  指示が空なら両方とも空配列にしてください。
+- このツールができるのは「元の映像から区間を選んで繋ぐこと」と「字幕を焼くこと」だけです。
+  BGMを付ける・効果音を足す・映像を加工する・話していないことを足す、といった要求は実行できないので、
+  必ず "notApplied" に理由付きで書いてください（黙って無視しないでください）。`;
 
   const stdout = await runClaudeJson({
     stdin: prompt,
@@ -214,12 +232,17 @@ ${segList}
   if (!Array.isArray(parsed.keep) || parsed.keep.length === 0) {
     throw new Error("区間選定の応答に keep 配列がありません");
   }
-  return parsed.keep.map(([a, b]) => {
+  const ranges = parsed.keep.map(([a, b]) => {
     const from = transcript.segments[Math.min(a, b)];
     const to = transcript.segments[Math.max(a, b)];
     if (!from || !to) throw new Error(`不正なセグメント番号: ${a}, ${b}`);
     return { start: from.start, end: to.end };
   });
+  // 反映報告は「あれば表示する」もの。書式が崩れても編集そのものは止めない
+  // （ここで例外にすると、指示の書き方ひとつで動画が出なくなる）。
+  const asLines = (v) =>
+    Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim()) : [];
+  return { ranges, applied: asLines(parsed.applied), notApplied: asLines(parsed.notApplied) };
 }
 
 // ---------- 4. 無音スナップ ----------
@@ -329,12 +352,37 @@ function reframeToPortrait(inPath, outPath, workDir) {
 //     より弱いので、外れても2行以内という保証そのものは揺らがない。
 
 const CAPTION_FONT = FONT_CATALOG.kaku; // buildAssFile が実際に焼く書体(Noto Sans JP Black)と一致させる
-const CAPTION_FONT_SIZE = 64;
 const CAPTION_MAX_LINES = 2; // マスター指示「2行で収まるには」
-const CAPTION_MARGIN_LR = 60; // buildAssFile の Style行 MarginL/MarginR と一致させる
+// 左右の余白（画面幅に対する割合）。以前は 60px 固定だったが、それは縦型(幅1080)を前提にした値で、
+// 横型(幅1920)では端に寄りすぎていた。フォントサイズと同じく解像度に追従させる。
+const CAPTION_MARGIN_LR_RATIO = 60 / 1080;
 // 1行に使ってよい幅の上限（可用幅に対する割合）。1.0いっぱいまで詰めると測定誤差で
 // 画面端に接するので、srt-builder.mjs の CAPTION_LINE_FILL_MAX と同じ 0.9 を使う。
 const LINE_FILL_MAX = 0.9;
+
+/**
+ * その映像に焼く字幕の寸法を、映像の実寸から1箇所で決める。
+ *
+ * 【2026-08-19】以前は Fontsize を 64 に固定していた。libass の Fontsize は「文字そのものの
+ * 大きさ」ではなく上下の余白を含む高さに効くので、64 は実際の字の高さにすると
+ * 64 × 0.69 = 44px ＝ 1920px 高に対して 2.3% しかなく、マスターが選んだ 5.2%（案C・
+ * subtitle-styles.mjs の CAPTION_EM_RATIO）の半分以下だった。しかも解像度に追従しない。
+ * `fontSizeForHeight()` は subtitle-styles.mjs に既にあったのに、どこからも呼ばれていなかった。
+ * 縁取りも 4 固定だったが、書体ごとの実測値 outlineRatio から出す（黒帯を外したので、
+ * 背景から字を切り離すのは縁取りだけが担う）。
+ */
+function captionMetrics(dims) {
+  const fontSize = fontSizeForHeight(dims.height, CAPTION_FONT);
+  const marginLR = Math.round(dims.width * CAPTION_MARGIN_LR_RATIO);
+  const available = dims.width - marginLR * 2;
+  return {
+    fontSize,
+    marginLR,
+    marginV: Math.round(dims.height * CAPTION_MARGIN_V_RATIO),
+    outline: Math.max(1, Math.round(fontSize * CAPTION_FONT.outlineRatio)),
+    budgetPx: available > 0 ? available * LINE_FILL_MAX : Infinity,
+  };
+}
 
 /** 全角相当(CJK等)なら2、半角なら1（srt-builder.mjs の charDisplayWidth と同じ判定）。 */
 function charDisplayWidth(ch) {
@@ -352,19 +400,13 @@ function charDisplayWidth(ch) {
 }
 
 /** 文字列の描画幅(px)の見積り（実測比 wideRatio/narrowRatio × フォントサイズを積む）。 */
-function textWidthPx(text) {
+function textWidthPx(text, fontSize) {
   let px = 0;
   for (const ch of text) {
     const wide = charDisplayWidth(ch) === 2;
-    px += CAPTION_FONT_SIZE * (wide ? CAPTION_FONT.wideRatio : CAPTION_FONT.narrowRatio);
+    px += fontSize * (wide ? CAPTION_FONT.wideRatio : CAPTION_FONT.narrowRatio);
   }
   return px;
-}
-
-/** 1行に収める幅の予算(px)。canvasW は焼き込み先の実解像度（buildAssFile の PlayResX）。 */
-export function lineBudgetPx(canvasW) {
-  const available = canvasW - CAPTION_MARGIN_LR * 2;
-  return available > 0 ? available * LINE_FILL_MAX : Infinity;
 }
 
 /**
@@ -374,12 +416,12 @@ export function lineBudgetPx(canvasW) {
  * 日本語の語では起きない）は、割らずにそのまま1行として置く（はみ出しより分断しない
  * ことを優先。captacity も同じ方針＝ "too long for frame" でも割らずにそのまま置く）。
  */
-export function packWordsIntoLines(words, budgetPx) {
+export function packWordsIntoLines(words, budgetPx, fontSize) {
   const lines = [];
   let cur = "";
   for (const w of words) {
     const candidate = cur ? cur + w.w : w.w;
-    if (cur && textWidthPx(candidate) > budgetPx) {
+    if (cur && textWidthPx(candidate, fontSize) > budgetPx) {
       lines.push(cur);
       cur = w.w;
     } else {
@@ -405,22 +447,22 @@ function endsSentence(word) {
  * 加えて、カードが十分埋まっている（半行以上使っている）ときに限り、文末や大きな無音
  * ギャップでの早期区切りを許す（無くても2行保証は揺らがない、読みやすさのための上乗せ）。
  */
-export function buildCaptionCards(relWords, budgetPx) {
+export function buildCaptionCards(relWords, budgetPx, fontSize) {
   const GAP_BREAK = 0.3; // 実測ギャップがこれ以上なら早期区切りの候補にしてよい
   const MIN_FILL_FOR_EARLY_BREAK = 0.35; // 半行未満で毎回切ると極端に短いカードが乱発する
   const cards = [];
   let cur = [];
   for (const w of relWords) {
     if (cur.length) {
-      const candidateLines = packWordsIntoLines([...cur, w], budgetPx);
+      const candidateLines = packWordsIntoLines([...cur, w], budgetPx, fontSize);
       const mustBreak = candidateLines.length > CAPTION_MAX_LINES; // 唯一の必須条件
       let preferBreak = false;
       if (!mustBreak) {
         const gapBefore = +(w.start - cur[cur.length - 1].end).toFixed(3);
         const prevEndsSentence = endsSentence(cur[cur.length - 1]);
         if (prevEndsSentence || gapBefore >= GAP_BREAK) {
-          const curLines = packWordsIntoLines(cur, budgetPx);
-          const usedWidth = textWidthPx(curLines[curLines.length - 1] ?? "");
+          const curLines = packWordsIntoLines(cur, budgetPx, fontSize);
+          const usedWidth = textWidthPx(curLines[curLines.length - 1] ?? "", fontSize);
           preferBreak = usedWidth >= budgetPx * MIN_FILL_FOR_EARLY_BREAK;
         }
       }
@@ -439,21 +481,17 @@ export function buildCaptionCards(relWords, budgetPx) {
  * buildCaptionCards がすでに「2行以内に収まる」ことを保証した語の集まりだけを渡す前提
  * だが、行分割そのものは独立した関数として持つ（captacity が calculate_lines と
  * fits_frame を分けているのと同じ構成）。 */
-export function wrapCardText(words, budgetPx) {
-  return packWordsIntoLines(words, budgetPx).join("\\N");
+export function wrapCardText(words, budgetPx, fontSize) {
+  return packWordsIntoLines(words, budgetPx, fontSize).join("\\N");
 }
 
-// 帯・文字位置の比率（1920x1080基準の実測値からの比率。縦型(1080x1920)等でも同じ見え方になるよう
-// PlayResX/Yを実際の映像サイズに合わせたうえで、この比率で座標を再計算する）。
-const CAPTION_BAR_Y_RATIO = 780 / 1080;
-const CAPTION_BAR_H_RATIO = 300 / 1080;
+// 字幕を画面下からどれだけ浮かせるか（映像高に対する割合）。
 const CAPTION_MARGIN_V_RATIO = 95 / 1080;
 
 export function buildAssFile(transcript, ranges, assPath, dims) {
   const PLAY_RES_X = dims.width;
   const PLAY_RES_Y = dims.height;
-  const marginV = Math.round(PLAY_RES_Y * CAPTION_MARGIN_V_RATIO);
-  const budgetPx = lineBudgetPx(PLAY_RES_X);
+  const { fontSize, marginLR, marginV, outline, budgetPx } = captionMetrics(dims);
 
   let relWords = [];
   let newBase = 0;
@@ -462,14 +500,14 @@ export function buildAssFile(transcript, ranges, assPath, dims) {
     for (const w of rel) relWords.push({ w: w.w, start: w.start + newBase, end: w.end + newBase });
     newBase += r.end - r.start;
   }
-  const cards = buildCaptionCards(relWords, budgetPx);
+  const cards = buildCaptionCards(relWords, budgetPx, fontSize);
   const LEAD = 0.05;
   const MAXHOLD = 0.6;
   // 終了時刻は「次のカードの表示開始より前」を絶対条件にする（最低表示時間の底上げより優先。
   // 底上げを先に適用すると、間隔の詰まったカード同士で重なって縦に積み上がる事故が起きる）。
   const events = cards
     .map((c, i) => {
-      const text = wrapCardText(c, budgetPx).replace(/[{}]/g, "");
+      const text = wrapCardText(c, budgetPx, fontSize).replace(/[{}]/g, "");
       const start = Math.max(0, c[0].start - LEAD);
       const naturalEnd = c[c.length - 1].end + 0.15;
       const hardLimit = i + 1 < cards.length ? cards[i + 1][0].start - LEAD : Infinity;
@@ -487,7 +525,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${CAPTION_FONT.family},${CAPTION_FONT_SIZE},&H00FFFFFF,&H00000000,&H00000000,1,1,4,0,2,${CAPTION_MARGIN_LR},${CAPTION_MARGIN_LR},${marginV},1
+Style: Caption,${CAPTION_FONT.family},${fontSize},&H00FFFFFF,&H00000000,&H00000000,1,1,${outline},0,2,${marginLR},${marginLR},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -495,20 +533,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   fs.writeFileSync(assPath, header + events.join("\n") + "\n", "utf-8");
 }
 
-function burnCaptions(inPath, assPath, outPath, workDir, dims) {
+/**
+ * 【2026-08-19】以前はここで `drawbox=...color=black@1.0:t=fill` を敷いていた。
+ * 画面下部 27.8%（1080p なら y=780 から 300px）を不透明の黒で塗り潰すもので、
+ * 横型の出力では実際の映像の上に被さり、人物の胴体が黒帯で切れていた。
+ * 帯は置かず、白文字＋黒縁だけで背景から字を切り離す（マスター決定 2026-08-19）。
+ * 素材にすでに字幕が焼かれている動画では、その字幕が見えるようになるが、代替は作らない。
+ */
+function burnCaptions(inPath, assPath, outPath, workDir) {
   console.log("[6/7] 字幕を焼き込み中…");
   // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
   // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
   const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
   const relFonts = path.relative(workDir, FONTS_DIR).split(path.sep).join("/");
-  const barY = Math.round(dims.height * CAPTION_BAR_Y_RATIO);
-  const barH = Math.round(dims.height * CAPTION_BAR_H_RATIO);
   runSync(
     "ffmpeg",
     [
       "-y",
       "-i", inPath,
-      "-vf", `drawbox=x=0:y=${barY}:w=${dims.width}:h=${barH}:color=black@1.0:t=fill,subtitles=${relAss}:fontsdir=${relFonts}`,
+      "-vf", `subtitles=${relAss}:fontsdir=${relFonts}`,
       "-c:v", "libx264", "-crf", "18", "-preset", "medium",
       "-c:a", "copy",
       outPath,
@@ -523,7 +566,6 @@ async function main() {
   if (!jobId) usage();
 
   const job = readInboxJob(jobId);
-  if (!job.video || !job.video.path) throw new Error("このジョブには動画がありません（instructionのみのテスト送信の可能性）");
 
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
@@ -531,13 +573,29 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   try {
+    // 動画の有無の確認は必ず try の中で行う（外に置くと、この throw だけ下の catch を通らず
+    // results.jsonl に何も書かれないまま落ち、UI の完了通知が永久に来ない）。
+    if (!job.video || !job.video.path) {
+      throw new Error("このジョブには動画がありません（instructionのみのテスト送信の可能性）");
+    }
+    // 受け取った指示をそのまま出す。空なら「空だった」ことが分かるように明示する
+    // （マスターが送ったつもりの文が、ここまで届いているかを目で確かめられるようにする）。
+    console.log(`[0/7] 受け取った指示: ${job.instruction ? job.instruction : "（指示なし）"}`);
     checkCancelled(workDir);
     const transcript = transcribe(job.video.path, workDir);
     checkCancelled(workDir);
     const silences = detectSilences(job.video.path);
     checkCancelled(workDir);
-    const rawRanges = await selectSegments(transcript, job.instruction, job.settings, workDir);
-    const ranges = snapRanges(rawRanges, silences);
+    const decision = await selectSegments(transcript, job.instruction, job.settings, workDir);
+    const ranges = snapRanges(decision.ranges, silences);
+    // 反映報告を作業フォルダにも残す（UI の表示が壊れても、あとから何が起きたか追えるようにする）。
+    fs.writeFileSync(
+      path.join(workDir, "decision.json"),
+      `${JSON.stringify({ instruction: job.instruction ?? "", ...decision, ranges }, null, 2)}\n`,
+      "utf-8"
+    );
+    for (const line of decision.applied) console.log(`  [反映] ${line}`);
+    for (const line of decision.notApplied) console.log(`  [未反映] ${line}`);
     checkCancelled(workDir);
 
     const trimmedPath = path.join(workDir, "trimmed.mp4");
@@ -557,13 +615,22 @@ async function main() {
       const assPath = path.join(workDir, "captions.ass");
       buildAssFile(transcript, ranges, assPath, dims);
       checkCancelled(workDir);
-      burnCaptions(framedPath, assPath, resultPath, workDir, dims);
+      burnCaptions(framedPath, assPath, resultPath, workDir);
     } else {
       fs.copyFileSync(framedPath, resultPath);
     }
 
     console.log("[7/7] 完了記録を書き込み中…");
-    appendResult({ id: jobId, status: "done", output: resultPath, at: new Date().toISOString() });
+    appendResult({
+      id: jobId,
+      status: "done",
+      output: resultPath,
+      // UI が「この指示で編集しました／反映した内容／反映できなかった項目」を出すための材料。
+      instruction: job.instruction ?? "",
+      applied: decision.applied,
+      notApplied: decision.notApplied,
+      at: new Date().toISOString(),
+    });
     console.log(`完了: ${resultPath}`);
   } catch (err) {
     if (err instanceof CancelledError) {
