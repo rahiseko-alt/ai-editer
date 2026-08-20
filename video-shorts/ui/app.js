@@ -380,18 +380,37 @@
       ? `<p class="said">${escapeHtml(instruction)}</p>`
       : `<p class="said none">（指示なし。自動で判断しました）</p>`;
 
+    html +=
+      `<button type="button" class="apply-report-toggle" id="applyReportToggle" ` +
+      `aria-expanded="false" aria-controls="applyReportDetails">` +
+      `<span class="chev" aria-hidden="true">▽</span>反映した内容</button>`;
+
+    let details = "";
     if (applied.length) {
-      html += "<h3>反映した内容</h3>" + listHtml(applied, "hit");
+      details += listHtml(applied, "hit");
     }
     if (notApplied.length) {
-      html += "<h3>反映できなかった項目</h3>" + listHtml(notApplied, "miss");
+      details += "<h3>反映できなかった項目</h3>" + listHtml(notApplied, "miss");
     } else if (instruction) {
-      html += `<h3>反映できなかった項目</h3><p class="said none">ありません（指示はすべて反映しました）</p>`;
+      details += `<h3>反映できなかった項目</h3><p class="said none">ありません（指示はすべて反映しました）</p>`;
     }
+    html += `<div class="apply-report-details" id="applyReportDetails" hidden>${details}</div>`;
 
     applyReport.innerHTML = html;
     applyReport.hidden = false;
   }
+
+  // 反映内容パネルはrenderApplyReportのたびにDOMが作り直される（トグルボタンも毎回新規要素）ため、
+  // ボタン個別ではなく静的な親要素applyReportへイベント委任で1回だけ登録する。
+  applyReport.addEventListener("click", (e) => {
+    const toggle = e.target.closest("#applyReportToggle");
+    if (!toggle) return;
+    const details = document.getElementById("applyReportDetails");
+    if (!details) return;
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    details.hidden = expanded;
+  });
 
   // --- 縦横比 ---
   aspectButtons.forEach((btn) => {
