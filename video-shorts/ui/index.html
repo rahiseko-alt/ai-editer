@@ -1,5 +1,5 @@
 <!--
-  AI-Editer 本番UI（バックエンド未実装。API契約は ui/app.js 冒頭コメントを正とする）。
+  KOSM 本番UI（バックエンド未実装。API契約は ui/app.js 冒頭コメントを正とする）。
   デモ版（../demo-ui/index.html）とは別物：ここでは本物の fetch のみを行い、
   サーバーが無い間はエラーを正直に表示する（タイマーでの進捗偽装はしない）。
 -->
@@ -8,7 +8,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI-Editer</title>
+<title>KOSM</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -19,10 +19,11 @@
 
 <div class="app">
   <header>
-    <div class="brand"><span class="mark" aria-hidden="true">AE</span>AI-Editer</div>
+    <div class="brand"><span class="mark" aria-hidden="true">KO</span>KOSM</div>
     <div class="header-right">
       <span id="serverStatus" class="server-status" role="status" aria-live="polite">確認中…</span>
       <button class="btn ghost" id="fullscreenBtn" type="button">全画面</button>
+      <button class="btn ghost" id="transcriptBtn" type="button" disabled>文字起こしを表示</button>
       <button class="btn" id="exportBtn" type="button" disabled>ダウンロード</button>
     </div>
   </header>
@@ -92,6 +93,16 @@
     <div class="overlay-actions" id="overlayActions" hidden>
       <button type="button" class="btn" id="overlayCloseBtn">閉じる</button>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="transcriptOverlay" role="dialog" aria-modal="true" aria-labelledby="transcriptTitle" hidden>
+  <div class="transcript-card">
+    <div class="transcript-head">
+      <h3 id="transcriptTitle">文字起こし（編集前）</h3>
+      <button type="button" class="btn ghost small" id="transcriptCloseBtn">閉じる</button>
+    </div>
+    <div class="transcript-body" id="transcriptBody"></div>
   </div>
 </div>
 

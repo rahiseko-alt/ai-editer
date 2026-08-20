@@ -12,7 +12,7 @@
 
 ## 技術スタック（既存実装より確定）
 
-- クラウド / ホスティング: 不要（客の PC 上でローカル動作。AI-Editer のサーバ・アカウントを介さない）
+- クラウド / ホスティング: 不要（客の PC 上でローカル動作。KOSM のサーバ・アカウントを介さない）
 - 言語 / ランタイム: Node.js 22（標準モジュールのみ・npm 依存ゼロ） + Python 3（文字起こし: Groq Whisper API）。
   `package.json` の `engines.node` で `>=20.0.0 <24.0.0` を明示している(AUD-P1-15)。上限を切っているのは、
   Node.js v24.13.0 の Windows 環境で OneDrive 配下・日本語パス上の `fs.rmSync()` 再帰削除がネイティブ
@@ -49,7 +49,7 @@
 
 ## この案件固有のルール / メモ
 
-- 全工程キーレスが原則。Groq を使う場合のみ客自身の API キーを使用（AI-Editer が代理・再販しない）。
+- 全工程キーレスが原則。Groq を使う場合のみ客自身の API キーを使用（KOSM が代理・再販しない）。
 - 2026-07-27 監査提案（`docs/audits/2026-07-27-kosespark-test-review-proposal.md`）の残作業（P0-5・P1 全12件・P2 全9件）は
   `docs/roadmap.html` の原子ツリーへ移した。以後の進捗管理はそちらが正。
 - 旧統治（`memory.md` / `.claude/hooks/*` の vibe-base 系ゲート）はこのリポジトリでは採用しない。

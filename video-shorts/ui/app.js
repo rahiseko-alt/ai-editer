@@ -115,6 +115,10 @@
   const serverStatus = document.getElementById("serverStatus");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const exportBtn = document.getElementById("exportBtn");
+  const transcriptBtn = document.getElementById("transcriptBtn");
+  const transcriptOverlay = document.getElementById("transcriptOverlay");
+  const transcriptBody = document.getElementById("transcriptBody");
+  const transcriptCloseBtn = document.getElementById("transcriptCloseBtn");
 
   const dropZone = document.getElementById("dropZone");
   const fileInput = document.getElementById("fileInput");
@@ -349,6 +353,8 @@
     outputTabs.innerHTML = "";
     clearApplyReport();
     exportBtn.disabled = true;
+    transcriptBtn.disabled = true;
+    transcriptOverlay.hidden = true;
   }
 
   function clearApplyReport() {
@@ -616,6 +622,7 @@
     player.style.display = "block";
     stageEmpty.style.display = "none";
     exportBtn.disabled = false;
+    transcriptBtn.disabled = false;
     renderApplyReport(data);
     showToast("処理が完了しました");
   }
@@ -633,6 +640,26 @@
     a.click();
     a.remove();
     showToast("ダウンロードを開始しました");
+  });
+
+  // --- 文字起こし（編集前）表示。transcript.json をそのまま平文で見せるだけで、
+  // 編集後の内容には一切影響しない読み取り専用の確認機能。 ---
+  transcriptBtn.addEventListener("click", async () => {
+    if (!job || !job.id) {
+      showToast("文字起こしがありません", true);
+      return;
+    }
+    transcriptBody.textContent = "読み込み中…";
+    transcriptOverlay.hidden = false;
+    try {
+      const data = await apiFetch(`/api/jobs/${encodeURIComponent(job.id)}/transcript`);
+      transcriptBody.textContent = data && data.text ? data.text : "（文字起こしが空です）";
+    } catch (err) {
+      transcriptBody.textContent = err instanceof ApiError ? err.message : "取得に失敗しました。";
+    }
+  });
+  transcriptCloseBtn.addEventListener("click", () => {
+    transcriptOverlay.hidden = true;
   });
 
   // --- オーバーレイ（進捗・エラー表示。タイマーでの偽装は行わず、常に実イベント/実経過時間を反映する） ---

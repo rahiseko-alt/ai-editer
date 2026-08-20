@@ -250,6 +250,20 @@ aside.right{
 .overlay-actions{margin-top:16px;}
 .overlay-actions[hidden]{display:none;}
 
+/* 文字起こし（編集前）モーダル。「反映した内容」パネルが枠無制限で伸びて動画を圧迫した事故の
+   教訓を踏まえ、枠(.transcript-card)は固定サイズのまま、中身(.transcript-body)だけを
+   内側スクロールさせる（長尺動画の全文でも動画エリアやレイアウト全体を圧迫しない）。 */
+.transcript-card{
+  width:min(680px, 90vw);max-height:80vh;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;
+  display:flex;flex-direction:column;gap:12px;
+}
+.transcript-head{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.transcript-head h3{margin:0;font-size:14px;}
+.transcript-body{
+  overflow-y:auto;white-space:pre-wrap;line-height:1.8;font-size:13.5px;color:var(--text);
+}
+
 .toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
   background:var(--panel-2);border:1px solid var(--good);color:var(--text);
