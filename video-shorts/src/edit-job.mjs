@@ -435,10 +435,14 @@ function snapRanges(ranges, silences, phraseUnits) {
       if (u.start >= r.end - EPS) nextStart = Math.min(nextStart, u.start);
     }
 
-    // 実測した無音のうち、**その窓の内側に完全に収まるものだけ**を候補にする。
-    // 以前は全部の無音を候補にしていたため、捨てると決めた発話の向こう側にある無音へ
-    // 寄ってしまい、その発話を丸ごと飲み込んでいた（実測: 文節139「なんか」140「最近って」）。
-    const usable = silences.filter((s) => s.start >= prevEnd - EPS && s.end <= nextStart + EPS);
+    // 【2026-08-20 修正】以前は無音区間の両端が窓に完全内包されることを要求していたが、
+    // 実測の無音は窓のすぐ外まで伸びていることがあり（例:助かりますよね→あ、の間の無音は
+    // 193.134〜194.159秒で、nextStart=193.828をわずかに超える）、その場合に正しい無音が
+    // 丸ごと除外され、snapToSilenceが単語の途中の別の無音へスナップする事故が実際に起きた
+    // （文節「コズム」「助かりますよね」がそれぞれ音声から欠落した）。
+    // 無音の「入り口側」が窓に触れてさえいれば候補にし、実際に使う値は下でクランプして
+    // 隣の発話を絶対に越えないようにする（歯止めは維持したまま、除外条件だけ緩める）。
+    const usable = silences.filter((s) => s.end >= prevEnd - EPS && s.start <= nextStart + EPS);
 
     // 使える無音が無い場合の既定値。**終端と開始で扱いを変える。**
     //
@@ -452,11 +456,15 @@ function snapRanges(ranges, silences, phraseUnits) {
     const midStart = r.start;
     const midEnd = Number.isFinite(nextStart) ? r.end + (nextStart - r.end) / 2 : r.end;
 
-    const snappedStart = snapToSilence(r.start, usable, "start", phraseUnits);
-    const snappedEnd = snapToSilence(r.end, usable, "end", phraseUnits);
+    const rawSnappedStart = snapToSilence(r.start, usable, "start", phraseUnits);
+    const rawSnappedEnd = snapToSilence(r.end, usable, "end", phraseUnits);
     // snapToSilence は候補が無いと引数をそのまま返す。その場合だけ中央へ寄せる。
-    const start = snappedStart === r.start ? midStart : snappedStart;
-    const end = snappedEnd === r.end ? midEnd : snappedEnd;
+    const foundStart = rawSnappedStart !== r.start;
+    const foundEnd = rawSnappedEnd !== r.end;
+    // usable をオーバーラップ基準に緩めたぶん、返り値側で「捨てると決めた発話は絶対に越えない」
+    // という歯止めを掛け直す（虎の巻 原則1）。
+    const start = foundStart ? Math.max(rawSnappedStart, prevEnd) : midStart;
+    const end = foundEnd ? Math.min(rawSnappedEnd, nextStart) : midEnd;
 
     return end > start ? { start, end } : { start: r.start, end: r.end };
   });
