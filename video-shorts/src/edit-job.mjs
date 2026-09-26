@@ -53,6 +53,8 @@ const RESULTS_JSONL = path.join(RUNTIME_DIR, "results.jsonl");
 function usage() {
   console.error("使い方: node src/edit-job.mjs prepare <jobId>  （文字起こし〜文節化。ワーカーが自動実行）");
   console.error("       node src/edit-job.mjs render <jobId>   （work/<jobId>/keep.json を読んで書き出し）");
+  console.error("         切り分け用: --no-snap（無音スナップしない） --no-filler（言い淀みを切らない）");
+  console.error("                     --out <名前>（outputs/<jobId>/<名前>.mp4 へ書き、完了記録は書かない）");
   process.exit(1);
 }
 
@@ -739,7 +741,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  * @param {{videoPath:string, ranges:{start:number,end:number}[], portrait:boolean,
  *   assPath:string|null, workDir:string, outPath:string}} args
  */
-function renderFinal({ videoPath, ranges, portrait, assPath, workDir, outPath }) {
+export function renderFinal({ videoPath, ranges, portrait, assPath, workDir, outPath }) {
   console.log("[6/8] 切り出し・結合中…");
   const filters = [];
   const labels = [];
@@ -863,11 +865,17 @@ async function prepareMain(jobId) {
 
 /**
  * render: work/<jobId>/keep.json を読み、書き出しまで実行する。
+ *
+ * 切り分け用の指定（2026-09-26。音声が欠落する不具合を、どの工程で起きているか突き止めるため）:
+ *   noSnap   … 無音スナップを飛ばす（文節の時刻そのままで切る）
+ *   noFiller … 言い淀み除去を飛ばす
+ *   outName  … outputs/<jobId>/<outName>.mp4 と work/<jobId>/decision-<outName>.json へ書く。
+ *              試しの書き出しなので results.jsonl には何も書かない（UI を「完了」にしない）。
  * keep.json の形式: {"keep": [[開始文節番号, 終了文節番号], ...],
  *                     "applied": ["反映した指示"], "notApplied": ["反映できなかった指示"]}
  * keep はこのセッションが units.json を読んで直接決める（区間選定の自動化はしない）。
  */
-async function renderMain(jobId) {
+async function renderMain(jobId, { noSnap = false, noFiller = false, outName = null } = {}) {
   const job = readInboxJob(jobId);
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
@@ -905,11 +913,18 @@ async function renderMain(jobId) {
     };
 
     checkCancelled(workDir);
-    let ranges = snapRanges(decision.ranges, silences, groupIntoPhrases(transcript.words || [], silences));
+    let ranges = noSnap
+      ? decision.ranges
+      : snapRanges(decision.ranges, silences, groupIntoPhrases(transcript.words || [], silences));
+    if (noSnap) console.log("[切り分け] 無音スナップを飛ばしました（--no-snap）");
 
     console.log("[5/8] 言い淀みを切っています…");
-    const fillerPlan = planFillerCuts(transcript.words || [], silences);
-    if (fillerPlan.aborted) {
+    const fillerPlan = noFiller
+      ? { cuts: [], skipped: [], aborted: false }
+      : planFillerCuts(transcript.words || [], silences);
+    if (noFiller) {
+      console.log("[切り分け] 言い淀み除去を飛ばしました（--no-filler）");
+    } else if (fillerPlan.aborted) {
       console.log("  フィラー判定が半数を超えたため、判定が壊れているとみなして1つも切りません");
     } else {
       ranges = subtractCuts(ranges, fillerPlan.cuts);
@@ -921,7 +936,7 @@ async function renderMain(jobId) {
     decision.fillerCuts = fillerPlan.cuts;
     decision.fillerSkipped = fillerPlan.skipped;
     fs.writeFileSync(
-      path.join(workDir, "decision.json"),
+      path.join(workDir, outName ? `decision-${outName}.json` : "decision.json"),
       `${JSON.stringify({ instruction: job.instruction ?? "", ...decision, ranges }, null, 2)}\n`,
       "utf-8"
     );
@@ -934,7 +949,7 @@ async function renderMain(jobId) {
     // （trim/concatは解像度を変えないため、書き出し後も同じ実寸になる）。
     const dims = portrait ? { width: 1080, height: 1920 } : probeDimensions(job.video.path);
 
-    const resultPath = path.join(outDir, "result.mp4");
+    const resultPath = path.join(outDir, outName ? `${outName}.mp4` : "result.mp4");
     let assPath = null;
     if (job.settings?.caption) {
       assPath = path.join(workDir, "captions.ass");
@@ -944,6 +959,10 @@ async function renderMain(jobId) {
     renderFinal({ videoPath: job.video.path, ranges, portrait, assPath, workDir, outPath: resultPath });
     checkCancelled(workDir);
 
+    if (outName) {
+      console.log(`[切り分け] 書き出しました（完了記録は書きません）: ${resultPath}`);
+      return;
+    }
     console.log("[完了] 完了記録を書き込み中…");
     appendResult({
       id: jobId,
@@ -969,10 +988,23 @@ async function renderMain(jobId) {
 }
 
 async function main() {
-  const [, , cmd, jobId] = process.argv;
+  const [, , cmd, jobId, ...rest] = process.argv;
   if (!cmd || !jobId || (cmd !== "prepare" && cmd !== "render")) usage();
-  if (cmd === "prepare") await prepareMain(jobId);
-  else await renderMain(jobId);
+  if (cmd === "prepare") {
+    if (rest.length) usage();
+    await prepareMain(jobId);
+    return;
+  }
+  const opts = { noSnap: false, noFiller: false, outName: null };
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--no-snap") opts.noSnap = true;
+    else if (rest[i] === "--no-filler") opts.noFiller = true;
+    else if (rest[i] === "--out" && /^[A-Za-z0-9_-]+$/.test(rest[i + 1] ?? "")) opts.outName = rest[++i];
+    else usage();
+  }
+  // 切り分けの書き出しで result.mp4 と完了記録を上書きしないよう、飛ばす指定には --out を必須にする。
+  if ((opts.noSnap || opts.noFiller) && !opts.outName) usage();
+  await renderMain(jobId, opts);
 }
 
 // 検証スクリプト等からこのファイルを import して buildCaptionCards/wrapCardText/buildAssFile を
