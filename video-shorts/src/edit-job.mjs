@@ -44,10 +44,11 @@ import { fileURLToPath } from "node:url";
 import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
 import { writeJsonAtomically } from "./atomic-json.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
-import { FONTS_DIR, FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
+import { FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
 import { approvalProblem, writeApproval } from "./editorial/approval.mjs";
 import { loadPlan, renderScript, validatePlan } from "./editorial/plan-schema.mjs";
 import { resolveEdl } from "./editorial/resolve-edl.mjs";
+import { alignToFrames, probeFps, renderFinal } from "./render/render-edl.mjs";
 import { groupIntoPhrases } from "./script/phrases.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -483,79 +484,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   fs.writeFileSync(assPath, header + events.join("\n") + "\n", "utf-8");
 }
 
-/**
- * 切り出し・結合（クロスフェード付き）、縦型変換（letterbox）、字幕焼き込みを
- * 1本の filter_complex にまとめ、ffmpeg を1回だけ実行して直接 outPath へ書き出す。
- *
- * 【2026-08-19】以前は「切り出し・結合」「縦型変換」「字幕焼き込み」を別々のffmpeg呼び出し
- * （それぞれフル再エンコード、libx264 crf18 preset medium）に分けていた。設定次第で最大3回
- * 連続の再エンコードが走り、長尺動画では render 全体の大半の時間をここが占めていた
- * （マスター指摘「遅いです」を受けて調査・特定。同じ内容を1回のエンコードにまとめた）。
- * 各処理のフィルタ内容そのものは変えていない。
- *
- * 縦型変換（letterbox）についての経緯【2026-08-18】: 既存の顔追跡クロップ実装 src/reframe.py を
- * 先に試したが、Windows環境で "[WinError 206] ファイル名または拡張子が長すぎます" で失敗した。
- * フレームごとのx位置を1本の -vf 条件式に埋め込む実装のため、動画が長い（フレーム数が多い）と
- * Windows のコマンドライン長上限を超える。ここでは確実に動く letterbox 方式（顔追跡なし）で
- * 「指定した縦横比になる」ことを優先し、顔追跡クロップは別課題として切り分けた。
- *
- * 字幕の帯についての経緯【2026-08-19】: 以前は `drawbox=...color=black@1.0:t=fill` で
- * 画面下部27.8%を不透明の黒で塗り潰していたが、横型の出力では実際の映像の上に被さり、
- * 人物の胴体が黒帯で切れていた。帯は置かず、白文字＋黒縁だけで背景から字を切り離す
- * （マスター決定2026-08-19）。素材にすでに字幕が焼かれている動画では、その字幕が見えるように
- * なるが、代替は作らない。
- *
- * @param {{videoPath:string, ranges:{start:number,end:number}[], portrait:boolean,
- *   assPath:string|null, workDir:string, outPath:string}} args
- */
-export function renderFinal({ videoPath, ranges, portrait, assPath, workDir, outPath }) {
-  console.log("[6/8] 切り出し・結合中…");
-  const filters = [];
-  const labels = [];
-  ranges.forEach((r, i) => {
-    const dur = r.end - r.start;
-    const fadeOutSt = Math.max(0, dur - 0.02);
-    filters.push(`[0:v]trim=${r.start}:${r.end},setpts=PTS-STARTPTS[v${i}]`);
-    filters.push(
-      `[0:a]atrim=${r.start}:${r.end},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02,afade=t=out:st=${fadeOutSt}:d=0.02[a${i}]`
-    );
-    labels.push(`[v${i}][a${i}]`);
-  });
-  filters.push(`${labels.join("")}concat=n=${ranges.length}:v=1:a=1[outv][outa]`);
-
-  let videoLabel = "outv";
-  if (portrait) {
-    console.log("[7/8] 縦型変換中（letterbox）…");
-    filters.push(
-      "[outv]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[outv2]"
-    );
-    videoLabel = "outv2";
-  }
-  if (assPath) {
-    console.log("[8/8] 字幕を焼き込み中…");
-    // ffmpeg の subtitles フィルタは Windows のドライブレター(C:)をオプション区切りと誤認するため、
-    // 作業ディレクトリからの相対パスで渡す（絶対パスのコロンを回避する）。
-    const relAss = path.relative(workDir, assPath).split(path.sep).join("/");
-    const relFonts = path.relative(workDir, FONTS_DIR).split(path.sep).join("/");
-    filters.push(`[${videoLabel}]subtitles=${relAss}:fontsdir=${relFonts}[vfinal]`);
-    videoLabel = "vfinal";
-  }
-
-  runSync(
-    "ffmpeg",
-    [
-      "-y",
-      "-i", videoPath,
-      "-filter_complex", filters.join(";\n"),
-      "-map", `[${videoLabel}]`, "-map", "[outa]",
-      "-c:v", "libx264", "-crf", "18", "-preset", "medium",
-      "-c:a", "aac", "-b:a", "192k",
-      outPath,
-    ],
-    { cwd: workDir }
-  );
-}
-
 // ---------- メイン ----------
 //
 // 【2026-08-19 マスター指示】「UIに素材を投げる→文字起こしする→お前が内容を決める→
@@ -728,14 +656,20 @@ async function renderMain(jobId, { noSnap = false, noFiller = false, outName = n
       for (const c of edl.fillerCuts) console.log(`    切: ${c.start.toFixed(2)}s 「${c.word}」`);
       for (const k of edl.fillerSkipped) console.log(`    残: ${k.start.toFixed(2)}s 「${k.word}」← ${k.reason}`);
     }
+    // 書き出しは区間の端を映像のフレーム境界に揃えて切る（render-edl.mjs）。字幕の時刻も
+    // 実際に切る区間に合わせるため、ここで先に揃えておく（renderFinal 側で揃え直しても変わらない）。
+    const fps = probeFps(job.video.path);
+    const ranges = alignToFrames(edl.ranges, fps).map(({ start, end }) => ({ start, end }));
     // 書き出しは EDL だけを見る。記録として残す（以前の decision.json はこれに統合した）。
     writeJsonAtomically(path.join(workDir, outName ? `edl-${outName}.json` : "edl.json"), {
       ...edl,
       instruction: job.instruction ?? "",
       applied: decision.applied,
       notApplied: decision.notApplied,
+      // 実際に切り出す区間（フレーム境界に揃えたもの）。検品で時刻を照合するときはこちらを使う。
+      fps,
+      renderedRanges: ranges,
     });
-    const ranges = edl.ranges.map(({ start, end }) => ({ start, end }));
     for (const line of decision.applied) console.log(`  [反映] ${line}`);
     for (const line of decision.notApplied) console.log(`  [未反映] ${line}`);
     checkCancelled(workDir);
@@ -752,7 +686,7 @@ async function renderMain(jobId, { noSnap = false, noFiller = false, outName = n
       buildAssFile(transcript, ranges, assPath, dims);
       checkCancelled(workDir);
     }
-    renderFinal({ videoPath: job.video.path, ranges, portrait, assPath, workDir, outPath: resultPath });
+    renderFinal({ videoPath: job.video.path, ranges, portrait, assPath, workDir, outPath: resultPath, fps });
     checkCancelled(workDir);
 
     if (outName) {
@@ -789,7 +723,7 @@ async function renderMain(jobId, { noSnap = false, noFiller = false, outName = n
 }
 
 // 以前ここで定義していた関数は、import していた側のために同じ名前で出し続ける。
-export { groupIntoPhrases };
+export { groupIntoPhrases, renderFinal };
 
 async function main() {
   const [, , cmd, jobId, ...rest] = process.argv;

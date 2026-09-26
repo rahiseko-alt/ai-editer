@@ -22,15 +22,14 @@ const SOURCE_SEC = 60;
 // どの時刻の音も他の時刻と区別できる＝どこがずれた・欠けたかが一意に分かる。
 const chirp = (t) => 0.6 * Math.sin(2 * Math.PI * (200 * t + 30 * t * t));
 
-// 区間の両端で照合から外す幅（秒）。renderFinal のフェード 20ms ＋ 余裕 5ms。
+// 区間の両端で照合から外す幅（秒）。renderFinal のフェード（10ms）＋ 余裕。
 const FADE_EXCLUDE_SEC = 0.025;
 // 区間の中身が元と一致していると見なす誤差の上限（平均二乗誤差）。AAC の劣化は 1e-4 程度に収まる。
 const CONTENT_MSE_MAX = 1e-3;
-// 繋ぎ目に挟まってよい無音の上限（秒）。
-// 【現状の記録】2026-09-26 時点の renderFinal は、映像がフレーム単位・音声がサンプル単位で切れるため、
-// 繋ぎ目ごとに最大1フレーム（1/30秒）の無音が挟まる（docs/再開発計画_Phase0-2.md §2-1）。
-// Phase 2 でこれを 1ms 未満にしたら、この値を 0.001 に下げる。
-const GAP_MAX_SEC = 1 / FPS + 0.002;
+// 繋ぎ目に挟まってよい余分な音の上限（秒）。
+// 2026-09-26 の作り直し前は、映像がフレーム単位・音声がサンプル単位で切れていたため、繋ぎ目ごとに
+// 最大1フレーム（1/30秒）の無音が挟まっていた（docs/再開発計画_Phase0-2.md §2-1）。
+const GAP_MAX_SEC = 0.001;
 
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { encoding: "buffer", maxBuffer: 1 << 30 });
@@ -99,11 +98,19 @@ function locateRanges(y, ranges) {
 
 function check(label, src, dir, ranges) {
   const outPath = path.join(dir, `${label}.mp4`);
-  renderFinal({ videoPath: src, ranges, portrait: false, assPath: null, workDir: dir, outPath });
-  const found = locateRanges(decodePcm(outPath), ranges);
+  // renderFinal は区間の端をフレーム境界へ広げて切る。照合は実際に切った区間で行う。
+  const actual = renderFinal({ videoPath: src, ranges, portrait: false, assPath: null, workDir: dir, outPath });
   const failures = [];
+  if (actual.length !== ranges.length) failures.push(`${label}: 区間の数が変わった（${ranges.length}→${actual.length}）`);
+  actual.forEach((a, i) => {
+    const r = ranges[i];
+    if (r && !(a.start <= r.start + 1e-9 && a.end >= r.end - 1e-9 && a.end - a.start <= r.end - r.start + 2 / FPS + 1e-9)) {
+      failures.push(`${label} 区間${i}: 揃えた区間 ${a.start}〜${a.end} が元の ${r.start}〜${r.end} を覆っていない、または広げすぎ`);
+    }
+  });
+  const found = locateRanges(decodePcm(outPath), actual);
   found.forEach((f, i) => {
-    const name = `${label} 区間${i}（${f.range.start}〜${f.range.end}秒）`;
+    const name = `${label} 区間${i}（${f.range.start.toFixed(3)}〜${f.range.end.toFixed(3)}秒）`;
     if (!(f.mse <= CONTENT_MSE_MAX)) failures.push(`${name}: 中身が元と一致しない（mse=${f.mse.toExponential(2)}）`);
     if (i > 0) {
       const gap = f.offsetSec - found[i - 1].offsetSec;

@@ -12,9 +12,19 @@
 //     原則(F)を付与した上で迷った旨をコメント」とある＝専門家が音声を聞いても迷う。
 //     **ここでは扱わない。** 扱うなら承認制にする（合格条件 §4）。
 //
+// 【判定の単位は「文節」（2026-09-26）】Groq の日本語の語は1文字単位に近い部分語で返る
+// （「くれちゃうんです」が「く」「れ」「ちゃ」「う」「ん」「で」「す」になる）。以前は語ごとに判定して
+// いたため、1文字の「ん」「あ」「え」が CLASS_A に一致し、前後に語の内部の無音の誤検出があると、
+// 「くれちゃ[ん]です」の「ん」をフィラーとして切っていた（合成データで再現。tests/filler-cut.mjs）。
+// 無音スナップで既に踏んだのと同じ誤り（edit-job.mjs の isInsideAnyWord の経緯）なので、同じく
+// BudouX の文節（groupIntoPhrases）を単位にし、**文節まるごとが母音性フィラーのときだけ**候補にする。
+// 「えーまず」のように文節がくっついたものは切らない（迷ったら消さない＝虎の巻 §4-1）。
+//
 // 【消せないものは消さない】Descript の "Avoid harsh cuts" と同じ降参の実装。
 // 隣の語を削らずに切り出せないフィラーは、そのまま残す。無理に消すと
 // 「カットが harsh」（Descript のフィードバックで他要望より400票多い最多の不満）になる。
+
+import { groupIntoPhrases } from "./script/phrases.mjs";
 
 /** クラスA（母音性フィラー）。CSJ 前川2012 の表層形リストに基づく。 */
 const CLASS_A = /^(?:え[ーぇえ]*(?:っ?と[ーぉ]*)?|あ[ーぁっ]*|ん[ーっ]*(?:と[ーぉ]*)?|う[ーぅ]+|お[ーぉ]+)$/;
@@ -68,11 +78,13 @@ function nearestSilenceEdge(t, silences, distance) {
 /**
  * 切り落とすべきフィラー区間を決める。
  *
- * @param {{w:string,start:number,end:number}[]} words 文字起こしの語（素材の時刻）
+ * @param {{w:string,start:number,end:number}[]} words 文字起こしの語（素材の時刻）。内部で文節にまとめてから判定する
  * @param {{start:number,end:number}[]} silences ffmpeg silencedetect の実測値
  * @returns {{cuts:{start:number,end:number,word:string}[], skipped:{word:string,start:number,reason:string}[], aborted:boolean}}
  */
-export function planFillerCuts(words, silences) {
+export function planFillerCuts(rawWords, silences) {
+  // 判定は文節単位（冒頭のコメント参照）。以下の words は文節の並び。
+  const words = groupIntoPhrases(rawWords, silences);
   const candidates = [];
   for (let i = 0; i < words.length; i++) {
     if (isClassA(words[i])) candidates.push(i);
