@@ -114,7 +114,7 @@ function scanInbox() {
  *
  * 【2026-08-19 マスター指示】「内容を決める」のは別プロセスの使い捨てLLMではなく、
  * この対話をしているセッション自身にする。ワーカーは prepare（文字起こし〜文節化）
- * までしか自動実行しない。区間選定（work/<jobId>/keep.json を書いて render を叩く）は
+ * までしか自動実行しない。区間選定（work/<jobId>/editorial_plan.json を書き、plan → 承認 → approve → render）は
  * このセッションが直接行う＝ prepare の正常終了は「完了」ではないので results.jsonl
  * には何も書かない（UI は render が終わるまで処理中のまま待つ）。
  */
@@ -155,7 +155,7 @@ function runJob(jobId) {
     child.on("close", (code, signal) => {
       if (code === 0) {
         // prepare の正常終了。ここでは完了記録を書かない（内容を決めるのはこれから）。
-        log(`prepare 完了: ${jobId} — work/${jobId}/units.json を見て keep.json を書き、render してください`);
+        log(`prepare 完了: ${jobId} — work/${jobId}/units.json を見て editorial_plan.json を書き、plan → 承認 → approve → render してください`);
         resolve();
         return;
       }

@@ -1,6 +1,6 @@
 ---
 name: video-edit-checklist
-description: Use for the whole video-shorts editing loop in this repo. Trigger when starting or launching the local editing UI (「立ち上げて」「起動して」「UIを出して」「ローカルで動かして」), when a job becomes ready for segment selection (writing work/<jobId>/keep.json for video-shorts/src/edit-job.mjs), before running "node src/edit-job.mjs render <jobId>", and before reporting any edited video as finished, done, or 合格. Also triggers on 「編集して」「区間を決めて」「keep.json書いて」「検品して」「完成した」「レンダーして」「動画できた」. Covers three mandatory phases: arming the job watcher so submitted videos are never missed, selecting segments by reading units.json in full, and inspecting the rendered output against docs/合格条件.md. Launching the UI without arming the watcher, or a clean process exit from edit-job.mjs, is not evidence of anything — do not skip this skill because a command succeeded.
+description: Use for the whole video-shorts editing loop in this repo. Trigger when starting or launching the local editing UI (「立ち上げて」「起動して」「UIを出して」「ローカルで動かして」), when a job becomes ready for segment selection (writing work/<jobId>/editorial_plan.json or keep.json for video-shorts/src/edit-job.mjs), before running "node src/edit-job.mjs plan/approve/render <jobId>", and before reporting any edited video as finished, done, or 合格. Also triggers on 「編集して」「区間を決めて」「keep.json書いて」「検品して」「完成した」「レンダーして」「動画できた」. Covers three mandatory phases: arming the job watcher so submitted videos are never missed, selecting segments by reading units.json in full, and inspecting the rendered output against docs/合格条件.md. Launching the UI without arming the watcher, or a clean process exit from edit-job.mjs, is not evidence of anything — do not skip this skill because a command succeeded.
 ---
 
 # 動画編集：区間選定と出力前検品
@@ -59,11 +59,22 @@ Monitor({
 `work/<jobId>/units.json`（番号付き文節一覧）を**実際に全文読む**。「だいたいこの辺」で済ませない。
 
 `docs/編集についての虎の巻.md`（どこで切るか）と `docs/合格条件.md`（何を残すか・何を捨てるか）
-の基準に照らして、**このセッション自身が** `work/<jobId>/keep.json` を直接書く。
+の基準に照らして、**このセッション自身が** `work/<jobId>/editorial_plan.json` を直接書く。
 
-`keep.json` の形式: `{"keep": [[開始文節番号, 終了文節番号], ...], "applied": ["反映した指示"], "notApplied": ["反映できなかった指示とその理由"]}`
+`editorial_plan.json` の形式（正は `src/editorial/plan-schema.mjs`）:
+`{"version": 1, "segments": [{"fromUnit": 開始文節番号, "toUnit": 終了文節番号, "role": "HOOK", "reason": "選んだ理由"}, ...], "applied": ["反映した指示"], "notApplied": ["反映できなかった指示とその理由"]}`
+segments の並び順が動画での順番。**時刻は書かない**（書くと止まる）。旧形式の `keep.json` も受け付ける。
 
-書いたら `node src/edit-job.mjs render <jobId>` を実行する。
+書いたら、次の順で進める。
+
+1. `node src/edit-job.mjs plan <jobId>` … 台本案（採用する文節の本文を順番どおりに並べたもの）が出る。
+   問題があれば理由が出るので直す。
+2. **台本案をマスターに見せ、承認をもらう。**（マスター指示原文「ユーザーに提示→ユーザー承認を経て編集作業の開始」）
+3. `node src/edit-job.mjs approve <jobId>` … 承認を記録する。
+4. `node src/edit-job.mjs render <jobId>` … 承認後に編集案を書き換えていたら止まるので、1 からやり直す。
+
+音声が欠落する不具合の切り分けには、`render <jobId> --no-snap --no-filler --out <名前>` などを使う
+（完了記録を書かない試しの書き出し。承認は不要）。
 
 ## フェーズ2：出力前検品（完成報告の前・必須3点）
 
@@ -77,7 +88,7 @@ ffmpeg -ss <秒> -frames:v 1 -y frame.png
 その後 Read ツールで画像を確認する。文字起こしの結果を読むだけで済ませない。
 
 **b. 完成した動画をもう一度文字起こしし直して、実際に焼かれた音声・話の繋がりを確認する**
-事前の判断（keep.json）が正しく実現されているとは限らない。無音スナップ・フィラー除去は
+事前の判断（編集案）が正しく実現されているとは限らない。無音スナップ・フィラー除去は
 判断のあとに動くので、最終結果は別工程で検証しないと、判断と実物のズレに気づけない。
 
 **c. `docs/合格条件.md` の共通チェックリスト10項目＋該当するモード別追加チェックに、

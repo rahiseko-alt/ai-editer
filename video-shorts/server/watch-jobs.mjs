@@ -167,7 +167,9 @@ function classify(job, results) {
     return { state: "中止", detail: ".cancel の旗が立っています（このまま render しても即座に打ち切られます）" };
   }
 
-  const keepExists = exists(path.join(dir, "keep.json"));
+  // 編集案（editorial_plan.json。旧形式は keep.json）があれば、区間選定は済んでいる。
+  const keepExists = exists(path.join(dir, "editorial_plan.json")) || exists(path.join(dir, "keep.json"));
+  const approved = exists(path.join(dir, "approval.json"));
   const units = readJson(path.join(dir, "units.json"));
 
   if (result && result.status === "error") {
@@ -187,9 +189,12 @@ function classify(job, results) {
     if (!keepExists) {
       return { state: "選定待ち", units: units.value.length };
     }
-    // keep.json まで書いてあるのに完了記録が無い＝ render が止まった可能性。
+    // 編集案まで書いてあるのに完了記録が無い＝承認待ちか、render が止まった可能性。
     if (age != null && age >= STALL_MIN && age <= STALL_MAX) {
-      return { state: "停滞", detail: `keep.json は在るが完了記録がありません（投入から${Math.floor(age)}分）。render が落ちたか、叩き忘れの可能性` };
+      if (!approved) {
+        return { state: "停滞", detail: `編集案は在るが承認が記録されていません（投入から${Math.floor(age)}分）。台本案をマスターに見せたか、approve の叩き忘れの可能性` };
+      }
+      return { state: "停滞", detail: `承認済みの編集案は在るが完了記録がありません（投入から${Math.floor(age)}分）。render が落ちたか、叩き忘れの可能性` };
     }
     return null; // render 中とみなす
   }

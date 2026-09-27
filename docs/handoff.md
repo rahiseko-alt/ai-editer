@@ -6,6 +6,36 @@
 
 ---
 
+## 更新日: 2026-09-26
+
+マスター提出の「AI Editor 再開発計画提案書」に沿って、Phase 0〜2 を実装した。
+計画と進捗の正は `docs/再開発計画_Phase0-2.md`。
+
+### ① 今回実施したこと
+- 計画書を作成し、§7 の5問について承認を得た（すべて推奨案）。
+- 未使用ファイル（export-presets / job-id / term-dictionary / reframe_cli / demo-ui）を削除。虎の巻 §8 を現行コードの違反一覧に書き換えた。
+- **編集の流れが変わった**：`prepare` → セッションが `editorial_plan.json` を書く（文節番号だけ・時刻は書けない）→
+  `plan`（台本案を表示）→ **マスターに見せて承認** → `approve` → `render`。承認後に編集案を書き換えると render は止まる。
+  旧形式の keep.json も受け付ける。手順は `.claude/skills/video-edit-checklist` と AGENTS.md の絶対項目を更新済み。
+- 書き出しを作り直した（`src/render/render-edl.mjs`）：区間の端をフレーム境界に揃え、区間ごとに可逆の中間ファイル
+  （`work/<jobId>/segments/`）へ切り出してから繋ぎ、最後に1回だけ変換する。繋ぎ目に挟まっていた最大1フレームの無音が消えた。
+- フィラー判定を文節単位にした（1文字の「ん」を切りうる誤りを直した）。
+- テストを置いた：`pnpm --filter video-shorts test`（editorial / filler-cut / audio-integrity）。
+
+### ② 今回のトラブル・発見
+- 音声欠落の不具合は、合成音では書き出し工程で再現しなかった。合成データでは、フィラー除去が
+  「くれちゃ[ん]です」の「ん」を切ることを再現した（有力な原因。実素材では未確認）。
+- main の時点で lint が3件落ちていた（未使用変数など）。今回あわせて直した。
+
+### ③ 次回やること
+- **実素材で確認する**（マスターのPC）：`フリノバAIU＃3素材動画.mp4` の区間6付近（文節121-137）を editorial_plan.json に入れ、
+  plan → 承認 → approve → render。書き出した動画を再文字起こしして「きれいに切り分けてくれちゃうんです」がそのまま出るか見る。
+  出なければ `render <jobId> --no-snap --no-filler --out a` などで切り分ける。
+- 実聴でフェード長（今 10ms）を確かめる。
+- Phase 3 以降（packed transcript・timeline view・QC・字幕移植・reframe・UI）の提案。
+
+---
+
 ## 更新日: 2026-08-19（2回目）
 
 **セッション開始前に必ず読むこと**：`AGENTS.md` の
