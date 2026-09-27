@@ -6,6 +6,27 @@
 
 ---
 
+## 更新日: 2026-09-28
+
+**お題（チャットだけで完結する形にし、他人に渡して使えるようにする）は完了。**
+
+### ① 今回実施したこと
+- 配布用の公開リポジトリ https://github.com/rahiseko-alt/ai-editor-kit を作成（マスター承認: 公開・この名前）。
+  中身は `node video-shorts/scripts/export-dist.mjs <出力先>` で作る（edit-job.mjs の import 閉包＋文字起こし＋フォント＋
+  虎の巻・合格条件・スキル＋`video-shorts/dist-template/` の CLAUDE.md・README.md・.gitignore＋LICENSE）。
+- 誤字直しの工程（裏で `claude -p`）を prepare から外した（マスター決定）。
+- 書き出しの中間ファイルを再帰削除せず1つずつ消すようにした（Node v24 の Windows で再帰削除がクラッシュした実測への対策。配布先は v24 LTS を入れるため）。
+- 配布物の中だけで new → 台本案 → 承認 → render → 検品を一周し合格。クローンしたフォルダで doctor も通った。
+
+### ② 今回のトラブル・発見
+- まっさらな PC での準備（README の手順）は未検証。最初に渡す相手の結果で README を直す。
+
+### ③ 次回やること
+- ツールを直したら、export-dist.mjs で書き出して ai-editor-kit に push する（配布物に .env・.runtime を入れない）。
+- 次の目標はマスターが決める。
+
+---
+
 ## 更新日: 2026-09-27（2回目）
 
 **お題：デスクトップ版 Claude Code のチャットだけで完結する形に作り変え、他人に渡して使えるようにする。**
