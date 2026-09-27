@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>動画編集キット 取扱説明書</title>
+<!-- この HTML から 取扱説明書.pdf を作る（video-shorts/scripts/build-manual-pdf.mjs）。配布物には PDF だけを入れる。 -->
+<style>
+@page{size:A4;margin:13mm 15mm 12mm}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Yu Gothic","YuGothic","Meiryo",sans-serif;font-size:10.2pt;line-height:1.55;color:#1b2220}
+h1{font-size:19pt;margin:0 0 2mm;letter-spacing:.02em}
+.sub{color:#56615c;margin:0 0 3mm;font-size:10pt}
+h2{font-size:12pt;margin:4.5mm 0 2mm;padding:1.2mm 0 1.2mm 3mm;border-left:3.5pt solid #0c6158;background:#e8f1ef}
+ol{margin:0;padding-left:6mm}
+ol li{margin:0 0 1.2mm}
+ul{margin:0;padding-left:5mm}
+ul li{margin:0 0 .8mm}
+.say{display:inline-block;background:#0c6158;color:#fff;border-radius:3mm;padding:.2mm 3mm;font-weight:bold;margin:0 .6mm}
+.path{font-family:Consolas,monospace;font-size:9.5pt;background:#eef2f0;padding:0 1.5mm;border-radius:1mm}
+.flow{display:flex;gap:0;margin:1mm 0 2mm;border:1px solid #cfd8d4;border-radius:2mm;overflow:hidden}
+.flow div{flex:1;padding:2mm 2.5mm;border-right:1px solid #cfd8d4;font-size:9.5pt;line-height:1.5}
+.flow div:last-child{border-right:0}
+.flow b{display:block;font-size:10.5pt}
+.box{border:1px solid #e0b25a;background:#fcf4e4;border-radius:2mm;padding:2.5mm 3.5mm;margin-top:2mm;font-size:10pt}
+.foot{margin-top:4mm;color:#56615c;font-size:9pt;border-top:1px solid #cfd8d4;padding-top:2mm}
+</style>
+</head>
+<body>
+<h1>動画編集キット 取扱説明書</h1>
+<p class="sub">Claude のデスクトップアプリで、チャットに動画を渡すだけで要点をつないだダイジェスト動画を作ります（Windows 用）。</p>
+
+<h2>用意するもの</h2>
+<ul>
+  <li>Windows の PC</li>
+  <li>Claude の有料プランのアカウント</li>
+  <li>Groq のアカウント（無料・おすすめ。文字起こしが速くなります）</li>
+</ul>
+
+<h2>はじめての準備（最初の1回だけ）</h2>
+<ol>
+  <li><b>Claude のデスクトップアプリ</b>を入れてログインする（<span class="path">claude.ai/download</span>）。</li>
+  <li><b>キットをダウンロード</b>する：<span class="path">github.com/rahiseko-alt/ai-editor-kit</span> を開き、緑の「Code」→「Download ZIP」。<br>ZIP を右クリック →「すべて展開」し、できたフォルダを <span class="path">C:\ai-editor-kit</span> のような短い英字の場所に置く。</li>
+  <li>Claude のアプリで「<b>Code</b>」を選び、そのフォルダを開く。</li>
+  <li>チャット欄に <span class="say">使えるようにして</span> と送る。<br>必要なソフトは Claude が入れます。許可を求める画面が出たら「はい」を押してください。</li>
+  <li>Claude に頼まれたら、Groq のキーを用意して貼り付ける（<span class="path">console.groq.com</span> →「API Keys」→「Create API Key」）。</li>
+</ol>
+
+<h2>使い方（毎回）</h2>
+<div class="flow">
+  <div><b>① 動画を渡す</b>動画をチャット欄にドラッグし <span class="say">この動画を編集して</span></div>
+  <div><b>② 台本案を読む</b>残す所・捨てる所が出ます</div>
+  <div><b>③ 承認する</b><span class="say">承認</span>／直したい所を言葉で伝える</div>
+  <div><b>④ 受け取る</b>完成した動画の場所が届きます</div>
+</div>
+<ul>
+  <li>希望は一緒に書く：「縦型で」「字幕を付けて」「3分くらいに」など。書かなければ横型・字幕なし。</li>
+  <li>承認するまで動画は作られません。元の動画は変わりません。</li>
+  <li>完成した動画はキットのフォルダ内 <span class="path">.runtime\outputs\</span> に保存されます。</li>
+</ul>
+
+<h2>知っておいてほしいこと</h2>
+<ul>
+  <li>Groq のキーを設定すると、文字起こしのため<b>音声が Groq に送られます</b>。文字起こしの文章は Claude が読みます。</li>
+  <li>AI は音を聴けません。つなぎ目に「プツッ」という音がないかは、一度ご自身の耳で確かめてください。</li>
+  <li>BGM・効果音・図を足すなど、素材に無いものを加える編集はできません。</li>
+</ul>
+<div class="box"><b>困ったときは</b>、起きたことをそのままチャット欄に書いてください（例：「エラーが出た」「止まったみたい」）。Claude が調べます。</div>
+
+<p class="foot">ai-editor-kit 取扱説明書（Windows 版）</p>
+</body>
+</html>
