@@ -92,7 +92,12 @@ export function renderFinal({ videoPath, ranges, portrait, assPath, workDir, out
   if (aligned.length === 0) throw new Error("切り出す区間がありません");
 
   const segDir = path.join(workDir, "segments");
-  fs.rmSync(segDir, { recursive: true, force: true });
+  // 前回の中間ファイルを1つずつ消す。fs.rmSync の再帰削除は、Node.js v24 の Windows で OneDrive 配下・
+  // 日本語パス上だとネイティブクラッシュした実測がある（video-shorts/AGENTS.md）。配布先は今の LTS（v24）を
+  // 入れるので、再帰削除を使わない。segments/ は平らなフォルダ（中にフォルダを作らない）。
+  if (fs.existsSync(segDir)) {
+    for (const name of fs.readdirSync(segDir)) fs.unlinkSync(path.join(segDir, name));
+  }
   fs.mkdirSync(segDir, { recursive: true });
   const listLines = [];
   aligned.forEach((r, i) => {

@@ -9,7 +9,7 @@
 // セッション自身にする。そのため工程を分けた:
 //
 //   node src/edit-job.mjs prepare <jobId>
-//     文字起こし→誤字修正→無音実測→文節化（BudouX）までを自動実行する。
+//     文字起こし→無音実測→文節化（BudouX）までを自動実行する。
 //     チャットで動画を受け取ったら `new <動画パス>` が登録してから呼ぶ（2026-09-27 に UI・ワーカーを廃止）。
 //     結果は work/<jobId>/units.json（番号付き文節一覧）・silences.json に残る。
 //     ★ここで自動処理は止まる。区間選定はしない。★
@@ -42,7 +42,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { aiCaptionFixStage, createDefaultRunModel } from "./ai-caption-fix.mjs";
 import { writeJsonAtomically } from "./atomic-json.mjs";
 import { wordsInRange, assTime } from "./srt-builder.mjs";
 import { FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
@@ -572,7 +571,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 //   node src/edit-job.mjs render <jobId>   work/<jobId>/keep.json を読んで書き出しまで
 //                                          （keep.json はこのセッションが直接書く）
 
-/** prepare: 文字起こし・誤字修正・無音実測・文節化までを行い、判断材料を work/<jobId> に残す。 */
+/** prepare: 文字起こし・無音実測・文節化までを行い、判断材料を work/<jobId> に残す。 */
 async function prepareMain(jobId) {
   const job = readInboxJob(jobId);
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
@@ -589,18 +588,9 @@ async function prepareMain(jobId) {
     checkCancelled(workDir);
     transcribe(job.video.path, workDir);
     checkCancelled(workDir);
-    console.log("[2/4] 台本の誤字を直しています（全体を読んでから直します）…");
-    try {
-      const r = await aiCaptionFixStage({
-        workDir,
-        runModel: createDefaultRunModel(workDir),
-        onLog: (l) => console.log(`  ${l}`),
-      });
-      console.log(`  ${r.total} 語中 ${r.fixed} 語を直しました`);
-    } catch (err) {
-      console.log(`  誤字修正に失敗しました（そのまま続行します）: ${err.message}`);
-    }
-    checkCancelled(workDir);
+    // 誤字直し（裏で claude -p を呼ぶ工程）は 2026-09-27 に外した（マスター決定）。他の人の PC では
+    // claude コマンドが無い・認証が切れている可能性が高く、実際に認証切れで失敗していた。台本を読んで
+    // 内容を理解するのはこのセッション自身なので、字幕なしなら仕上がりに影響しない。
     const transcript = JSON.parse(fs.readFileSync(path.join(workDir, "transcript.json"), "utf-8"));
     const silences = detectSilences(job.video.path);
     writeJsonAtomically(path.join(workDir, "silences.json"), silences);
