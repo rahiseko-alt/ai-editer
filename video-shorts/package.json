@@ -6,7 +6,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "node tests/editorial.mjs && node tests/filler-cut.mjs && node tests/audio-integrity.mjs",
+    "test": "node tests/editorial.mjs && node tests/silence-threshold.mjs && node tests/filler-cut.mjs && node tests/audio-integrity.mjs",
     "serve": "node server/index.mjs",
     "worker": "node server/job-worker.mjs"
   },

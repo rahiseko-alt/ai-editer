@@ -48,6 +48,7 @@ import { FONT_CATALOG, fontSizeForHeight } from "./subtitle-styles.mjs";
 import { approvalProblem, writeApproval } from "./editorial/approval.mjs";
 import { loadPlan, renderScript, validatePlan } from "./editorial/plan-schema.mjs";
 import { resolveEdl } from "./editorial/resolve-edl.mjs";
+import { chooseSilenceThresholdDb } from "./editorial/silence-threshold.mjs";
 import { alignToFrames, probeFps, renderFinal } from "./render/render-edl.mjs";
 import { groupIntoPhrases } from "./script/phrases.mjs";
 
@@ -175,9 +176,30 @@ function transcribe(videoPath, workDir) {
 }
 
 // ---------- 2. 無音実測 ----------
-function detectSilences(videoPath) {
+/** 50ms 窓ごとのピーク値（dB）を測る。閾値を素材の環境音から決めるため（silence-threshold.mjs）。 */
+function measurePeaksDb(videoPath) {
+  const r = spawnSync(
+    "ffmpeg",
+    [
+      "-v", "error", "-i", videoPath, "-vn", "-af",
+      "aresample=16000,asetnsamples=n=800,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-",
+      "-f", "null", "-",
+    ],
+    { encoding: "utf-8", maxBuffer: 256 * 1024 * 1024 }
+  );
+  const peaks = [];
+  for (const line of (r.stdout ?? "").split("\n")) {
+    const m = line.match(/Peak_level=(-?inf|-?[\d.]+)/);
+    if (m) peaks.push(m[1].endsWith("inf") ? -Infinity : Number(m[1]));
+  }
+  return peaks;
+}
+
+export function detectSilences(videoPath) {
   console.log("[3/8] 無音区間を実測中…");
-  const r = spawnSync("ffmpeg", ["-i", videoPath, "-af", "silencedetect=noise=-30dB:d=0.15", "-f", "null", "-"], {
+  const noiseDb = chooseSilenceThresholdDb(measurePeaksDb(videoPath));
+  console.log(`  無音とみなす音量: ${noiseDb}dB 以下（素材の環境音から決定）`);
+  const r = spawnSync("ffmpeg", ["-i", videoPath, "-af", `silencedetect=noise=${noiseDb}dB:d=0.15`, "-f", "null", "-"], {
     encoding: "utf-8",
   });
   const text = r.stderr ?? "";
