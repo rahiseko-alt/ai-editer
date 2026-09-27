@@ -63,7 +63,7 @@ function usage() {
   console.error("       node src/edit-job.mjs plan <jobId>     （編集案を検査し、台本案を表示）");
   console.error("       node src/edit-job.mjs approve <jobId>  （マスターの承認を記録）");
   console.error("       node src/edit-job.mjs render <jobId>   （承認済みの編集案を書き出し）");
-  console.error("         切り分け用: --no-snap（無音スナップしない） --no-filler（言い淀みを切らない）");
+  console.error("         切り分け用: --no-snap（無音スナップしない） --no-filler（言い淀みを切らない） --no-caption（字幕を焼かない）");
   console.error("                     --out <名前>（outputs/<jobId>/<名前>.mp4 へ書き、完了記録は書かない）");
   process.exit(1);
 }
@@ -436,15 +436,24 @@ export function wrapCardText(words, budgetPx, fontSize) {
   return packWordsIntoLines(words, budgetPx, fontSize).join("\\N");
 }
 
-export function buildAssFile(transcript, ranges, assPath, dims) {
+/**
+ * @param {{start:number,end:number}[]} ranges 実際に切り出す区間
+ * @param {{start:number,end:number}[]} [textWindows] ranges と同じ並びの「字幕に出してよい語」の範囲。
+ *   語は開始時刻がこの範囲に入るものだけを使う（区間と少し重なるだけの、捨てた文節の語を出さない）。
+ */
+export function buildAssFile(transcript, ranges, assPath, dims, textWindows = null) {
   const PLAY_RES_X = dims.width;
   const PLAY_RES_Y = dims.height;
   const { fontSize, marginLR, marginV, outline, budgetPx } = captionMetrics(dims);
 
   let relWords = [];
   let newBase = 0;
-  for (const r of ranges) {
-    const rel = wordsInRange(transcript.words, r.start, r.end);
+  for (const [k, r] of ranges.entries()) {
+    const tw = textWindows?.[k];
+    const TOL = 0.02;
+    const rel = wordsInRange(transcript.words, r.start, r.end).filter(
+      (w) => !tw || (w.start + r.start >= tw.start - TOL && w.start + r.start < tw.end)
+    );
     for (const w of rel) relWords.push({ w: w.w, start: w.start + newBase, end: w.end + newBase });
     newBase += r.end - r.start;
   }
@@ -610,7 +619,7 @@ function approveMain(jobId) {
  *                     "applied": ["反映した指示"], "notApplied": ["反映できなかった指示"]}
  * keep はこのセッションが units.json を読んで直接決める（区間選定の自動化はしない）。
  */
-async function renderMain(jobId, { noSnap = false, noFiller = false, outName = null } = {}) {
+async function renderMain(jobId, { noSnap = false, noFiller = false, noCaption = false, outName = null } = {}) {
   const job = readInboxJob(jobId);
   const workDir = path.join(RUNTIME_DIR, "work", jobId);
   const outDir = path.join(RUNTIME_DIR, "outputs", jobId);
@@ -659,7 +668,10 @@ async function renderMain(jobId, { noSnap = false, noFiller = false, outName = n
     // 書き出しは区間の端を映像のフレーム境界に揃えて切る（render-edl.mjs）。字幕の時刻も
     // 実際に切る区間に合わせるため、ここで先に揃えておく（renderFinal 側で揃え直しても変わらない）。
     const fps = probeFps(job.video.path);
-    const ranges = alignToFrames(edl.ranges, fps).map(({ start, end }) => ({ start, end }));
+    // 1区間ずつ揃える（フレーム数0で消えた区間があっても、字幕の語の範囲と並びがずれないように）。
+    const aligned = edl.ranges.map((r) => ({ r, a: alignToFrames([r], fps)[0] })).filter((p) => p.a);
+    const ranges = aligned.map(({ a }) => ({ start: a.start, end: a.end }));
+    const textWindows = aligned.map(({ r, a }) => ({ start: r.textStart ?? a.start, end: r.textEnd ?? a.end }));
     // 書き出しは EDL だけを見る。記録として残す（以前の decision.json はこれに統合した）。
     writeJsonAtomically(path.join(workDir, outName ? `edl-${outName}.json` : "edl.json"), {
       ...edl,
@@ -681,9 +693,9 @@ async function renderMain(jobId, { noSnap = false, noFiller = false, outName = n
 
     const resultPath = path.join(outDir, outName ? `${outName}.mp4` : "result.mp4");
     let assPath = null;
-    if (job.settings?.caption) {
+    if (job.settings?.caption && !noCaption) {
       assPath = path.join(workDir, "captions.ass");
-      buildAssFile(transcript, ranges, assPath, dims);
+      buildAssFile(transcript, ranges, assPath, dims, textWindows);
       checkCancelled(workDir);
     }
     renderFinal({ videoPath: job.video.path, ranges, portrait, assPath, workDir, outPath: resultPath, fps });
@@ -743,10 +755,13 @@ async function main() {
     }
     return;
   }
-  const opts = { noSnap: false, noFiller: false, outName: null };
+  const opts = { noSnap: false, noFiller: false, noCaption: false, outName: null };
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--no-snap") opts.noSnap = true;
     else if (rest[i] === "--no-filler") opts.noFiller = true;
+    // 字幕なしで書き出す（2026-09-27 マスター指示「字幕無し状態で良い感じにする、を最初の目標に」）。
+    // 字幕は仕上がりの判定対象から外すだけなので、--out 無しでも使える。
+    else if (rest[i] === "--no-caption") opts.noCaption = true;
     else if (rest[i] === "--out" && /^[A-Za-z0-9_-]+$/.test(rest[i + 1] ?? "")) opts.outName = rest[++i];
     else usage();
   }
