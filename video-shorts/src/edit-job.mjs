@@ -1,4 +1,4 @@
-// video-shorts [固定手順] .runtime/chat-inbox.jsonl の1ジョブを、実際に編集して
+// video-shorts [固定手順] .runtime/chat-inbox.jsonl（ジョブ台帳。`new` が追記する）の1ジョブを、実際に編集して
 // .runtime/outputs/<jobId>/result.mp4 へ書き出し、.runtime/results.jsonl へ完了を記録する。
 //
 // 【2026-08-19 マスター指示】「UIに素材を投げる→文字起こしする→お前が内容を決める→
@@ -10,7 +10,7 @@
 //
 //   node src/edit-job.mjs prepare <jobId>
 //     文字起こし→誤字修正→無音実測→文節化（BudouX）までを自動実行する。
-//     ワーカー（server/job-worker.mjs）がジョブ投入を検知して自動で呼ぶ。
+//     チャットで動画を受け取ったら `new <動画パス>` が登録してから呼ぶ（2026-09-27 に UI・ワーカーを廃止）。
 //     結果は work/<jobId>/units.json（番号付き文節一覧）・silences.json に残る。
 //     ★ここで自動処理は止まる。区間選定はしない。★
 //
@@ -37,6 +37,7 @@
 //   → 出力・完了記録
 
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,7 +61,10 @@ const CHAT_INBOX = path.join(RUNTIME_DIR, "chat-inbox.jsonl");
 const RESULTS_JSONL = path.join(RUNTIME_DIR, "results.jsonl");
 
 function usage() {
-  console.error("使い方: node src/edit-job.mjs prepare <jobId>  （文字起こし〜文節化。ワーカーが自動実行）");
+  console.error("使い方: node src/edit-job.mjs doctor         （必要な物がそろっているか確かめる）");
+  console.error("       node src/edit-job.mjs new <動画のパス> [--portrait] [--caption] [--instruction <指示>]");
+  console.error("                                               （ジョブを登録して prepare まで実行。既定は横型・字幕なし）");
+  console.error("       node src/edit-job.mjs prepare <jobId>  （文字起こし〜文節化）");
   console.error("       node src/edit-job.mjs plan <jobId>     （編集案を検査し、台本案を表示）");
   console.error("       node src/edit-job.mjs approve <jobId>  （マスターの承認を記録）");
   console.error("       node src/edit-job.mjs render <jobId>   （承認済みの編集案を書き出し）");
@@ -113,6 +117,47 @@ function clearCancel(workDir) {
   } catch (_err) {
     return false; // 無ければ何もしない（存在しないのが通常）
   }
+}
+
+/**
+ * doctor: 動かすのに必要な物がそろっているかを確かめ、足りない物と入れ方を表示する。
+ * 他の人の PC で最初に動かすときに使う。戻り値は終了コード（0=すべてそろっている）。
+ */
+function runDoctor() {
+  const lines = [];
+  let ok = true;
+  const check = (name, pass, fix) => {
+    lines.push(`${pass ? "OK" : "NG"}  ${name}${pass ? "" : `\n    → ${fix}`}`);
+    if (!pass) ok = false;
+  };
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  check(`Node.js ${process.versions.node}`, nodeMajor >= 20, "Node.js 20 以上を https://nodejs.org から入れてください");
+  const ff = spawnSync("ffmpeg", ["-version"], { encoding: "utf-8" });
+  check("ffmpeg", ff.status === 0, "ffmpeg を入れて PATH を通してください（Windows: winget install Gyan.FFmpeg）");
+  const fp = spawnSync("ffprobe", ["-version"], { encoding: "utf-8" });
+  check("ffprobe", fp.status === 0, "ffmpeg と一緒に入ります（上と同じ）");
+  let py = null;
+  try {
+    py = resolvePython();
+  } catch {
+    /* 下で NG にする */
+  }
+  check(`Python${py ? `（${py}）` : ""}`, !!py, "Python 3.10 以上を https://www.python.org から入れてください");
+  if (py) {
+    const mods = spawnSync(py, ["-c", "import importlib.util as u;print(bool(u.find_spec('groq')), bool(u.find_spec('faster_whisper')))"], { encoding: "utf-8" });
+    const [hasGroq, hasWhisper] = (mods.stdout ?? "").trim().split(/\s+/).map((s) => s === "True");
+    const envFile = path.join(VIDEO_SHORTS_DIR, ".env");
+    const hasKey = !!process.env.GROQ_API_KEY || (fs.existsSync(envFile) && /^\s*GROQ_API_KEY\s*=\s*\S+/m.test(fs.readFileSync(envFile, "utf-8")));
+    const groqReady = hasGroq && hasKey;
+    check(
+      `文字起こし（Groq: ${groqReady ? "使える" : "使えない"} / ローカル: ${hasWhisper ? "使える" : "使えない"}）`,
+      groqReady || hasWhisper,
+      `次のどちらかを用意してください:\n      (速い) pip install groq を実行し、video-shorts/.env に GROQ_API_KEY=... を書く（キーは https://console.groq.com で無料発行）\n      (キー不要・遅い) ${py} -m pip install -r video-shorts/requirements.txt`
+    );
+  }
+  console.log(lines.join("\n"));
+  console.log(ok ? "\nすべてそろっています。" : "\n足りない物があります。上の → の手順で入れてから、もう一度 doctor を実行してください。");
+  return ok ? 0 : 1;
 }
 
 function readInboxJob(jobId) {
@@ -574,8 +619,8 @@ async function prepareMain(jobId) {
       units.map((u, i) => ({ i, start: +u.start.toFixed(3), end: +u.end.toFixed(3), w: u.w })),
       (data) => `[\n${data.map((u) => JSON.stringify(u)).join(",\n")}\n]`
     );
-    console.log(`  文節 ${units.length} 個。work/${jobId}/units.json を見て、keep.json を書いてください。`);
-    console.log(`  終わったら: node src/edit-job.mjs render ${jobId}`);
+    console.log(`  文節 ${units.length} 個。work/${jobId}/units.json を全文読んで、editorial_plan.json を書いてください。`);
+    console.log(`  書いたら: node src/edit-job.mjs plan ${jobId}`);
   } catch (err) {
     if (err instanceof CancelledError) {
       appendResult({ id: jobId, status: "cancelled", message: err.message, at: new Date().toISOString() });
@@ -587,6 +632,33 @@ async function prepareMain(jobId) {
       process.exitCode = 1;
     }
   }
+}
+
+/**
+ * new: チャットで渡された動画を1ジョブとして登録し、そのまま prepare まで実行する。
+ * 2026-09-27 マスター指示「デスクトップ版の Claude Code だけで完結する形に。UI は不要。チャット欄の操作だけで完結」。
+ * 以前は UI → サーバー → ワーカーがジョブを登録していた。いまはこのセッションが直接登録する。
+ */
+async function newMain(videoArg, { portrait = false, caption = false, instruction = "" } = {}) {
+  const videoPath = path.resolve(videoArg.replace(/^["']|["']$/g, ""));
+  if (!fs.existsSync(videoPath) || !fs.statSync(videoPath).isFile()) {
+    console.error(`動画が見つかりません: ${videoPath}`);
+    process.exitCode = 1;
+    return;
+  }
+  const id = crypto.randomUUID();
+  fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+  const job = {
+    id,
+    at: new Date().toISOString(),
+    instruction,
+    video: { path: videoPath, originalName: path.basename(videoPath) },
+    settings: { aspect: portrait ? "portrait" : "landscape", caption, outputCount: 1 },
+  };
+  fs.appendFileSync(CHAT_INBOX, JSON.stringify(job) + "\n", "utf-8");
+  console.log(`ジョブを登録しました: ${id}（${job.settings.aspect} / 字幕${caption ? "あり" : "なし"}）`);
+  await prepareMain(id);
+  if (!process.exitCode) console.log(`JOB_ID=${id}`);
 }
 
 /** 区間を決めるための材料（prepare の結果）と、このセッションが書いた編集案をまとめて読む。 */
@@ -761,6 +833,22 @@ export { groupIntoPhrases, renderFinal };
 
 async function main() {
   const [, , cmd, jobId, ...rest] = process.argv;
+  if (cmd === "doctor") {
+    process.exitCode = runDoctor();
+    return;
+  }
+  if (cmd === "new") {
+    if (!jobId) usage();
+    const opts = { portrait: false, caption: false, instruction: "" };
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "--portrait") opts.portrait = true;
+      else if (rest[i] === "--caption") opts.caption = true;
+      else if (rest[i] === "--instruction" && rest[i + 1] != null) opts.instruction = rest[++i];
+      else usage();
+    }
+    await newMain(jobId, opts);
+    return;
+  }
   if (!cmd || !jobId || !["prepare", "plan", "approve", "render"].includes(cmd)) usage();
   if (cmd !== "render") {
     if (rest.length) usage();
