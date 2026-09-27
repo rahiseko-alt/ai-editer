@@ -35,7 +35,7 @@ export function isInsideAnyWord(silence, phraseUnits) {
  *   "start"=区間の始まり(語頭。無音の尾から0.3秒遡って助走を付ける)
  * @param {{start:number,end:number,w:string}[]} phraseUnits 文節の内部の誤検出無音を除外するために使う
  */
-export function snapToSilence(t, silences, kind, phraseUnits, maxDistance = 1.0) {
+export function snapToSilence(t, silences, kind, phraseUnits, maxDistance = 1.0, margin = AFTER_SPEECH_MARGIN_SEC) {
   let best = null;
   let bestDist = Infinity;
   for (const s of silences) {
@@ -49,9 +49,9 @@ export function snapToSilence(t, silences, kind, phraseUnits, maxDistance = 1.0)
   if (!best || bestDist > maxDistance) return t;
   const edgeMargin = Math.min(0.05, (best.end - best.start) / 4);
   if (kind === "end") {
-    return Math.min(best.start + AFTER_SPEECH_MARGIN_SEC, best.end - edgeMargin);
+    return Math.min(best.start + margin, best.end - edgeMargin);
   }
-  return Math.max(best.end - AFTER_SPEECH_MARGIN_SEC, best.start + edgeMargin);
+  return Math.max(best.end - margin, best.start + edgeMargin);
 }
 
 // ---------- 4. 無音スナップ ----------
@@ -70,9 +70,13 @@ export function snapToSilence(t, silences, kind, phraseUnits, maxDistance = 1.0)
  * 歯止め: 範囲の直前・直後にある文節（＝捨てると決めたもの）の境界を越えない。
  * 無音の中で寄せる自由は保ちつつ、隣の発話は絶対に含めない（虎の巻 原則1）。
  */
-export function snapRanges(ranges, silences, phraseUnits) {
+export function snapRanges(ranges, silences, phraseUnits, { joinMarginSec = AFTER_SPEECH_MARGIN_SEC } = {}) {
   const EPS = 0.01;
-  return ranges.map((r) => {
+  return ranges.map((r, i) => {
+    // 区間どうしの繋ぎ目の側だけ、元の無音を長めに残せるようにする（動画の頭と尻は今までどおり）。
+    // 無音そのものより長くはならない（snapToSilence が無音の内側に収める＝虎の巻 原則4）。
+    const startMargin = i > 0 ? joinMarginSec : AFTER_SPEECH_MARGIN_SEC;
+    const endMargin = i < ranges.length - 1 ? joinMarginSec : AFTER_SPEECH_MARGIN_SEC;
     // 範囲の直前・直後にある発話（＝捨てると決めた文節）の境界。ここを越えてはいけない。
     let prevEnd = 0;
     let nextStart = Infinity;
@@ -102,8 +106,8 @@ export function snapRanges(ranges, silences, phraseUnits) {
     const midStart = r.start;
     const midEnd = Number.isFinite(nextStart) ? r.end + (nextStart - r.end) / 2 : r.end;
 
-    const rawSnappedStart = snapToSilence(r.start, usable, "start", phraseUnits);
-    const rawSnappedEnd = snapToSilence(r.end, usable, "end", phraseUnits);
+    const rawSnappedStart = snapToSilence(r.start, usable, "start", phraseUnits, 1.0, startMargin);
+    const rawSnappedEnd = snapToSilence(r.end, usable, "end", phraseUnits, 1.0, endMargin);
     // snapToSilence は候補が無いと引数をそのまま返す。その場合だけ中央へ寄せる。
     const foundStart = rawSnappedStart !== r.start;
     const foundEnd = rawSnappedEnd !== r.end;

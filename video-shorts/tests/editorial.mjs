@@ -9,7 +9,7 @@ import path from "node:path";
 import { approvalProblem, writeApproval } from "../src/editorial/approval.mjs";
 import { snapRanges } from "../src/editorial/boundary.mjs";
 import { keepToPlan, renderScript, validatePlan } from "../src/editorial/plan-schema.mjs";
-import { resolveEdl } from "../src/editorial/resolve-edl.mjs";
+import { JOIN_MARGIN_SEC, resolveEdl } from "../src/editorial/resolve-edl.mjs";
 import { planFillerCuts, subtractCuts } from "../src/filler-cut.mjs";
 import { groupIntoPhrases } from "../src/script/phrases.mjs";
 
@@ -71,7 +71,8 @@ test("EDL の区間は、以前の render と同じ計算結果になる", () =>
   const keep = [[0, 6], [units.length - 2, units.length - 1]];
   // 以前の renderMain の計算（2026-09-26 時点の main と同じ手順）
   const legacyRaw = keep.map(([a, b]) => ({ start: units[Math.min(a, b)].start, end: units[Math.max(a, b)].end }));
-  let legacy = snapRanges(legacyRaw, silences, groupIntoPhrases(words, silences));
+  // 繋ぎ目の無音の残し幅だけは 2026-09-27 に変えた（JOIN_MARGIN_SEC）。それ以外の計算が同じことを見る。
+  let legacy = snapRanges(legacyRaw, silences, groupIntoPhrases(words, silences), { joinMarginSec: JOIN_MARGIN_SEC });
   const filler = planFillerCuts(words, silences);
   legacy = subtractCuts(legacy, filler.cuts);
   assert.equal(legacy.length, 3, "対照: 言い淀み除去で1つ目の区間が割れていない＝このテストは除去の経路を比べていない");
@@ -90,6 +91,30 @@ test("並べ替えた編集案は、その順番のまま EDL になる", () => 
   assert.equal(edl.ranges[0].segment, 0);
   assert.equal(edl.ranges[0].role, "HOOK");
   assert.ok(edl.ranges[0].start > edl.ranges[edl.ranges.length - 1].start);
+});
+
+test("繋ぎ目の側は、動画の尻より元の無音を長く残す（間を場所で変える）", () => {
+  const aEnd = units.findIndex((u) => u.w.includes("します"));
+  const last = units.length - 1;
+  const plan = { version: 1, segments: [{ fromUnit: 0, toUnit: aEnd }, { fromUnit: last, toUnit: last }] };
+  const edl = resolveEdl({ plan, units, silences, words, source: "x.mp4", noFiller: true });
+  const joinTail = edl.ranges[0].end - units[aEnd].end;
+  const videoTail = edl.ranges.at(-1).end - units[last].end;
+  assert.ok(joinTail > videoTail + 0.1, `繋ぎ目の余韻 ${joinTail} / 動画の尻の余韻 ${videoTail}`);
+  // 元の無音より長くはしない（無音を合成しない）
+  const sil = silences.find((s) => s.start <= units[aEnd].end + 0.1 && s.end > units[aEnd].end);
+  assert.ok(edl.ranges[0].end <= sil.end, "無音の外まで伸びた");
+});
+
+test("字幕に出す語の範囲は、採用した文節の外へ広がらない", () => {
+  const plan = { version: 1, segments: [{ fromUnit: 1, toUnit: 2 }] };
+  const edl = resolveEdl({ plan, units, silences, words, source: "x.mp4" });
+  for (const r of edl.ranges) {
+    assert.ok(r.textStart >= units[1].start && r.textStart >= r.start, JSON.stringify(r));
+    assert.ok(r.textEnd <= units[2].end && r.textEnd <= r.end, JSON.stringify(r));
+  }
+  // 対照: 無音スナップで区間そのものは文節の外へ広がっている（広がらないなら、このテストは何も見ていない）
+  assert.ok(edl.ranges[0].start < units[1].start || edl.ranges.at(-1).end > units[2].end, "対照: 区間が文節の外へ広がっていない");
 });
 
 test("--no-snap / --no-filler は、文節の時刻そのままの区間を出す", () => {
