@@ -6,7 +6,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "node tests/editorial.mjs && node tests/silence-threshold.mjs && node tests/filler-cut.mjs && node tests/audio-integrity.mjs",
+    "test": "node tests/editorial.mjs && node tests/silence-threshold.mjs && node tests/filler-cut.mjs && node tests/audio-integrity.mjs && node tests/phrases.mjs",
     "doctor": "node src/edit-job.mjs doctor"
   },
   "devDependencies": {

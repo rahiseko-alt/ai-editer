@@ -61,6 +61,33 @@ function silenceOverlapSec(gapStart, gapEnd, silences) {
   return total;
 }
 
+/** 文字種（カタカナ・数字・英字）。同じ種類の連続は1語であり、途中で割るのは明白な誤り。 */
+function scriptClass(ch) {
+  if (/[ァ-ヶー・]/.test(ch)) return "kata";
+  if (/[0-9０-９]/.test(ch)) return "digit";
+  if (/[A-Za-zＡ-Ｚａ-ｚ]/.test(ch)) return "latin";
+  return null;
+}
+
+/** BudouX が「ショー/ト」「32/1」のようにカタカナ語・数字・英単語の途中で割った境界を消し、
+ * 隣の塊と結合する（docs/caption-plan.md 案1）。境界の前後が同じ文字種のときだけ結合する。 */
+export function mergeSameScriptBoundaries(phrases) {
+  const out = [];
+  for (const p of phrases) {
+    const prev = out[out.length - 1];
+    if (prev && p) {
+      const a = scriptClass(prev[prev.length - 1]);
+      const b = scriptClass(p[0]);
+      if (a && a === b) {
+        out[out.length - 1] = prev + p;
+        continue;
+      }
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 /** 語の並びから、BudouX の文節境界で区切った塊を作る。塊は {w,start,end} を持つので、
  * packWordsIntoLines / buildCaptionCards がそのまま1トークンとして扱える。
  *
@@ -74,7 +101,7 @@ function silenceOverlapSec(gapStart, gapEnd, silences) {
 export function groupIntoPhrases(words, silences = []) {
   if (!words.length) return [];
   const text = words.map((w) => w.w).join("");
-  const phrases = budouxParser().parse(text);
+  const phrases = mergeSameScriptBoundaries(budouxParser().parse(text));
 
   const units = [];
   let wordIdx = 0;
